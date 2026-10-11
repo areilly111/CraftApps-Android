@@ -88,12 +88,11 @@ print("re-applied the ui-egui eframe accesskit gate")
 EOF
 fi
 
-# bump the port version
-UPVER="${TAG#v}"
-RSLIB="apps/$APP-android/src/lib.rs"
-OLDVN="$(grep -oP 'pub const VERSION_NAME: &str = "\K[^"]+' "$RSLIB")"
-NEWVN="$UPVER-port1"
-sed -i "s/pub const VERSION_NAME: &str = \"$OLDVN\"/pub const VERSION_NAME: &str = \"$NEWVN\"/" "$RSLIB"
+# unified versioning: VERSION_NAME is managed at release time
+# (see scripts/release.sh), NOT bumped here. The pin only updates
+# upstream source; the port keeps its current unified version.
+CURVN="$(grep -oP 'pub const VERSION_NAME: &str = "\K[^"]+' "apps/$APP-android/src/lib.rs")"
+echo "VERSION_NAME stays at $CURVN (unified; bump via scripts/release.sh)"
 echo "VERSION_NAME: $OLDVN -> $NEWVN"
 
 rm -rf "$UPSTREAM_DIR"

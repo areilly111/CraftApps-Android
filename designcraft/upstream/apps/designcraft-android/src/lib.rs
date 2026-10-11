@@ -35,7 +35,7 @@ use storage::{StorageAppInfo, StorageManager};
 use updater::Updater;
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
-/// derives the Gradle `versionCode` from it (`0.5.0-port1` → 50001).
+/// derives the Gradle `versionCode` from it (`0.1.0` → 100).
 pub const VERSION_NAME: &str = "0.1.0";
 
 /// Local newtype so the port can implement the shared [`gpu::GpuCanvasHost`]

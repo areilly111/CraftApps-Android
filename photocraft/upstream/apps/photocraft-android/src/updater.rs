@@ -99,7 +99,7 @@ impl Updater {
     }
 
     /// Open the update dialog (and start a check): the Help menu's hook.
-    /// Sibling ports reuse this verbatim; only `TAG_PREFIX` differs per app.
+    /// Unified releases: the updater finds the newest `vX.Y.Z` tag and this app's APK by filename prefix.
     pub fn open(&mut self) {
         self.window_open = true;
         self.check();

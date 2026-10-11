@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generic build script for CraftApps Android ports.
-# Usage: build-apk.sh <app>  (e.g. build-apk.sh designcraft)
+# Usage: build-apk.sh <app>  (e.g. build-apk.sh photocraft)
 #
 # Pipeline:
 #   1. build the Rust cdylib for arm64-v8a + x86_64 (direct cargo, NDK clang)
@@ -9,7 +9,7 @@
 #   4. copy it to ~/workspace/your_files/<Name>-<version>-universal.apk
 set -euo pipefail
 
-APP="${1:?usage: build-apk.sh <app> (designcraft|vectorcraft|lightcraft|pdfcraft|filmcraft|effectcraft|launcher)}"
+APP="${1:?usage: build-apk.sh <app> (photocraft|designcraft|vectorcraft|lightcraft|pdfcraft|filmcraft|effectcraft|launcher)}"
 MONOREPO="$HOME/workspace/craftapps-android"
 APP_DIR="$MONOREPO/$APP"
 UPSTREAM="$APP_DIR/upstream"
@@ -18,6 +18,7 @@ YOUR_FILES="$HOME/workspace/your_files"
 
 # Per-app metadata
 case "$APP" in
+    photocraft)   APP_NAME="PhotoCraft";   CRATE="photocraft-android";   LIB="libphotocraft_android.so" ;;
     designcraft)  APP_NAME="DesignCraft";  CRATE="designcraft-android";  LIB="libdesigncraft_android.so" ;;
     vectorcraft)  APP_NAME="VectorCraft";  CRATE="vectorcraft-android";  LIB="libvectorcraft_android.so" ;;
     lightcraft)   APP_NAME="LightCraft";    CRATE="lightcraft-android";   LIB="liblightcraft_android.so" ;;

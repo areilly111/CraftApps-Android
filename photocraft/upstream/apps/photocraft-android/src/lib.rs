@@ -41,7 +41,7 @@ use crate::storage::{StorageAppInfo, StorageManager};
 use crate::updater::Updater;
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
-/// derives the Gradle `versionCode` from it (`0.6.0-port1` → 60001).
+/// derives the Gradle `versionCode` from it (`0.1.0` → 100).
 pub const VERSION_NAME: &str = "0.1.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]): how the render
