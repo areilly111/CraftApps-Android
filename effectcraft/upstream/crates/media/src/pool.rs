@@ -14,10 +14,10 @@ use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in, frame_to_imag
 use crate::gif_anim::{self, Anim};
 use crate::{MediaError, Result};
 
-/// Default frame-cache budget: 1 GiB of decoded frames (128 MiB on Android:
+/// Default frame-cache budget: 1 GiB of decoded frames (256 MiB on Android:
 /// the desktop default OOM-kills the app during preview playback).
 #[cfg(target_os = "android")]
-pub const DEFAULT_BUDGET: usize = 128 << 20;
+pub const DEFAULT_BUDGET: usize = 256 << 20;
 #[cfg(not(target_os = "android"))]
 pub const DEFAULT_BUDGET: usize = 1 << 30;
 

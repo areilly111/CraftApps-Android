@@ -279,7 +279,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
     // GPU frames + 1 GB media pool) OOM-kill the app on Android during preview
     // playback. Clamp all three before the UI starts. The media pool budget is
     // already 128 MB on Android via target-gated DEFAULT_BUDGET.
-    const MOBILE_CACHE_MB: usize = 128;
+    const MOBILE_CACHE_MB: usize = 256;
     inner.frames.set_budget(MOBILE_CACHE_MB << 20);
     inner.frames.set_gpu_budget(MOBILE_CACHE_MB << 20);
     if let Some(r) = recovery {

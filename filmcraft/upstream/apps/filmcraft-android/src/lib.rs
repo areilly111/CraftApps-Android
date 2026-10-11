@@ -198,11 +198,11 @@ fn run(app: AndroidApp) -> Result<(), String> {
     // Mobile memory: the desktop cache budgets (768 MB decoded frames + 1 GB
     // GPU plans) OOM-kill the app on Android during preview playback (logcat:
     // lmkd reclaimed the app at 1.9 GB RSS). Clamp both to mobile sizes before
-    // the UI starts. 128 MB of frames covers the 14-frame prefetch window at
+    // the UI starts. 256 MB of frames covers the 14-frame prefetch window at
     // 1080p RGBA (~8 MB/frame); the plan cache holds render plans, not pixels.
     // Also clamp the saved preference so a desktop-sized value in an existing
     // preferences.json can't re-raise the budget on the first apply_prefs.
-    const MOBILE_CACHE_MB: u32 = 128;
+    const MOBILE_CACHE_MB: u32 = 256;
     inner.session.prefs.memory.frame_cache_mb =
         inner.session.prefs.memory.frame_cache_mb.min(MOBILE_CACHE_MB);
     inner.frames.set_cache_budget(MOBILE_CACHE_MB as usize * (1 << 20));

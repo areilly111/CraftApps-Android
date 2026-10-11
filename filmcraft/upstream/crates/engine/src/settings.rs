@@ -469,7 +469,7 @@ impl Default for MemoryPrefs {
             // Android: the 768 MB desktop frame-cache default OOM-kills the app
             // during preview playback (logcat: lmkd reclaim at 1.9 GB RSS).
             #[cfg(target_os = "android")]
-            frame_cache_mb: 128,
+            frame_cache_mb: 256,
             #[cfg(not(target_os = "android"))]
             frame_cache_mb: 768,
         }
