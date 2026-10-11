@@ -94,6 +94,16 @@ pub struct LibraryLock {
 impl LibraryLock {
     /// Lock `dir` (which must exist) for this process. Fails only when another process holds it.
     pub fn acquire(dir: &Path, program: &str) -> Result<LibraryLock, LockError> {
+        // Android: file locks don't work on shared storage (FUSE), and there's
+        // only ever one app instance, so skip locking entirely. No warning —
+        // the desktop "unprotected" dialog is meaningless on mobile.
+        #[cfg(target_os = "android")]
+        {
+            let _ = program;
+            return Ok(LibraryLock { dir: dir.to_path_buf(), _file: None, held: false });
+        }
+        #[cfg(not(target_os = "android"))]
+        {
         let unlocked = |why: io::Error| {
             log::warn!("library {}: can't lock {LOCK} ({why}); opening it without protection against a second program", dir.display());
             LibraryLock { dir: dir.to_path_buf(), _file: None, held: false }
@@ -117,6 +127,7 @@ impl LibraryLock {
             log::warn!("library {}: can't write {OWNER}: {e}", dir.display());
         }
         Ok(LibraryLock { dir: dir.to_path_buf(), _file: Some(file), held: true })
+        } // cfg(not(target_os = "android"))
     }
 
     /// The OS lock is held (`false`: the file system can't lock; opened unprotected).
