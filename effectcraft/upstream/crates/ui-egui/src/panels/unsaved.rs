@@ -1,0 +1,274 @@
+//! The unsaved-changes prompt: commands that close the open project (Quit and closing the
+//! window, File ▸ New Project / Open / Open Recent / Close Project / Revert, the demo project, a
+//! Home template) first ask to save a modified project. Save saves (asking for a path when the
+//! project is untitled) and continues; Don't Save continues; Cancel keeps the project open.
+//! Revert only asks to discard. Agents running commands with `engine.execute` are never asked.
+//!
+//! Automation ids: `dialog.unsaved.save`, `dialog.unsaved.dontSave` (Revert: `dialog.unsaved.revert`),
+//! `dialog.unsaved.cancel`.
+
+use crate::i18n::tr;
+use egui::{Color32, vec2};
+use serde_json::{Value, json};
+
+use crate::theme::Tokens;
+use crate::{Dialog, EffectcraftApp};
+
+/// Commands that replace or close the open project (Quit is asked when the window closes).
+const CLOSING: &[&str] = &["file.newProject", "file.open", "file.openRecent", "file.closeProject", "file.revert", "file.openDemoProject", "templates.create"];
+
+/// The command waiting on the prompt, and whether the user already answered it.
+#[derive(Clone, Debug, Default)]
+pub struct Pending {
+    pub command: Option<(String, Value)>,
+    /// The next guarded command runs without asking (the user answered Save or Don't Save).
+    pub answered: bool,
+    /// The window closes without asking (the user answered the Quit prompt).
+    pub quitting: bool,
+}
+
+/// Whether `id` needs the prompt first. When it does, the prompt opens holding the command and
+/// the caller must not run it (it runs once the user answers).
+pub fn guard(app: &mut EffectcraftApp, id: &str, params: &Value) -> bool {
+    if !CLOSING.contains(&id) || std::mem::take(&mut app.dialog_state.unsaved.answered) {
+        return false;
+    }
+    ask(app, id, params)
+}
+
+fn ask(app: &mut EffectcraftApp, id: &str, params: &Value) -> bool {
+    if !app.session.is_dirty() {
+        return false;
+    }
+    app.dialog_state.unsaved.command = Some((id.to_string(), params.clone()));
+    app.dialog = Some(Dialog::UnsavedChanges);
+    true
+}
+
+/// The window's close button (and Quit, which closes it): keep the window open and ask.
+pub fn on_close_requested(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    if !ctx.input(|i| i.viewport().close_requested()) || app.dialog_state.unsaved.quitting {
+        return;
+    }
+    // Logged, so a window that closes on its own shows it (#234).
+    log::info!("the window was asked to close");
+    if ask(app, "app.quit", &json!({})) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+    }
+}
+
+/// The project's display name: its file name, or `Untitled Project.ecproj`.
+pub fn project_name(app: &EffectcraftApp) -> String {
+    app.session
+        .path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Untitled Project.ecproj".into())
+}
+
+/// The window title: the project's path (or name) and `*` while it has unsaved changes.
+pub fn window_title(app: &EffectcraftApp) -> String {
+    let doc = app.session.path.clone().unwrap_or_else(|| project_name(app));
+    format!("EffectCraft - {doc}{}", if app.session.is_dirty() { " *" } else { "" })
+}
+
+enum Answer {
+    Save,
+    Discard,
+    Cancel,
+}
+
+pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
+    let Some((id, _)) = app.dialog_state.unsaved.command.clone() else {
+        app.dialog = None;
+        return;
+    };
+    let revert = id == "file.revert";
+    let name = project_name(app);
+    let mut answer = None;
+    let title = if revert { "Revert Project" } else { "Unsaved Changes" };
+    super::dialogs::modal(ctx, title, vec2(460.0, 170.0), t, |ui| {
+        let text = if revert {
+            format!("Revert “{name}” to the last saved version? Changes made since then will be lost.")
+        } else {
+            format!("Save changes to “{name}” before closing?")
+        };
+        ui.label(egui::RichText::new(text).color(t.tab_text_active));
+        if !revert {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(tr("Your changes will be lost if you don't save them.")).color(t.text_dim).size(11.0));
+        }
+        ui.add_space(18.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (label, key) = if revert { ("  Revert  ", "dialog.unsaved.revert") } else { ("   Save   ", "dialog.unsaved.save") };
+            let r = ui.add(egui::Button::new(egui::RichText::new(label).color(Color32::WHITE)).fill(t.accent));
+            app.auto.add(key, r.rect, label.trim());
+            if r.clicked() {
+                answer = Some(if revert { Answer::Discard } else { Answer::Save });
+            }
+            let r = ui.button(tr("Cancel"));
+            app.auto.add("dialog.unsaved.cancel", r.rect, "Cancel");
+            if r.clicked() {
+                answer = Some(Answer::Cancel);
+            }
+            if !revert {
+                // Set apart from Save, as is customary.
+                ui.add_space(ui.available_width() - 90.0);
+                let r = ui.button(tr("Don't Save"));
+                app.auto.add("dialog.unsaved.dontSave", r.rect, "Don't Save");
+                if r.clicked() {
+                    answer = Some(Answer::Discard);
+                }
+            }
+        });
+    });
+    if answer.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        answer = Some(Answer::Cancel);
+    }
+    if let Some(a) = answer {
+        answer_with(app, ctx, a);
+    }
+}
+
+fn answer_with(app: &mut EffectcraftApp, ctx: &egui::Context, a: Answer) {
+    app.dialog = None;
+    let Some((id, params)) = app.dialog_state.unsaved.command.take() else { return };
+    match a {
+        Answer::Cancel => return,
+        Answer::Save => {
+            // An untitled project asks for a path; cancelling that dialog cancels the command.
+            if let Err(e) = crate::menus::invoke(app, ctx, "file.save", json!({})) {
+                app.ui.status = e;
+                return;
+            }
+            if app.session.is_dirty() {
+                return;
+            }
+        }
+        Answer::Discard => {}
+    }
+    if id == "app.quit" {
+        app.dialog_state.unsaved.quitting = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        return;
+    }
+    app.dialog_state.unsaved.answered = true;
+    let before = (app.session.path.clone(), app.session.revision);
+    if let Err(e) = crate::menus::invoke(app, ctx, &id, params) {
+        app.ui.status = e;
+    }
+    // Leave Home once something opened from it (not when its file dialog was cancelled).
+    if (app.session.path.clone(), app.session.revision) != before {
+        app.ui.start_screen = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> (EffectcraftApp, egui::Context) {
+        let ctx = egui::Context::default();
+        let app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        (app, ctx)
+    }
+
+    /// One frame of the dialogs, with `close` = the window's close button pressed; returns
+    /// whether the frame asked the window to stay open.
+    fn frame(app: &mut EffectcraftApp, ctx: &egui::Context, close: bool) -> bool {
+        let mut raw = egui::RawInput::default();
+        if close {
+            raw.viewports.entry(egui::ViewportId::ROOT).or_default().events.push(egui::ViewportEvent::Close);
+        }
+        let mut out = ctx.run_ui(raw, |ui| {
+            app.auto.begin_frame();
+            on_close_requested(app, ui.ctx());
+            crate::panels::dialogs::show(app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.contains(&egui::ViewportCommand::CancelClose))
+    }
+
+    fn modified(app: &mut EffectcraftApp) {
+        app.session.execute("comp.new", json!({"name": "Main", "width": 64, "height": 64})).unwrap();
+        assert!(app.session.is_dirty());
+    }
+
+    #[test]
+    fn closing_a_modified_project_asks_and_cancel_keeps_it() {
+        let (mut app, ctx) = app();
+        // An unmodified project closes without asking.
+        crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
+        assert!(app.dialog.is_none());
+        modified(&mut app);
+        assert!(window_title(&app).ends_with("Untitled Project.ecproj *"), "{}", window_title(&app));
+        let r = crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
+        assert_eq!(r, json!({"dialog": "unsavedChanges"}));
+        assert_eq!(app.dialog, Some(Dialog::UnsavedChanges));
+        assert_eq!(app.session.project.comps().count(), 1, "nothing closed yet");
+        frame(&mut app, &ctx, false);
+        for id in ["dialog.unsaved.save", "dialog.unsaved.dontSave", "dialog.unsaved.cancel"] {
+            assert!(app.auto.find(id).is_some(), "{id}");
+        }
+        answer_with(&mut app, &ctx, Answer::Cancel);
+        assert!(app.dialog.is_none() && app.session.is_dirty());
+        assert_eq!(app.session.project.comps().count(), 1);
+        // Don't Save runs the command.
+        crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
+        answer_with(&mut app, &ctx, Answer::Discard);
+        assert_eq!(app.session.project.comps().count(), 0);
+        assert!(!app.session.is_dirty() && app.dialog.is_none());
+        assert!(!app.dialog_state.unsaved.answered, "the answer is used once");
+        // Agents (`engine.execute`) are never asked.
+        modified(&mut app);
+        app.session.execute("file.closeProject", json!({})).unwrap();
+        assert!(app.dialog.is_none() && app.session.project.comps().count() == 0);
+    }
+
+    #[test]
+    fn save_saves_then_continues_and_revert_only_asks_to_discard() {
+        let (mut app, ctx) = app();
+        let dir = std::env::temp_dir().join(format!("ec-unsaved-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Kept.ecproj");
+        modified(&mut app);
+        app.session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
+        assert!(!app.session.is_dirty());
+        assert!(window_title(&app).ends_with("Kept.ecproj"), "{}", window_title(&app));
+        // Revert: Revert / Cancel.
+        app.session.execute("layer.newNull", json!({})).unwrap();
+        crate::menus::invoke(&mut app, &ctx, "file.revert", json!({})).unwrap();
+        frame(&mut app, &ctx, false);
+        assert!(app.auto.find("dialog.unsaved.revert").is_some() && app.auto.find("dialog.unsaved.save").is_none());
+        answer_with(&mut app, &ctx, Answer::Discard);
+        assert_eq!(app.session.active_comp().unwrap().layers.len(), 0, "reverted");
+        // Save: the change is written, then the project closes.
+        app.session.execute("layer.newNull", json!({})).unwrap();
+        crate::menus::invoke(&mut app, &ctx, "file.closeProject", json!({})).unwrap();
+        answer_with(&mut app, &ctx, Answer::Save);
+        assert_eq!(app.session.project.comps().count(), 0, "closed");
+        app.session.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert_eq!(app.session.active_comp().unwrap().layers.len(), 1, "the null was saved");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_window_stays_open_until_the_quit_prompt_is_answered() {
+        let (mut app, ctx) = app();
+        assert!(!frame(&mut app, &ctx, true), "an unmodified project quits at once");
+        modified(&mut app);
+        assert!(frame(&mut app, &ctx, true), "the close is cancelled");
+        assert_eq!(app.dialog, Some(Dialog::UnsavedChanges));
+        answer_with(&mut app, &ctx, Answer::Discard);
+        assert!(app.dialog_state.unsaved.quitting);
+        assert!(!frame(&mut app, &ctx, true), "Don't Save lets the window close");
+        // Undoing back to the saved state needs no prompt.
+        let (mut app, ctx) = self::app();
+        modified(&mut app);
+        app.session.execute("edit.undo", json!({})).unwrap();
+        assert!(!app.session.is_dirty());
+        assert!(!frame(&mut app, &ctx, true));
+    }
+}

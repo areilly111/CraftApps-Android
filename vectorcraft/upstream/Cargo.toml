@@ -1,0 +1,107 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+default-members = ["crates/*", "apps/vectorcraft", "apps/vectorcraft-cli", "xtask"]
+
+[workspace.package]
+version = "0.8.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/storytold/vectorcraft"
+
+[workspace.dependencies]
+# internal
+vectorcraft-geom = { path = "crates/geom" }
+vectorcraft-color = { path = "crates/color" }
+vectorcraft-doc = { path = "crates/doc" }
+vectorcraft-pathops = { path = "crates/pathops" }
+vectorcraft-brush = { path = "crates/brush" }
+vectorcraft-trace = { path = "crates/trace" }
+vectorcraft-text = { path = "crates/text" }
+vectorcraft-effects = { path = "crates/effects" }
+vectorcraft-three-d = { path = "crates/three-d" }
+vectorcraft-render = { path = "crates/render" }
+vectorcraft-svg = { path = "crates/svg" }
+vectorcraft-pdf = { path = "crates/pdf" }
+vectorcraft-format = { path = "crates/format" }
+vectorcraft-tools = { path = "crates/tools" }
+vectorcraft-engine = { path = "crates/engine" }
+vectorcraft-ui-egui = { path = "crates/ui-egui" }
+vectorcraft-mcp = { path = "crates/mcp" }
+vectorcraft-testkit = { path = "crates/testkit" }
+vectorcraft-cad = { path = "crates/cad" }
+vectorcraft-eps = { path = "crates/eps" }
+vectorcraft-metafile = { path = "crates/metafile" }
+vectorcraft-plugins = { path = "crates/plugins" }
+vectorcraft-affinity = { path = "crates/affinity" }
+
+# foundation
+kurbo = { version = "0.13", features = ["serde"] }
+peniko = "0.6"
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+proptest = "1"
+crc32fast = "1.5"
+# tests: a TCP port bound without listening (connections to it are refused)
+socket2 = "0.6"
+# Sandboxed WebAssembly plug-ins: a pure-Rust interpreter (MIT OR Apache-2.0) that builds for wasm32
+# too. Without `wat` (text parsing is test-only) and memory64; `validate` keeps full module
+# validation on; the portable dispatcher can't overflow the host stack on long-running modules.
+wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "stable", "portable-dispatch"] }
+# Tests: WebAssembly text -> binary for the plug-in fixtures (Apache-2.0 WITH LLVM-exception).
+wat = "1.228"
+
+# rendering / formats
+vello_cpu = { version = "0.2", features = ["f32_pipeline"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff", "bmp"] }
+usvg = "0.48"
+krilla = "0.8"
+skrifa = "0.47"
+harfrust = "0.13"
+linesweeper = "0.4"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Zstandard decoder (pure Rust, builds for wasm32 too): the editing copy an EPS carries of its art.
+ruzstd = { version = "0.9", default-features = false, features = ["std"] }
+jpeg-encoder = { version = "0.6", default-features = false, features = ["std"] }
+gif = { version = "0.14", default-features = false, features = ["std", "raii_no_panic"] }
+# CMYK image samples (vectorcraft-doc's cmyk module): the image crate's own TIFF and JPEG
+# decoders, read directly (the image crate converts CMYK to RGB).
+tiff = "0.11"
+zune-jpeg = "0.5"
+
+# ui
+egui = "0.36"
+egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
+eframe = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+arboard = { version = "3.6", default-features = false }
+clipboard-win = "5.4"
+webbrowser = "1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+# VectorCraft never crashes: shipped code returns `Result`/`Option` instead of panicking (see
+# AGENTS.md › Robustness). Tests may unwrap (clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

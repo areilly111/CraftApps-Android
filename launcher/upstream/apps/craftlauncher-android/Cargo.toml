@@ -1,0 +1,27 @@
+[package]
+name = "craftlauncher-android"
+version = "1.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Craft Launcher for Android (tablet): install, update and open the Craft App Suite ports"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
+# feature is a compile error with `android-native-activity` (see eframe 0.36.2
+# src/lib.rs), so it is deliberately absent here.
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+# Shared suite shell: JNI bridge, HTTP, SHA-256, APK install intent.
+craftapps-shared = { workspace = true }
+jni = "=0.22.4"
+ndk-context = "=0.1.1"
+log = "0.4"
+android_logger = "0.15"
+serde_json = "1"
+
+# NOTE: this crate does NOT forbid unsafe: the JNI calls an Android shell
+# fundamentally needs. It denies unwrap/expect/panic/todo like every other
+# crate, and every unsafe block carries a SAFETY comment.

@@ -1,0 +1,59 @@
+//! Sandboxed WebAssembly plug-ins for VectorCraft.
+//!
+//! A plug-in is a WebAssembly module that implements the VectorCraft plug-in ABI (v1, documented
+//! in `docs/plugins.md`). It runs in [`wasmi`], a pure-Rust interpreter, with:
+//!
+//! - **no host imports**: no WASI, file system, network, clock or randomness. A module that
+//!   imports anything is rejected;
+//! - an **instruction budget** (fuel) per call, metered in slices so a wall-clock deadline is
+//!   also enforced (native builds), so infinite loops end with an error;
+//! - a **linear-memory cap**, a **recursion-depth cap** and wasmi's strict module limits;
+//! - a **fresh instance per run**, so no state leaks between calls.
+//!
+//! Every failure (malformed module, trap, exhausted budget, bad output) is an [`Error`]; nothing
+//! a module does can panic or hang the host.
+//!
+//! Plug-ins see the document as JSON ([`objects`]): the selected paths and compound paths with
+//! their geometry, fills, strokes (gradients included) and opacity. An **object filter** returns
+//! the objects to keep, change or add, applied to the document as one edit
+//! ([`objects::apply_output`]); a **live effect** ([`effect`]) rewrites one object's geometry each
+//! time it is drawn, from an appearance stack. The process-wide [`registry`] holds the installed
+//! plug-ins.
+#![forbid(unsafe_code)]
+
+pub mod effect;
+pub mod manifest;
+pub mod objects;
+pub mod registry;
+mod runtime;
+pub mod wat;
+
+pub use manifest::{Kind, Manifest, ParamSpec};
+pub use runtime::{ABI_VERSION, Limits, Plugin};
+
+/// A plug-in error. Every way a module can misbehave ends here, never in a panic.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum Error {
+    #[error("not a valid plug-in module: {0}")]
+    Module(String),
+    #[error("plug-in ABI: {0}")]
+    Abi(String),
+    #[error("plug-in manifest: {0}")]
+    Manifest(String),
+    #[error("plug-in trapped: {0}")]
+    Trap(String),
+    #[error("plug-in exceeded its {0}")]
+    Limit(String),
+    #[error("plug-in parameters: {0}")]
+    Params(String),
+    #[error("plug-in output: {0}")]
+    Output(String),
+    #[error("plug-in failed: {0}")]
+    Failed(String),
+    #[error("no plug-in {0:?} is installed")]
+    NotFound(String),
+    #[error("{0}")]
+    Io(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

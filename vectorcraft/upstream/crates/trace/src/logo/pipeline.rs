@@ -1,0 +1,484 @@
+//! The logo pipeline end to end: raster in, painted vector shapes out.
+
+use super::field::{blur_plane, upsample};
+use super::geom::{Cubic, finite};
+use super::march::{area2, contours};
+use super::outline::{Stats, Style, fit_outline};
+use super::palette::{WHITE_MIN, auto_palette, flat_fraction, parse_hex, unexplained_colours};
+use super::restore::RestoreParams;
+use super::unmix::{Px, count_ambiguous, unmix};
+use crate::{Raster, TraceError, TraceParams, TraceResult, TracedPath};
+use vectorcraft_geom::{Anchor, AnchorKind, PathData, Point, SubPath};
+
+/// Longest side the tracer works at; bigger images are averaged down first and the result scaled up.
+const WORK_MAX_SIDE: usize = 1024;
+/// Transparent border added around the image so every outline closes.
+const PAD: usize = 3;
+/// Most cells of the smooth field (about 24 MB per plane).
+const FIELD_CELLS_MAX: usize = 6_000_000;
+/// Flat-colour score below which the image is refused.
+const MIN_FLAT: f64 = 0.93;
+/// Most outlines of one colour (above the noise threshold) we will fit; more is refused, not truncated.
+const MAX_LOOPS_PER_CLASS: usize = if cfg!(test) { 500 } else { 20_000 };
+/// Most pixels `unmix` may have to work on (those that are not exactly one colour). A busier image is
+/// averaged down further first, which bounds the time on pathological input.
+const EDGE_BUDGET: usize = 150_000;
+/// Palette colours closer than this (RGB distance) are one colour.
+const SAME_COLOUR: f64 = 12.0;
+/// Most colours a palette may hold (white and transparency come on top).
+const MAX_COLOURS: usize = 10;
+/// Neighbouring colours overlap by this many working pixels so no hairline gap can open.
+const OVERLAP: f64 = 0.06;
+
+/// The raster as premultiplied RGBA, averaged down so its longest side is at most [`WORK_MAX_SIDE`].
+fn working_copy(img: &Raster, at_least: usize) -> (Vec<Px>, usize, usize, usize) {
+    let (w, h) = (img.width as usize, img.height as usize);
+    let factor = w.max(h).div_ceil(WORK_MAX_SIDE).max(at_least).max(1);
+    let (ow, oh) = (w.div_ceil(factor), h.div_ceil(factor));
+    let mut out = Vec::with_capacity(ow * oh);
+    for oy in 0..oh {
+        for ox in 0..ow {
+            let mut acc = [0.0f32; 4];
+            let mut n = 0.0f32;
+            for y in oy * factor..((oy + 1) * factor).min(h) {
+                for x in ox * factor..((ox + 1) * factor).min(w) {
+                    let i = (y * w + x) * 4;
+                    if let Some(p) = img.rgba.get(i..i + 4) {
+                        let a = f32::from(p[3]) / 255.0;
+                        acc[0] += f32::from(p[0]) / 255.0 * a;
+                        acc[1] += f32::from(p[1]) / 255.0 * a;
+                        acc[2] += f32::from(p[2]) / 255.0 * a;
+                        acc[3] += a;
+                        n += 1.0;
+                    }
+                }
+            }
+            let n = n.max(1.0);
+            out.push([acc[0] / n, acc[1] / n, acc[2] / n, acc[3] / n]);
+        }
+    }
+    (out, ow, oh, factor)
+}
+
+fn style(params: &TraceParams) -> Style {
+    // Parameters come from users and agents: a NaN or infinity must not reach the geometry.
+    let unit = |v: f64, default: f64| if v.is_finite() { (v / 100.0).clamp(0.0, 1.0) } else { default };
+    let paths = unit(params.paths, 0.6);
+    let corners = unit(params.corners, 0.5);
+    Style {
+        tol: 0.04 + 0.2 * (1.0 - paths),
+        corner_deg: 90.0 - 55.0 * corners,
+        snap: params.snap_curves_to_lines,
+        restore: Some(RestoreParams::default()),
+        ..Style::default()
+    }
+}
+
+/// Transparent regions fully enclosed by artwork (letters knocked out of a badge) become white, so
+/// the logo is still right on a dark background. Works on coverage planes in place.
+fn fill_knockouts(planes: &mut [Vec<f32>], w: usize, h: usize, white: usize, transparent: usize) {
+    let n = w * h;
+    let Some(t) = planes.get(transparent) else { return };
+    let seed: Vec<bool> = t.iter().take(n).map(|&v| v > 0.2).collect();
+    // Components of "mostly transparent" pixels; the ones touching the border are the outside.
+    let mut comp = vec![0u32; n];
+    let mut next_id = 0u32;
+    let mut outside: Vec<bool> = vec![false];
+    let mut stack = Vec::new();
+    for s in 0..n {
+        if !seed[s] || comp[s] != 0 {
+            continue;
+        }
+        next_id += 1;
+        let mut touches = false;
+        comp[s] = next_id;
+        stack.push(s);
+        while let Some(i) = stack.pop() {
+            let (x, y) = (i % w, i / w);
+            if x == 0 || y == 0 || x + 1 == w || y + 1 == h {
+                touches = true;
+            }
+            let mut push = |j: usize| {
+                if seed[j] && comp[j] == 0 {
+                    comp[j] = next_id;
+                    stack.push(j);
+                }
+            };
+            if x > 0 {
+                push(i - 1);
+            }
+            if x + 1 < w {
+                push(i + 1);
+            }
+            if y > 0 {
+                push(i - w);
+            }
+            if y + 1 < h {
+                push(i + w);
+            }
+        }
+        outside.push(touches);
+    }
+    let enclosed: Vec<bool> = comp.iter().map(|&c| c != 0 && !outside.get(c as usize).copied().unwrap_or(true)).collect();
+    // Grow by one pixel so the blended edge pixels around a knockout come with it.
+    let mut grown = enclosed.clone();
+    for y in 0..h {
+        for x in 0..w {
+            if enclosed[y * w + x] {
+                for yy in y.saturating_sub(1)..=(y + 1).min(h - 1) {
+                    for xx in x.saturating_sub(1)..=(x + 1).min(w - 1) {
+                        grown[yy * w + xx] = true;
+                    }
+                }
+            }
+        }
+    }
+    for (i, &is_grown) in grown.iter().enumerate() {
+        if is_grown {
+            let tv = planes.get(transparent).and_then(|p| p.get(i)).copied().unwrap_or(0.0);
+            if tv > 0.02 {
+                if let Some(v) = planes.get_mut(white).and_then(|p| p.get_mut(i)) {
+                    *v += tv;
+                }
+                if let Some(v) = planes.get_mut(transparent).and_then(|p| p.get_mut(i)) {
+                    *v = 0.0;
+                }
+            }
+        }
+    }
+}
+
+fn pad_plane(plane: &[f32], w: usize, h: usize, outside: f32) -> Vec<f32> {
+    let (wp, hp) = (w + 2 * PAD, h + 2 * PAD);
+    let mut out = vec![outside; wp * hp];
+    for y in 0..h {
+        if let (Some(dst), Some(src)) = (out.get_mut((y + PAD) * wp + PAD..(y + PAD) * wp + PAD + w), plane.get(y * w..(y + 1) * w)) {
+            dst.copy_from_slice(src);
+        }
+    }
+    out
+}
+
+/// A loop's `(x, y)` grid points as working-pixel coordinates.
+fn to_pixels(loop_pts: &[Point], u: usize) -> Vec<Point> {
+    loop_pts.iter().map(|p| Point::new((p.x + 0.5) / u as f64 - PAD as f64, (p.y + 0.5) / u as f64 - PAD as f64)).collect()
+}
+
+fn point_in_poly(p: Point, poly: &[Point]) -> bool {
+    let n = poly.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (Some(&a), Some(&b)) = (poly.get(i), poly.get((i + 1) % n)) else { continue };
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// What the working-resolution class map says about the pixels around an outline.
+struct Around<'a> {
+    dominant: &'a [u8],
+    w: usize,
+    h: usize,
+    white: usize,
+    transparent: usize,
+}
+
+/// Grow the vertices of an outer outline that touch another coloured region.
+fn grow_into_neighbours(p: &mut [Point], class: usize, map: &Around) {
+    let n = p.len();
+    if class == map.white || n < 3 {
+        return;
+    }
+    let src = p.to_vec();
+    for i in 0..n {
+        let (Some(&a), Some(&b), Some(&c)) = (src.get((i + n - 1) % n), src.get((i + 1) % n), src.get(i)) else { continue };
+        let t = b - a;
+        let len = t.hypot();
+        if len.is_nan() || len <= 1e-12 {
+            continue;
+        }
+        let t = t / len;
+        // Interior is on the left of travel, so the outward normal is on the right.
+        let out = kurbo::Vec2::new(-t.y, t.x);
+        let q = c + out * 0.45;
+        if q.x < 0.0 || q.y < 0.0 {
+            continue;
+        }
+        let (ix, iy) = (q.x as usize, q.y as usize);
+        if ix >= map.w || iy >= map.h {
+            continue;
+        }
+        let d = map.dominant.get(iy * map.w + ix).copied().map_or(map.transparent, usize::from);
+        if d != class
+            && d != map.white
+            && d != map.transparent
+            && let Some(v) = p.get_mut(i)
+        {
+            *v = c + out * OVERLAP;
+        }
+    }
+}
+
+/// Where working-pixel coordinates land in the source image. Working pixels are `factor` source
+/// pixels wide except the last in each direction, which may be narrower: mapping the whole axis
+/// with one factor would overshoot the image by up to `factor - 1` pixels.
+#[derive(Clone, Copy)]
+struct ToSource {
+    factor: f64,
+    work: (usize, usize),
+    source: (usize, usize),
+}
+
+impl ToSource {
+    fn axis(&self, v: f64, work: usize, source: usize) -> f64 {
+        let last = work.saturating_sub(1) as f64;
+        if v <= last { v * self.factor } else { last * self.factor + (v - last) * (source as f64 - last * self.factor) }
+    }
+    fn point(&self, p: Point) -> Point {
+        Point::new(self.axis(p.x, self.work.0, self.source.0), self.axis(p.y, self.work.1, self.source.1))
+    }
+}
+
+fn to_subpath(segs: &[Cubic], map: &ToSource) -> Option<SubPath> {
+    let n = segs.len();
+    if n == 0 {
+        return None;
+    }
+    let sc = |p: Point| map.point(p);
+    let mut anchors = Vec::with_capacity(n);
+    for i in 0..n {
+        let (cur, prev) = (segs.get(i)?, segs.get((i + n - 1) % n)?);
+        let (p, h_out, h_in) = (sc(cur[0]), sc(cur[1]), sc(prev[2]));
+        let (vi, vo) = (p - h_in, h_out - p);
+        let kind = if vi.hypot() > 1e-9 && vo.hypot() > 1e-9 && vi.cross(vo).abs() < 0.07 * vi.hypot() * vo.hypot() && vi.dot(vo) > 0.0 {
+            AnchorKind::Smooth
+        } else {
+            AnchorKind::Corner
+        };
+        anchors.push(Anchor { p, h_in, h_out, kind });
+    }
+    anchors.iter().all(|a| finite(a.p) && finite(a.h_in) && finite(a.h_out)).then(|| SubPath::new(anchors, true))
+}
+
+struct Shape {
+    class: usize,
+    area: f64,
+    outer: Vec<Cubic>,
+    holes: Vec<Vec<Cubic>>,
+}
+
+/// A hard-edged source (a GIF, say) has no anti-aliasing to read an edge position from, and its
+/// outlines would follow the pixel staircase. Blurring the coverage by under a pixel gives the
+/// outline a smooth edge to find. Sources with plenty of blended edge pixels are left alone.
+fn soften_if_aliased(planes: &mut [Vec<f32>], w: usize, h: usize) -> bool {
+    let n = w * h;
+    let dominant: Vec<usize> =
+        (0..n).map(|i| (0..planes.len()).max_by(|&a, &b| plane_at(planes, a, i).total_cmp(&plane_at(planes, b, i))).unwrap_or(0)).collect();
+    let (mut boundary, mut blended) = (0usize, 0usize);
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            let d = dominant.get(i).copied().unwrap_or(0);
+            let strongest = (0..planes.len()).map(|c| plane_at(planes, c, i)).fold(0.0f32, f32::max);
+            if strongest < 0.9 {
+                blended += 1;
+            }
+            let differs = |j: usize| dominant.get(j).is_some_and(|&o| o != d);
+            if (x + 1 < w && differs(i + 1)) || (y + 1 < h && differs(i + w)) {
+                boundary += 1;
+            }
+        }
+    }
+    let aliased = boundary > 0 && blended * 4 < boundary;
+    if aliased {
+        for p in planes.iter_mut() {
+            blur_plane(p, w, h, 0.8);
+        }
+    }
+    aliased
+}
+
+fn plane_at(planes: &[Vec<f32>], class: usize, i: usize) -> f32 {
+    planes.get(class).and_then(|p| p.get(i)).copied().unwrap_or(0.0)
+}
+
+/// The unmixing classes for a palette: each colour, then white, then transparent.
+fn classes_for(palette: &[[u8; 3]]) -> Vec<[f64; 4]> {
+    let mut classes: Vec<[f64; 4]> =
+        palette.iter().map(|c| [f64::from(c[0]) / 255.0, f64::from(c[1]) / 255.0, f64::from(c[2]) / 255.0, 1.0]).collect();
+    classes.push([1.0, 1.0, 1.0, 1.0]);
+    classes.push([0.0, 0.0, 0.0, 0.0]);
+    classes
+}
+
+fn distance(a: [u8; 3], b: [u8; 3]) -> f64 {
+    (0..3).map(|k| (f64::from(a[k]) - f64::from(b[k])).powi(2)).sum::<f64>().sqrt()
+}
+
+/// The colours to trace: those the caller named (white is always its own class so it is skipped;
+/// colours closer than [`SAME_COLOUR`] count as one; at most [`MAX_COLOURS`]) or the ones found.
+fn choose_palette(params: &TraceParams, pix: &[Px], w: usize, h: usize) -> Result<Vec<[u8; 3]>, TraceError> {
+    if params.logo_colors.is_empty() {
+        return Ok(auto_palette(pix, w, h, (params.colors as usize).clamp(2, MAX_COLOURS)));
+    }
+    let mut palette: Vec<[u8; 3]> = Vec::new();
+    for s in &params.logo_colors {
+        // Every entry is checked, but only the first few distinct colours are kept.
+        let c = parse_hex(s).ok_or_else(|| TraceError::BadPalette(s.clone()))?;
+        let white = c.iter().all(|&v| v >= WHITE_MIN);
+        if palette.len() < MAX_COLOURS && !white && !palette.iter().any(|&q| distance(q, c) < SAME_COLOUR) {
+            palette.push(c);
+        }
+    }
+    Ok(palette)
+}
+
+/// Trace a flat-colour logo.
+pub(crate) fn trace_logo(img: &Raster, params: &TraceParams, max_anchors: usize) -> Result<TraceResult, TraceError> {
+    let (w0, h0) = (img.width as usize, img.height as usize);
+    if w0 == 0 || h0 == 0 || img.rgba.len() != w0 * h0 * 4 {
+        return Ok(TraceResult::default());
+    }
+    let (mut pix, mut w, mut h, mut factor) = working_copy(img, 1);
+    let mut palette = choose_palette(params, &pix, w, h)?;
+    if palette.is_empty() {
+        return Ok(TraceResult::default());
+    }
+    let fraction = flat_fraction(&pix, w, h, &palette);
+    if fraction < MIN_FLAT {
+        return Err(TraceError::NotFlat { fraction });
+    }
+    let mut classes = classes_for(&palette);
+    // A very busy image is averaged down further until the unmixing work is bounded.
+    for _ in 0..6 {
+        if count_ambiguous(&pix, &classes) <= EDGE_BUDGET || w * h <= 16_384 {
+            break;
+        }
+        (pix, w, h, factor) = working_copy(img, factor * 2);
+    }
+    let (mut planes, residual) = unmix(&pix, w, h, &classes);
+    let mut planes = if params.logo_colors.is_empty() && palette.len() < MAX_COLOURS {
+        // Colours too small to be found at first show up as pixels nothing explains: add them.
+        let extra = unexplained_colours(&pix, w, h, &residual, &palette);
+        if extra.is_empty() {
+            planes
+        } else {
+            palette.extend(extra.into_iter().take(MAX_COLOURS - palette.len()));
+            classes = classes_for(&palette);
+            unmix(&pix, w, h, &classes).0
+        }
+    } else {
+        std::mem::take(&mut planes)
+    };
+    let (white, transparent) = (palette.len(), palette.len() + 1);
+    let aliased = soften_if_aliased(&mut planes, w, h);
+    fill_knockouts(&mut planes, w, h, white, transparent);
+    let n = w * h;
+    let dominant: Vec<u8> = (0..n)
+        .map(|i| (0..planes.len()).max_by(|&a, &b| plane_at(&planes, a, i).total_cmp(&plane_at(&planes, b, i))).unwrap_or(transparent) as u8)
+        .collect();
+    let around = Around { dominant: &dominant, w, h, white, transparent };
+    // Smooth fields: where each class is the most present, and by how much.
+    let (wp, hp) = (w + 2 * PAD, h + 2 * PAD);
+    let u = (((FIELD_CELLS_MAX / (wp * hp).max(1)) as f64).sqrt() as usize).clamp(2, 8);
+    let (ow, oh) = (wp * u, hp * u);
+    let padded: Vec<Vec<f32>> = planes.iter().enumerate().map(|(c, p)| pad_plane(p, w, h, if c == transparent { 1.0 } else { 0.0 })).collect();
+    let mut best = vec![f32::MIN; ow * oh];
+    let mut second = vec![f32::MIN; ow * oh];
+    let mut best_id = vec![0u8; ow * oh];
+    for (c, pl) in padded.iter().enumerate() {
+        let m = upsample(pl, wp, hp, u);
+        if m.len() != ow * oh {
+            return Ok(TraceResult::default());
+        }
+        for (i, &v) in m.iter().enumerate() {
+            if v > best[i] {
+                second[i] = best[i];
+                best[i] = v;
+                best_id[i] = c as u8;
+            } else if v > second[i] {
+                second[i] = v;
+            }
+        }
+    }
+    let mut style = style(params);
+    if aliased {
+        // No anti-aliasing means the edge position is only known to about half a pixel.
+        style.tol *= 2.5;
+        style.circle_tol *= 1.8;
+        style.line_tol *= 1.8;
+        style.sigma = 0.9;
+    }
+    // `noise` is in source pixels (areas under noise/10 are ignored), whatever the working size.
+    let min_area = ((f64::from(params.noise) / 10.0) / (factor * factor) as f64).max(0.3);
+    let mut stats = Stats::default();
+    let mut shapes: Vec<Shape> = Vec::new();
+    let mut anchors_made = 0usize;
+    for class in 0..=white {
+        if class == white && params.ignore_white {
+            continue;
+        }
+        let m = upsample(padded.get(class).map_or(&[][..], Vec::as_slice), wp, hp, u);
+        let f: Vec<f32> = m.iter().enumerate().map(|(i, &v)| v - if usize::from(best_id[i]) == class { second[i] } else { best[i] }).collect();
+        drop(m);
+        let mut outers: Vec<(f64, Vec<Point>)> = Vec::new();
+        let mut holes: Vec<Vec<Point>> = Vec::new();
+        for lp in contours(&f, ow, oh) {
+            let a2 = area2(&lp) / (u * u) as f64;
+            if a2.abs() / 2.0 < min_area {
+                continue;
+            }
+            // More real outlines than we will fit is refused, not silently truncated.
+            if outers.len() + holes.len() >= MAX_LOOPS_PER_CLASS {
+                return Err(TraceError::TooComplex { max: max_anchors });
+            }
+            let pts = to_pixels(&lp, u);
+            if a2 < 0.0 { outers.push((a2.abs() / 2.0, pts)) } else { holes.push(pts) }
+        }
+        // Each hole belongs to the smallest outline that contains it, and to no other.
+        let owner: Vec<Option<usize>> = if params.ignore_white {
+            holes
+                .iter()
+                .map(|hole| {
+                    let p = *hole.first()?;
+                    outers.iter().enumerate().filter(|(_, (_, o))| point_in_poly(p, o)).min_by(|a, b| a.1.0.total_cmp(&b.1.0)).map(|(i, _)| i)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for (idx, (area, mut pts)) in outers.into_iter().enumerate() {
+            grow_into_neighbours(&mut pts, class, &around);
+            let Some(outer) = fit_outline(&pts, &style, &mut stats) else { continue };
+            let hole_fits: Vec<Vec<Cubic>> =
+                holes.iter().zip(&owner).filter(|(_, o)| **o == Some(idx)).filter_map(|(hole, _)| fit_outline(hole, &style, &mut stats)).collect();
+            anchors_made += outer.len() + hole_fits.iter().map(Vec::len).sum::<usize>();
+            if anchors_made > max_anchors {
+                return Err(TraceError::TooComplex { max: max_anchors });
+            }
+            shapes.push(Shape { class, area, outer, holes: hole_fits });
+        }
+    }
+    // Painter's order: biggest shapes first, so smaller ones sit on top of what they belong to.
+    shapes.sort_by(|a, b| b.area.total_cmp(&a.area).then(a.class.cmp(&b.class)));
+    let to_source = ToSource { factor: factor as f64, work: (w, h), source: (w0, h0) };
+    let mut out = TraceResult::default();
+    for s in shapes {
+        let color = palette.get(s.class).copied().unwrap_or([255, 255, 255]);
+        let mut subs: Vec<SubPath> = Vec::new();
+        subs.extend(to_subpath(&s.outer, &to_source));
+        for hole in &s.holes {
+            subs.extend(to_subpath(hole, &to_source));
+        }
+        if subs.is_empty() {
+            continue;
+        }
+        if !out.palette.contains(&color) {
+            out.palette.push(color);
+        }
+        out.paths.push(TracedPath { path: PathData::new(subs), color, pixels: (s.area * (factor * factor) as f64) as usize, stroke: None });
+    }
+    Ok(out)
+}

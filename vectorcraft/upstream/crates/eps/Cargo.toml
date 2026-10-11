@@ -1,0 +1,30 @@
+[package]
+name = "vectorcraft-eps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft Encapsulated PostScript: a hand-written EPS writer (PostScript Level 2 and 3) with TIFF previews"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-effects = { workspace = true }
+vectorcraft-brush = { workspace = true }
+vectorcraft-text = { workspace = true }
+# Windows metafile previews, opened when a file's PostScript can't be read.
+vectorcraft-metafile = { workspace = true }
+# Non-native art in Illustrator editing data (a placed PDF's content, kept as a PDF).
+vectorcraft-pdf = { workspace = true }
+# The TIFF writer (previews) and PackBits, shared with raster export.
+vectorcraft-render = { workspace = true }
+kurbo = { workspace = true }
+image = { workspace = true }
+flate2 = { workspace = true }
+ruzstd = { workspace = true }
+
+[dev-dependencies]
+vectorcraft-testkit = { workspace = true }

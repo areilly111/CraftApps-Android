@@ -1,0 +1,81 @@
+[package]
+name = "filmcraft-web"
+description = "FilmCraft in the browser (wasm32): eframe web runner, WebGPU/WebGL2, Blob media, OPFS, WebAudio, WebCodecs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Everything is wasm32-only: on other targets this crate is empty (so `cargo test --workspace`
+# and clippy stay cheap). Build with `cargo xtask web` (see docs/web.md).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+filmcraft-engine = { workspace = true }
+filmcraft-ui-egui = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-codecs = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-isobmff = { workspace = true }
+filmcraft-format = { workspace = true }
+filmcraft-time = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+serde_json = { workspace = true }
+log = { workspace = true }
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-time = "1"
+web-sys = { version = "0.3", features = [
+    "AudioContext",
+    "AudioContextOptions",
+    "AudioContextState",
+    "AudioDestinationNode",
+    "AudioNode",
+    "AudioWorklet",
+    "AudioWorkletNode",
+    "AudioWorkletNodeOptions",
+    "BaseAudioContext",
+    "Blob",
+    "BlobPropertyBag",
+    "CssStyleDeclaration",
+    "DataTransfer",
+    "Document",
+    "DragEvent",
+    "Element",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemGetFileOptions",
+    "FileSystemHandle",
+    "FileSystemHandleKind",
+    "FileSystemWritableFileStream",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "ImageData",
+    "Location",
+    "MessageEvent",
+    "MessagePort",
+    "Navigator",
+    "OffscreenCanvas",
+    "OffscreenCanvasRenderingContext2d",
+    "Performance",
+    "Response",
+    "StorageManager",
+    "Url",
+    "UrlSearchParams",
+    "Window",
+    "WritableStream",
+] }

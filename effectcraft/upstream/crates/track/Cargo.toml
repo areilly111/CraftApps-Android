@@ -1,0 +1,18 @@
+[package]
+name = "effectcraft-track"
+description = "Motion tracking: feature/search region point tracking (pyramid normalized cross-correlation + Lucas-Kanade refinement), confidence, corner-pin / transform solves, stabilization, Roto Brush segmentation (graph cut, matting) and 3D camera solving (structure from motion)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-raster = { workspace = true }
+effectcraft-segment = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+web-time = { workspace = true }

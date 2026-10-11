@@ -1,0 +1,96 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+default-members = ["crates/*", "apps/designcraft", "apps/designcraft-cli", "xtask"]
+
+[workspace.package]
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+repository = "https://github.com/storytold/designcraft"
+
+[workspace.dependencies]
+# internal
+designcraft-geom = { path = "crates/geom" }
+designcraft-color = { path = "crates/color" }
+designcraft-doc = { path = "crates/doc" }
+designcraft-fonts = { path = "crates/fonts" }
+designcraft-compose = { path = "crates/compose" }
+designcraft-images = { path = "crates/images" }
+designcraft-render = { path = "crates/render" }
+designcraft-pdf = { path = "crates/pdf" }
+designcraft-idml = { path = "crates/idml" }
+designcraft-epub = { path = "crates/epub" }
+designcraft-textimport = { path = "crates/textimport" }
+designcraft-format = { path = "crates/format" }
+designcraft-tools = { path = "crates/tools" }
+designcraft-engine = { path = "crates/engine" }
+designcraft-ui-egui = { path = "crates/ui-egui" }
+designcraft-mcp = { path = "crates/mcp" }
+designcraft-testkit = { path = "crates/testkit" }
+
+# foundation
+kurbo = { version = "0.13", features = ["serde"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+proptest = "1"
+rayon = "1"
+unicode-bidi = "0.3"
+unicode-script = "0.5"
+unicode-bidi-mirroring = "0.4"
+unicode-segmentation = "1"
+caseless = "0.2"
+regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
+tempfile = "3"
+
+# text / rendering / formats
+skrifa = "0.47"
+harfrust = "0.13"
+vello_cpu = "0.2"
+vello_common = { version = "0.2", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff", "bmp"] }
+# CMYK TIFF samples for PDF export (`image` decodes them to RGB); the version `image` uses.
+tiff = "0.11"
+# SVG (same usvg as krilla-svg).
+resvg = { version = "0.47", default-features = false, features = ["text"] }
+krilla-svg = "0.8"
+# Boolean operations on Bézier paths (Pathfinder).
+flo_curves = "0.8"
+# QR codes (Object › Generate QR Code); MIT.
+qrcodegen = "1.8"
+krilla = { version = "0.8", features = ["pdf"] }
+hayro = "0.7"
+quick-xml = "0.38"
+zip = { version = "3", default-features = false, features = ["deflate"] }
+
+# ui
+egui = "0.36"
+egui_extras = { version = "0.36", default-features = false, features = ["svg"] }
+eframe = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+arboard = { version = "3.6", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = 0

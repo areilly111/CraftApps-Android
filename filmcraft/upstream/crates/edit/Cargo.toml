@@ -1,0 +1,21 @@
+[package]
+name = "filmcraft-edit"
+description = "Pure timeline edit algebra: insert, overwrite, razor, ripple, roll, slip, slide, rate stretch, lift, extract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-time = { workspace = true }
+filmcraft-project = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+filmcraft-geom = { workspace = true }
+filmcraft-media = { workspace = true }
+serde_json = { workspace = true }

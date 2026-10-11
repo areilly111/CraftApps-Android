@@ -1,0 +1,22 @@
+[package]
+name = "effectcraft-text"
+description = "Text engine: fonts (bundled OFL + system), shaping (harfrust), bidi, line breaking, paragraph layout and glyph outlines as Bezier paths"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-keyframe = { workspace = true }
+kurbo = { workspace = true }
+# Font tables, glyph outlines and metrics (MIT OR Apache-2.0).
+skrifa = { workspace = true }
+# OpenType shaping (HarfBuzz port on read-fonts, MIT).
+harfrust = { workspace = true }
+# Unicode Bidirectional Algorithm (MIT OR Apache-2.0).
+unicode-bidi = "0.3.18"
+# UAX #14 line breaking (Apache-2.0).
+unicode-linebreak = "0.1.5"

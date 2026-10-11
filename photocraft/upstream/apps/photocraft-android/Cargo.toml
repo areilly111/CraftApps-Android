@@ -1,0 +1,37 @@
+[package]
+name = "photocraft-android"
+version = "0.6.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "PhotoCraft for Android (tablet): eframe NativeActivity shell around the shared egui app"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+photocraft-engine = { workspace = true }
+photocraft-ui-egui = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-codecs = { workspace = true }
+photocraft-format = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-color = { workspace = true }
+# eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
+# feature is a compile error with `android-native-activity` (see eframe 0.36.2
+# src/lib.rs), so it is deliberately absent here.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "persistence", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+jni = "=0.22.4"
+ndk-context = "=0.1.1"
+log = { workspace = true }
+android_logger = "0.15"
+serde_json = { workspace = true }
+# Shared suite shell (pen/stylus, SAF, storage, updater, GPU cascade).
+# (The crate root is `craftapps-android/shared/`; the task's `../../shared`
+# phrasing assumed a different layout — this path is correct for this tree.)
+craftapps-shared = { path = "../../../../shared" }
+
+# NOTE: this crate does NOT inherit workspace lints: `unsafe_code = "forbid"`
+# there would rule out the JNI calls an Android shell fundamentally needs.
+# Instead lib.rs denies unwrap/expect/panic/todo like every other crate, and
+# every unsafe block carries a SAFETY comment (the photocraft-tablet pattern).

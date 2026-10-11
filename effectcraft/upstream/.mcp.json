@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "effectcraft": {
+      "command": "cargo",
+      "args": ["run", "--quiet", "--release", "-p", "effectcraft-cli", "--", "mcp", "--demo"]
+    },
+    "effectcraft-app": {
+      "command": "cargo",
+      "args": ["run", "--quiet", "--release", "-p", "effectcraft-cli", "--", "mcp", "--bridge", "9877"]
+    }
+  }
+}

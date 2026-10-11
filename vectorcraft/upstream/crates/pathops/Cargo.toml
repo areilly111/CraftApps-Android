@@ -1,0 +1,19 @@
+[package]
+name = "vectorcraft-pathops"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft path operations: booleans (Pathfinder), shape builder regions, offset, outline stroke, simplify"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+kurbo = { workspace = true }
+thiserror = { workspace = true }
+linesweeper = { workspace = true }
+
+[dev-dependencies]
+vectorcraft-testkit = { workspace = true }
+proptest = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "filmcraft-text"
+description = "FilmCraft text engine: font database (bundled + system), shaping, bidi, line breaking, paragraph layout and anti-aliased glyph/path rasterisation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-color = { workspace = true }
+# Font tables, glyph outlines and metrics (MIT OR Apache-2.0). Rasterisation is our own.
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
+# OpenType shaping (HarfBuzz port on read-fonts, MIT); shares font parsing with skrifa.
+harfrust = { version = "0.12", default-features = false, features = ["std"] }
+# Unicode Bidirectional Algorithm (MIT OR Apache-2.0).
+unicode-bidi = "0.3.18"
+# UAX #14 line breaking (Apache-2.0).
+unicode-linebreak = "0.1.5"
+# UAX #29 extended grapheme clusters (MIT OR Apache-2.0).
+unicode-segmentation = "1.13"

@@ -1,0 +1,14 @@
+// Top-level build file for the CraftApps Launcher Android port.
+//
+// The AGP plugin marker on the Gradle Plugin Portal doesn't resolve through
+// this sandbox's proxy, so AGP comes from Google's Maven repo via the classic
+// buildscript classpath instead (same artifact, reachable).
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.0'
+    }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "effectcraft-keyframe"
+description = "Animated values: keyframes, temporal ease (speed/influence), spatial Bezier motion paths, hold/linear/auto interpolation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-time = { workspace = true }
+effectcraft-geom = { workspace = true }
+effectcraft-color = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

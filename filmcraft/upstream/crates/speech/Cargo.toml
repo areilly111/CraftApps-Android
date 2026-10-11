@@ -1,0 +1,35 @@
+[package]
+name = "filmcraft-speech"
+description = "FilmCraft speech-to-text: the Transcriber trait, the Whisper model catalogue and downloader, pure-Rust Whisper inference (candle) with word timestamps, and speaker labelling"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Whisper inference on the CPU via candle (pure Rust). Off by default (and in wasm builds).
+whisper = ["dep:candle-core", "dep:candle-nn"]
+# Model downloads over HTTPS (pure-Rust TLS: rustls + RustCrypto, OS certificate verification).
+download = ["dep:ureq", "dep:rustls", "dep:rustls-rustcrypto", "dep:sha2"]
+
+[dependencies]
+filmcraft-time = { workspace = true }
+filmcraft-project = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+candle-core = { version = "0.9", default-features = false, optional = true }
+candle-nn = { version = "0.9", default-features = false, optional = true }
+rayon = { workspace = true }
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"], optional = true }
+rustls = { version = "0.23", default-features = false, optional = true }
+rustls-rustcrypto = { version = "0.0.2-alpha", optional = true }
+sha2 = { version = "0.10", optional = true }
+
+[[example]]
+name = "transcribe"
+required-features = ["whisper"]

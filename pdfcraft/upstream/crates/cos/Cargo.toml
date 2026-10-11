@@ -1,0 +1,19 @@
+[package]
+name = "pdfcraft-cos"
+description = "PDF object layer: lazy tolerant parsing, copy-on-write edits, incremental and full saving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pdfcraft-crypt = { workspace = true }
+pdfcraft-filters = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = { workspace = true }
+hayro-syntax = { workspace = true }

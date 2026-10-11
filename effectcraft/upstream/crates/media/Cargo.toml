@@ -1,0 +1,32 @@
+[package]
+name = "effectcraft-media"
+description = "Footage import: probing, stills, image sequences, video and audio via FilmCraft's pure-Rust codecs, memory-budgeted frame cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-time = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-raster = { workspace = true }
+effectcraft-render = { workspace = true }
+effectcraft-psd = { workspace = true }
+effectcraft-svg = { workspace = true }
+effectcraft-pdf = { workspace = true }
+effectcraft-model = { workspace = true }
+filmcraft-codecs = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-time = { workspace = true }
+exr = { workspace = true }
+gif = { workspace = true }
+image = { workspace = true, features = ["gif", "webp", "tiff", "bmp", "exr"] }
+rayon = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

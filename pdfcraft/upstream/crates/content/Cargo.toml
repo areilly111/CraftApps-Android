@@ -1,0 +1,12 @@
+[package]
+name = "pdfcraft-content"
+description = "Content streams (ISO 32000-2 §7.8, §8–9): operators with source spans, inline images, serializer, matrices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pdfcraft-cos = { workspace = true }

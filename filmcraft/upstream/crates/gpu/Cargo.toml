@@ -1,0 +1,30 @@
+[package]
+name = "filmcraft-gpu"
+description = "wgpu compositor: YUV/RGB layer sampling, linear-light premultiplied compositing in WGSL"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-color = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-geom = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-render = { workspace = true }
+filmcraft-time = { workspace = true }
+wgpu = { version = "30", default-features = false, features = ["wgsl"] }
+log = { workspace = true }
+pollster = "0.4"
+rayon = { workspace = true }
+
+[dev-dependencies]
+pollster = "0.4"
+filmcraft-export = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+wgpu = { version = "30", features = ["wgsl", "metal", "vulkan", "dx12", "gles"] }
+filmcraft-media = { workspace = true }
+filmcraft-time = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "filmcraft-frame"
+description = "Video frames and audio buffers with explicit colour metadata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-color = { workspace = true }
+filmcraft-time = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,14 @@
+# Apache (see HOSTING.md). Needs mod_mime; mod_deflate and mod_headers are optional.
+AddType application/wasm .wasm
+AddType text/javascript .js
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE application/wasm text/javascript text/html
+</IfModule>
+
+<IfModule mod_headers.c>
+  # The file names don't change between releases: revalidate them (HOSTING.md).
+  <FilesMatch "(\.(wasm|js)|^index\.html)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

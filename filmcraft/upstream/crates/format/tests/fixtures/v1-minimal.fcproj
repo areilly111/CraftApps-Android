@@ -1,0 +1,19 @@
+{
+  "name": "Legacy Minimal",
+  "settings": {
+    "renderer": "FilmCraft GPU Acceleration (wgpu)",
+    "video_display": "Timecode",
+    "audio_display_samples": true,
+    "default_still_duration": 1270080000000,
+    "default_transition_duration_frames": 24,
+    "default_audio_transition_duration": 254016000000
+  },
+  "root": {
+    "id": 0,
+    "name": "Legacy Minimal",
+    "children": []
+  },
+  "items": {},
+  "next_id": 1,
+  "version": 1
+}

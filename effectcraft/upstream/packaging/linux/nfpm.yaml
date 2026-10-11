@@ -1,0 +1,73 @@
+# .deb and .rpm packages (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
+# the file tree, substitutes its path for ${STAGE} (nfpm doesn't expand env vars in `src`) and
+# exports VERSION and NFPM_ARCH.
+#
+#   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/release/
+name: effectcraft
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+# semver: 0.2.0-rc.1 becomes 0.2.0~rc.1 in deb/rpm, so pre-releases sort before the release.
+version_schema: semver
+release: 1
+section: graphics
+priority: optional
+maintainer: ${EFFECTCRAFT_MAINTAINER}
+vendor: Learning Machines LLC
+homepage: https://getartcraft.com/apps/effectcraft
+license: MIT OR Apache-2.0
+description: |-
+  Open-source motion graphics and visual effects compositor.
+  Layers with keyframes and a graph editor, masks and shapes, text animators,
+  expressions, 3D cameras and lights, over 300 effects and a render queue
+  (H.264, HEVC, AV1, ProRes, WebM, image sequences); GPU compositing (wgpu).
+  Includes effectcraft-cli, a headless renderer, command runner and MCP server.
+
+# The binaries link only glibc and libgcc_s directly. Windowing (X11/Wayland, xkbcommon) and the
+# GPU (Vulkan, EGL/GL) are loaded at runtime, so they are dependencies/recommendations here
+# rather than ELF NEEDED entries.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libxkbcommon0
+      - libvulkan1 | libegl1
+      - libasound2 | libasound2t64
+    recommends:
+      - libwayland-client0
+      - libx11-6
+      - libx11-xcb1
+      - libxcursor1
+      - libxi6
+      - libxrandr2
+      - mesa-vulkan-drivers
+      - xdg-desktop-portal
+  rpm:
+    depends:
+      - libxkbcommon
+      - (vulkan-loader or libglvnd-egl)
+      - alsa-lib
+    recommends:
+      - libwayland-client
+      - libX11
+      - libXcursor
+      - libXi
+      - libXrandr
+      - mesa-vulkan-drivers
+      - xdg-desktop-portal
+
+contents:
+  - src: ${STAGE}/usr/bin/effectcraft
+    dst: /usr/bin/effectcraft
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/bin/effectcraft-cli
+    dst: /usr/bin/effectcraft-cli
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/
+    dst: /usr/share/
+    type: tree
+
+scripts:
+  postinstall: packaging/linux/postinst.sh
+  postremove: packaging/linux/postinst.sh

@@ -1,0 +1,52 @@
+asset:        filmcraft-hero.png
+title:        README hero: Color workspace, "Apollo 11 - Tranquility" documentary edit
+author:       FilmCraft contributors (screenshot); footage, transcript and music credits below
+source:       original work (screenshot of FilmCraft captured with its ui.screenshot control command)
+license:      MIT OR Apache-2.0 (screenshot); embedded footage and transcript text are US Government works (public domain), music CC0-1.0
+license-file:
+added:        2026-10-01 by Claude (agent) for Brandon Thomas
+notes:        A 3:10 documentary cut of the Apollo 11 mission, built entirely through FilmCraft's control channel, captured
+              mid-playback in the Color workspace at 2400x1285 logical px (2x) and downscaled to 2400 px wide.
+              Shown: Effect Controls of the selected liftoff shot (Motion Scale push-in and Lumetri Exposure keyframes,
+              a Basic Correction grade with the Warm Film look); the Program monitor on the Saturn V clearing the
+              tail-service mast at Launch Complex 39A, with a lower-third title (Inter Bold/Regular) and a subtitle from the
+              NASA air-to-ground transcript; the Lumetri Color panel; Project bins of NASA selects, mission audio, music and
+              the sequence; a timeline with 49 picture cuts and dissolves on V1, B-roll cutaways on V2, titles on V3, a
+              caption track, nat sound, mission audio and a ducked music bed, named markers, In/Out around the launch and
+              a rendered (green) section; live loudness meters. All UI icons are drawn in code; fonts are Inter and
+              JetBrains Mono (OFL-1.1). Contains no Adobe artwork.
+              NASA does not endorse this project. NASA insignia visible inside the 1969 footage (e.g. on the crew van) are
+              incidental to the historical record and are not used as logos.
+Media visible or used in the project (none of it is committed to the repository):
+  - "Apollo 11 25th Anniversary 'B' Roll Footage" (NASA KSC, NASA ID KSC-19690716-MH-NAS01-0001-Apollo_11_Historical_Footage_and_Broll-DVC_1560;
+    1969 NASA film). US Government work, public domain (credited "NASA", no secondary creator).
+    Source: https://images.nasa.gov/details/KSC-19690716-MH-NAS01-0001-Apollo_11_Historical_Footage_and_Broll-DVC_1560
+  - "Apollo 11 Activities: breakfast, C-7 exit, convoy, white room, hatch closing, launch count and launch" (NASA KSC, NASA ID
+    KSC-19690716-MH-NAS01-0001-Apollo_11_Breakfast_C7Exit_Convoy_WhiteRmHatchClosing_Launch-HM_0083; launch-pad camera feeds and
+    countdown audio). US Government work, public domain.
+    Source: https://images.nasa.gov/details/KSC-19690716-MH-NAS01-0001-Apollo_11_Breakfast_C7Exit_Convoy_WhiteRmHatchClosing_Launch-HM_0083
+  - "Apollo 11 Mission Control Center - Film Rolls" (NASA KSC, Launch Control Center Firing Room film, no audio; NASA ID
+    KSC-19690716-MH-NAS01-0001-Apollo_11_Mission_Control_Center_Film_Rolls1). US Government work, public domain.
+    Source: https://images.nasa.gov/details/KSC-19690716-MH-NAS01-0001-Apollo_11_Mission_Control_Center_Film_Rolls1
+  - "Apollo 11 moonwalk montage" (NASA HQ, NASA ID Apollo_11_moonwalk_montage_720p; 1969 lunar-surface TV with
+    air-to-ground audio). US Government work, public domain.
+    Source: https://images.nasa.gov/details/Apollo_11_moonwalk_montage_720p
+  - Subtitle text: "Apollo 11 Technical Air-to-Ground Voice Transcription" (NASA Manned Spacecraft Center, July 1969).
+    US Government work, public domain. Source: https://www.nasa.gov/wp-content/uploads/static/history/alsj/a11/a11transcript_tec.pdf
+    (lines at GET 00 00 00 04, 00 00 00 13, 00 00 01 02, 04 06 38 30, 04 06 45 40, 04 06 45 59, 04 06 46 04, 04 06 46 06,
+    04 13 24 48, 04 13 43 16, 04 13 43 24; speakers named from the transcript's CDR/LMP/CC codes).
+  - Chopin, Nocturne Op. 48 No. 1, performed for Musopen. CC0-1.0. Source: https://archive.org/details/musopen-chopin
+    (shown only as a waveform).
+Reproduction: download the four NASA files (the "~medium" MP4 renditions; the Film Rolls file as "~large") into
+  target/demo-media/apollo11/src/; cut them into reels with ffmpeg used only as a fixture generator (crop the active picture,
+  restore 4:3 from the horizontally stretched transfers, 1440x1080 30p H.264): R01 = B-roll 120 s +456 s, R02 = 660 s +320 s,
+  R03 = 980 s +270 s, R04 = 1300 s +420 s, R05 = 1740 s +230 s, Firing Room = 0 s +420 s, OTV countdown = HM_0083 2340 s +426 s,
+  EVA montage = whole file. Run `filmcraft --control <port>` and drive it with the scripts kept (not committed) in
+  target/demo-media/apollo11/scripts/: build.py (bins, imports, 1920x1080 30p sequence, 49 V1 cuts), build2.py (V2 cutaways,
+  A2 mission audio, A3 music, track names, dissolves and audio fades), build3.py (titles with graphics.newText/graphics.set,
+  caption track from the transcript, markers), build_fixups.py A, build4.py (Lumetri grades, motion/exposure keyframes,
+  Essential Sound types, essentialSound.generateDucking on the music), build_fixups.py B, build5.py (liftoff shot as hero),
+  build_fixups.py C (In/Out 00:00:46:15-00:01:34:00, Render In to Out). The resulting project is
+  target/demo-media/Apollo 11 - Tranquility.fcproj. Capture: setup_ui.py 77.5 (Color workspace, Effect Controls tab, bins
+  expanded, timeline fit, Full playback resolution), then final_shot.py <out.png> 76.9 0.6 (plays from 00:01:16:27 and grabs
+  the window 0.6 s in, so the meters are live), then downscale to 2400 px wide.

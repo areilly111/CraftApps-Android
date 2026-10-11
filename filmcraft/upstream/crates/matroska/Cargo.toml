@@ -1,0 +1,16 @@
+[package]
+name = "filmcraft-matroska"
+description = "Clean-room Matroska (MKV) and WebM demuxer and muxer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+filmcraft-testkit = { workspace = true }
+serde_json = { workspace = true }

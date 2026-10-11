@@ -1,0 +1,18 @@
+[package]
+name = "effectcraft-path"
+description = "Bezier shapes: AE vertex model ⇄ kurbo, parametric shapes, path operations, stroking/dashing and anti-aliased coverage rasterisation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-geom = { workspace = true }
+effectcraft-keyframe = { workspace = true }
+effectcraft-raster = { workspace = true }
+kurbo = { workspace = true }
+tiny-skia = { workspace = true }
+linesweeper = "0.4"

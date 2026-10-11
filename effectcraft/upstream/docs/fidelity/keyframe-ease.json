@@ -1,0 +1,57 @@
+{
+  "generatedAt": "2026-10-06T01:17:41.470Z",
+  "aeVersion": "26.3x87",
+  "property": "Rotation (scalar)",
+  "tolerance": 1e-7,
+  "cases": [
+    {
+      "name": "easy",
+      "samples": 21,
+      "maxAbsoluteError": 2.842170943040401e-14,
+      "pass": true
+    },
+    {
+      "name": "high_influence",
+      "samples": 21,
+      "maxAbsoluteError": 8.965272968453064e-12,
+      "pass": true
+    },
+    {
+      "name": "asymmetric",
+      "samples": 21,
+      "maxAbsoluteError": 1.3642420526593924e-12,
+      "pass": true
+    },
+    {
+      "name": "overshoot",
+      "samples": 21,
+      "maxAbsoluteError": 2.9473312679328956e-11,
+      "pass": true
+    },
+    {
+      "name": "descending",
+      "samples": 21,
+      "maxAbsoluteError": 2.5774937739697634e-12,
+      "pass": true
+    },
+    {
+      "name": "equal_endpoints",
+      "samples": 21,
+      "maxAbsoluteError": 4.220623850414995e-12,
+      "pass": true
+    },
+    {
+      "name": "maximum_influence",
+      "samples": 21,
+      "maxAbsoluteError": 5.684341886080802e-14,
+      "pass": true
+    },
+    {
+      "name": "minimum_maximum",
+      "samples": 21,
+      "maxAbsoluteError": 2.4030555323406588e-11,
+      "pass": true
+    }
+  ],
+  "pass": true
+}

@@ -1,0 +1,31 @@
+[package]
+name = "filmcraft-render"
+description = "Sequence evaluation and CPU reference compositor (linear-light premultiplied f32)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-time = { workspace = true }
+filmcraft-geom = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-audio-dsp = { workspace = true }
+filmcraft-captions = { workspace = true }
+filmcraft-text = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Thread CPU clock for load-robust performance tests.
+[target.'cfg(unix)'.dev-dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "time"] }

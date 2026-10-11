@@ -1,0 +1,35 @@
+[package]
+name = "filmcraft-cli"
+description = "FilmCraft headless CLI and MCP server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "filmcraft-cli"
+path = "src/main.rs"
+
+[features]
+default = []
+# Speech-to-text (Text panel ▸ Transcribe) with Whisper on the CPU, and model downloads.
+whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
+
+[dependencies]
+filmcraft-engine = { workspace = true }
+filmcraft-export = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-render = { workspace = true }
+filmcraft-time = { workspace = true }
+filmcraft-gpu = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-codecs = { workspace = true }
+filmcraft-platform = { workspace = true }
+filmcraft-mxf = { workspace = true }
+filmcraft-mpegts = { workspace = true }
+filmcraft-ogg = { workspace = true }
+filmcraft-automation = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

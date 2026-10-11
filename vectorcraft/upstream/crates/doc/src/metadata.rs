@@ -1,0 +1,151 @@
+//! File → File Info: the document's descriptive metadata (author, description, keywords, rating,
+//! copyright) and its created and modified dates, which the SVG, PDF and PNG writers carry. The
+//! document title is [`crate::Document::title`]. Every field is defaulted, so documents saved
+//! before File Info existed load unchanged.
+
+use serde::{Deserialize, Serialize};
+
+/// File Info → Copyright Status.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CopyrightStatus {
+    #[default]
+    Unknown,
+    Copyrighted,
+    PublicDomain,
+}
+
+impl CopyrightStatus {
+    pub const ALL: [CopyrightStatus; 3] = [CopyrightStatus::Unknown, CopyrightStatus::Copyrighted, CopyrightStatus::PublicDomain];
+    pub fn id(self) -> &'static str {
+        match self {
+            CopyrightStatus::Unknown => "unknown",
+            CopyrightStatus::Copyrighted => "copyrighted",
+            CopyrightStatus::PublicDomain => "publicDomain",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            CopyrightStatus::Unknown => "Unknown",
+            CopyrightStatus::Copyrighted => "Copyrighted",
+            CopyrightStatus::PublicDomain => "Public Domain",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.id().eq_ignore_ascii_case(s) || c.label().eq_ignore_ascii_case(s))
+    }
+}
+
+/// Highest File Info rating (stars).
+pub const MAX_RATING: u8 = 5;
+
+/// File → File Info.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DocMetadata {
+    pub author: String,
+    /// The author's position or job title.
+    pub author_title: String,
+    pub description: String,
+    /// Keywords, each once, in the order they were added.
+    pub keywords: Vec<String>,
+    /// 0 (unrated) to [`MAX_RATING`] stars.
+    pub rating: u8,
+    pub copyright_status: CopyrightStatus,
+    pub copyright_notice: String,
+    /// Where to read more about the copyright.
+    pub copyright_url: String,
+    /// When the document was created, as Unix seconds (UTC).
+    pub created: Option<i64>,
+    /// When the document was last saved, as Unix seconds (UTC).
+    pub modified: Option<i64>,
+}
+
+impl DocMetadata {
+    /// The PNG text entries (registered keywords where one fits) for a document titled `title`:
+    /// only the non-empty ones.
+    pub fn png_text<'a>(&'a self, title: &'a str) -> Vec<(&'static str, std::borrow::Cow<'a, str>)> {
+        let mut out: Vec<(&'static str, std::borrow::Cow<'a, str>)> = vec![];
+        let mut push = |k: &'static str, v: std::borrow::Cow<'a, str>| {
+            if !v.trim().is_empty() {
+                out.push((k, v));
+            }
+        };
+        push("Title", title.into());
+        push("Author", self.author.as_str().into());
+        push("Description", self.description.as_str().into());
+        push("Keywords", self.keywords.join(", ").into());
+        push("Copyright", self.copyright_notice.as_str().into());
+        push("Copyright URL", self.copyright_url.as_str().into());
+        push("Creation Time", self.created.map(iso8601).unwrap_or_default().into());
+        out
+    }
+}
+
+/// The current time as Unix seconds (UTC); `None` where the platform has no clock (the web build).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn now_unix() -> Option<i64> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_secs()).ok())
+}
+#[cfg(target_arch = "wasm32")]
+pub fn now_unix() -> Option<i64> {
+    None
+}
+
+/// Unix seconds (UTC) → `[year, month, day, hour, minute, second]` (civil-from-days, proleptic
+/// Gregorian; years clamped to 0–9999).
+pub fn civil(t: i64) -> [i64; 6] {
+    // Clamp first so every step stays in range for any input.
+    let t = t.clamp(-62_167_219_200, 253_402_300_799);
+    let days = t.div_euclid(86_400);
+    let secs = t.rem_euclid(86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    [year.clamp(0, 9999), month, day, secs / 3600, secs / 60 % 60, secs % 60]
+}
+
+/// Unix seconds → `2026-10-05T14:03:00Z`.
+pub fn iso8601(t: i64) -> String {
+    let [y, mo, d, h, mi, s] = civil(t);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dates_and_statuses() {
+        assert_eq!(iso8601(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso8601(1_791_208_980), "2026-10-05T14:03:00Z");
+        assert_eq!(civil(i64::MIN)[0], 0);
+        assert_eq!(civil(i64::MAX)[0], 9999);
+        assert_eq!(CopyrightStatus::parse("Public Domain"), Some(CopyrightStatus::PublicDomain));
+        assert_eq!(CopyrightStatus::parse("publicdomain"), Some(CopyrightStatus::PublicDomain));
+        assert_eq!(CopyrightStatus::parse("maybe"), None);
+    }
+
+    #[test]
+    fn png_text_skips_empty_entries() {
+        let m = DocMetadata { author: "Ada".into(), keywords: vec!["a".into(), "b".into()], created: Some(0), ..Default::default() };
+        let t: Vec<(&str, String)> = m.png_text("Poster").into_iter().map(|(k, v)| (k, v.into_owned())).collect();
+        assert_eq!(
+            t,
+            [
+                ("Title", "Poster".to_string()),
+                ("Author", "Ada".into()),
+                ("Keywords", "a, b".into()),
+                ("Creation Time", "1970-01-01T00:00:00Z".into())
+            ]
+        );
+        assert!(DocMetadata::default().png_text("").is_empty());
+    }
+}

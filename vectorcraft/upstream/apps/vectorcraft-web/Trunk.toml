@@ -1,0 +1,18 @@
+# Build with: trunk build --release   (from apps/vectorcraft-web)
+[build]
+target = "index.html"
+dist = "../../dist/web"
+public_url = "./"
+filehash = true
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8766
+
+# Copy the craft-fonts faces web builds fetch (crates/text/web-fonts.txt) into the site's fonts/
+# folder; a no-op without CRAFT_FONTS_DIR. Runs for `trunk serve` and `trunk build`, through cargo so
+# it needs no shell (xtask/src/web_fonts.rs).
+[[hooks]]
+stage = "post_build"
+command = "cargo"
+command_arguments = ["xtask", "web-fonts"]

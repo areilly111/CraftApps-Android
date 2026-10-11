@@ -1,0 +1,324 @@
+{
+  "name": "Legacy Edit",
+  "settings": {
+    "renderer": "FilmCraft GPU Acceleration (wgpu)",
+    "video_display": "Timecode",
+    "audio_display_samples": true,
+    "default_still_duration": 1270080000000,
+    "default_transition_duration_frames": 24,
+    "default_audio_transition_duration": 254016000000
+  },
+  "root": {
+    "id": 0,
+    "name": "Legacy Edit",
+    "children": [
+      {
+        "Bin": {
+          "id": 1,
+          "name": "Footage",
+          "children": [
+            {
+              "Item": 5
+            }
+          ]
+        }
+      },
+      {
+        "Item": 21
+      }
+    ]
+  },
+  "items": {
+    "5": {
+      "id": 5,
+      "name": "Ocean_Sunset.mp4",
+      "label": "Iris",
+      "kind": {
+        "Media": {
+          "media": {
+            "Generator": {
+              "Demo": "OceanSunset"
+            }
+          },
+          "info": {
+            "name": "Ocean_Sunset.mp4",
+            "kind": "Movie",
+            "duration": 4572288000000,
+            "video": {
+              "width": 1920,
+              "height": 1080,
+              "frame_rate": {
+                "num": 24000,
+                "den": 1001
+              },
+              "par": [
+                1,
+                1
+              ],
+              "codec": "H.264 (synthetic)",
+              "pixel_format": "RGBA 8-bit",
+              "color": {
+                "matrix": "Bt709",
+                "transfer": "Srgb",
+                "primaries": "Bt709",
+                "range": "Full"
+              },
+              "has_alpha": false,
+              "bitrate": null
+            },
+            "audio": {
+              "sample_rate": 48000,
+              "channels": 2,
+              "codec": "PCM (synthetic)",
+              "bits_per_sample": 32
+            },
+            "container": "Synthetic MPEG-4",
+            "start_timecode": null,
+            "file_size": null
+          },
+          "interpret": {
+            "frame_rate": null,
+            "par": null,
+            "ignore_alpha": false,
+            "invert_alpha": false
+          },
+          "mark_in": null,
+          "mark_out": null,
+          "markers": [],
+          "offline": false,
+          "proxy": null
+        }
+      }
+    },
+    "21": {
+      "id": 21,
+      "name": "Assembly",
+      "label": "Forest",
+      "kind": {
+        "Sequence": {
+          "settings": {
+            "width": 1920,
+            "height": 1080,
+            "frame_rate": {
+              "num": 24000,
+              "den": 1001
+            },
+            "par": [
+              1,
+              1
+            ],
+            "sample_rate": 48000,
+            "drop_frame": false,
+            "preset": "HD 1080p 23.976",
+            "audio_master": "Stereo",
+            "preview_codec": "ProRes 422",
+            "max_bit_depth": false,
+            "max_render_quality": false,
+            "working_space": "Rec. 709"
+          },
+          "video_tracks": [
+            {
+              "id": 15,
+              "kind": "Video",
+              "name": "Video 1",
+              "items": [
+                {
+                  "id": 29,
+                  "item": 5,
+                  "name": "Ocean_Sunset.mp4",
+                  "label": "Iris",
+                  "start": 0,
+                  "duration": 1260755496000,
+                  "source_in": 243675432000,
+                  "speed": 1.0,
+                  "enabled": true,
+                  "effects": [
+                    {
+                      "effect": "motion",
+                      "enabled": true,
+                      "params": {
+                        "anchor": {
+                          "value": {
+                            "Vec2": {
+                              "x": 960.0,
+                              "y": 540.0
+                            }
+                          }
+                        },
+                        "anti_flicker": {
+                          "value": {
+                            "Float": 0.0
+                          }
+                        },
+                        "position": {
+                          "value": {
+                            "Vec2": {
+                              "x": 960.0,
+                              "y": 540.0
+                            }
+                          }
+                        },
+                        "rotation": {
+                          "value": {
+                            "Float": 0.0
+                          }
+                        },
+                        "scale": {
+                          "value": {
+                            "Float": 100.0
+                          }
+                        },
+                        "scale_width": {
+                          "value": {
+                            "Float": 100.0
+                          }
+                        },
+                        "uniform_scale": {
+                          "value": {
+                            "Bool": true
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "effect": "opacity",
+                      "enabled": true,
+                      "params": {
+                        "blend": {
+                          "value": {
+                            "Choice": 0
+                          }
+                        },
+                        "opacity": {
+                          "value": {
+                            "Float": 100.0
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "effect": "time_remap",
+                      "enabled": true,
+                      "params": {
+                        "speed": {
+                          "value": {
+                            "Float": 100.0
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "transitions": [],
+              "locked": false,
+              "sync_lock": true,
+              "enabled": true,
+              "muted": false,
+              "solo": false,
+              "channels": "Stereo",
+              "volume_db": 0.0,
+              "pan": 0.0
+            }
+          ],
+          "audio_tracks": [
+            {
+              "id": 18,
+              "kind": "Audio",
+              "name": "Audio 1",
+              "items": [
+                {
+                  "id": 30,
+                  "item": 5,
+                  "name": "Ocean_Sunset.mp4",
+                  "label": "Iris",
+                  "start": 0,
+                  "duration": 1260755496000,
+                  "source_in": 243675432000,
+                  "speed": 1.0,
+                  "enabled": true,
+                  "effects": [
+                    {
+                      "effect": "volume",
+                      "enabled": true,
+                      "params": {
+                        "bypass": {
+                          "value": {
+                            "Bool": false
+                          }
+                        },
+                        "level": {
+                          "value": {
+                            "Float": -8.0
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "effect": "channel_volume",
+                      "enabled": true,
+                      "params": {
+                        "bypass": {
+                          "value": {
+                            "Bool": false
+                          }
+                        },
+                        "left": {
+                          "value": {
+                            "Float": 0.0
+                          }
+                        },
+                        "right": {
+                          "value": {
+                            "Float": 0.0
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "effect": "panner",
+                      "enabled": true,
+                      "params": {
+                        "balance": {
+                          "value": {
+                            "Float": 0.0
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "transitions": [],
+              "locked": false,
+              "sync_lock": true,
+              "enabled": true,
+              "muted": false,
+              "solo": false,
+              "channels": "Stereo",
+              "volume_db": 0.0,
+              "pan": 0.0
+            }
+          ],
+          "markers": [
+            {
+              "id": 800000,
+              "start": 0,
+              "duration": 0,
+              "name": "Open",
+              "comment": "",
+              "kind": "Comment",
+              "color": "Green"
+            }
+          ],
+          "mark_in": null,
+          "mark_out": null,
+          "work_area": null,
+          "start_timecode": 0
+        }
+      }
+    }
+  },
+  "next_id": 48,
+  "version": 1
+}

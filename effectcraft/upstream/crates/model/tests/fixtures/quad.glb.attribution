@@ -1,0 +1,7 @@
+asset:        quad.glb
+title:        Binary glTF (GLB) fixture: the same textured, animated quad with its PNG texture in the BIN chunk
+author:       EffectCraft contributors
+source:       original work
+license:      MIT OR Apache-2.0
+added:        2026-10-02 by EffectCraft agent (M7.4)
+notes:        Hand-written / script-generated test data for the model importer, made from the public Khronos glTF 2.0 specification and the Wavefront OBJ/MTL format description; not taken from any third-party file. The 2x2 texture is four solid colours.

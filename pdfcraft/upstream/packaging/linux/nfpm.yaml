@@ -1,0 +1,73 @@
+# .deb and .rpm packages (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
+# the file tree, substitutes its path for ${STAGE} (nfpm doesn't expand env vars in `src`) and
+# exports VERSION and NFPM_ARCH.
+#
+#   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/release/
+name: pdfcraft
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+# semver: 0.2.0-rc.1 becomes 0.2.0~rc.1 in deb/rpm, so pre-releases sort before the release.
+version_schema: semver
+release: 1
+section: graphics
+priority: optional
+maintainer: ${PDFCRAFT_MAINTAINER}
+vendor: Learning Machines LLC
+homepage: https://getartcraft.com/apps/pdfcraft
+license: MIT OR Apache-2.0
+description: |-
+  Open-source, native PDF workbench: read, comment, fill and sign forms,
+  organize, combine, split, edit, redact, protect and export PDFs.
+  Includes pdfcraft-cli, a headless command runner and opt-in MCP server.
+
+# The binaries link only glibc and libgcc_s directly. Windowing (X11/Wayland, xkbcommon) and the
+# GPU (Vulkan, EGL/GL) are loaded at runtime, so they are dependencies/recommendations here
+# rather than ELF NEEDED entries. Printing likewise shells out to CUPS's lpstat/lp (cups-client);
+# without it the Print dialog still offers Save as PDF, so it is a recommendation, not a hard
+# dependency.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libxkbcommon0
+      - libvulkan1 | libegl1
+    recommends:
+      - cups-client
+      - libwayland-client0
+      - libx11-6
+      - libx11-xcb1
+      - libxcursor1
+      - libxi6
+      - libxrandr2
+      - mesa-vulkan-drivers
+      - xdg-desktop-portal
+  rpm:
+    depends:
+      - libxkbcommon
+      - (vulkan-loader or libglvnd-egl)
+    recommends:
+      - cups-client
+      - libwayland-client
+      - libX11
+      - libXcursor
+      - libXi
+      - libXrandr
+      - mesa-vulkan-drivers
+      - xdg-desktop-portal
+
+contents:
+  - src: ${STAGE}/usr/bin/pdfcraft
+    dst: /usr/bin/pdfcraft
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/bin/pdfcraft-cli
+    dst: /usr/bin/pdfcraft-cli
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/
+    dst: /usr/share/
+    type: tree
+
+scripts:
+  postinstall: packaging/linux/postinst.sh
+  postremove: packaging/linux/postinst.sh

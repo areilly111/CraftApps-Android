@@ -1,0 +1,20 @@
+[package]
+name = "vectorcraft-trace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft Image Trace: raster to vector tracing (quantize, boundary follow, polygon, Bezier fit)"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-pathops = { workspace = true }
+kurbo = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

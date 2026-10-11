@@ -1,0 +1,8 @@
+asset:        effectcraft-3d.png
+title:        EffectCraft Classic 3D
+author:       EffectCraft contributors
+source:       original work (headless render of the EffectCraft UI via crates/ui-egui/examples/snapshot.rs)
+license:      MIT OR Apache-2.0
+license-file:
+added:        2026-10-01 by Claude (agent) for Brandon Thomas
+notes:        Screenshot of EffectCraft only, showing procedurally generated demo content from crates/engine/src/demo.rs and built-in effects. EffectCraft Classic 3D: the demo "3D Showcase" composition in Custom View 1, showing intersecting 3D planes, spot-light shadows, the camera frustum and light wireframes.

@@ -1,0 +1,8 @@
+asset:        background.svg
+title:        EffectCraft macOS DMG window background
+author:       @XusBadia
+source:       original work
+license:      MIT OR Apache-2.0
+license-file: LICENSE-MIT, LICENSE-APACHE
+added:        2026-10-08 by @XusBadia
+notes:        Original work for this repository, derived from the EffectCraft app icon (assets/app-icon/effectcraft.svg, referenced via <image>, not copied). Used for the Finder window of the macOS DMG; packaging/macos/package.sh renders it to a TIFF at package time. Text is outlined Inter/JetBrains Mono glyph paths.

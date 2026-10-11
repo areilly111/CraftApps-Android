@@ -1,0 +1,8 @@
+asset:        Inter-Bold.ttf
+title:        Inter Bold (text engine / graphics)
+author:       The Inter Project Authors (Rasmus Andersson et al.)
+source:       https://github.com/rsms/inter (release v4.1, extras/ttf)
+license:      OFL-1.1
+license-file: assets/fonts/OFL-Inter.txt
+added:        2026-10-01 by Claude (agent) for Brandon Thomas
+notes:        Unmodified font file, bundled via include_bytes! in the text engine (crates/text/src/fonts.rs) for graphics text, titles and burn-ins.

@@ -1,0 +1,35 @@
+[package]
+name = "effectcraft-host"
+description = "Builds a fully wired EffectCraft session: media decoding (FilmCraft codecs), importer, the expression engine and scripting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-engine = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-media = { workspace = true }
+effectcraft-expr = { workspace = true }
+effectcraft-script = { workspace = true }
+effectcraft-export = { workspace = true }
+effectcraft-plugin = { workspace = true }
+
+# WebAssembly effect plug-ins run in wasmi on native builds.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+effectcraft-plugin = { workspace = true, features = ["wasm"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+effectcraft-psd = { workspace = true }
+effectcraft-svg = { workspace = true }
+effectcraft-pdf = { workspace = true }
+effectcraft-raster = { workspace = true }
+effectcraft-time = { workspace = true }
+effectcraft-interchange = { workspace = true }
+image = { workspace = true }
+exr = { workspace = true }
+rayon = { workspace = true }

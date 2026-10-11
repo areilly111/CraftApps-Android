@@ -1,0 +1,21 @@
+[package]
+name = "vectorcraft-format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft native .vectorcraft format (versioned JSON, embedded images)"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-doc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+vectorcraft-testkit = { workspace = true }
+proptest = { workspace = true }
+vectorcraft-geom = { workspace = true }

@@ -1,0 +1,56 @@
+[package]
+name = "effectcraft-web"
+description = "EffectCraft in the browser (wasm32): eframe web runner, persistent browser storage (OPFS / IndexedDB), Web Audio, Web Worker renders, PWA, window.effectcraft API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# The browser glue is wasm32-only; on other targets the crate holds just the portable storage
+# model (`store`), unit-tested natively. Build the app with `cargo xtask web` (see docs/web.md).
+[dependencies]
+effectcraft-engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+effectcraft-host = { workspace = true }
+effectcraft-gpu = { workspace = true }
+effectcraft-media = { workspace = true }
+effectcraft-export = { workspace = true }
+effectcraft-expr = { workspace = true }
+effectcraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+log = { workspace = true }
+web-time = { workspace = true }
+# The wasm-bindgen CLI used by `cargo xtask web` must be exactly this version.
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Blob",
+    "BlobPropertyBag",
+    "CssStyleDeclaration",
+    "Document",
+    "Element",
+    "DedicatedWorkerGlobalScope",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Location",
+    "Url",
+    "UrlSearchParams",
+    "Window",
+] }

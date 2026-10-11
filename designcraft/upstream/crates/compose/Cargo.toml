@@ -1,0 +1,25 @@
+[package]
+name = "designcraft-compose"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft text composition: paragraph composer (Knuth–Plass), hyphenation, justification, columns, threading, wrap"
+
+[lints]
+workspace = true
+
+[dependencies]
+unicode-bidi = { workspace = true }
+unicode-bidi-mirroring = { workspace = true }
+designcraft-geom = { workspace = true }
+designcraft-color = { workspace = true }
+designcraft-doc = { workspace = true }
+designcraft-fonts = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+miniz_oxide = "0.8"
+hypher = { version = "0.1.8", default-features = false, features = ["alloc", "spanish"] }
+
+[dev-dependencies]
+designcraft-fonts = { workspace = true, features = ["testing"] }
+proptest = { workspace = true }

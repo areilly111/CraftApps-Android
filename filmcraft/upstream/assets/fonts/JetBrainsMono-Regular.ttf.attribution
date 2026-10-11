@@ -1,0 +1,8 @@
+asset:        JetBrainsMono-Regular.ttf
+title:        JetBrains Mono Regular (monospace for timecode)
+author:       The JetBrains Mono Project Authors
+source:       https://github.com/JetBrains/JetBrainsMono
+license:      OFL-1.1
+license-file: assets/fonts/OFL-JetBrainsMono.txt
+added:        2026-09-30 by Claude (agent) for Brandon Thomas
+notes:        Unmodified font file, embedded via include_bytes! in the text engine (crates/text/src/fonts.rs), which also supplies it to the UI (crates/ui-egui/src/theme.rs).

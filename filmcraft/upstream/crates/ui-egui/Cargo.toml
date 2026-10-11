@@ -1,0 +1,64 @@
+[package]
+name = "filmcraft-ui-egui"
+description = "The FilmCraft egui frontend (swappable): panels, docking, timeline, monitors, control channel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-time = { workspace = true }
+filmcraft-geom = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-tts = { workspace = true }
+filmcraft-edit = { workspace = true }
+filmcraft-render = { workspace = true }
+filmcraft-text = { workspace = true }
+filmcraft-audio-dsp = { workspace = true }
+filmcraft-engine = { workspace = true }
+filmcraft-export = { workspace = true }
+filmcraft-gpu = { workspace = true }
+filmcraft-scopes = { workspace = true }
+egui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+rayon = { workspace = true }
+web-time = "1"
+# ArtCraft wordmark (PNG) for the About dialog and Home screen.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# eframe's `accesskit` (screen-reader) integration is a compile error with
+# `android-native-activity` (eframe 0.36.2), so the Android port builds eframe
+# without it. The `egui::accesskit` types used across this crate are unaffected
+# (they come from egui itself, not the eframe feature).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit"] }
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+
+# Thread/process CPU clocks for frame-job profiling (safe wrappers; see frames.rs).
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
+# the same clocks on Windows (GetThreadTimes / GetProcessTimes behind a safe API; MIT OR Apache-2.0)
+[target.'cfg(windows)'.dependencies]
+cpu-time = "1"
+
+[dev-dependencies]
+pollster = "0.4"
+filmcraft-codecs = { workspace = true }
+# the bench registers OS hardware decoders as the desktop app does (dev-dependency only: ui-egui
+# itself stays OS-independent and web-portable)
+filmcraft-platform = { workspace = true }
+filmcraft-interchange = { workspace = true }
+egui_kittest = { workspace = true, features = ["eframe", "wgpu"] }
+
+# build.rs bakes contributors/contributors.json into the binary (About ▸ Contributors).
+[build-dependencies]
+serde_json = { workspace = true }
+toml = "1"

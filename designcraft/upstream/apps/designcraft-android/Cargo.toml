@@ -1,0 +1,35 @@
+[package]
+name = "designcraft-android"
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "DesignCraft for Android (tablet): eframe NativeActivity shell around the shared egui app"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+designcraft-engine = { workspace = true }
+designcraft-ui-egui = { workspace = true }
+# eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
+# feature is a compile error with `android-native-activity` (see eframe 0.36.2
+# src/lib.rs), so it is deliberately absent here. designcraft-ui-egui itself
+# has no eframe dependency, so there is no target-gating to do upstream; the
+# desktop `apps/designcraft` crate keeps its own eframe features (it is never
+# built for Android).
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+# Shared suite shell: updater, GPU cascade, /sdcard/ArtCraft storage, SAF, JNI.
+# (The crate root is `craftapps-android/shared/`; the task's `../../shared`
+# miscounts the depth — from this crate dir it is `../../../../shared`.)
+craftapps-shared = { path = "../../../../shared" }
+jni = "=0.22.4"
+ndk-context = "=0.1.1"
+log = { workspace = true }
+android_logger = "0.15"
+serde_json = { workspace = true }
+
+# NOTE: this crate does NOT inherit workspace lints: `unsafe_code = "forbid"`
+# there would rule out the JNI calls an Android shell fundamentally needs.
+# Instead lib.rs denies unwrap/expect/panic/todo like every other crate, and
+# every unsafe block carries a SAFETY comment (the photocraft-tablet pattern).

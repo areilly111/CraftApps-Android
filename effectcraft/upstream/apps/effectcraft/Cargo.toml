@@ -1,0 +1,47 @@
+[package]
+name = "effectcraft"
+description = "EffectCraft desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "effectcraft"
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-engine = { workspace = true }
+effectcraft-host = { workspace = true }
+effectcraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+# `links`: links (Help menu, Discord, Settings) open in the system browser.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
+serde_json = { workspace = true }
+rfd = { workspace = true }
+cpal = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Settings ▸ Appearance ▸ Sync with System: the XDG desktop portal's colour scheme. Already in
+# Cargo.lock (accesskit, through eframe), so it adds no new crates.
+zbus = "5.19"
+
+[build-dependencies]
+# Icon + VERSIONINFO for effectcraft.exe; build.rs only uses it when targeting Windows.
+winresource = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Same winit as eframe: macOS event-loop options (no app activation when driven by an agent).
+winit = { version = "0.30", default-features = false }
+# Keep the control channel responsive when the window is covered (App Nap / occlusion throttling).
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString", "NSObject"] }
+# The native menu bar (NSMenu). MIT OR Apache-2.0; macOS only, never in the web build.
+muda = { version = "0.21", default-features = false }
+objc2 = "0.6"
+# NSApplication hide / hide others / show all, and the pasteboard for Edit ▸ Paste in text fields.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSPasteboard"] }
+# Finder double-click, Open With, Dock drops and `open -a EffectCraft x.ecproj` arrive as a
+# kAEOpenDocuments Apple event, which winit 0.30 doesn't handle. This audited crate (also used by
+# PhotoCraft and PdfCraft) registers the handler (Objective-C interop needs unsafe, which our
+# workspace forbids) behind a safe API. Pinned exactly: review the diff before bumping.
+fmv-macos-events = "=0.1.0"

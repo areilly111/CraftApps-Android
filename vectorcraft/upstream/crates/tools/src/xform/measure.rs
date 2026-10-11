@@ -1,0 +1,108 @@
+//! Measure tool: drag between two points to read distance, angle, dX and dY (Shift constrains to
+//! 45°). The result stays on screen (and in the tool options, for agents) until the next drag; the
+//! document is never changed.
+
+use serde_json::{Value, json};
+use vectorcraft_geom::{Point, Vec2};
+
+use super::CYAN;
+use crate::{Action, Cursor, Mods, Overlay, PointerEvent, PointerKind, Tool, ToolContext};
+
+#[derive(Default)]
+pub struct MeasureTool {
+    line: Option<(Point, Point)>,
+    dragging: bool,
+}
+
+/// (distance, angle in degrees counter-clockwise, dx, dy)
+pub fn measure(a: Point, b: Point) -> (f64, f64, f64, f64) {
+    let d = b - a;
+    (d.hypot(), (-d.y).atan2(d.x).to_degrees(), d.x, d.y)
+}
+
+impl Tool for MeasureTool {
+    fn id(&self) -> &'static str {
+        "measure"
+    }
+
+    fn busy(&self) -> bool {
+        self.dragging
+    }
+
+    fn pointer(&mut self, cx: &ToolContext, ev: &PointerEvent) -> Vec<Action> {
+        match ev.kind {
+            PointerKind::Down => {
+                let (p, _) = crate::guides::snap_draw(cx, ev.pos, &[]);
+                self.line = Some((p, p));
+                self.dragging = true;
+            }
+            PointerKind::Drag | PointerKind::Up if self.dragging => {
+                if let Some((a, _)) = self.line {
+                    let b = if ev.mods.shift {
+                        a + vectorcraft_geom::constrain_angle(ev.pos - a, 45.0)
+                    } else {
+                        crate::guides::snap_draw(cx, ev.pos, &[]).0
+                    };
+                    self.line = Some((a, b));
+                }
+                self.dragging = ev.kind == PointerKind::Drag;
+            }
+            _ => {}
+        }
+        vec![]
+    }
+
+    fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
+        let Some((a, b)) = self.line else { return vec![] };
+        if a == b {
+            return vec![];
+        }
+        let (dist, ang, dx, dy) = measure(a, b);
+        vec![
+            Overlay::Line { a, b, color: CYAN, dashed: false },
+            Overlay::Measure {
+                p: b + Vec2::new(cx.tol(12.0), cx.tol(12.0)),
+                text: format!("D: {}\nAngle: {ang:.1}°\n{}", cx.len(dist), cx.offset_label(dx, dy)),
+            },
+        ]
+    }
+
+    fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
+        Cursor::Crosshair
+    }
+
+    fn options(&self) -> Value {
+        match self.line {
+            Some((a, b)) => {
+                let (d, ang, dx, dy) = measure(a, b);
+                json!({ "x": a.x, "y": a.y, "distance": d, "angle": ang, "dx": dx, "dy": dy })
+            }
+            None => Value::Null,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::*;
+    use vectorcraft_doc::Selection;
+
+    #[test]
+    fn drag_reports_distance_and_angle() {
+        let (d, _) = doc_with_rect();
+        let s = Selection::default();
+        let p = paint();
+        let mut cx = cx(&d, &s, &p);
+        cx.smart_guides = false;
+        let mut t = MeasureTool::default();
+        assert!(t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 10.0, 10.0)).is_empty());
+        assert!(t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 40.0, -30.0)).is_empty());
+        assert!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 40.0, -30.0)).is_empty());
+        let o = t.options();
+        assert!((o["distance"].as_f64().unwrap() - 50.0).abs() < 1e-9);
+        assert!((o["angle"].as_f64().unwrap() - 53.130102).abs() < 1e-4);
+        let ov = t.overlays(&cx);
+        assert!(matches!(&ov[1], Overlay::Measure { text, .. } if text.starts_with("D: 50.00 pt")));
+    }
+}

@@ -1,0 +1,76 @@
+# Flatpak manifest for EffectCraft, ready for a Flathub submission.
+#
+# Flatpak builds run offline, so the crate sources must be vendored first. From the repo root:
+#
+#   curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+#   python3 flatpak-cargo-generator.py Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+#   flatpak-builder --user --install --force-clean build-flatpak packaging/linux/flatpak/ai.storyteller.effectcraft.yml
+#   flatpak run ai.storyteller.effectcraft
+#
+# For Flathub, replace the `dir` source with a `git` source pinned to a release tag and commit.
+#
+# ai.storyteller.effectcraft.bundle.yml (same directory) builds the .flatpak attached to each
+# release from the release's Linux tarball. Keep runtime-version and finish-args identical in both
+# (packaging-lint checks this).
+id: ai.storyteller.effectcraft
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: effectcraft
+finish-args:
+  # Display: Wayland first; X11 only when no Wayland compositor is running.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # X11 shared memory (MIT-SHM). Without it the X11 fallback is slow or fails.
+  - --share=ipc
+  # GPU access for the wgpu compositor and renderer (Vulkan, or GL as a fallback).
+  - --device=dri
+  # Audio preview and playback (cpal through ALSA, which the runtime routes to PulseAudio or
+  # PipeWire's Pulse server).
+  - --socket=pulseaudio
+  # The optional trained models (Settings ▸ Roto Brush, Settings ▸ Face Tracking) download only
+  # when the user asks, over HTTPS with curl. It also lets host agents reach the optional
+  # --control server (127.0.0.1). No telemetry: nothing else uses the network.
+  - --share=network
+  # Open/Save and import dialogs go through the file-chooser portal (rfd's xdg-portal backend) and
+  # drag-and-drop through the document portal, so picked files work anywhere without broad
+  # filesystem access. Pictures, Videos and Documents are granted so files passed by path (the
+  # command line, Open Recent, footage a project links to, Render Queue output) work in the
+  # usual places.
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-documents
+  # Deliberately not granted: home/host filesystem access.
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: effectcraft
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/effectcraft/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline build --release --locked -p effectcraft -p effectcraft-cli
+      - install -Dm755 target/release/effectcraft /app/bin/effectcraft
+      - install -Dm755 target/release/effectcraft-cli /app/bin/effectcraft-cli
+      - install -Dm644 packaging/linux/ai.storyteller.effectcraft.desktop /app/share/applications/ai.storyteller.effectcraft.desktop
+      - install -Dm644 packaging/linux/ai.storyteller.effectcraft.mime.xml /app/share/mime/packages/ai.storyteller.effectcraft.xml
+      - mkdir -p /app/share/icons && cp -R assets/app-icon/hicolor /app/share/icons/
+      - >-
+        version=$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml);
+        install -d /app/share/metainfo;
+        sed -e "s/@VERSION@/$version/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/"
+        packaging/linux/ai.storyteller.effectcraft.metainfo.xml.in > /app/share/metainfo/ai.storyteller.effectcraft.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - target
+          - dist
+          - corpus
+          - build-flatpak
+          - .flatpak-builder
+      - cargo-sources.json

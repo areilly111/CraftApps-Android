@@ -1,0 +1,249 @@
+# Per-model evidence that overrides the format rules in coverage.py. status: verified | preview | unsupported.
+# "verified" means a real file from this body decoded from sensor data in a corpus test or a recorded bulk check (source column).
+maker	camera	status	source
+Apple	iPhone 12 Pro Rear Wide Camera	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 40D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 550D (EOS Digital Rebel T2i, EOS Kiss X4 Digital)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 5D Mark II	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 5DS R	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 6D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 7D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 80D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS M50 (EOS Kiss M)	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
+Canon	EOS R100	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
+Canon	EOS R8	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
+Canon	EOS-5D Mark III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	GFX 100	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	GFX 100RF (Final Support)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	GFX 100S	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	GFX 50S	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-A2	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-A5	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-E1	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-E5	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-H2	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-H2S	verified	docs/raf-compression.md (supplied files, exact sensor arrays)
+Fujifilm	X-M5	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T2	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T20	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T4**	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T5	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T50	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Google	Pixel 2 XL	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Leica	C (Typ 112)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	D-Lux (Typ 109)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	D-Lux 3	verified	PR #215: raw.pixls.us bulk check of every RW2 / RWL / RAW body
+Leica	D-Lux 4	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	D-Lux 5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	D-Lux 6	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	D-Lux 7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	Digilux 2	verified	PR #215: raw.pixls.us bulk check of every RW2 / RWL / RAW body
+Leica	Digilux 3	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	V-LUX (Typ 114)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	V-LUX 1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	V-LUX 4	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Leica	V-LUX 5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Nikon	COOLPIX B700	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D5100	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D7000	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D7500	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z f	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Olympus	E-1	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Olympus	EVOLT E-400	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Olympus	Stylus XZ-2 iHS	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Panasonic	LUMIX DC - G97 (DC-G99M2)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-FZ1000M2 (DC-FZ10002)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-FZ80 (DC-FZ82, DC-FZ85)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-G100 (DC-G110)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-G100D	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-G9	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-G95D	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-G99 (DC-G90, DC-G91, DC-G95)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GF10 (DC-GF90)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GF9 (DC-GX850, DC-GX800)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GH5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GH5M2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GH5s	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GH6	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GH7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GX880	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-GX9 (DC-GX7MK3)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-LX100 II	verified	PR #215: raw.pixls.us bulk check of every RW2 / RWL / RAW body
+Panasonic	LUMIX DC-S1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S1H	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S1M2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S1M2ES (Final Support)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S1R	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S1RM2 (Final Support)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S5M2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S5M2X	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-S9	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-TX2D (DC-TZ200D, DC-TZ202D, DC-TZ220D, DC-ZS200D, DC-ZS220D)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-ZS70 (DC-TZ90, DC-TZ91, DC-TZ92, DC-TZ93)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-ZS80 (DC-TZ95, DC-TZ96, DC-TZ97)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DC-ZS80D (DC-TZ95D, DC-TZ96D)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DCG9M2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-CM1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FX150	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ100	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ1000	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ150	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ18	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ200	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ2500 (DMC-FZ2000, DMC-FZH1)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ28	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ30	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ300	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ330	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ35	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ38	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ40 (DMC-FZ45)	verified	PR #215: raw.pixls.us bulk check of every RW2 / RWL / RAW body
+Panasonic	LUMIX DMC-FZ50	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ70	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ72	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-FZ8	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G10	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G3	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G6	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-G8 (DMC-G80, DMC-G81, DMC-G85)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF3	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF6	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GF8	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GH1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GH2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GH3	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GH4	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GM1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GM1S	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GM5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GX1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GX7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GX8	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-GX85 (DMC-GX80, DMC-GX7MK2)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-L1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-L10	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LF1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX1	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX100	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX2	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX3	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX5	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX7	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-LX9 (DMC-LX10, DMC-LX15)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-ZS100 (DMC-ZS110, DMC-TZ100, DMC-TZ101, DMC-TZ110, DMC-TX1)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-ZS40 (DMC-TZ60, DMC-TZ61)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-ZS50 (DMC-TZ70, DMC-TZ71)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX DMC-ZS60 (DMC-TZ80, DMC-TZ81, DMC-TZ85)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Panasonic	LUMIX ZS200 (DC-TX2, DC-TZ200, DC-TZ202, DC-TZ220, DC-ZS220)	verified	PR #215: 178 raw.pixls.us files from 118 Panasonic / Leica bodies, every RW2 format
+Pentax	K-3	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	K-5 IIs	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	K10D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Ricoh	GR III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Samsung	TL500 (EX1)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Sony	A100 (DSLR-A100)	unsupported	issue #702: regression, refused as not a readable photo
+Sony	A200 (DSLR-A200)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A230 (DSLR-A230)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A290 (DSLR-A290)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A300 (DSLR-A300)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A3000 (ILCE-3000)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A33 (SLT-A33)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A330 (DSLR A330)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A35 (SLT-A35)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A350 (DSLR-A350)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A3500 (ILCE-3500)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A37 (SLT-A37)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A380 (DSLR-A380)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A390 (DSLR-A390)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A450 (DSLR-A450)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A500 (DSLR-A500)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A5000 (ILCE-5000)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A5100 (ILCE-5100)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A550 (DSLR-A550)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A55V (SLT-A55V)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies
+Sony	A560 (DSLR-A560)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A57 (SLT-A57)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A58 (SLT-A58)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A580 (DSLR-A580)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6000 (ILCE-6000)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6100 (ILCE-6100)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6300 (ILCE-6300)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6400 (ILCE-6400)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A65 (SLT-A65)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6500 (ILCE-6500)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6600 (ILCE-6600)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A6700 (ILCE-6700)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A68 (ILCA-68)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7 (ILCE-7)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7 II (ILCE-A7M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies
+Sony	A7 III (ILCE-7M3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7 IV (ILCE-7M4)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A700 (DSLR-A700)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A77 (SLT-A77)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A77 II (ILCA-77M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7C (ILCE-7C)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7C II (ILCE-7CM2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7CR (ILCE-7CR)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R (ILCE-7R)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R II (ILCE-7RM2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R III (ILCE-7RM3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R IIIA (ILCE-7RM3A)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R IV (ILCE-7RM4)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R IVA (ILCE-7RM4A)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7R V (ILCE-7RM5)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7S (ILCE-7S)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7S II (ILCE-7SM2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A7s III (ILCE-7SM3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A850 (DSLR-A850)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A9 (ILCE-9)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A9 II (ILCE-9M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A9 III (ILCE-9M3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A900 (DSLR-A900)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	A99 (SLT-A99V)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies
+Sony	A99 II (ILCA-99M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	Alpha 1 (ILCE-1)*	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	DSC-F828	unsupported	issue #702 (SRF refused); SRF not in the import list
+Sony	DSC-HX95	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	DSC-HX99	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	DSC-V3	unsupported	SRF not in the import list
+Sony	FX3 (ILME-FX3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	FX30 (ILME-FX30)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-3	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-3N	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-5	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-5N	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-5R	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-5T	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-6	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-7	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-C3	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	NEX-F3	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	QX1 (ILCE-QX1)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX0 (DSC-RX0)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX0 II (DSC-RX0M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX1 (DSC-RX1)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX10 (DSC-RX10)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX10 II (DSC-RX10M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX10 III (DSC-RX10M3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX10 IV (DSC-RX10M4)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 (DSC-RX100)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 II (DSC-RX100M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 III (DSC-RX100M3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 IV (DSC-RX100M4)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 V (DSC-RX100M5)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 VA (DSC-RX100M5A)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 VI (DSC-RX100M6)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX100 VII (DSC-RX100M7)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX1R (DSC-RX1R)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	RX1R II (DSC-RX1RM2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	ZV-1 (DCZV1/B)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	ZV-E1	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Sony	ZV-E10	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)

@@ -1,0 +1,40 @@
+[package]
+name = "filmcraft-android"
+version = "0.5.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "FilmCraft for Android (tablet): eframe NativeActivity shell around the shared egui app"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+filmcraft-engine = { workspace = true }
+filmcraft-ui-egui = { workspace = true }
+filmcraft-format = { workspace = true }
+filmcraft-media = { workspace = true }
+# eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
+# feature is a compile error with `android-native-activity` (see eframe 0.36.2
+# src/lib.rs), so it is deliberately absent here — unlike the desktop app's
+# dependency, which keeps it. `filmcraft-ui-egui` drops it on Android too (see
+# its Cargo.toml), so no feature unification can re-enable it.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "persistence", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+jni = "=0.22.4"
+ndk-context = "=0.1.1"
+log = { workspace = true }
+android_logger = "0.15"
+serde_json = { workspace = true }
+# cpal 0.16 has an Android (AAudio) backend: playback audio without desktop-only probing.
+cpal = "0.16"
+# Local UTC offset for auto-save file names (the desktop's main.rs uses the same).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Shared Android shell code (updater, GPU cascade, storage, SAF, JNI bridge).
+# NOTE: `../../../../shared` is the suite folder `~/workspace/craftapps-android/shared`
+# (the crate lives directly in it), not a nested crate dir.
+craftapps-shared = { path = "../../../../shared" }
+
+# NOTE: this crate does NOT inherit workspace lints: `unsafe_code = "forbid"`
+# there would rule out the JNI calls an Android shell fundamentally needs.
+# Instead lib.rs denies unwrap/expect/panic/todo like every other crate, and
+# every unsafe block carries a SAFETY comment (the photocraft-tablet pattern).

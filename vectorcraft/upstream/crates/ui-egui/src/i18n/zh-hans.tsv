@@ -1,0 +1,3725 @@
+# Simplified Chinese (zh-hans) catalog. Same format as zh-hant.tsv:  context <TAB> source <TAB> translation
+# (empty context = a plain UI string; `@id` = a command id; `@plural` = "one|other" forms, Chinese
+# has one). `{name}` placeholders must appear in both columns; the trailing "…" is kept.
+#
+# Vocabulary: the terms used in mainland China (文档, 画板, 描边, 色板, 蒙版, 首选项, 快捷键, 默认,
+# 撤销 ...), never Taiwan's (档案, 工作区域, 笔画, 色票, 遮色片, 偏好设定 ...; tested by
+# `zh_hans_is_simplified_and_mainland`), and a row and a column are 行 and 列. Many rows started from
+# this project's own zh-hant catalog. Clean-room: translate from the meaning of the English text; no
+# proprietary localisation resource, string table or product UI may be copied. Product and
+# technology names stay in Latin letters. Full-width punctuation (，。：“”) in sentences, half-width
+# parentheses.
+	Glowing Edges…	发光边缘…
+	Glowing Edges	发光边缘
+	Edge Width	边缘宽度
+	Edge Brightness	边缘亮度
+	Smoothness	平滑度
+
+	  — missing	  — 缺失
+	 to search every command	以搜索所有命令
+	(closest)	(最接近)
+	+ Add Scale	+ 添加缩放
+	0.2 (quality) to 100 (speed)	0.2 (质量) 到 100 (速度)
+	1 Color Job…	1 色作业…
+	1 {unit} on the artboard stands for {real} {unit} in the scene.	画板上的1 {unit}代表场景中的{real} {unit}。
+	2 Color Job…	2 色作业…
+	3 Color Job…	3 色作业…
+	30° Angles	30° 角
+	3D and Materials	3D 与材质
+	3D Ribbon	3D 缎带
+	45° Angles	45° 角
+	60° Angles	60° 角
+	90° & 45° & 30° Angles	90°、45° 和 30° 角
+	90° & 45° Angles	90° 和 45° 角
+	90° Angles	90° 角
+	< 1 sec	< 1 秒
+	<Opacity Mask>	<不透明度蒙版>
+	[1P-High View]	[一点透视-高视角]
+	[1P-Low View]	[一点透视-低视角]
+	[1P-Normal View]	[一点透视-正常视角]
+	[2P-High View]	[两点透视-高视角]
+	[2P-Low View]	[两点透视-低视角]
+	[2P-Normal View]	[两点透视-正常视角]
+	[3P-Low View]	[三点透视-低视角]
+	[3P-Normal View]	[三点透视-正常视角]
+	[Default] is protected: New… starts an editable copy.	[默认] 受保护：“新建…”会创建可编辑的副本。
+	[Unnamed]	[未命名]
+	A File…	文件…
+	A lower value follows the stroke closely; a higher one gives fewer points and smoother curves.	数值较小时紧贴所绘线条，较大时锚点较少、曲线更平滑。
+	A new preset starting from the selected one	以所选预设为基础的新预设
+	A saved copy of the selected preset	所选预设的副本
+	About VectorCraft	关于 VectorCraft
+	above	以上
+	Absolute Position	绝对位置
+	Accurate	精确
+	Abutting	相邻
+	Action {n}	动作 {n}
+	Actions	动作
+	Activate Document	激活文档
+	Active Perspective Plane	活动透视平面
+	Actual Size	实际大小
+	Add	添加
+	Add Anchor (Pen)	添加锚点 (钢笔)
+	Add Anchor Point	添加锚点
+	Add Anchor Point Tool	添加锚点工具
+	Add Anchor Points	添加锚点
+	Add Effect	添加效果
+	Add Freeform Line	添加自由曲线
+	Add Freeform Point	添加自由点
+	Add Guide	添加参考线
+	Add Mesh Line	添加网格线
+	Add New	新建
+	Add New Effect	添加新效果
+	Add New Fill	添加新填色
+	Add New Stroke	添加新描边
+	Add Selected Artwork (Alt: as one asset)	添加所选图稿 (Alt：合为一个资源)
+	Add Selected Artwork as Multiple Assets	将所选图稿添加为多个资源
+	Add Selected Artwork as One Asset	将所选图稿添加为一个资源
+	Add Spine Point	添加脊线点
+	Add Swatches	添加色板
+	Add to Graphic Styles	添加到图形样式
+	Add to Profiles	添加到配置文件
+	Add to Profiles…	添加到配置文件…
+	Add to Selection	添加到选区
+	Add to Swatches	添加到色板
+	Add Used Colors	添加已用颜色
+	Additional Plug-ins Folder	附加增效工具文件夹
+	Additional Fonts Folder	附加字体文件夹
+	Adjust Adjoining Width Points	调整相邻宽度点
+	Adjust Color Balance…	调整色彩平衡…
+	Adjust Colors	调整颜色
+	Adjust Options:	调整选项：
+	Advanced	高级
+	Advanced Options	高级选项
+	Align	对齐
+	Align center	居中对齐
+	Align left	左对齐
+	Align Objects:	对齐对象：
+	Align On:	对齐于：
+	Align right	右对齐
+	Align Stroke to Center	描边对齐中央
+	Align Stroke to Inside	描边对齐内侧
+	Align Stroke to Outside	描边对齐外侧
+	Align Stroke:	描边对齐：
+	Align to Artboard	对齐画板
+	Align to Glyph Bounds	对齐到字形边界
+	Align to Key Object	对齐关键对象
+	Align to Page	对齐页面
+	Align to Path	对齐路径
+	Align to Selection	对齐选区
+	Align To:	对齐到：
+	Align:	对齐：
+	Alignment Guides	对齐参考线
+	Alignment:	对齐：
+	All	全部
+	All Artwork Above	上方所有图稿
+	All Caps	全部大写
+	All Categories	所有类别
+	All colours are within the CMYK gamut	所有颜色皆在 CMYK 色域内
+	All on Active Artboard	当前画板上的所有对象
+	All on Same Layers	同层上的所有对象
+	All printer's marks	所有打印机标记
+	All Text Objects	所有文本对象
+	All the art	所有图稿
+	All Tools	所有工具
+	Alt	Alt
+	Alt:	Alt：
+	Alter Paths for Appearance	为外观改变路径
+	Amount	数量
+	Amount:	数量：
+	Anchor Point	锚点
+	Anchor Point Tool	锚点工具
+	Anchor Points	锚点
+	Anchor Points, Handle, and Bounding Box Display	锚点、手柄和定界框显示
+	Anchor/Path Labels	锚点/路径标签
+	Anchors:	锚点：
+	Angle	角度
+	Angle:	角度：
+	Angles	角度
+	Animated Zoom	动画缩放
+	Anti-alias	消除锯齿
+	Anti-Alias	消除锯齿
+	Anti-alias Rasters	栅格消除锯齿
+	Anti-aliased Artwork	图稿抗锯齿
+	Anti-aliasing:	消除锯齿：
+	Appearance	外观
+	Appearance Attribute	外观属性
+	Appearance Item	外观项目
+	Appearance of Black	黑色外观
+	Appearance Panel	外观面板
+	Appearance panel	外观面板
+	Applies when the linked file is relinked or updated.	在重新链接或更新链接文件时应用。
+	Apply	应用
+	Apply Brush	应用画笔
+	Apply Character Style	应用字符样式
+	Apply Effect	应用效果
+	Apply Graphic Style	应用图形样式
+	Apply Last Color	应用上一次颜色
+	Apply Last Effect	应用上一次效果
+	Apply Last Gradient	应用上一次渐变
+	Apply Paragraph Style	应用段落样式
+	Apply SVG Filter…	应用 SVG 滤镜…
+	Apply to All	应用到全部
+	Apply to All ({count} more missing)	全部应用 (另有 {count} 个缺失)
+	Arc	弧形
+	Arc Lower…	下弧形…
+	Arc Tool	弧形工具
+	Arc Upper…	上弧形…
+	Arch…	拱形…
+	Arc…	弧形…
+	Area / Path Type	区域/路径文字
+	Area Graph Tool	面积图工具
+	Area Text Objects	区域文字对象
+	Area Type Options	区域文字选项
+	Area Type Options…	区域文字选项…
+	Area Type Tool	区域文字工具
+	Around Object	围绕对象
+	Arrange	排列
+	Arrange: Bring to Front	排列：置于顶层
+	Arrowheads:	箭头：
+	Art	图稿
+	Art using a deleted global swatch keeps its colour.	使用已删除全局色板的图稿会保留其颜色。
+	Artboard Options	画板选项
+	Artboard Options: edit with the Artboard tool	画板选项：使用画板工具编辑
+	Artboard Options…	画板选项…
+	Artboard Tool	画板工具
+	Artboard {number}	画板 {number}
+	Artboard:	画板：
+	Artboards	画板
+	ArtCraft Website	ArtCraft 网站
+	ArtCraft website	ArtCraft 网站
+	Artwork Colors	图稿颜色
+	As Multiple Assets	作为多个资源
+	As Single Asset	作为单一资源
+	Ascender	上缘
+	Ask When Modified	修改时询问
+	Aspect Ratio	长宽比
+	Asset Export	资源导出
+	Asset Export Settings	资源导出设置
+	Assets	资源
+	Assign	指定
+	Assign Profile…	指定配置文件…
+	Assign:	指定：
+	Attach to Active Plane	附加到活动平面
+	Attributes	属性
+	Author Title:	作者职务：
+	Author:	作者：
+	Auto	自动
+	Automatic	自动
+	Auto Size New Area Type	自动调整新区域文字大小
+	Auto Spell Check	自动拼写检查
+	Auto-Collapse Iconic Panels	自动折叠图标面板
+	Ellipse Properties:	椭圆属性：
+	Invert Pie	反转扇形
+	Side Length:	边长：
+	Make Sides Equal	使各边等长
+	Pie End Angle:	扇形终止角度：
+	Pie Start Angle:	扇形起始角度：
+	Show Tool Group Labels	显示工具组标签
+	Auto-Rotate (turn the paper to each artboard)	自动旋转 (为每个画板转动纸张)
+	Automatic flatness	自动平滑度
+	Automatically	自动
+	Automatically Save Recovery Data	自动保存恢复数据
+	Automation	自动化
+	Average	平均
+	Average…	平均…
+	Axis:	轴：
+	Background Color:	背景颜色：
+	Background Contents	背景内容
+	Background Contents:	背景内容：
+	Background:	背景：
+	Backspace	Backspace
+	Bar Graph Tool	条形图工具
+	Baseline	基线
+	Baseline Shift	基线偏移
+	Basic Latin	基本拉丁文
+	Batch	批处理
+	Begin Recording	开始记录
+	Bend:	弯曲：
+	Bevel Join	斜角连接
+	Bitmap	位图
+	Black	黑
+	Black and White	黑白
+	Black and White Logo	黑白徽标
+	BLANK DOCUMENT PRESETS	空白文档预设
+	Bleed	出血
+	Bleed:	出血：
+	Bleeds	出血
+	Blend	混合
+	Blend Front to Back	从前到后混合
+	Blend Horizontally	水平混合
+	Blend Info	渐变信息
+	Blend Options	渐变选项
+	Blend Options…	混合选项…
+	Blend Tool	混合工具
+	Blend Vertically	垂直混合
+	Blending Mode	混合模式
+	Blends and Transparency	混合与透明度
+	Bloat Tool	膨胀工具
+	Blob Brush	斑点画笔
+	Blob Brush Tool	斑点画笔工具
+	Blue	蓝
+	Blur	模糊
+	Bottom	下
+	Bottom in Front	下方置前
+	Bottom-to-Bottom Leading	基线至基线行距
+	Burasagari	标点悬挂
+	Force	强制
+	Bottom:	下：
+	Bounds	边界
+	Bounds (Fill Proportionally)	边界 (按比例填满)
+	Bounds (Fit Proportionally)	边界 (按比例符合)
+	Break Link to Graphic Style	断开与图形样式的链接
+	Break Link to Symbol	断开与符号的链接
+	Brick by Column	按列砖形
+	Brick by Row	按行砖形
+	Brick Offset:	砖块偏移：
+	Brightness	亮度
+	Brightness/Contrast…	亮度/对比…
+	Brights	鲜艳色
+	Bring Forward	前移一层
+	Bring to Front	置于顶层
+	Bristle	鬃毛
+	Bristle Brush Strokes	毛刷画笔描边
+	Browser	浏览器
+	Brush Affects:	画笔影响：
+	Brush Definition	画笔定义
+	Brush Libraries	画笔库
+	Brush Libraries (on the roadmap)	画笔库 (规划中)
+	Brush Options…	画笔选项…
+	Brush Strokes	画笔描边
+	Brushes	画笔
+	Built-in Libraries	内置库
+	Built-in presets are read-only: New… starts an editable copy.	内置预设为只读：“新建…”会创建可编辑的副本。
+	Built-in presets don't change: New makes a copy you can edit.	内置预设不会改变：按“新建”会生成可编辑的副本。
+	Built-in presets don't change: New… starts an editable copy.	内置预设不会变动：“新建…”会创建可编辑的副本。
+	Bulge…	鼓起…
+	Bullet	项目符号
+	Butt Cap	平头端点
+	Byte Order:	字节顺序：
+	Calligraphic	书法
+	Can't print these settings: see the Summary	无法打印这些设置：请参阅摘要
+	Cancel	取消
+	Cancel Key Object	取消关键对象
+	Canvas Color	画布颜色
+	Cap	端点
+	Cap:	端点：
+	Cascade	层叠
+	Center Artwork	居中图稿
+	Center on Artboard	在画板上居中
+	Center-Justified Tab	居中对齐制表位
+	Centimeters	厘米
+	Change	更改
+	Change All	全部更改
+	Change Case	更改大小写
+	Change Screen Mode (F)	更改屏幕模式 (F)
+	Change to Global Rulers	更改为全局标尺
+	Change to Right-to-Left Layout	更改为由右至左版面配置
+	Changed since the last Refresh.	自上次刷新后已更改
+	Changes allowed:	允许的更改：
+	Changes made since it was last saved will be lost.	自上次存储后所做的更改将会丢失。
+	Changing these settings changes how raster effects look when exported, flattened or expanded.	更改这些设置会改变栅格效果在导出、拼合或扩展时的外观。
+	Channel	色版
+	Character	字符
+	Character Alignment	字符对齐
+	Character / Paragraph	字符/段落
+	Character Rotation	字符旋转
+	Character Set:	字符集：
+	Character Style	字符样式
+	Character Style Options	字符样式选项
+	Character Styles	字符样式
+	Check Links	检查链接
+	Check Spelling…	检查拼写…
+	Choose a folder	选择文件夹
+	Choose…	选择…
+	Circle	圆形
+	Classic Defaults	经典默认
+	Clean Up…	清理…
+	Clear	清除
+	Clear All Tabs	清除全部制表位
+	Above Text	文本上方
+	Position Panel Above Text	将面板置于文本上方
+	Clear Appearance	清除外观
+	Clear Guides	清除参考线
+	Clear Overrides	清除覆盖
+	Clear Recent Files	清除最近文件
+	Click	单击
+	Click an anchor point	单击锚点
+	Click or drag	单击或拖动
+	Click the art with the Gradient tool to add or select points.	使用渐变工具单击图稿以添加或选择点。
+	Click the first point	单击第一个点
+	Click the ramp or a type button to apply a gradient.	单击渐变条或类型按钮以应用渐变。
+	Click to add a tab stop, drag to move it, drag it off the ruler to delete it	单击添加制表位，拖动移动，拖出标尺删除
+	Click to choose a swatch, Shift-click to mix a colour	单击选择色板，Shift+单击以混合颜色
+	Click to edit the mask; Alt-click to view only the mask; Shift-click to disable or enable it	点击以编辑蒙版；Alt+点击仅查看蒙版；Shift+点击可停用或启用
+	Click to place each file at 100%, or drag to size it; arrow keys switch files, Esc skips one.	单击按 100% 置入每个文件，或拖动以设置大小；方向键切换文件，Esc 跳过。
+	Click to select, double-click to edit	单击以选择，双击以编辑
+	Click to toggle visibility	单击以切换可见性
+	Click to zoom in, Alt-click to zoom out, drag to pan, double-click to fit	单击放大，Alt+单击缩小，拖动平移，双击适合窗口
+	Client-side (.html)	客户端 (.html)
+	Clip	剪切
+	Clip Complex Regions	剪切复杂区域
+	Clip to Art	剪切到图稿
+	Clip to Artboard	裁剪到画板
+	Clip to Bounding Box	剪切到定界框
+	Clipboard as PDF	剪贴板复制为 PDF
+	Clipboard as PNG	剪贴板复制为 PNG
+	Clipboard as SVG	剪贴板复制为 SVG
+	Clipboard as Text	剪贴板复制为文本
+	Clipboard Formats	剪贴板格式
+	Clipboard Handling	剪贴板处理
+	Clipping Mask	剪切蒙版
+	Clipping Masks	剪切蒙版
+	Close	关闭
+	Close All	全部关闭
+	Close Library	关闭库
+	Close Path	闭合路径
+	Close paths when ends are within:	端点相距在以下范围内时闭合路径：
+	Cmd	Cmd
+	CMYK	CMYK
+	CMYK Color	CMYK 颜色
+	CMYK colours print with their own values; off, they go through the colour settings too.	CMYK 颜色以其本身的数值打印；关闭时，也会经过色彩设置处理。
+	Collate	逐份打印
+	Collect for Export	收集以导出
+	Collect in New Layer	收集到新图层
+	Collect Links in a Separate Folder	将链接收集到单独的文件夹
+	Color	颜色
+	Color (,)	颜色 (,)
+	Color Adjustments	色彩调整
+	Color bars	色彩条
+	Color blindness – Deuteranopia-type	色盲 – 绿色盲型
+	Color blindness – Protanopia-type	色盲 – 红色盲型
+	Color Burn	颜色加深
+	Color conversion:	色彩转换：
+	Color Dodge	颜色减淡
+	Color Group	颜色组
+	Color Group:	颜色组：
+	Color Group: {name}	颜色组：{name}
+	Color Guide	颜色参考
+	Color Guide Options	颜色参考选项
+	Color Guide Options…	颜色参考选项…
+	Color images	彩色图像
+	Color Library	颜色库
+	Color Library…	颜色库…
+	Color Management	颜色管理
+	Color Mixer (Shift-click the chip)	颜色混合器 (Shift+单击色块)
+	Color Mode	颜色模式
+	Color Mode:	颜色模式：
+	Color Model:	颜色模型：
+	Color Models	颜色模型
+	Color Picker	拾色器
+	Color Picker…	颜色选择器…
+	Color Reduction:	色彩缩减：
+	Color Settings	颜色设置
+	Color Settings…	颜色设置…
+	Color Space	色彩空间
+	Color Swatches	色板
+	Color Table	颜色表
+	Color Table ({n} color)	颜色表 ({n} 色)
+	Color Table ({n} colors)	颜色表 ({n} 色)
+	Color Theme	色彩主题
+	Color Themes	颜色主题
+	Color Type:	颜色类型：
+	Color:	颜色：
+	Colorize	上色
+	Colors	颜色数
+	Colors:	颜色：
+	Column Graph Tool	柱形图工具
+	Columns:	列数：
+	Column…	列…
+	Combine Slices	组合切片
+	Coming soon — tracked in the parity plan	即将推出 — 在对标计划中跟踪
+	Command Click to Select Objects Behind	按住 Command 单击选择后方对象
+	Command Dialog	命令对话框
+	Community	社区
+	Compatibility:	兼容性：
+	Compatible Gradient and Gradient Mesh Printing	兼容渐变和渐变网格打印
+	Complement	反选
+	Complexity:	复杂度：
+	Composite colours are converted to it; separations separate with it when it is a CMYK profile.	复合颜色会转换为此配置文件；其为 CMYK 配置文件时，分色也会使用它。
+	Compound Path	复合路径
+	Compress (RLE)	压缩 (RLE)
+	Compress text and line art	压缩文字与线条图
+	Compression	压缩
+	Compression › Color › Above Ppi	压缩 › 颜色 › 高于 ppi
+	Compression:	压缩：
+	Condition identifier:	条件识别码：
+	Conflict {n} of {count}	冲突 {n}／{count}
+	Connect Selected End Points	连接所选端点
+	Consolidate All Windows	合并所有窗口
+	Constrain Angle	约束角度
+	Constrain Width and Height Proportions	约束宽高比例
+	Construction Guides	构造参考线
+	Contextual Alternates	上下文替代
+	Contextual Task Bar	上下文任务栏
+	Pin Bar Position	固定任务栏位置
+	Reset Bar Position	重置任务栏位置
+	Contrast	对比
+	Control	控制栏
+	Convert	转换
+	Convert All Spot Colors to Process	将所有专色转换为印刷色
+	Convert All Strokes to Outlines	将所有描边转换为轮廓
+	Convert All Text to Outlines	将所有文字转换为轮廓
+	Convert Anchor Point	转换锚点
+	Convert Anchor Points	转换锚点
+	Convert Color	转换颜色
+	Convert Document Color Mode	转换文档颜色模式
+	Convert Process to Global	将印刷色转换为全局色
+	Convert Selected Anchor Points to Corner	将所选锚点转换为尖角
+	Convert Selected Anchor Points to Smooth	将所选锚点转换为平滑
+	Convert text to outlines	将文字转换为轮廓
+	Convert To Area Type	转换为区域文字
+	Convert to Artboards	转换为画板
+	Convert to CMYK	转换为 CMYK
+	Convert to Grayscale	转换为灰度
+	Convert To Outlines	转换为轮廓
+	Convert To Point Type	转换为点文字
+	Convert to RGB	转换为 RGB
+	Convert to Shape	转换为形状
+	Convert to sRGB	转换为 sRGB
+	Convert:	转换：
+	Copied the CSS of {rules} object(s)	已复制 {rules} 个对象的 CSS
+	Copies:	份数：
+	Copy	复制
+	Copy (make a transformed copy)	复制 (制作变换后的副本)
+	Copy All Objects	复制所有对象
+	Copy All Styles	复制所有样式
+	Copy Color Value (Hex)	复制颜色值 (十六进制)
+	Copy Fonts Used in the Document	复制文档中使用的字体
+	Copy Links	复制链接
+	Copy Selected Style	复制所选样式
+	Copy to User Defined	复制到用户定义
+	Copy Width Point	复制宽度点
+	Copyright	版权
+	Copyright Info URL:	版权信息 URL：
+	Copyright Notice:	版权声明：
+	Copyright Status:	版权状态：
+	Copyright Symbol	著作权符号
+	Corner Radius	圆角半径
+	Corner Radius:	圆角半径：
+	Corner:	转角：
+	Corners	转角
+	Cut Path	切割路径
+	Descender	下缘
+	Flip	翻转
+	Round	圆角
+	Inverted Round	反向圆角
+	Corners…	转角…
+	Chamfer	倒角
+	Couldn't copy to the system clipboard: {e}	无法复制到系统剪贴板：{e}
+	Couldn't paste from the clipboard: {e}	无法从剪贴板粘贴：{e}
+	Couldn't save recovery data: {e}	无法存储恢复数据：{e}
+	Couldn't {} {name}: {e}	无法{} {name}：{e}
+	Create	创建
+	Create Clipping Mask	创建剪切蒙版
+	Create Document	创建文档
+	Create from Guides	从参考线创建
+	Create from Selection	从选区创建
+	Create From:	创建自：
+	Create Gradient Mesh…	创建渐变网格…
+	Create Graph	创建图表
+	Create New Layer	创建新图层
+	Create New Sublayer	创建新子图层
+	Create New Swatch…	新建色板…
+	Create New {kind} Style	创建新的{kind}样式
+	Create Object Mosaic…	创建对象马赛克…
+	Create Outlines	创建轮廓
+	Create Path	创建路径
+	Create PDF layers from layers and sublayers	从图层和子图层创建 PDF 图层
+	Create PDF-Compatible File	创建与 PDF 兼容的文件
+	Create Report	创建报告
+	Create Slice	创建切片
+	Create Sub-folders	创建子文件夹
+	Create Text	创建文字
+	Create Trim Marks	创建裁切标记
+	Created	创建时间
+	Created:	创建时间：
+	Crop	裁剪
+	Crop Image	裁剪图像
+	Mask	蒙版
+	Crop Marks	裁切标记
+	Crop To	裁剪到
+	Crystallize Tool	晶格化工具
+	CSS Properties	CSS 属性
+	Ctrl	Ctrl
+	Currency & Symbols	货币与符号
+	Current Brush	当前画笔
+	Current Colors ({total})	当前颜色 ({total})
+	Current Symbol	当前符号
+	Curvature	曲率
+	Curvature Tool	曲率工具
+	Curves…	曲线…
+	Custom	自定义
+	Customize…	自定义…
+	Cut	剪切
+	Cut Path at Selected Anchor Points	在所选锚点处切割路径
+	Cyan	青
+	Dark	深色
+	Darken	变暗
+	dash	虚线
+	Dash Pattern	虚线样式
+	Dashed	虚线
+	Dashed Line	虚线
+	Data Recovery	数据恢复
+	Data…	数据…
+	Dates	日期
+	Decimal-Justified Tab	小数点对齐制表位
+	Decimal:	小数：
+	Default	默认
+	Default Actions	默认动作
+	Default Figure	默认数字
+	Default Fill and Stroke	默认填色和描边
+	Default Fill and Stroke (D)	默认填色和描边 (D)
+	Default Language	默认语言
+	Default Printer	默认打印机
+	Default Swatches	默认色板
+	Define Grid…	定义网格…
+	Define Perspective Grid	定义透视网格
+	Define Perspective Grid…	定义透视网格…
+	Delete	删除
+	Delete All	全部删除
+	Delete Anchor Point	删除锚点
+	Delete Anchor Point Tool	删除锚点工具
+	Delete Artboard	删除画板
+	Delete Artboards	删除画板
+	Delete Brush	删除画笔
+	Delete Character Style	删除字符样式
+	Delete Empty Artboards	删除空白画板
+	Delete Freeform Point	删除自由点
+	Delete Graphic Style	删除图形样式
+	Delete Graphic Style (Alt-click: without asking)	删除图形样式 (Alt+点击：不询问)
+	Delete Layer	删除图层
+	Delete Mesh Point	删除网格点
+	Delete Paragraph Style	删除段落样式
+	Delete Pattern	删除图案
+	Delete PDF Preset	删除 PDF 预设
+	Delete Perspective Grid Preset	删除透视网格预设
+	Delete Point	删除点
+	Delete Preset	删除预设
+	Delete Print Preset	删除打印预设
+	Delete Profile	删除配置文件
+	Delete Save for Web Preset	删除 Web 预设
+	Delete Selected Item	删除所选项目
+	Delete Selection	删除选区
+	Delete Slices	删除切片
+	Delete Spine Point	删除脊线点
+	Delete Stop	删除色标
+	Delete Swatch	删除色板
+	Delete Symbol	删除符号
+	Delete Tab	删除制表位
+	Delete the graphic style “{name}”?	要删除图形样式“{name}”吗？
+	Delete Theme	删除主题
+	Delete theme	删除主题
+	Delete these {count} swatches and groups?	要删除这 {count} 个色板和编组吗？
+	Delete these {n} graphic styles?	要删除这 {n} 个图形样式吗？
+	Delete this saved preset	删除此已存储的预设
+	Delete this {n} graphic style?	要删除这 {n} 个图形样式吗？
+	Delete Transparency Flattener Preset	删除透明度拼合器预设
+	Delete Width Point	删除宽度点
+	Delete Workspace	删除工作区
+	Delete {kind} Style	删除{kind}样式
+	Delete “{name}”?	要删除“{name}”吗？
+	Depth:	深度：
+	Description	描述
+	Description:	说明：
+	Deselect	取消选择
+	Design…	设计…
+	Destination:	目的地：
+	Detail:	细节：
+	Devices	设备
+	Dialog	对话框
+	Diamond	菱形
+	Difference	差值
+	Differences from {preset}:	与{preset}的差异：
+	Dim Copies to:	将拷贝调暗至：
+	Dimensions	尺寸
+	Direct Selection Tool	直接选择工具
+	Direction Handles	方向手柄
+	Disable Auto Add/Delete	禁用自动添加/删除锚点
+	Disable Opacity Mask	禁用不透明度蒙版
+	Discard	不存储
+	Discard Empty Type	丢弃空文字
+	Discard Recovered Documents	丢弃已恢复的文档
+	Discard White Overprint in Output	输出时放弃白色叠印
+	Discarded {} recovered document(s)	已放弃 {} 份恢复的文档
+	Discord	Discord
+	Discretionary Hyphen	选择性连字号
+	Discretionary Ligatures	任意连字
+	Display All Blacks Accurately	准确显示所有黑色
+	Display All Blacks as Rich Black	将所有黑色显示为复合黑
+	Display Bitmaps as Anti-aliased Images in Pixel Preview	像素预览中抗锯齿显示位图
+	Display Options	显示选项
+	Display Print Size at 100% Zoom	100% 缩放时显示打印尺寸
+	Distort & Transform	扭曲与变形
+	Distort Appearance	扭曲外观
+	Distort Linear Gradients	扭曲线性渐变
+	Distort Pattern Fills	扭曲图案填色
+	Distortion	扭曲
+	Distribute	分布
+	Distribute Objects:	分布对象：
+	Distribute Spacing	按间距分布
+	Distribute Spacing:	分布间距：
+	Dither:	仿色：
+	Divide	分割
+	Divide Horizontally Into	水平分割为
+	Divide Objects Below	分割下方对象
+	Divide Slices	划分切片
+	Divide Slices…	切分切片…
+	Divide Vertically Into	垂直分割为
+	Do Not Move	不移动
+	Do you want to save the changes you made to “{name}”?	要存储对“{name}”所做的更改吗？
+	Can't open “{name}”.	无法打开“{name}”。
+	Document	文档
+	Document Color Mode	文档颜色模式
+	Document Info	文档信息
+	Document Ink Options	文档油墨选项
+	Document JSON	文档 JSON
+	Document open password	文档打开口令
+	Document profile	文档配置文档
+	Document Raster Effects Settings	文档栅格效果设置
+	Document Raster Effects Settings Dialog	文档栅格效果设置对话框
+	Document Raster Effects Settings…	文档栅格化效果设置…
+	Document Setup	文档设置
+	Document Setup…	文档设置…
+	Document Swatches	文档色板
+	Document Title:	文档标题：
+	Documents you create appear here.	创建过的文档将显示在这里。
+	Don't Save	不存储
+	Don't Show Center	不显示中心点
+	Done	完成
+	Dots	点线
+	Double Click To Isolate	双击进入隔离模式
+	Double Left Quotation Marks	左双引号
+	Double Quotes:	双引号：
+	Double Right Quotation Marks	右双引号
+	Double-click	双击
+	Double-click to edit the characters' paint	双击以编辑字符的上色
+	Double-click to insert	双击以插入
+	Double-click to rename	双击以重命名
+	Double-click to target the contents	双击以指定内容
+	Download	下载
+	Download:	下载：
+	Downloaded {what}	已下载 {what}
+	Downloaded {} file(s)	已下载 {} 个文件
+	Drag	拖动
+	Drag a handle	拖动控制手柄
+	Drag art here, or select it and click +. Hold Alt for one asset of several objects.	将图稿拖到此处，或选择图稿后单击 +。按住 Alt 可将多个对象合并为一个资源。
+	Drag onto art to apply this appearance	拖到图稿上以应用此外观
+	Drag the art to move it on the paper	拖动图稿以在纸张上移动
+	Draw	绘制
+	Draw Behind	背面绘图
+	Draw in Perspective	在透视中绘制
+	Draw Inside	内部绘图
+	Draw Normal	正常绘图
+	Draw:	绘制：
+	Drawing Mode	绘图模式
+	Drop Shadow	制作阴影
+	Drop Shadow…	阴影…
+	Duotone Gradients	双色调渐变
+	Duplicate	复制
+	Duplicate and Offset 10 pt	复制并偏移 10 pt
+	Duplicate Artboard	复制画板
+	Copy Artboard	拷贝画板
+	Cut Artboard	剪切画板
+	Duplicate Artboards	复制画板
+	Duplicate Brush	复制画笔
+	Duplicate Character Style	制作字符样式副本
+	Duplicate Effect	复制效果
+	Duplicate Graphic Style	复制图形样式
+	Duplicate Item	复制项目
+	Duplicate Layer	复制图层
+	Duplicate Paragraph Style	制作段落样式副本
+	Duplicate Selected Item	制作所选项目的副本
+	Duplicate Slice	复制切片
+	Duplicate Swatch	复制色板
+	Duplicate Symbol	复制符号
+	Duplicate {kind} Style	制作{kind}样式的副本
+	Dutch	荷兰语
+	DXF Import Options	DXF 导入选项
+	DXF Info	DXF 信息
+	DXF Options	DXF 选项
+	DXF Options Dialog	DXF 选项对话框
+	e.g. 1-3, 5	例如 1-3, 5
+	Each page prints as one image, at the document's raster effects resolution.	每页会以文档的栅格效果分辨率打印为单一图像。
+	Earth Tones	大地色
+	East Asian Type	东亚文字
+	Edit	编辑
+	Edit Artboards	编辑画板
+	Edit Clipping Path	编辑剪切路径
+	Edit Color Group	编辑颜色组
+	Edit Colors	编辑颜色
+	Edit Contents	编辑内容
+	Edit Custom Dictionary…	编辑自定义词典…
+	Edit Envelope	编辑封套
+	Edit Freeform Point	编辑自由点
+	Edit Gradient	编辑渐变
+	Edit Opacity Mask	编辑不透明度蒙版
+	Edit or Apply Color Group	编辑或应用颜色组
+	Edit or Apply Color Group…	编辑或应用颜色组…
+	Edit or Apply Colors	编辑或应用颜色
+	Edit Original	编辑原稿
+	Edit Pattern	编辑图案
+	Edit PDF Preset	编辑 PDF 预设
+	Edit Print Preset	编辑打印预设
+	Edit selected paths within:	在以下范围内编辑所选路径：
+	Edit Selection…	编辑所选对象…
+	Edit Symbol	编辑符号
+	Edit Text	编辑文字
+	Edit the applied effect, or add another one?	编辑已应用的效果，还是再添加一个？
+	Edit the selected point's colour in the Color panel	在颜色面板中编辑所选点的颜色
+	Edit the stop	编辑色标
+	Edit Theme	编辑主题
+	Edit theme	编辑主题
+	Edit Toolbar	编辑工具栏
+	Edit Views	编辑视图
+	Edit Views…	编辑视图…
+	Edit…	编辑…
+	Effect	效果
+	Effect Options	效果选项
+	Effective PPI	有效 PPI
+	Effects	效果
+	Effect…	效果…
+	Ellipse	椭圆
+	Ellipse Tool	椭圆工具
+	Ellipse…	椭圆形…
+	Ellipsis	删节号
+	Em Box Bottom/Left	全角字框下 / 左
+	Em Box Center	全角字框居中
+	Em Box Top/Right	全角字框上 / 右
+	ICF Top/Right	ICF 上 / 右
+	ICF Bottom/Left	ICF 下 / 左
+	Em Dash	长破折号
+	Em Space	全角空格
+	Embed	嵌入
+	Embed Fonts (for other applications)	嵌入字体 (供其他应用程序使用)
+	Embed Fonts (Glyphs Used)	嵌入字体 (所用字形)
+	Embed ICC Profile	嵌入 ICC 配置文件
+	Embed ICC Profiles	嵌入 ICC 配置文件
+	Embed Image	嵌入图像
+	Embed Image(s)	嵌入图像
+	Embed page thumbnails	嵌入页面缩略图
+	Embedded	嵌入
+	Embedded Image	嵌入的图像
+	Embedded {n} image(s)	已嵌入 {n} 张图像
+	Embedded {n} image(s); {missing} missing: relink them first	已嵌入 {n} 张图像；{missing} 张缺失：请先重新链接
+	Emulsion:	药膜：
+	En Dash	短破折号
+	En Space	半角空格
+	Enable Background Export	启用后台导出
+	Enable Background Save	启用后台保存
+	Enable Contextual Task Bar	启用上下文任务栏
+	Enable copying of text, images and other content	启用复制文字、图像与其他内容
+	Enable in-menu font previews	启用菜单内字体预览
+	Enable Missing Glyph Protection	启用缺字保护
+	Enable Opacity Mask	启用不透明度蒙版
+	Enable plaintext metadata	启用纯文本元数据
+	Enable Rubber Band for	为这些工具启用橡皮筋预览
+	Enable text access for screen readers	启用屏幕阅读器的文字访问
+	Enable Touch Gestures	启用触控手势
+	Enable Touch Workspace	启用触控工作区
+	Encoding	编码
+	Encoding:	编码：
+	Encryption: {name} (set by Compatibility)	加密：{name} (由兼容性设置)
+	End arrowhead	结尾箭头
+	English	English
+	English: UK	英语：英国
+	English: USA	英语：美国
+	Enter	回车
+	Enter Isolation Mode	进入隔离模式
+	Entire Font	整个字体
+	Envelope Distort	封套扭曲
+	Envelope Info	封套信息
+	Envelope Mesh	封套网格
+	Envelope Options	封套选项
+	Envelope Options…	封套选项…
+	EPS Options	EPS 选项
+	EPS Options Dialog	EPS 选项对话框
+	Eraser	橡皮擦
+	Eraser Tool	橡皮擦工具
+	Error	错误
+	Esc	Esc
+	Essentials	基本功能
+	Essentials Classic	基本功能 (经典)
+	Every (minutes)	每隔 (分钟)
+	Every option is at its default.	所有选项皆为默认值。
+	Every option matches {base}.	所有选项皆与{base}相同。
+	Every-line Composer	逐行排版器
+	Exact dash lengths	精确虚线长度
+	Exceptions (comma separated)	例外词 (逗号分隔)
+	Exclude	差集
+	Exclusion	排除
+	Exit Isolation Mode	退出隔离模式
+	Expand	扩展
+	Expand Appearance	扩展外观
+	Expand applies to compound shapes (Alt-click a shape mode) — on the roadmap	扩展仅适用于复合形状 (Alt+单击形状模式)——已在路线图中
+	Expand Brush Strokes	扩展画笔描边
+	Expand Compound Shape	扩展复合形状
+	Expand Gradient Mesh	扩展渐变网格
+	Expand Gradient To	扩展渐变到
+	Expand Options	展开选项
+	Expand Repeat	展开重复
+	Expand Shape	扩展形状
+	Expand:	展开：
+	Expand…	扩展…
+	Export	导出
+	Export All…	导出全部…
+	Export and Clipboard Transparency Flattener Settings	导出与剪贴板透明度拼合器设置
+	Export Artboard	导出画板
+	Export As	导出为
+	Export As PNG…	导出为 PNG…
+	Export As SVG…	导出为 SVG…
+	Export Asset	导出资源
+	Export Assets	导出资源
+	Export As…	导出为…
+	Export CSS	导出 CSS
+	Export CSS…	导出 CSS…
+	Export Document	导出文档
+	Export DXF	导出 DXF
+	Export EPS	导出 EPS
+	Export for Screens	导出为屏幕所用格式
+	Export for Screens Settings	导出为屏幕所用格式设置
+	Export for Screens…	导出为屏幕所用格式…
+	Export Keyboard Shortcuts…	导出键盘快捷键…
+	Export Option	导出选项
+	Export PDF	导出 PDF
+	Export PDF Presets	导出 PDF 预设
+	Export Perspective Grid Presets	导出透视网格预设
+	Export Print Presets	导出打印预设
+	Export Selected Art Only	仅导出所选图稿
+	Export Selected CSS…	导出所选 CSS…
+	Export Selection…	导出所选对象…
+	Export Settings	导出设置
+	Export the selected assets (else all of them)	导出所选资源 (否则导出全部)
+	Export to:	导出到：
+	Export Transparency Flattener Presets	导出透明度拼合器预设
+	Export {count} Selected	导出 {count} 个选择项目
+	Export:	导出：
+	Exported {count} file(s) to {folder}	已导出 {count} 个文件至 {folder}
+	Exported {path}	已导出 {path}
+	Exported {what}	已导出 {what}
+	Exported {what} with {} note(s): {first}	已导出 {what}，附 {} 条附注：{first}
+	Exporting {}	正在导出 {}
+	Export…	导出…
+	Extrude & Bevel…	突出与斜角…
+	Eyedropper	吸管
+	Eyedropper Applies:	吸管应用：
+	Eyedropper Options	吸管选项
+	Eyedropper Picks Up:	吸管拾取：
+	Eyedropper Tool	吸管工具
+	Eyedropper: click the art to sample the stop's colour	吸管：点击图稿以取样色标的颜色
+	Feather…	羽化…
+	Feet	英尺
+	Feet & Inches	英尺和英寸
+	Fewer <tspan> Elements	更少的 <tspan> 元素
+	Fidelity:	精确度：
+	Figure Space	数字空格
+	Figure:	数字：
+	File	文件
+	File Dimensions	文件尺寸
+	File Format:	文件格式：
+	File Formats	文件格式
+	File Handling	文件处理
+	File Info	文件信息
+	File Info Dialog	文件信息对话框
+	File Info…	文件信息…
+	File Name:	文件名称：
+	File › Place… brings in an image, linked or embedded.	“文件 › 置入…”可引入图像 (链接或嵌入)。
+	Files	文件
+	Files of a PDF standard can't be password-protected.	PDF 标准的文件无法设置密码保护。
+	Files of this standard tag their colours with ICC profiles.	此标准的文件会以 ICC 配置文件标记颜色。
+	Fill	填色
+	Fill & Stroke	填色和描边
+	Fill (X), double-click for the Color Picker	填色 (X)，双击打开拾色器
+	Fill and Stroke	填色和描边
+	Fill new strokes	为新描边应用填色
+	Fill Color	填色
+	Fill New Type Objects With Placeholder Text	用占位文本填充新文字对象
+	Fill Rule	填充规则
+	Fill with Placeholder Text	用占位文本填充
+	Insert Inline Symbol	插入行内符号
+	Fill:	填色：
+	Fill: click for swatches, Shift-click for the color mixer	填色：单击开启色板，按住 Shift 单击开启混色器
+	Find	查找
+	Find and Replace…	查找和替换…
+	Find Font	查找字体
+	Find Font…	查找字体…
+	Find Next	查找下一个
+	Find Objects	查找对象
+	First Page	第一页
+	First-line Left Indent	首行左缩进
+	Fisheye…	鱼眼…
+	Fish…	鱼形…
+	Fit All	符合全部
+	Fit All in Window	全部适合窗口
+	Fit Artboard in Window	使画板适合窗口
+	Fit dashes to corners and ends	让虚线贴合转角与端点
+	Fit Headline	适合标题
+	Decrease Font Size	减小字体大小
+	Increase Font Size	增大字体大小
+	Spacing	间距
+	Step Type	按增量调整文字
+	Fit in View	适合视图
+	Fit in Window	适合窗口
+	Fit on Screen	显示全页
+	Fit to Artwork Bounds	适合图稿边界
+	Fit to Selected Art	适合所选图稿
+	Flag…	旗形…
+	Flare	光晕
+	Flare Tool	光晕工具
+	Flare Tool Options	光晕工具选项
+	Halo	光晕
+	Rays	射线
+	Rings	光环
+	Diameter:	直径：
+	Brightness:	亮度：
+	Growth:	增大：
+	Fuzziness:	模糊度：
+	Number:	数量：
+	Longest:	最长：
+	Path:	路径：
+	Largest:	最大：
+	Direction:	方向：
+	Symbolism Tools Options	符号工具选项
+	Symbol Set Density:	符号组密度：
+	Flat Image	平面图像
+	Flatness:	平滑度：
+	Flatten Transparency	拼合透明度
+	Flatten Transparency…	拼合透明度…
+	Flattener preset:	拼合预设：
+	Flattener presets	拼合预设
+	Flattener Preview	拼合预览
+	Flip Across	跨轴翻转
+	Flip Along	沿轴翻转
+	Flip Along Horizontal Axis	沿水平轴翻转
+	Flip Along Vertical Axis	沿垂直轴翻转
+	Flip Horizontal	水平翻转
+	Flip Row Order	反转行顺序
+	Flip Vertical	垂直翻转
+	Float in Window	在窗口中浮动
+	Focal Fill	焦点填色
+	Focal Stroke	焦点描边
+	Folder	文件夹
+	Folder Name:	文件夹名称：
+	Font	字体
+	Font Family	字体系列
+	Font Family & Style	字体系列和样式
+	Font Family, Style & Size	字体系列、样式和字号
+	Font List	字体列表
+	Font Preview Size	字体预览大小
+	Font Size	字号
+	Font:	字体：
+	Fonts	字体
+	Fonts in Document	文档中的字体
+	Fonts in Document: {count}	文档中的字体：{count}
+	Fonts whose licence doesn't allow embedding are not copied.	许可证不允许嵌入的字体不会被复制。
+	Forced Line Break	强制换行
+	Format	格式
+	Format Options	格式选项
+	Format Settings	格式设置
+	Format:	格式：
+	Formats:	格式：
+	Fractional Widths	比例宽度
+	Fractions	分数字
+	Free	自由
+	Free Distort	自由变形
+	Free Distort…	随意扭曲…
+	Free Transform Tool	自由变换工具
+	Freeform Gradient	自由渐变
+	French	法语
+	Frequencies and angles are the output device's to apply.	频率与角度由输出设备负责应用。
+	Frequency	频率
+	Full Document	整个文档
+	Full Screen Mode	全屏模式
+	Full Screen Mode with Menu Bar	含菜单栏的全屏模式
+	Gamma	灰度系数
+	Gamut Check	色域检查
+	Gamut Warning	色域警告
+	gap	间隔
+	Gap Options…	间隙选项…
+	Gaussian Blur…	高斯模糊…
+	General	常规
+	General › Placement › X	一般 › 位置 › X
+	General › Thumbnails	一般 › 缩略图
+	Generate CSS	生成 CSS
+	Generate CSS: the whole document's CSS while nothing is selected	生成 CSS：未选择任何对象时，生成整份文档的 CSS
+	German	德语
+	Get Preferences	获取首选项
+	Get Text Range	获取文本范围
+	Global	全局
+	Global Brush Dimensions	全局画笔尺寸
+	Global Process Color	全局印刷色
+	Global Process Color, CMYK	全局印刷色，CMYK
+	glyph {id}	字符 {id}
+	Glyphs	字形
+	Go to Artboard	前往画板
+	Go To Link	转到链接
+	GPL palettes keep solid colours only, as RGB.	GPL 调板仅保留为 RGB 的纯色。
+	GPU Performance	GPU 性能
+	Gradient	渐变
+	Gradient (.)	渐变 (.)
+	Gradient across stroke	横跨描边的渐变
+	Gradient along stroke	沿描边的渐变
+	Gradient and Mesh Resolution:	渐变和网格分辨率：
+	Gradient Fill: click to apply, drag onto art	渐变填色：单击以应用，拖到图稿上
+	Gradient Finishes	渐变质感
+	Gradient Mesh	渐变网格
+	Gradient swatches	渐变色板
+	Gradient Tool	渐变工具
+	Gradient Vector	渐变矢量
+	Gradient within stroke	描边内的渐变
+	Gradients	渐变
+	Graph	图表
+	Graph Data	图表数据
+	Graph Type	图表类型
+	Graphic Style	图形样式
+	Graphic Style Libraries	图形样式库
+	Graphic Style Libraries Menu	图形样式库菜单
+	Graphic Style Library	图形样式库
+	Graphic Style Options	图形样式选项
+	Graphic Style Options…	图形样式选项…
+	Graphic Styles	图形样式
+	Graphic Styles Options	图形样式选项
+	Graphics	图形
+	Gravity	重力
+	Grays	灰度级数
+	Grays and Neutrals	灰色和中性色
+	Grayscale	灰度
+	Flat Logo	扁平徽标
+	Grayscale images	灰度图像
+	Greek & Cyrillic	希腊文与西里尔文
+	Green	绿
+	Grid	网格
+	Grid Color & Opacity	网格颜色与不透明度
+	Grid Colors:	网格颜色：
+	Grid Size:	网格大小：
+	Gridline every	网格线间隔
+	Gridline every:	网格线间隔：
+	Grids In Back	网格置于后方
+	Group	编组
+	Group Selection Tool	编组选择工具
+	Guides	参考线
+	Guides & Grid	参考线和网格
+	H Spacing:	水平间距：
+	H:	H：
+	Hair Space	极细空格
+	Hand Tool	抓手工具
+	Hand-Drawn	手绘
+	Handles	手柄
+	Hard Light	强光
+	Harmony Rules:	协调规则：
+	Harmony Sets	色彩调和组
+	Height	高度
+	Height:	高度：
+	Help	帮助
+	Help › Search Commands…	帮助 › 搜索命令…
+	Hex by Column	按列六边形
+	Hex by Row	按行六边形
+	Hide	隐藏
+	Hide Artboards	隐藏画板
+	Hide Bounding Box	隐藏定界框
+	Hide Code	隐藏代码
+	Hide Bar	隐藏任务栏
+	More Options	更多选项
+	Show Properties Panel	显示属性面板
+	Hide Corner Widget	隐藏角控件
+	Hide Corner Widget for angles greater than	角度大于此值时隐藏圆角控件
+	Hide Edges	隐藏边缘
+	Hide Gradient Annotator	隐藏渐变批注器
+	Hide Grid	隐藏网格
+	Hide Guides	隐藏参考线
+	Hide Hidden Characters	隐藏隐藏字符
+	Hide Note	隐藏注解
+	Hide Options	隐藏选项
+	Hide Print Tiling	隐藏打印分页
+	Hide Rulers	隐藏标尺
+	Hide Slices	隐藏切片
+	Hide Text Threads	隐藏文本串接线
+	Hide Thumbnail	隐藏缩略图
+	Hide Thumbnails	隐藏缩略图
+	Hide Transparency Grid	隐藏透明度网格
+	High	高
+	High (300 ppi)	高 (300 ppi)
+	Highlight Alternate Glyphs	高亮替代字形
+	Highlight anchors on mouse over	鼠标悬停时高亮锚点
+	Highlight Substituted Fonts	突出显示替代字体
+	Highlight Substituted Glyphs	突出显示替代字形
+	History	历史记录
+	History Options…	历史记录选项…
+	History States	历史记录步数
+	Hollow	空心
+	Home	主页
+	Horizon Height:	地平线高度：
+	Horizontal	横排
+	Horizontal %	水平 %
+	Horizontal Align Center	水平居中对齐
+	Horizontal Align Left	水平左对齐
+	Horizontal Align Right	水平右对齐
+	Horizontal Distribute Center	水平分布中心
+	Horizontal Distribute Left	水平分布左缘
+	Horizontal Distribute Right	水平分布右缘
+	Horizontal Distribute Space	水平分布间距
+	Horizontal Grid:	水平网格：
+	Horizontal Plane	水平面
+	Horizontal Scale %	水平缩放 %
+	Horizontal:	水平：
+	How colours outside the press's gamut are separated.	印刷机色域以外的颜色如何分色。
+	Hue	色相
+	Hue/Saturation…	色相/饱和度…
+	Hyphenate	连字
+	Hyphenation	连字符
+	Hyphenation…	连字符设置…
+	ICC Profile	ICC 配置文件
+	Identify Objects By	对象识别方式
+	Ignore	忽略
+	Ignore Artboards (all the art as one page)	忽略画板 (所有图稿作为一页)
+	Ignore White	忽略白色
+	Palette:	调板：
+	Limited	有限
+	Full Tone	全色调
+	Document Library	文档库
+	Library:	库：
+	Image	图像
+	Image Info	图像信息
+	Image Map:	图像映射：
+	Image Size	图像大小
+	Image Trace	图像描摹
+	Image Tracing	图像描摹对象
+	Tracing Presets	描摹预设
+	Image Trace Presets	图像描摹预设
+	Image:	图像：
+	Images:	图像：
+	Import Keyboard Shortcuts…	导入键盘快捷键…
+	Import PDF	导入 PDF
+	Import PDF Presets	导入 PDF 预设
+	Import Perspective Grid Presets	导入透视网格预设
+	Import Print Presets	导入打印预设
+	Import Transparency Flattener Presets	导入透明度拼合器预设
+	Imported {what}: {}	已导入 {what}：{}
+	Import…	导入…
+	In Tangent Handles	内侧切线控制手柄
+	In the selected objects	在所选对象中
+	Inches	英寸
+	Include Blacks with CMY:	包含 CMY 的黑色：
+	Include Bleed	包含出血
+	Include Cmy Blacks	包含 CMY 黑色
+	Include CMYK PostScript in RGB Files	在 RGB 文件中包含 CMYK PostScript
+	Include Document Thumbnails	包含文档缩略图
+	Include Hidden Layers	包含隐藏图层
+	Include Linked Files	包含链接文件
+	Include Metadata	包含元数据
+	Include non-printing layers	包含非打印图层
+	Include SVG Code	包含 SVG 代码
+	Include Swatches for Tints	包含淡色色板
+	Inflate…	膨胀…
+	Info	信息
+	Ink	油墨
+	Inner Glow…	内光晕…
+	Input Black	输入黑色
+	Input White	输入白色
+	Insert Break Character	插入分行字符
+	Insert Character	插入字符
+	Insert Special Character	插入特殊字符
+	Insert Whitespace Character	插入空白字符
+	Inspect Document	检查文档
+	Inspect Object	检查对象
+	Install Plug-in	安装插件
+	Install Plug-in…	安装增效工具…
+	Installed plug-in {}	已安装增效工具 {}
+	Intensity:	强度：
+	Intent:	意图：
+	Interlaced	交错
+	Internal CSS	内部 CSS
+	Internet Standard RGB (sRGB)	互联网标准 RGB (sRGB)
+	Intersect	交集
+	Inverse	反向
+	Invert	反相
+	Invert Colors	反相颜色
+	Invert Mask	反转蒙版
+	Isolate	隔离
+	Isolate Blending	隔离混合
+	Isolate Group	隔离编组
+	Italian	意大利语
+	Join	连接
+	Join Our Discord	加入 Discord
+	Join our Discord	加入我们的 Discord
+	Join the ArtCraft community on Discord (discord.gg/artcraft)	在 Discord 加入 ArtCraft 社区 (discord.gg/artcraft)
+	Join the lines of each paragraph	合并每个段落的行
+	Join Tool	连接工具
+	Justification…	对齐设置…
+	Justify all lines	全部两端对齐
+	Justify with last line aligned center	两端对齐，末行居中
+	Justify with last line aligned left	两端对齐，末行左对齐
+	Justify with last line aligned right	两端对齐，末行右对齐
+	Keep a link to an image file instead of only embedding it	保留图像文件的链接，而不只是嵌入
+	Keep both sides the same width	保持两侧宽度相同
+	Keep Formatting	保留格式
+	Keep Original	保留原稿
+	Keep Plain Text	保留纯文本
+	Keep the pasted color as a new swatch with a numbered name.	将粘贴的颜色保留为新色板，并以编号命名。
+	Keep this row's colors (exclude)	保留此行的颜色 (排除)
+	Keep:	保留：
+	Kerning (0 = Auto)	字偶距 (0 = 自动)
+	Keyboard Increment	键盘增量
+	Keyboard Shortcut Conflicts	键盘快捷键冲突
+	Keyboard Shortcut Set	键盘快捷键组
+	Keyboard Shortcuts…	键盘快捷键…
+	Keywords:	关键词：
+	Knife	刻刀
+	Knockout Group	挖空组
+	Lab	Lab
+	Lab Spot Colors:	Lab 专色：
+	Lab Values	Lab 值
+	Landscape	横向
+	Interface Language	界面语言
+	Language	语言
+	Language Options	语言选项
+	Language:	语言：
+	Large	大
+	Large List View	大型列表视图
+	Large Tabs	大标签页
+	Large Thumbnail View	大缩略图视图
+	Large Thumbnails	大缩略图
+	Lasso Tool	套索工具
+	Last Effect: {name}	最后一次效果：{name}
+	Last Effect: {}	上次效果：{}
+	Last Effect…	上次效果…
+	Last Page	最后一页
+	Latin Extended	拉丁文扩充
+	Latin-1 Supplement	拉丁文-1 补充
+	Layer	图层
+	Layer Names	图层名称
+	Layer Options…	图层选项…
+	Layers	图层
+	Layout	布局
+	Layout:	布局：
+	Leader:	前导符：
+	Leading	行距
+	Left	左
+	Left Grid:	左侧网格：
+	Left in Front	左侧在前
+	Left Indent	左缩进
+	Left Plane	左平面
+	Left-Justified Tab	左对齐制表位
+	Left:	左：
+	Legacy Macintosh RGB (Gamma 1.8)	旧版 Macintosh RGB (Gamma 1.8)
+	Legacy vector clipboard	旧版矢量剪贴板
+	Legacy vector clipboard (no transparency)	旧版矢量剪贴板 (无透明度)
+	Less	较少
+	Letter	信纸
+	Levels…	色阶…
+	Libraries	库
+	Ligatures are off while the text is tracked.	设置字距时连字会关闭。
+	Light	浅色
+	Light Blue	浅蓝色
+	Lighten	变亮
+	Lightness	亮度
+	Limit Color Guide to Library	将色彩参考限制于库
+	Limit colors to swatch library	将颜色限制于色板库
+	Limit colors to swatch library: {name}	将颜色限制于色板库：{name}
+	Limit to Library:	限制到库：
+	Limit:	限制：
+	Line	直线
+	Line Art and Text Resolution:	线稿和文字分辨率：
+	Line Breaks	换行
+	Line Color	线条颜色
+	Line Cut	直线切割
+	Line Cut Tool	直线切割工具
+	Line Endings:	换行字符：
+	Line Graph Tool	折线图工具
+	Line Segment	直线段
+	Line Segment Tool	直线段工具
+	Line Segment Tool Options	线段工具选项
+	Linear Gradient	线性渐变
+	Lines	实线
+	Lines: clicks add points joined by a line	线条：每次点击会添加以线连接的点
+	Link	链接
+	Link harmony colors	链接调和颜色
+	Link Info	链接信息
+	Link Opacity Mask	链接不透明度蒙版
+	Link start and end arrowhead scales	链接起点与终点箭头的缩放
+	Link the mask	链接蒙版
+	Linked	已链接
+	Linked File	链接文件
+	Linked File Not Found	找不到链接文件
+	Links	链接
+	Liquify	液化
+	List Graphic Styles	列出图形样式
+	List Keyboard Shortcuts	列出键盘快捷键
+	List Patterns	列出图案
+	List Plug-ins	列出插件
+	List Preferences	列出首选项
+	List Slices	列出切片
+	List View	列表视图
+	List Workspaces	列出工作区
+	Live Paint	实时上色
+	Live Paint Bucket	实时上色工具
+	Live Paint Bucket (Stroke)	实时上色工具 (描边)
+	Live Paint Info	实时上色信息
+	Live Paint Selection Tool	实时上色选择工具
+	Live Shape Properties	实时形状属性
+	Load Color Profile…	载入颜色配置文件…
+	Load Image into Clipboard	将图像载入剪贴板
+	Load Metafile into Clipboard	将图元文件载入剪贴板
+	Load PDF into Clipboard	将 PDF 载入剪贴板
+	Load Place Cursor	载入置入光标
+	Load Profile…	载入配置文件…
+	Load SVG into Clipboard	将 SVG 载入剪贴板
+	Load Text into Clipboard	将文本载入剪贴板
+	Local Libraries	本地库
+	Locate Object	查找对象
+	Location	位置
+	Location:	位置：
+	Lock	锁定
+	Lock (⌘2)	锁定 (⌘2)
+	Lock Grid	锁定网格
+	Lock Guides	锁定参考线
+	Lock Slices	锁定切片
+	Lock Station Point	锁定基准点
+	Lossless (lossy WebP isn't available yet)	无失真 (尚未提供有失真的 WebP)
+	Lossy:	有损：
+	Low	低
+	lowercase	小写
+	Luminosity	亮度
+	LZW Compression	LZW 压缩
+	Mac	Mac
+	Magenta	洋红
+	Magic Wand	魔棒
+	Magic Wand Options	魔棒选项
+	Magic Wand Settings	魔棒设置
+	Magic Wand Tool	魔棒工具
+	Maintain Envelope Shape	维持封套形状
+	Make	创建
+	Make a theme on Create and save it.	在“创建”中制作主题并存储。
+	Make all bleed settings the same	使所有出血设置相同
+	Make and Expand	创建并扩展
+	Make Clipping Mask	制作剪切蒙版
+	Make Compound Shape	创建复合形状
+	Make Envelope	制作封套
+	Make Guides	创建参考线
+	Make Mask	创建蒙版
+	Make Opacity Mask	创建不透明度蒙版
+	Make Pixel Perfect	像素对齐
+	Make the bleed values differ	使各出血值不同
+	Make with Mesh…	用网格创建…
+	Make with Top Object	用顶层对象创建
+	Make with Warp…	用变形创建…
+	Make/Release Clipping Mask	创建/释放剪切蒙版
+	Manage Workspaces	管理工作区
+	Manage Workspaces…	管理工作区…
+	Manually	手动
+	Mark as trapped	标示为已陷印
+	Mark Older Files as [Converted] When Opened	打开旧文件时标记为 [已转换]
+	Marker…	标记…
+	Marks	标记
+	Marks and Bleed	标记和出血
+	Marks and Bleeds	标记和出血
+	Match User Interface Brightness	匹配用户界面亮度
+	Light Gray	浅灰色
+	Medium Gray	中灰色
+	Dark Gray	深灰色
+	Materials…	材质…
+	Matte	杂边
+	Matte:	杂边：
+	Maximize	最大化
+	Maximum	最高
+	Maximum Editability	最高可编辑性
+	Measure Tool	度量工具
+	Measurement Labels	测量标签
+	Media	介质
+	Medium	中
+	Medium (150 ppi)	中 (150 ppi)
+	Medium Dark	中深色
+	Medium Light	中浅色
+	Medium Thumbnail View	中缩略图视图
+	Medium Thumbnails	中缩略图
+	Menu Dialog	菜单对话框
+	Merge	合并
+	Merge colors into one row	将颜色合并为一行
+	Merge Graphic Styles	合并图形样式
+	Merge Graphic Styles…	合并图形样式…
+	Merge Layers	合并图层
+	Merge Swatches	合并色板
+	Mesh Tool	网格工具
+	Message:	信息：
+	Metadata:	元数据：
+	Metallic Gradients	金属渐变
+	Meters	米
+	Method:	方法：
+	Millimeters	毫米
+	Minify	压缩
+	Minimal	最少
+	Minimize	最小化
+	Minus Back	减去底层
+	Minus Front	减去顶层
+	Mirror	镜像
+	Mirror & Cut	镜像并切割
+	Mirror & Cut Tool	镜像并切割工具
+	Missing	缺失
+	Missing: {path}	缺失：{path}
+	Miter Join	斜接连接
+	Miter Limit	尖角限度
+	Miter Limit:	斜接限制：
+	Mixed Appearances	混合外观
+	Mixed Objects	混杂对象
+	Mode:	模式：
+	Model	模型
+	Modified	已修改
+	Modified since it was read: {path}	读取后已被修改：{path}
+	Modified:	修改时间：
+	Modify	修改
+	Monitor RGB	显示器 RGB
+	Mono	单色
+	Monochrome images	单色图像
+	More	较多
+	More Pathfinder options	更多路径查找器选项
+	More Align options	更多对齐选项
+	More Paragraph options	更多段落选项
+	More Settings	更多设置
+	Move	移动
+	Move All Objects	移动所有对象
+	Move Anchors	移动锚点
+	Move Appearance	移动外观
+	Move Artboard	移动画板
+	Move Artboard Up/Down	上下移动画板
+	Move Direction Handle	移动方向手柄
+	Move Down	下移
+	Move Effect	移动效果
+	Move Envelope Mesh Point	移动封套网格点
+	Move Graphic Style	移动图形样式
+	Move Guide	移动参考线
+	Move in Perspective	在透视中移动
+	Move Locked and Hidden Artwork with Artboard	随画板移动锁定和隐藏图稿
+	Move Mesh Point	移动网格点
+	Move Plane	移动平面
+	Move Plane to Match Object	移动平面以符合对象
+	Move Slices	移动切片
+	Move Spine Point	移动脊线点
+	Move Swatch	移动色板
+	Move Up	上移
+	Move…	移动…
+	Multiply	正片叠底
+	My Themes	我的主题
+	N pt per	每 N pt
+	N slices …, evenly spaced	N 个切片…，等距分布
+	Name	名称
+	Name 40%	名称 40%
+	Name* @ 66.67 % (RGB/Preview)	名称* @ 66.67 % (RGB/预览)
+	Name* @ 66.67% (RGB/Preview)	名称* @ 66.67% (RGB/预览)
+	Name:	名称：
+	Navigate	导航
+	Navigator	导航器
+	Needs the desktop app	需要桌面应用
+	Neutral Gradients	中性渐变
+	New	新建
+	New Art Appearance	新建图稿外观
+	New Art Brush from Selection	从选区新建艺术画笔
+	New Art Has Basic Appearance	新建图稿使用基本外观
+	New Artboard	新建画板
+	Exit	退出
+	New Bristle Brush	新建鬃毛画笔
+	Calligraphic Brush Options	书法画笔选项
+	Bristle Brush Options	鬃毛画笔选项
+	Scatter Brush Options	散布画笔选项
+	Art Brush Options	艺术画笔选项
+	Pattern Brush Options	图案画笔选项
+	Scatter:	散布：
+	Rotation:	旋转：
+	Rotation relative to:	旋转相对于：
+	Brush Scale Options	画笔缩放选项
+	Scale Proportionately	等比缩放
+	Stretch to Fit Stroke Length	伸展以适合描边长度
+	Stretch Between Guides	在参考线之间伸展
+	Start:	起点：
+	End:	终点：
+	Left to Right	从左到右
+	Right to Left	从右到左
+	Top to Bottom	从上到下
+	Bottom to Top	从下到上
+	Flip:	翻转：
+	Outer Corner Tile	外角拼贴
+	Side Tile	边线拼贴
+	Inner Corner Tile	内角拼贴
+	Start Tile	起点拼贴
+	End Tile	终点拼贴
+	Fit	适合
+	Stretch to fit	伸展以适合
+	Add space to fit	添加间距以适合
+	Approximate path	近似路径
+	Colorization	着色
+	Key Color:	主色：
+	Roundness:	圆度：
+	Fixed	固定
+	Pressure	压力
+	Shape:	形状：
+	Bristle Length:	鬃毛长度：
+	Bristle Density:	鬃毛密度：
+	Bristle Thickness:	鬃毛粗细：
+	Paint Opacity:	上色不透明度：
+	Stiffness:	硬度：
+	Round Point	圆尖头
+	Flat Point	扁尖头
+	Round Blunt	圆钝头
+	Flat Blunt	扁钝头
+	Round Curve	圆弯头
+	Flat Curve	扁弯头
+	Round Angle	圆斜头
+	Flat Angle	扁斜头
+	Round Fan	圆扇头
+	Flat Fan	扁扇头
+	New Brush…	新建画笔…
+	New Calligraphic Brush	新建书法画笔
+	New Character Style	新建字符样式
+	New Color Group	新建颜色组
+	New Color Group…	新建颜色组…
+	New Document Presets	新建文档预设
+	New file	新建文件
+	New from Template	从模板新建
+	New from Template…	从模板新建…
+	New Graphic Style	新建图形样式
+	New Graphic Style (Alt-click to name it)	新建图形样式 (Alt+点击可命名)
+	New Graphic Style…	新建图形样式…
+	New Layer…	新建图层…
+	New Opacity Masks Are Clipping	新建不透明度蒙版为剪切
+	New Opacity Masks Are Inverted	新建不透明度蒙版为反相
+	New Paragraph Style	新建段落样式
+	New Pattern Brush from Selection	从选区新建图案画笔
+	New PDF Preset	新建 PDF 预设
+	New Print Preset	新建打印预设
+	New Scatter Brush from Selection	从选区新建散布画笔
+	New Sublayer…	新建子图层…
+	New Swatch	新建色板
+	New Swatch…	新建色板…
+	New Symbol	新建符号
+	New Symbol…	新建符号…
+	New theme from the current color	以当前颜色新建主题
+	New View	新建视图
+	New View…	新建视图…
+	New Window	新建窗口
+	New Workspace	新建工作区
+	New Workspace…	新建工作区…
+	New {kind} Style…	新建{kind}样式…
+	New…	新建…
+	Next	下一个
+	Next Library	下一个库
+	Next Object Above	上方下一个对象
+	Next Object Below	下方下一个对象
+	Next Page	下一页
+	Next page	下一页
+	No actions. Press ● to record.	没有动作。按 ● 开始记录。
+	No assets	没有资源
+	No assets yet. Collect art with Object › Collect for Export, or drag it into the Asset Export panel.	尚无资源。使用“对象 › 收集以便导出”收集图稿，或将其拖到“资源导出”面板。
+	No Break	不换行
+	No brushes	没有画笔
+	No colors to recolor (preserved colors are left out).	没有可重新着色的颜色 (保留的颜色已排除)。
+	No CSS	没有 CSS
+	No document	未打开文档
+	No Document	未打开文档
+	No document open	未打开文档
+	No document open.	未打开文档。
+	No filter plug-ins installed	未安装滤镜增效工具
+	No fonts are available.	没有可用的字体。
+	No gradient swatches	没有渐变色板
+	No graphic styles	没有图形样式
+	No images	没有图像
+	No matches.	没有匹配项。
+	No matching fonts	没有相符的字体
+	No options	无选项
+	No printer settings to open here	此处没有可打开的打印机设置
+	No saved themes	没有已存储的主题
+	No saved views (View → New View…)	没有已存储的视图 (视图 → 新建视图…)
+	No Selection	未选择对象
+	No selection	未选择
+	No symbols in this document	此文档中没有符号
+	No text selected	未选择文字
+	No Thumbnails	无缩略图
+	Noise	杂色
+	Create:	创建：
+	Fills	填色
+	Strokes	描边
+	Nonbreaking Hyphen	不断行连字号
+	Nonbreaking Space	不断行空格
+	None	无
+	None (/)	无 (/)
+	None (keep transparency)	无 (保留透明度)
+	None.	无。
+	Normal	正常
+	Normal Screen Mode	正常屏幕模式
+	Note:	注释：
+	Nothing matches the Show filter.	没有项目符合“显示”筛选条件。
+	Nothing to print	没有可打印的内容
+	Nudge	微移
+	Nudge in Perspective	在透视中微移
+	Number of Artboards:	画板数量：
+	Number of Colors:	颜色数：
+	Number of Recent Files to Display	要显示的最近文件数量
+	Number of Recent Fonts	最近字体数量
+	Numbers Without Units Are Points	无单位数字按点处理
+	Object	对象
+	Object Highlighting	对象高亮
+	Object IDs:	对象 ID：
+	Object Name	对象名称
+	Object Properties	对象属性
+	Object Selection by Path Only	仅按路径选择对象
+	Objects	对象
+	Objects using them keep their look but are no longer linked.	使用它们的对象会保持外观，但不再链接。
+	of characters used	使用的字符数
+	of {count}	共 {count}
+	Off	关
+	Offset Path	偏移路径
+	Offset Path…	偏移路径…
+	Offset X	X 偏移
+	Offset:	偏移：
+	OK	确定
+	On	开
+	On Copy	复制时
+	On Paste	粘贴时
+	On Screen	屏幕显示
+	One file per artboard: <name>-<artboard>.{ext}	每个画板一个文件：<name>-<artboard>.{ext}
+	One page per artboard.	每个画板一页。
+	One Point	一点
+	One Point Perspective	一点透视
+	One Point Perspective Preset 1	一点透视预设 1
+	One Point Perspective Preset 2	一点透视预设 2
+	One Point Perspective Preset 3	一点透视预设 3
+	One Point Perspective Preset 4	一点透视预设 4
+	One Point Perspective Preset 5	一点透视预设 5
+	Only Web Colors	仅 Web 颜色
+	Opacity	不透明度
+	Opacity & Mask Define Knockout Shape	不透明度与蒙版定义挖空形状
+	Opacity Mask	不透明度蒙版
+	Opacity Mask Info	不透明度蒙版信息
+	Opacity Mask Options	不透明度蒙版选项
+	Opacity:	不透明度：
+	Opacity: 50% Multiply	不透明度：50% 正片叠底
+	Opacity: Default	不透明度：默认
+	Opacity: {value}	不透明度：{value}
+	Opaque	不透明
+	Open	打开
+	Open a document to edit its patterns.	打开文档以编辑其图案。
+	Open a document to navigate it.	打开文档以进行导航。
+	Open a document to preview its flattening.	打开文档以预览其拼合效果。
+	Open a document to preview its pages	打开文档即可预览其页面
+	Open a document to see its artboards.	打开文档以查看其画板。
+	Open a document to see its graphic styles.	打开文档以查看其图形样式。
+	Open a document to see its history.	打开文档以查看其历史记录。
+	Open a document to see its swatches.	打开文档以查看其色板。
+	Open Document	打开文档
+	Open Documents As Tabs	以标签页打开文档
+	Open Graphic Style Library	打开图形样式库
+	Open Location after Export	导出后打开位置
+	Open password:	打开密码：
+	Open Paths	开放路径
+	Open Recent File 1	打开最近使用的文件 1
+	Open Recent File 10	打开最近使用的文件 10
+	Open Recent File 11	打开最近使用的文件 11
+	Open Recent File 12	打开最近使用的文件 12
+	Open Recent File 13	打开最近使用的文件 13
+	Open Recent File 14	打开最近使用的文件 14
+	Open Recent File 15	打开最近使用的文件 15
+	Open Recent File 16	打开最近使用的文件 16
+	Open Recent File 17	打开最近使用的文件 17
+	Open Recent File 18	打开最近使用的文件 18
+	Open Recent File 19	打开最近使用的文件 19
+	Open Recent File 2	打开最近使用的文件 2
+	Open Recent File 20	打开最近使用的文件 20
+	Open Recent File 21	打开最近使用的文件 21
+	Open Recent File 22	打开最近使用的文件 22
+	Open Recent File 23	打开最近使用的文件 23
+	Open Recent File 24	打开最近使用的文件 24
+	Open Recent File 25	打开最近使用的文件 25
+	Open Recent File 26	打开最近使用的文件 26
+	Open Recent File 27	打开最近使用的文件 27
+	Open Recent File 28	打开最近使用的文件 28
+	Open Recent File 29	打开最近使用的文件 29
+	Open Recent File 3	打开最近使用的文件 3
+	Open Recent File 30	打开最近使用的文件 30
+	Open Recent File 4	打开最近使用的文件 4
+	Open Recent File 5	打开最近使用的文件 5
+	Open Recent File 6	打开最近使用的文件 6
+	Open Recent File 7	打开最近使用的文件 7
+	Open Recent File 8	打开最近使用的文件 8
+	Open Recent File 9	打开最近使用的文件 9
+	Open Recent Files	打开最近文件
+	Open Swatch Library	打开色板库
+	Open the URL in the web browser	在 Web 浏览器中打开 URL
+	Opened with {} note(s): {}	已打开，附 {} 条附注：{}
+	OpenType	OpenType
+	Open…	打开…
+	Optical Margin Alignment	视觉边界对齐
+	Optimize for fast web view	优化快速 Web 查看
+	Optimized	优化
+	Options	选项
+	Options:	选项：
+	Options…	选项…
+	or more spaces with a tab	或多个空格加一个制表符
+	Order:	顺序：
+	Ordinals	序数字
+	Orientation	方向
+	Orientation:	方向：
+	Original	原稿
+	Original: click to restore	原图：单击以恢复
+	Other	其他
+	Other Layers	其他图层
+	Other Libraries	其他库
+	Other Library…	其他库…
+	Other Script…	其他脚本…
+	Out of Gamut Warning	超出色域警告
+	Out of Web Color Warning	非网页安全色警告
+	Out Tangent Handles	外切线控制手柄
+	Outer Glow…	外光晕…
+	Outline	轮廓
+	Outline Stroke	轮廓化描边
+	Outline Text	文字轮廓
+	Outlines and Rules	轮廓与规则线
+	Output	输出
+	Output All Blacks Accurately	准确输出所有黑色
+	Output All Blacks as Rich Black	将所有黑色输出为复合黑
+	Output Black	输出黑色
+	Output condition:	输出条件：
+	Output Intent	输出意图
+	Output intent profile:	输出意图配置文件：
+	Output White	输出白色
+	Output › Mode	输出 › 模式
+	Output:	输出：
+	Overlap:	重叠：
+	Overlapping	重叠
+	Overlay	叠加
+	Overprint	叠印
+	Overprint and Transparency Flattener	叠印和透明度拼合器
+	Overprint and Transparency Flattener Options	叠印和透明度拼合器选项
+	Overprint Black…	黑色叠印…
+	Overprint Fill	叠印填色
+	Overprint Preview	叠印预览
+	Overprint Preview (separations)	叠印预览 (分色)
+	Overprint Stroke	叠印描边
+	Overprint:	叠印：
+	Overprints:	叠印：
+	Override Character Color	覆盖字符颜色
+	Package	打包
+	Package collects a saved document with its linked files and fonts.	打包会将已存储的文件连同其链接文件与字体一并收集。
+	Package created	已创建打包
+	Packaged {n} file(s) in {folder}{note}	已将 {n} 个文件打包于 {folder}{note}
+	Packaged {n} file(s){note}	已打包 {n} 个文件{note}
+	Package…	打包…
+	Page	页面
+	Page information	页面信息
+	Page Isolated Blending	页面隔离混合
+	Page Knockout Group	页面挖空组
+	Pages	页面
+	Paintbrush	画笔
+	Paintbrush Tool	画笔工具
+	Painting	绘画
+	Panel menu	面板菜单
+	Panel Options…	面板选项…
+	Panels	面板
+	Paragraph	段落
+	Paragraph Style	段落样式
+	Paragraph Style Options	段落样式选项
+	Paragraph Styles	段落样式
+	Paragraph Symbol	段落符号
+	Part of ArtCraft. MIT OR Apache-2.0. Fonts: Source Sans 3, Inter, JetBrains Mono (OFL). Icons: Lucide (ISC) + VectorCraft.	ArtCraft 的一部分。MIT OR Apache-2.0。字体：Source Sans 3、Inter、JetBrains Mono (OFL)。图标：Lucide (ISC) + VectorCraft。
+	Password	口令
+	Paste	粘贴
+	Paste in Back	贴在后面
+	Paste in Front	贴在前面
+	Paste in Place	原位粘贴
+	Paste Offset	粘贴偏移
+	Paste on All Artboards	粘贴到所有画板
+	Paste Remembers Layers	粘贴时保留图层
+	Paste without Formatting	无格式粘贴
+	Pasted	已粘贴
+	Pastels	粉彩色
+	Path	路径
+	Path Eraser	路径橡皮擦
+	Path Eraser Tool	路径橡皮擦工具
+	Pathfinder	路径查找器
+	Pathfinder Options…	路径查找器选项…
+	Pathfinders:	路径查找器：
+	Paths	路径
+	Paths: {paths}    Anchors: {anchors}    Colors: {colors}	路径：{paths}    锚点：{anchors}    颜色：{colors}
+	Pattern	图案
+	Pattern Editing	图案编辑
+	Pattern Options	图案选项
+	Pattern options are available in pattern editing mode.	图案选项仅在图案编辑模式下可用。
+	PDF	PDF
+	PDF 1.3 files have no transparency: the preset flattens it.	PDF 1.3 文件不支持透明度：预设会将其拼合。
+	PDF Info	PDF 信息
+	PDF Preset	PDF 预设
+	PDF Preset:	PDF 预设：
+	PDF Presets	PDF 预设
+	PDF Presets…	PDF 预设…
+	PDF Settings	PDF 设置
+	PDF/A files carry their own output intent.	PDF/A 文件自带输出意图。
+	PDF/X-1a files are CMYK: every colour is converted to the destination (blank: the output intent's CMYK profile), untagged.	PDF/X-1a 文件为 CMYK：所有颜色都会转换至目的地 (留空：输出意图的 CMYK 配置文件)，且不加标记。
+	Pen Tool	钢笔工具
+	Pencil	铅笔
+	Pencil Tool	铅笔工具
+	per slice	每个切片
+	Percent:	百分比：
+	Perceptual Scales	感知尺度
+	Performance	性能
+	Performance & Storage	性能和存储
+	Permissions	权限
+	Permissions password:	权限密码：
+	Perspective	透视
+	Perspective Grid	透视网格
+	Perspective Grid Options	透视网格选项
+	Perspective Grid Preset	透视网格预设
+	Perspective Grid Presets	透视网格预设
+	Perspective grid presets	透视网格预设
+	Perspective Grid Presets…	透视网格预设…
+	Perspective Grid Settings	透视网格设置
+	Perspective Grid Tool	透视网格工具
+	Perspective Plane Options…	透视平面选项…
+	Perspective Selection Tool	透视选择工具
+	Phone 390×844	手机 390×844
+	Picas	派卡
+	Pie Graph Tool	饼图工具
+	Pixel Preview	像素预览
+	Pixels	像素
+	Place	置入
+	Place DXF	置入 DXF
+	Place onto a new locked, dimmed template layer below the current layer	置入至当前图层下方新的锁定且淡化的模板图层
+	Place PDF	置入 PDF
+	Place Symbol Instance	置入符号实例
+	Place the pages with the placement again	按置入设置重新放置页面
+	Placed File Info	置入文件信息
+	Placement Options	置入选项
+	Placement Options…	置入选项…
+	Placement:	摆放方式：
+	Place…	置入…
+	Plates	印版
+	Platform:	平台：
+	Play Current Selection	播放当前选择项目
+	Plug-in Info	插件信息
+	Plug-ins	增效工具
+	Plug-in…	增效工具…
+	Point Sample	点取样
+	Point Text Objects	点文字对象
+	Points	点
+	Points: clicks add free points	点：单击即添加自由点
+	Polar Grid	极坐标网格
+	Polar Grid Tool	极坐标网格工具
+	Polygon	多边形
+	Polygon Properties:	多边形属性：
+	Polygon Tool	多边形工具
+	Portrait	纵向
+	Portuguese	葡萄牙语
+	Position	位置
+	Postcard	明信片
+	PostScript:	PostScript：
+	PPI	PPI
+	Preferences	首选项
+	Preferences…	首选项…
+	Prefix:	前缀：
+	Presentation Attributes	呈现属性
+	Presentation Mode	演示模式
+	Preserve Alpha Transparency	保留 Alpha 透明度
+	Preserve Appearance and Overprints	保留外观和叠印
+	Preserve CMYK Numbers	保留 CMYK 数值
+	Preserve Editing Capabilities	保留编辑功能
+	Preserve editing capabilities	保留编辑能力
+	Preserve Lightness	保留亮度
+	Preserve Overprints and Spot Colors	保留叠印和专色
+	Preserve Paths	保留路径
+	Preserve Shape Using:	保留形状的方式：
+	Preserve Spot Colors	保留专色
+	Preserve Text Appearance	保留文字外观
+	Preserve Text Editability	保留文字可编辑性
+	Preserve:	保留：
+	PRESET DETAILS	预设详情
+	Preset Name	预设名称
+	Preset name:	预设名称：
+	Preset {}	预设 {}
+	Preset:	预设：
+	Presets you save with the Save Preset button appear here.	保存的文档预设将显示在这里。
+	Presets:	预设：
+	Press 	按 
+	Preview	预览
+	Preview in Browser	在浏览器中预览
+	Preview in Browser needs the desktop app (the web downloads files instead)	在浏览器中预览需要桌面版应用程序 (网页版会改为下载文件)
+	Preview Mode	预览模式
+	Preview the document as it is now	按当前状态预览文档
+	Previous	上一个
+	Previous Library	上一个库
+	Previous Page	上一页
+	Previous page	上一页
+	Primary	主要
+	Print	打印
+	Print as Bitmap	以位图打印
+	Print Layers:	打印图层：
+	Print Preset	打印预设
+	Print Preset:	打印预设：
+	Print Presets	打印预设
+	Print presets	打印预设
+	Print Presets…	打印预设…
+	Print Preview	打印预览
+	Print Setup	打印设置
+	Print Tiling	打印拼贴
+	Print Tiling Pages	打印拼贴页面
+	Print Tiling Tool	打印拼贴工具
+	Printer	打印机
+	Printer mark type:	打印机标记类型：
+	Printer profile:	打印机配置文件：
+	Printer Setup…	打印机设置…
+	Printer:	打印机：
+	Printers	打印机
+	Printing / Exporting	打印/导出
+	Printing allowed:	允许打印：
+	Printing and Proofing	打印和打样
+	Print…	打印…
+	Process Color	印刷色
+	Profile inclusion:	配置文件嵌入：
+	Profile:	配置文件：
+	Progressive	渐进式
+	Projecting Cap	方头端点
+	Proof Colors	校样颜色
+	Proof Setup	校样设置
+	Properties	属性
+	Proportional Oldstyle	比例旧式数字
+	Pucker & Bloat…	缩拢与膨胀…
+	Pucker Tool	收缩工具
+	Punctuation	标点符号
+	Punctuation Space	标点空格
+	Puppet Warp	操控变形
+	Puppet Warp Pins	操控变形图钉
+	Puppet Warp Tool	操控变形工具
+	Quality {quality}	质量 {quality}
+	Quality:	质量：
+	Quarter Space	四分之一空格
+	Quick Actions	快速操作
+	Quickly start a new file	快速新建文件
+	Quit VectorCraft	退出 VectorCraft
+	Radar Graph Tool	雷达图工具
+	Radial	径向
+	Radial Glows	径向光晕
+	Radial Gradient	径向渐变
+	Radius 1	半径 1
+	Radius 2	半径 2
+	Radius1	半径1
+	Radius2	半径2
+	Rainbow	彩虹
+	Random	随机
+	Randomize Colors	随机化颜色
+	Randomly change color order	随机更改颜色顺序
+	Randomly change saturation and brightness	随机更改饱和度与亮度
+	Range:	范围：
+	Raster Effects	栅格效果
+	Raster File Format:	栅格文件格式：
+	Raster Sample Size:	栅格取样大小：
+	Raster/Vector Balance:	栅格/矢量平衡：
+	Rasterize	栅格化
+	Rasterize Unsupported Art	栅格化不支持的图稿
+	Rasterize…	栅格化…
+	Rasters	栅格
+	Rating:	等级：
+	Real World:	真实世界：
+	Real-time Drawing and Editing	实时绘图和编辑
+	Rearrange All Artboards	重新排列所有画板
+	Rearrange All	全部重新排列
+	Layout Order:	布局顺序：
+	Change to Left-to-Right Layout	更改为由左至右版面配置
+	Grid by Row	按行网格排列
+	Grid by Column	按列网格排列
+	Arrange by Row	排成一行
+	Arrange by Column	排成一列
+	Move Artwork with Artboard	随画板移动图稿
+	Scale Artwork with Artboard	随画板缩放图稿
+	Artboards: {n}	画板：{n}
+	Rearrange All Artboards…	重新排列所有画板…
+	Recall Selection	召回选区
+	RECENT	最近使用
+	Recent	最近使用
+	Recent Colors	最近使用的颜色
+	Recent File	最近文件
+	Recent Files	最近使用的文件
+	Recent Font	最近字体
+	Recent Font 1	最近使用的字体 1
+	Recent Font 10	最近使用的字体 10
+	Recent Font 11	最近使用的字体 11
+	Recent Font 12	最近使用的字体 12
+	Recent Font 13	最近使用的字体 13
+	Recent Font 14	最近使用的字体 14
+	Recent Font 15	最近使用的字体 15
+	Recent Font 2	最近使用的字体 2
+	Recent Font 3	最近使用的字体 3
+	Recent Font 4	最近使用的字体 4
+	Recent Font 5	最近使用的字体 5
+	Recent Font 6	最近使用的字体 6
+	Recent Font 7	最近使用的字体 7
+	Recent Font 8	最近使用的字体 8
+	Recent Font 9	最近使用的字体 9
+	Recent Fonts	最近字体
+	Recent URLs	最近使用的网址
+	Recolor	重新着色
+	Recolor Artwork	重新着色图稿
+	Recolor Artwork…	重新着色图稿…
+	Recolor this row	重新上色此行
+	Recolor with Preset	用预设重新着色
+	Recover Documents	恢复文档
+	Recovery Data	恢复数据
+	Rectangle	矩形
+	Rectangle Cut	矩形切割
+	Rectangle Cut Tool	矩形切割工具
+	Rectangle Properties:	矩形属性：
+	Rectangle Tool	矩形工具
+	Rectangle: Sunshine	矩形：阳光
+	Rectangle…	矩形…
+	Rectangular Grid	矩形网格
+	Rectangular Grid Tool	矩形网格工具
+	Red	红
+	Redefine Character Style	重新定义字符样式
+	Redefine Graphic Style	重新定义图形样式
+	Redefine Graphic Style “{name}”	重新定义图形样式“{name}”
+	Redefine Paragraph Style	重新定义段落样式
+	Redefine Symbol	重新定义符号
+	Redefine {kind} Style	重新定义{kind}样式
+	Redo	重做
+	Redo {name}	重做 {name}
+	Redo {}	重做 {}
+	Reduce Colors	减少颜色
+	Reduce to Basic Appearance	简化为基本外观
+	Reduction:	减少颜色：
+	Reference Point	参考点
+	Reflect	镜像
+	Reflect Horizontal	水平镜像
+	Reflect Tool	镜像工具
+	Reflect X	X 轴镜像
+	Reflect Y	Y 轴镜像
+	Reflect…	镜像…
+	Refresh	刷新
+	Refresh Font List	刷新字体列表
+	Missing Fonts	缺失的字体
+	Missing Fonts Dialog	缺失的字体对话框
+	These fonts aren't available. Their text shows in another font.	这些字体不可用。其文字以其他字体显示。
+	Search Fonts Folder	搜索 Fonts 文件夹
+	Find in Folder…	在文件夹中查找…
+	Find Fonts in Folder…	在文件夹中查找字体…
+	Find Font Files	查找字体文件
+	Add Font Files	添加字体文件
+	Add Fonts	添加字体
+	Find Fonts	查找字体
+	Stop	停止
+	Searching…	正在搜索…
+	Not found	未找到
+	{folders} folder(s) and {files} file(s) searched	已搜索 {folders} 个文件夹、{files} 个文件
+	{count} folder(s) skipped, such as other apps' and the system's folders and hidden ones	已跳过 {count} 个文件夹，例如其他应用程序和系统的文件夹，以及隐藏的文件夹
+	{count} folder(s) or file(s) couldn't be read	有 {count} 个文件夹或文件无法读取
+	The search stopped at its limit: search a smaller folder.	搜索已达上限而停止：请搜索较小的文件夹。
+	Copy only fonts you own or are licensed to install.	只复制您拥有或已获得安装许可的字体。
+	VectorCraft copies the fonts to {folder}.	VectorCraft 会将字体复制到 {folder}。
+	Registered Trademark Symbol	注册商标符号
+	Registration marks	对位标记
+	Registry name:	登录名称：
+	Regular	常规
+	Release	释放
+	Release Compound Shape	释放复合形状
+	Release Guides	释放参考线
+	Release Opacity Mask	释放不透明度蒙版
+	Release Selection	取消选择
+	Release with Perspective	在透视中释放
+	Relink	重新链接
+	Relink Linked Files to the Document	将链接文件重新链接到文档
+	Relink to Folder…	重新链接到文件夹…
+	Relinked {n} image(s)	已重新链接 {n} 张图像
+	Relinked {n} image(s); not in that folder: {}	已重新链接 {n} 张图像；不在该文件夹中：{}
+	Relinked {} image(s)	已重新链接 {} 张图像
+	Relink…	重新链接…
+	Reload Plug-ins	重新载入增效工具
+	Remove	移除
+	Remove Anchor Points	移除锚点
+	Remove Asset	移除资源
+	Remove blank lines between paragraphs	移除段落之间的空行
+	Remove Brush Stroke	移除画笔描边
+	Remove Effect	移除效果
+	Remove Guide	删除参考线
+	Remove Item	移除项目
+	Remove Plug-in	移除插件
+	Remove Selected Assets	移除所选资源
+	Remove Threading	移除线程
+	Remove “{keyword}”	移除“{keyword}”
+	Rename	重命名
+	Rename Asset	重命名资源
+	Rename Character Style	重命名字符样式
+	Rename Graphic Style	重命名图形样式
+	Rename Paragraph Style	重命名段落样式
+	Rename Workspace	重命名工作区
+	Render Threads (-1 = Automatic)	渲染线程 (-1 为自动)
+	Rendering intent:	演算目的：
+	Reorder	重新排序
+	Reorder Appearance Item	重新排序外观项目
+	Repeat	重复
+	Repeat Options	重复选项
+	Repeat Pathfinder	重复路径查找器
+	Repeat Tab	重复制表位
+	Repeat {name}	重复 {name}
+	Replace	替换
+	Replace Font	替换字体
+	Replace it with another file, or ignore it: its images keep showing the preview saved with the document.	将其替换为其他文件，或忽略：其图像继续显示随文档保存的预览。
+	Replace Spine	替换路径
+	Replace Symbol	替换符号
+	Replace With Font	替换为字体
+	Replaces the saved preset of that name.	替换同名已存预设。
+	Replace…	替换…
+	Require a password to open the document	打开文档时需要密码
+	Reselect	重新选择
+	Reset	重置
+	Reset Bounding Box	重置定界框
+	Reset Envelope Mesh	重置封套网格
+	Reset Envelope Shape	重置封套形状
+	Reset Essentials	重置基本功能
+	Reset Keyboard Shortcuts	重置键盘快捷键
+	Reset OpenType Features	重置 OpenType 特性
+	Reset Panel	重置面板
+	Reset Preferences	重置首选项
+	Reset Profiles	重置配置文件
+	Reset Rotate View	重置旋转视图
+	Reset the rows to the artwork's colors	将各行重置为图稿的颜色
+	Reset to Default	恢复默认
+	Reset to White, Black	重置为白、黑
+	Reset with Mesh	以网格重置
+	Reset with Mesh…	以网格重置…
+	Reset with Warp	以变形重置
+	Reset with Warp…	以变形重置…
+	Reset {name}	重置 {name}
+	Reset {}	重置 {}
+	Reshape	整形
+	Reshape Segment	整形线段
+	Reshape Tool	整形工具
+	Reshape Type Area	调整区域文字轮廓
+	Resolution:	分辨率：
+	Responsive	响应式
+	Restore	恢复
+	Restore every preference to its default (applied on OK)	把所有首选项恢复为默认值 (点击确定后应用)
+	Restore Recovered Documents	恢复已恢复的文档
+	Restored documents open unsaved: save them to keep them.	恢复的文档处于未存储状态：请存储以保留。
+	Restored {} recovered document(s): save them to keep them	已还原 {} 份恢复的文档：请存储以保留
+	Restrict printing, editing and other tasks	限制打印、编辑及其他操作
+	Reverse Front to Back	从前向后反转
+	Reverse Gradient	反转渐变
+	Reverse Order	逆序
+	Reverse Path Direction	反转路径方向
+	Reverse Path Direction Off	关闭反转路径方向
+	Reverse Path Direction On	开启反转路径方向
+	Reverse Spine	反转路径
+	Revert	恢复
+	Revert to the saved version of “{name}”?	要恢复为“{name}”已存储的版本吗？
+	Replace “{name}”, the file this document was opened from?	要替换“{name}”（打开此文档的源文件）吗？
+	Opening it left out what VectorCraft can't read yet ({what}), so replacing it loses that for good. Save under another name to keep it.	打开时略去了 VectorCraft 尚无法读取的内容（{what}），替换该文件会永久丢失这些内容。要保留它们，请以其他名称存储。
+	Revolve…	回转…
+	RGB Color	RGB 颜色
+	Right	右
+	Right Grid:	右侧网格：
+	Right in Front	右侧在前
+	Right Indent	右缩进
+	Right Plane	右侧平面
+	Right-Justified Tab	右对齐制表位
+	Right:	右：
+	Rise…	上升…
+	Roman Baseline	罗马基线
+	Roman Hanging Punctuation	西文悬挂标点
+	Rotate	旋转
+	Rotate 90° CW	顺时针旋转 90°
+	Rotate Tool	旋转工具
+	Rotate View Tool	旋转视图工具
+	Rotate…	旋转…
+	Rotation	旋转
+	Roughen…	粗糙效果…
+	Round Cap	圆头端点
+	Round Corners…	圆角…
+	Round Join	圆角连接
+	Rounded Rectangle	圆角矩形
+	Rounded Rectangle Tool	圆角矩形工具
+	Rounded Rectangle…	圆角矩形…
+	Rows:	行数：
+	Rule:	规则：
+	Rulers	标尺
+	Rulers & Grids	标尺和网格
+	Run Plug-in	运行插件
+	Same	相同
+	Same As Source	与来源相同
+	Sample Color	采样颜色
+	Saturate	饱和度
+	Saturate…	饱和度…
+	Saturation	饱和度
+	Save	保存
+	Save a Copy	存储副本
+	Save a Copy…	保存副本…
+	Save As	存储为
+	Save as PDF…	存为 PDF…
+	Save as preset:	存储为预设：
+	Save as Template	另存模板
+	Save as Template…	存为模板…
+	Save As…	另存为…
+	Save changes to {name}	存储对 {name} 的更改
+	Save color group to Swatch panel	将颜色组存储至色板面板
+	Save Colors as Swatches	将颜色存储为色板
+	Save Document	保存文档
+	Save Document Info…	存储文档信息…
+	Save each artboard to a separate file	将每个画板存储为个别文件
+	Save for Office Documents	存储为 Office 文档
+	Save for Office Documents…	存为 Office 文档…
+	Save for Web	存储为 Web 所用格式
+	Save for Web (Legacy)…	存储为 Web 所用格式 (旧版)…
+	Save for Web Presets	Web 预设
+	Save for Web Preview	Web 预览
+	Save for Web Settings	Web 设置
+	Save Graphic Style Library	存储图形样式库
+	Save Graphic Style Library…	保存图形样式库…
+	Save Grid as Preset	将网格存储为预设
+	Save Grid as Preset…	将网格存储为预设…
+	Save PDF	存储 PDF
+	Save PDF Dialog	存储 PDF 对话框
+	Save PDF Preset	保存 PDF 预设
+	Save Perspective Grid Preset	存储透视网格预设
+	Save Preset	保存预设
+	Save Preset…	存储预设…
+	Save Print Preset	保存打印预设
+	Save Recovery Data	保存恢复数据
+	Save Save for Web Preset	保存 Web 预设
+	Save selected colors as swatches	将所选颜色存储为色板
+	Save Selection…	保存选区…
+	Save Swatch Library	存储色板库
+	Save Swatch Library…	保存色板库…
+	Save the current layout under this name	以该名称保存当前布局
+	Save the document first?	要先存储文档吗？
+	Save the selected preset to a file	将所选预设存储到文件
+	Save the settings as a preset	将设置存储为预设
+	Save Theme	保存主题
+	Save theme to My Themes	将主题存储至“我的主题”
+	Save these settings as a preset	将这些设置存储为预设
+	Save these settings as a print preset	将这些设置存储为打印预设
+	Save to Swatches	存储到色板
+	Save To:	存储到：
+	Save Transparency Flattener Preset	保存透明度拼合器预设
+	Save Transparency Flattener Preset…	存储透明度拼合器预设…
+	SAVED	已保存
+	Saved	已存储
+	Saved recovery data for {title}	已存储 {title} 的恢复数据
+	Saved Selections	已保存的选区
+	Saved to User Defined: {}	已存储至用户自定义：{}
+	Saved View 1	已存视图 1
+	Saved View 10	已存视图 10
+	Saved View 2	已存视图 2
+	Saved View 3	已存视图 3
+	Saved View 4	已存视图 4
+	Saved View 5	已存视图 5
+	Saved View 6	已存视图 6
+	Saved View 7	已存视图 7
+	Saved View 8	已存视图 8
+	Saved View 9	已存视图 9
+	Saved Views	已存视图
+	Saved {n} files beside {path}	已将 {n} 个文件存储于 {path} 旁
+	Saved {path}	已存储 {path}
+	Saved {path} with {} note(s): {first}	已存储 {path}，附 {} 条附注：{first}
+	Saves the current bars, toolbar and panel layout.	保存当前的栏、工具栏和面板布局。
+	Save…	存储…
+	Saving	正在存储
+	Saving Poster.vectorcraft	正在存储 Poster.vectorcraft
+	Saving recovery data for {}	正在存储 {} 的恢复数据
+	Saving {}	正在存储 {}
+	Scale	缩放
+	Scale Corners	缩放圆角
+	Scale Cursor Proportional to UI	光标随界面等比缩放
+	Scale Lineweights	缩放线宽
+	Scale Strokes & Effects	缩放描边和效果
+	Scale to Fit Artboard	缩放以适合画板
+	Scale Tool	比例缩放工具
+	Scale:	缩放：
+	Scale…	缩放…
+	Scaling	缩放
+	Scaling:	缩放：
+	Scallop Tool	扇贝工具
+	Scans:	扫描：
+	Scatter	散布
+	Scatter Graph Tool	散点图工具
+	Scissors Tool	剪刀工具
+	Scratch Disks	暂存盘
+	Screen	滤色
+	Screen (72 ppi)	屏幕 (72 ppi)
+	Screen Mode	屏幕模式
+	Screens	网屏
+	Scribble…	涂抹…
+	Scripts	脚本
+	Search	搜索
+	Search All	搜索全部
+	Search commands and tools	搜索命令和工具
+	Search commands and tools…	搜索命令和工具…
+	Search Commands…	搜索命令…
+	Secondary	次要
+	Section Symbol	章节符号
+	Security	安全性
+	Select	选择
+	Select a text object	选择文字对象
+	Select a text object to edit its character attributes.	选择文字对象以编辑字符属性。
+	Select a text object to edit its paragraph attributes.	选择文字对象以编辑段落属性。
+	Select a text object to set its tab stops.	选择文字对象以设置制表位。
+	Select All	全选
+	Select All Art on Layer	选择图层上的所有图稿
+	Select All Assets	选择所有资源
+	Select All Instances	选择所有实例
+	Select All Pins	全选图钉
+	Select All Unused	选择所有未使用项
+	Select an image to see its Link Info.	选择图像以查看其链接信息。
+	Select an image to trace	选择要描摹的图像
+	Select Anchors	选择锚点
+	Select Appearance Item	选择外观项目
+	Select art and choose Object › Pattern › Make.	选择图稿并选择“对象 › 图案 › 创建”。
+	Select art and click New Symbol to make one.	选择图稿并单击“新建符号”以创建。
+	Select art and use New Brush to make one.	选择图稿并使用“新建画笔”创建。
+	Select Freeform Point	选择自由点
+	Select Gradient Stop	选择渐变色标
+	Select Objects	选择对象
+	Select objects to see their CSS, or Generate CSS for the whole document.	选择对象以查看其 CSS，或为整个文档生成 CSS。
+	Select Same Tint %	选择相同色调百分比
+	Select Slices	选择切片
+	Select styled art and click New Graphic Style.	选择已应用样式的图稿并单击“新建图形样式”。
+	Select text	选择文字
+	Select Text by Font	按字体选择文本
+	Select text or click into text with the Type tool to insert glyphs	使用文字工具选择文字或单击文字内部，以插入字符
+	Select text to set its OpenType features.	选择文字以设置 OpenType 特性。
+	Select the art (and, on top of it, the mask object)	选择图稿 (以及位于其上的蒙版对象)
+	Select Tool	选择工具
+	Select:	选择：
+	Selected Artwork	所选图稿
+	Selected Styles Only	仅限选择的样式
+	Selected Swatches	所选色板
+	Selected Swatches Only	仅限选择的色板
+	Selection	所选对象
+	Selection & Anchor Display	选择和锚点显示
+	Selection Only	仅所选内容
+	Selection Tool	选择工具
+	Send Backward	后移一层
+	Send to Back	置于底层
+	Send to Current Layer	发送到当前图层
+	Sentence case	句首大写
+	Separate colors into rows	将颜色分成多行
+	Separate several keywords with commas.	用逗号分隔多个关键词。
+	Separations list the document's inks here: one page per ink that prints.	分色会在此列出文档的油墨：每种会打印的油墨各一页。
+	Separations Preview	分色预览
+	Serialize Document	序列化文档
+	Server-side (.map)	服务器端 (.map)
+	Set 1	组 1
+	Set Anchors	设置锚点
+	Set base color	设置基准色
+	Set base color to the current color	将基色设为当前颜色
+	Set Bounds	设置边界
+	Set Current Layer	设为当前图层
+	Set Key Object	设为关键对象
+	Set Keyboard Shortcut	设置键盘快捷键
+	Set Mesh Point Color	设置网格点颜色
+	Set Preference	设置首选项
+	Set Slice Rectangle	设置切片矩形
+	Set Tab Stops	设置制表位
+	Set Text	设置文本
+	Set the selected color to the current color	将选择的颜色设为当前颜色
+	Set Zoom	设置缩放
+	Settings…	设置…
+	Setup…	设置…
+	Shadows and Glows	阴影与光晕
+	Shape	形状
+	Shape Builder	形状生成器
+	Shape Builder Regions	形状生成器区域
+	Shape Builder Tool	形状生成器工具
+	Shape Effects	形状效果
+	Shape Modes:	形状模式：
+	Shape Properties:	形状属性：
+	Shaper Tool	Shaper 工具
+	Shapes	形状
+	Shear	倾斜
+	Shear Tool	倾斜工具
+	Shear…	倾斜…
+	Shell Lower…	下弧形…
+	Shell Upper…	上弧形…
+	Shift	Shift
+	Shift to Color…	偏移至颜色…
+	Shifts the tints of global and spot colors; other colors stay.	偏移全局色和专色的淡色；其他颜色保持不变。
+	Show	显示
+	Show Active Plane Widget	显示当前平面 Widget
+	Show All	显示全部
+	Show All Hidden Attributes	显示所有隐藏属性
+	Show All Plates	显示所有印版
+	Show all plates	显示所有色版
+	Show All Swatches	显示所有色板
+	Show and print from the Lab definition; PDF files carry it as the ink's alternate color.	按 Lab 定义显示和打印；PDF 文件将其作为油墨的替代颜色保留。
+	Show and separate through the working CMYK space, as in older documents.	通过工作 CMYK 空间显示和分色，与旧版文档相同。
+	Show Artboards	显示画板
+	Show Bounding Box	显示定界框
+	Show Brush Size	显示画笔大小
+	Show Center	显示中心点
+	Show Code	显示代码
+	Show Color Groups	显示颜色组
+	Show Color Swatches	显示颜色色板
+	Show Corner Widget	显示转角 Widget
+	Show East Asian Options	显示东亚文字选项
+	Show Edges	显示边缘
+	Show Embedded	显示已嵌入
+	Show Find Field	显示查找字段
+	Show Font Names in English	以英文显示字体名称
+	Show Gradient Annotator	显示渐变批注器
+	Show Gradient Swatches	显示渐变色板
+	Show Grid	显示网格
+	Show Grid (⌘')	显示网格 (⌘')
+	Show Guides	显示参考线
+	Show handles when multiple anchors are selected	选择多个锚点时显示手柄
+	Show Hidden Characters	显示隐藏字符
+	Bold	粗体
+	Italic	斜体
+	Show Images in Outline Mode	以轮廓模式显示图像
+	Show in Folder	在文件夹中显示
+	Show Indic Options	显示印度文字选项
+	Show Link Info	显示链接信息
+	Show List View	显示列表视图
+	Show Mesh	显示网格
+	Show Missing	显示缺失
+	Show Modified	显示已修改
+	Show Note	显示注解
+	Show Options	显示选项
+	Show Package	显示打包
+	Show Panel	显示面板
+	Show Pattern Swatches	显示图案色板
+	Show Perspective Grid	显示透视网格
+	Show Pixel Grid (Above 600% Zoom)	显示像素网格 (600% 以上缩放)
+	Show Print Tiling	显示打印拼贴
+	Show Rulers	显示标尺
+	Show Rulers (⌘R)	显示标尺 (⌘R)
+	Show Slice Numbers	显示切片编号
+	Show Slices	显示切片
+	Show Swatch Bounds	显示色板边界
+	Show Swatch Kinds	显示色板种类
+	Show Text Threads	显示文本串接线
+	Show The Home Screen When No Documents Are Open	没有打开文档时显示主页
+	Show Thumbnail	显示缩略图
+	Show Thumbnail View	显示缩略图视图
+	Show Thumbnails	显示缩略图
+	Show Tile Edge	显示拼贴边缘
+	Show Tints/Shades	显示浅色调/深色调
+	Show Tool Tips	显示工具提示
+	Show Transparency Grid	显示透明网格
+	Show Video Rulers	显示视频标尺
+	Show Vivid/Muted	显示鲜艳/柔和
+	Show Warm/Cool	显示暖色/冷色
+	Show {kind} Brushes	显示{kind}画笔
+	Show/hide plate (Alt-click: only this plate)	显示／隐藏色版 (Alt-单击：仅此色版)
+	Show:	显示：
+	Shown with the optimised preview.	与优化预览一起显示。
+	Side 1:	侧边 1：
+	Side 2:	侧边 2：
+	Sides:	边数：
+	Simplify	简化
+	Simplify:	简化：
+	Simplify…	简化…
+	Simulate Colored Paper	模拟有色纸张
+	Simulate Paper	模拟纸张
+	Double Column	双列
+	Single Left Quotation Mark	左单引号
+	Single Quotes:	单引号：
+	Single Right Quotation Mark	右单引号
+	Single-line Composer	单行排版器
+	Sixth Space	六分之一空格
+	Size	大小
+	Size Tile to Art	使拼贴适合图稿
+	Size/Leading	字号/行距
+	Size:	尺寸：
+	Size: {size}  Tracking: {tracking}	大小：{size}  字距：{tracking}
+	Skew	倾斜
+	Skin Tone Ramps	肤色渐变
+	Skip Blank Artboards	跳过空白画板
+	Sky Gradients	天空渐变
+	Slice	切片
+	Slice Options	切片选项
+	Slice Options…	切片选项…
+	Slice Selection Tool	切片选择工具
+	Slice Tool	切片工具
+	Slice Type:	切片类型：
+	Slices	切片
+	slices across, evenly spaced	个横向切片，间距均等
+	slices down, evenly spaced	个纵向切片，间距均等
+	Slices:	切片：
+	Small	小
+	Small Caps	小型大写
+	Small Caps (on the roadmap)	小型大写 (路线图中)
+	Small Caps:	小型大写字母：
+	Small List View	小型列表视图
+	Small Thumbnail View	小缩略图视图
+	Small Thumbnails	小缩略图
+	Smaller ↔ Larger	较小 ↔ 较大
+	Smart Guides	智能参考线
+	Smart Guides (View → Smart Guides)	智能参考线 (视图 → 智能参考线)
+	Smart Guides (⌘U)	智能参考线 (⌘U)
+	Smart Punctuation…	智能标点…
+	Smooth	平滑
+	Corner	尖角
+	Relative	相对
+	Absolute	绝对
+	Smooth Color	平滑颜色
+	Smooth Tool	平滑工具
+	Snap Curves To Lines	将曲线对齐到直线
+	View:	视图：
+	Tracing Result	描摹结果
+	Tracing Result with Outlines	描摹结果（带轮廓）
+	Outlines	轮廓
+	Outlines with Source Image	轮廓（带源图像）
+	Source Image	源图像
+	Image Trace View	图像描摹视图
+	Snap Options	对齐选项
+	Snap to Glyph	靠齐字符
+	Snap to Grid	对齐网格
+	Snap to Pixel	对齐像素
+	Snap to Point	对齐点
+	Snapping Tolerance	吸附容差
+	Social Square Post 1080×1080	社交方形帖子 1080×1080
+	Soft Light	柔光
+	Solid	实心
+	Sort by Kind	按类型排序
+	Sort by Name	按名称排序
+	Sort by Status	依状态排序
+	Source code on GitHub	GitHub 源代码
+	Source Sans 3	Source Sans 3
+	Space After Paragraph	段后间距
+	Space Before Paragraph	段前间距
+	Spaces	空格
+	Spacing Guides	间距参考线
+	Spacing:	间距：
+	Spanish	西班牙语
+	Specified Distance	指定距离
+	Specified Steps	指定阶数
+	Specify:	指定：
+	Spectrum Gradients	光谱渐变
+	Spelling	拼写
+	Spiral	螺旋
+	Spiral Tool	螺旋工具
+	Split Freeform Line	分割自由曲线
+	Split Into Grid	分割为网格线
+	Split Into Grid…	分割为网格…
+	Split Path	分割路径
+	spot	专色
+	Spot Color	专色
+	Spot Colors	专色
+	Spot Colors…	专色…
+	Spread:	扩散：
+	Square	正方形
+	Squeeze…	挤压…
+	Stacked Bar Graph Tool	堆积条形图工具
+	Stacked Column Graph Tool	堆积柱形图工具
+	Stair Step	阶梯
+	Standard Ligatures	标准连字
+	Standard Vertical Roman Alignment	标准纵排西文对齐
+	Standard:	标准：
+	Star	星形
+	Star Tool	星形工具
+	Start arrowhead	起点箭头
+	Start Global Edit	开始全局编辑
+	Status	状态
+	Steps:	步数：
+	Stop Editing Opacity Mask	停止编辑不透明度蒙版
+	Stop editing the opacity mask	停止编辑不透明度蒙版
+	Stop Playing/Recording	停止播放/录制
+	Stray Points	游离点
+	Strikethrough	删除线
+	Stroke	描边
+	Stroke (X), double-click for the Color Picker	描边 (X)，双击打开拾色器
+	Stroke Color	描边颜色
+	Stroke Options	描边选项
+	Character:	字符：
+	Character options	字符选项
+	Stroke options	描边选项
+	Transform options	变换选项
+	Stroke Weight	描边粗细
+	Stroke:	描边：
+	Stroke: click for swatches, Shift-click for the color mixer	描边：单击开启色板，按住 Shift 单击开启混色器
+	Style	样式
+	Style Attributes	样式属性
+	Style Attributes (Entity References)	样式属性 (实体参考)
+	Style Name:	样式名称：
+	Style:	样式：
+	Styling:	样式：
+	Stylize	风格化
+	Subdivisions	细分
+	Subscript	下标
+	Subscript (on the roadmap)	下标 (路线图中)
+	Subscript:	下标：
+	Subset fonts below:	字体子集化门槛：
+	Subtract	减去
+	Suffix	后缀
+	Summary	摘要
+	Superscript	上标
+	Superscript (on the roadmap)	上标 (路线图中)
+	Superscript:	上标：
+	SVG Filters	SVG 滤镜
+	SVG Interactivity	SVG 互动性
+	SVG Options	SVG 选项
+	SVG Profile:	SVG 配置文件：
+	Swap Fill and Stroke	交换填色和描边
+	Swap Fill and Stroke (Shift+X)	切换填色和描边 (Shift+X)
+	Swap start and end arrowheads	对调起点与终点箭头
+	Swap the selected object for the file, keeping its place and transform	以文件替换选择的对象，并保留其位置与变形
+	Swash	花饰字
+	Swatch Conflict	色板冲突
+	Swatch Conflicts	色板冲突
+	Swatch exchange files keep solid colors only.	色板交换文件仅保留纯色。
+	Swatch Libraries	色板库
+	Swatch Libraries Menu	色板库菜单
+	Swatch Library	色板库
+	Swatch Name:	色板名称：
+	Swatch Options	色板选项
+	Swatch Options…	色板选项…
+	Swatch Tiles	色板拼贴
+	Swatches	色板
+	Switch workspace	切换工作区
+	Add Content	添加内容
+	Click to apply to the selected type	单击以应用到所选文字
+	Create New Library	创建新库
+	Create New Library…	创建新库…
+	Rename Library…	重命名库…
+	Delete the library “{name}”?	要删除库“{name}”吗？
+	Drag art or swatches here, or use + to add the selection's colors and text styles.	将图稿或色板拖到此处，或使用 + 添加所选对象的颜色和文字样式。
+	Its graphics, colors and text styles are deleted from this machine.	其图形、颜色和文字样式将从此计算机中删除。
+	Keep graphics, colors and text styles here to use them in any document. Libraries are stored on this machine — no account required.	在此保存图形、颜色和文字样式，即可在任何文档中使用。库存储在此计算机上，无需帐户。
+	This library is empty	此库为空
+	Add to Library	添加到库
+	Delete Library	删除库
+	Delete Library Item	删除库项目
+	No results	无结果
+	No items in this library match “{query}”.	此库中没有与“{query}”匹配的项目。
+	Right-click an item to move it into this group.	右键单击项目可将其移到此组。
+	New Group	新建组
+	New Group…	新建组…
+	Move to Group	移到组
+	No Group	无组
+	Rename Group…	重命名组…
+	Delete Group	删除组
+	Import Library…	导入库…
+	Export Library…	导出库…
+	Import Library	导入库
+	Export Library	导出库
+	New Library Group	新建库组
+	Rename Library Group	重命名库组
+	Delete Library Group	删除库组
+	Move Library Item to Group	将库项目移到组
+	Library	库
+	Rename Library	重命名库
+	Show Library	显示库
+	Use Library Item	使用库项目
+	Graphic	图形
+	Show all open documents	显示所有打开的文档
+	Symbol Instance	符号实例
+	Symbol Libraries	符号库
+	Symbol Libraries (on the roadmap)	符号库 (已列入路线图)
+	Symbol Screener Tool	符号透明度工具
+	Symbol Scruncher Tool	符号紧缩工具
+	Symbol Shifter Tool	符号移位工具
+	Symbol Sizer Tool	符号缩放工具
+	Symbol Spinner Tool	符号旋转工具
+	Symbol Sprayer	符号喷枪
+	Symbol Sprayer Tool	符号喷枪工具
+	Symbol Stainer Tool	符号着色工具
+	Symbol Styler Tool	符号样式工具
+	Symbolism Tool	符号工具
+	Symbols	符号
+	System Layout	系统排版
+	Tab	定位字符
+	Tab Stops	制表位
+	Tabs	制表符
+	Tabular Lining	等宽齐线数字
+	Tabular Oldstyle	等宽旧式数字
+	Target	目标
+	Target Contents	目标内容
+	Target:	目标：
+	Tate-chu-yoko	纵中横
+	Temperature	色温
+	Temperature/Tint…	色温/色调…
+	Template	模板
+	Templates	模板
+	Templates Folder	模板文件夹
+	Templates…	模板…
+	Text Displayed in Cell:	单元格中显示的文字：
+	Text Export Options	文本导出选项
+	Text Fill Color	文字填色
+	Text Import Options	文本导入选项
+	Text Stroke Color	文字描边颜色
+	Text Wrap	文本绕排
+	Text Wrap Options	文字绕图选项
+	Text Wrap Options…	文本绕排选项…
+	The bounds of the visible art.	可见图稿的边界。
+	The cell shows the type object's text as HTML.	该单元格以 HTML 显示文字对象的内容。
+	The document has no colour swatches.	文档没有颜色色板。
+	The edge of the paper the printer can't reach: the art goes inside it, and the preview shows it dashed.	打印机无法触及的纸张边缘：图稿会放在其内侧，预览中会以虚线显示。
+	The page as it prints	页面打印时的样子
+	the preset	该预设
+	The Print Tiling tool placed the pages.	已由打印拼贴工具放置页面。
+	The selected objects have no CSS of their own (see below).	选择的对象没有自己的 CSS (请参阅下方)。
+	The system's settings of this printer	此打印机的系统设置
+	Thin Space	细空格
+	Third Space	三分之一空格
+	Third Vanishing Point:	第三消失点：
+	This document already has a swatch named “{name}” with another color.	此文档已有名为“{name}”但颜色不同的色板。
+	This library is empty.	此库为空。
+	This panel is on the roadmap (see the parity plan).	此面板已在路线图中 (见兼容性计划)。
+	Threaded Text	串接文本
+	Threads	线程
+	Three Point	三点
+	Three Point Perspective	三点透视
+	Three Point Perspective Preset 1	三点透视预设 1
+	Three Point Perspective Preset 2	三点透视预设 2
+	Three Point Perspective Preset 3	三点透视预设 3
+	Three Point Perspective Preset 4	三点透视预设 4
+	Three Point Perspective Preset 5	三点透视预设 5
+	Threshold	阈值
+	Thumbnail View	缩略图视图
+	Tile	平铺
+	Tile Edge Color	拼贴边缘颜色
+	Tile Edge Color…	拼贴边缘颜色…
+	Tile Full Pages	并排完整页面
+	Tile Range:	拼贴范围：
+	Tile Type:	拼贴类型：
+	tile {number}	拼贴 {number}
+	Tiles are numbered across, then down; leave the range empty for every tile.	拼贴先由左至右再由上至下编号；范围留空表示全部拼贴。
+	Tint	色调
+	Tip extends past the end point	箭头超出端点
+	Tip on the end point	箭头位于端点
+	Title Case	词首大写
+	to	至
+	Toggle Fill/Stroke Focus	切换填色/描边焦点
+	Toggle Selection	切换选择
+	Toggle single/double column	切换单列/双列
+	Tolerance	容差
+	Tolerance:	容差：
+	Tool Option	工具选项
+	Tool Options…	工具选项…
+	Toolbar: Advanced / Basic	工具栏：高级 / 基本
+	Toolbar: Single/Double Column	工具列：单列/双列
+	Toolbars	工具栏
+	Tools	工具
+	Top	上
+	Top in Front	上方在前
+	Top-to-Top Leading	上缘至上缘行距
+	Top:	上：
+	Total Width:	总宽度：
+	Touch Type Tool	修饰文字工具
+	Trace	描摹
+	Trace the image with the Default preset	使用“默认”预设描摹图像
+	Tracing	描摹
+	Tracking	字距
+	Trademark Symbol	商标符号
+	Transform	变换
+	Transform Again	再次变换
+	Transform Both	变换两者
+	Transform Each	分别变换
+	Transform Each…	分别变换…
+	Transform in Perspective	透视变形
+	Transform Object Only	仅变换对象
+	Transform Panel	变换面板
+	Transform Pattern Only	仅变换图案
+	Transform Pattern Tiles	变换图案拼贴
+	Transform Patterns	变换图案
+	Transform Tools	变换工具
+	Transforms	变形
+	Transform…	变形…
+	Transparency	透明度
+	Transparency Flattener Presets	透明度拼合器预设
+	Transparency Flattener Presets…	透明度拼合预设…
+	Transparency Grid	透明网格
+	Transparency Info	透明度信息
+	Transparency is flattened with the preset. Type is written as outlines; gradients as bands of colour.	透明度会依预设拼合。文字以轮廓写出；渐变以色带写出。
+	Transparency is flattened with the preset. Type is written as outlines; gradients stay smooth.	透明度按预设拼合。文字写为轮廓；渐变保持平滑。
+	Transparency Options	透明度选项
+	Transparent	透明
+	Transparent (Default)	透明 (默认)
+	Transparent Background	透明背景
+	Transverse (the page a quarter turn on the paper)	横向 (页面在纸张上转四分之一圈)
+	Trap…	陷印…
+	Trim	修边
+	Trim mark weight:	剪裁标记宽度：
+	Trim marks	剪裁标记
+	Trim View	裁切视图
+	True colour needs version 2004 or later: the nearest of 256 colours is written.	全彩需要 2004 或更新的版本：会写入 256 色中最接近的颜色。
+	Turn off Data Recovery for complex documents	对复杂文档关闭数据恢复
+	Tweak…	随意描边…
+	Twirl Rate:	旋转速率：
+	Twirl Tool	旋转扭曲工具
+	Twist…	螺旋…
+	Two Point	两点
+	Two Point Perspective	两点透视
+	Two Point Perspective Preset 1	两点透视预设 1
+	Two Point Perspective Preset 2	两点透视预设 2
+	Two Point Perspective Preset 3	两点透视预设 3
+	Two Point Perspective Preset 4	两点透视预设 4
+	Two Point Perspective Preset 5	两点透视预设 5
+	Type	文字
+	Type becomes outlines, and strokes a CAD line can't draw become filled shapes.	文字变为轮廓，CAD 无法绘制的描边变为填充形状。
+	Type Object Selection by Path Only	仅按路径选择文字对象
+	Type on a Path	路径文字
+	Type on a Path Options	路径文字选项
+	Type on a Path Options…	路径文字选项…
+	Type on a Path Tool	路径文字工具
+	Type Orientation	文字方向
+	Type stays text, and every stroke is a line with its lineweight and dashes.	文字维持为文字，每个描边都是带有线宽与虚线的线条。
+	Type Tool	文字工具
+	Type:	类型：
+	Type…	文字…
+	Typography	文字排版
+	UI Brightness	界面亮度
+	UI Scaling	界面缩放
+	Underline	下划线
+	Undo	撤销
+	Undo {name}	撤销{name}
+	Undo {}	撤销 {}
+	Unembed	取消嵌入
+	Unembedded to {}	已取消嵌入至 {}
+	Unembed…	取消嵌入…
+	Ungroup	取消编组
+	Ungroup Color Group	取消编组颜色组
+	Unicode	Unicode
+	Unicode (UTF-16)	Unicode (UTF-16)
+	Unicode (UTF-8)	Unicode (UTF-8)
+	Uniform	统一
+	Unique	唯一
+	Unite	联集
+	Unite and Simplify	联集并简化
+	Units	单位
+	Units:	单位：
+	Units: {units}	单位：{units}
+	Unlink harmony colors	取消链接调和色彩
+	Unlink Opacity Mask	取消链接不透明度蒙版
+	Unlink the mask	取消链接蒙版
+	Unlock	解除锁定
+	Unlock All	全部解锁
+	Unlock Grid	解除锁定网格
+	Unlock Guides	解锁参考线
+	Unnamed Objects	未命名对象
+	Unprintable margin:	不可打印边界：
+	Unshift	取消偏移
+	Untitled	未命名
+	Update Link	更新链接
+	Update Links	更新链接
+	Update Changed Links	更新已更改的链接
+	{count} linked image(s) changed on disk. Show the new versions?	有 {count} 个链接图像已在磁盘上更改。要显示新版本吗？
+@msg	Updated {_1} linked file(s) changed on disk	已更新 {_1} 个在磁盘上更改的链接文件
+	Update Modified Links	更新已修改的链接
+	Updated {} image(s)	已更新 {} 张图像
+	UPPERCASE	大写
+	URL:	URL：
+	Use 	使用 
+	Use Artboards	使用画板
+	Use Black Point Compensation	使用黑场补偿
+	Use Compression	使用压缩
+	Use document bleed settings	使用文档的出血设置
+	Use Even-Odd Fill Rule	使用奇偶填色规则
+	Use Japanese Crop Marks	使用日式裁切标记
+	Use Low Resolution Proxy for Linked EPS	链接 EPS 使用低分辨率代理
+	Use Non-Zero Winding Fill Rule	使用非零缠绕填色规则
+	Use Precise Cursors	使用精确光标
+	Use Pressure Pen	使用压感笔
+	Use Preview Bounds	使用预览边界
+	Use Registration Point for Symbol	对符号使用注册点
+	Use Square for Previews	预览使用方形
+	Use Text for Previews	预览使用文字
+	Use the document's swatch: pasted colors take its color.	使用文档的色板：粘贴的颜色会采用其颜色。
+	Use the Selected Text's Font	使用所选文本的字体
+	Use Typographer's Quotes	使用印刷体引号
+	User Defined	用户定义
+	User Defined Libraries	用户定义的库
+	User Graphic Style Library 1	用户图形样式库 1
+	User Graphic Style Library 10	用户图形样式库 10
+	User Graphic Style Library 2	用户图形样式库 2
+	User Graphic Style Library 3	用户图形样式库 3
+	User Graphic Style Library 4	用户图形样式库 4
+	User Graphic Style Library 5	用户图形样式库 5
+	User Graphic Style Library 6	用户图形样式库 6
+	User Graphic Style Library 7	用户图形样式库 7
+	User Graphic Style Library 8	用户图形样式库 8
+	User Graphic Style Library 9	用户图形样式库 9
+	User Interface	用户界面
+	User Library	用户库
+	User Preset	用户预设
+	User Swatch Library 1	用户色板库 1
+	User Swatch Library 10	用户色板库 10
+	User Swatch Library 2	用户色板库 2
+	User Swatch Library 3	用户色板库 3
+	User Swatch Library 4	用户色板库 4
+	User Swatch Library 5	用户色板库 5
+	User Swatch Library 6	用户色板库 6
+	User Swatch Library 7	用户色板库 7
+	User Swatch Library 8	用户色板库 8
+	User Swatch Library 9	用户色板库 9
+	V Spacing:	垂直间距：
+	V:	V：
+	Variable Width Profile	变量宽度配置文件
+	Variables	变量
+	New Variable	新建变量
+	Delete Variable	删除变量
+	List Variables	列出变量
+	Bind Variable	绑定变量
+	Unbind Variable	解除变量绑定
+	New Data Set	新建数据集
+	Delete Data Set	删除数据集
+	List Data Sets	列出数据集
+	Select Data Set	选择数据集
+	Next Data Set	下一个数据集
+	Previous Data Set	上一个数据集
+	Data Sets	数据集
+	New Variable…	新建变量…
+	New Data Set…	新建数据集…
+	Edit Data Set…	编辑数据集…
+	Data Set	数据集
+	Kind	类型
+	Variable	变量
+	no document	没有文档
+	no data set to edit	没有可编辑的数据集
+	Make Text Dynamic	使文本动态化
+	Make Visibility Dynamic	使可见性动态化
+	Capture Data Set	捕获数据集
+	Update Data Set	更新数据集
+	Rename Data Set…	重命名数据集…
+	Variable Options…	变量选项…
+	Select Bound Object	选择绑定的对象
+	Select All Bound Objects	选择所有绑定的对象
+	Multiple objects	多个对象
+	New Name	新名称
+	no variable to rename	没有可重命名的变量
+	no data set to rename	没有可重命名的数据集
+	Variation:	变化：
+	Vector Effects	矢量效果
+	Vector Halftone	矢量半色调
+	Vector Halftone…	矢量半调…
+	Vector illustration — fast, open, scriptable.	矢量插画　—　快速、开放、可脚本化。
+	VectorCraft	VectorCraft
+	VectorCraft didn't quit normally last time. These documents had unsaved changes:	VectorCraft 上次未正常退出。以下文档有未存储的更改：
+	VectorCraft Help…	VectorCraft 说明…
+	VectorCraft on getartcraft.com	getartcraft.com 上的 VectorCraft
+	VectorCraft on GitHub	GitHub 上的 VectorCraft
+	Vectors	矢量
+	Version {version} — open-source vector illustration in pure Rust.	版本 {version} — 以纯 Rust 打造的开放原始码矢量插画软件。
+	Version:	版本：
+	Vertical	竖排
+	Vertical %	垂直 %
+	Vertical Align Bottom	垂直底对齐
+	Vertical Align Center	垂直居中对齐
+	Vertical Align Top	垂直顶对齐
+	Vertical Area Type Tool	直排区域文字工具
+	Vertical Distribute Bottom	垂直分布下缘
+	Vertical Distribute Center	垂直分布中心
+	Vertical Distribute Space	垂直分布间距
+	Vertical Distribute Top	垂直分布上缘
+	Vertical Scale %	垂直缩放 %
+	Vertical Type on a Path Tool	直排路径文字工具
+	Vertical Type Tool	直排文字工具
+	Vertical:	垂直：
+	Very High	极高
+	View	视图
+	View Artboard Only	仅查看画板
+	View Opacity Mask	查看不透明度蒙版
+	View PDF after saving	存储后查看 PDF
+	View {n}	查看 {n}
+	Viewing Angle:	视图角度：
+	Viewing Distance:	视图距离：
+	W:	W：
+	Warnings	警告
+	Warp	变形
+	Warp Options	变形选项
+	Warp Tool	变形工具
+	Wave…	波形…
+	Web	Web
+	Web 1920×1080	Web 1920×1080
+	Web Safe 216	Web 安全色 216
+	Web Safe RGB	网页安全 RGB
+	Web Shift	Web 色偏
+	Web Snap:	Web 色偏：
+	Weight	粗细
+	Weight:	粗细：
+	Welcome to VectorCraft	欢迎使用 VectorCraft
+	When pasting text	粘贴文字时
+	White	白色
+	Widget Position:	Widget 位置：
+	Width	宽度
+	Width and Height	宽度与高度
+	Width Point	宽度点
+	Width Point Edit	宽度点编辑
+	Width Point Edit…	宽度点编辑…
+	Width Profile	宽度配置文件
+	Width Profiles	宽度配置文件
+	Width Tool	宽度工具
+	Width:	宽度：
+	Window	窗口
+	Windows	Windows
+	Working CMYK	工作 CMYK
+	Working CMYK (don't tag)	工作 CMYK (不加标签)
+	Workspace	工作区
+	Workspace {i}	工作区 {i}
+	Wrinkle Tool	褶皱工具
+	Write Layers	写入图层
+	XML ID	XML ID
+	Yards	码
+	Yellow	黄
+	Your browser downloads the files (several as one .zip).	浏览器会下载这些文件 (多个文件打包为一个 .zip)。
+	Your changes will be lost if you don't save them.	如果不存储，你的更改将会丢失。
+	Zig Zag…	锯齿化…
+	Zoom In	放大
+	Zoom Out	缩小
+	Zoom to Selection	缩放到所选对象
+	Zoom Tool	缩放工具
+	Zoom with Mouse Wheel	使用鼠标滚轮缩放
+	Scrub Numeric Fields by Dragging	拖动以调整数值字段
+	{count} file(s) in {folder}{note}. Show the package folder?	{folder} 中有 {count} 个文件{note}。要显示打包文件夹吗？
+	{count} linked file(s) not found	找不到 {count} 个链接文件
+	fonts not copied: {fonts}	未复制的字体：{fonts}
+	{count} linked image(s) changed since this document was saved. Show the new versions?	自存储此文档后，有 {count} 个链接图像已更改。要显示新版本吗？
+	{count} more rules: Export writes every one.	另有 {count} 条规则：导出时会全部写出。
+	{count} unnamed objects left out: name them, or turn on Unnamed Objects in the panel menu.	已略过 {count} 个未命名对象：请为它们命名，或在面板菜单中开启“未命名对象”。
+	{effect} is already applied	已应用 {effect}
+	{format} Options	{format} 选项
+	{kind} Gradient	{kind}渐变
+	{kind} Style Options…	{kind}样式选项…
+	{kind}, {model}	{kind}，{model}
+	{name} (spot)	{name} (专色)
+	{pages} in all, {count} per copy	共 {pages}，每份 {count}
+	{page} of {count}	第 {page} 页，共 {count} 页
+	{percent}% opacity	不透明度 {percent}%
+	{secs} sec	{secs} 秒
+	{shortcut} with the tool sizes the brush	以工具搭配 {shortcut} 调整画笔大小
+	{title} (selection)	{title} (选区)
+	{tool} Options	{tool}选项
+	{tool} Tool Options	{tool}工具选项
+	{warning}: click to correct to the closest color ({hex})	{warning}：单击以修正为最接近的颜色 ({hex})
+	“{file}” is protected by a password.	“{file}”受密码保护。
+	● Recording	● 录制中
+@plural	{n} item|{n} items	{n} 个项目
+@plural	Color Table ({n} color)|Color Table ({n} colors)	颜色表 ({n} 色)
+@plural	Delete this {n} graphic style?|Delete these {n} graphic styles?	要删除这 {n} 个图形样式吗？
+@plural	{n} Layer|{n} Layers	{n} 个图层
+@plural	{n} Object|{n} Objects	{n} 个对象
+@plural	{n} area highlighted|{n} areas highlighted	已标示 {n} 个区域
+@plural	{n} color|{n} colors	{n} 色
+@plural	{n} fill|{n} fills	{n} 个填色
+@plural	{n} glyph|{n} glyphs	{n} 个字符
+@plural	{n} object highlighted|{n} objects highlighted	已标示 {n} 个对象
+@plural	{n} star|{n} stars	{n} 个星芒
+@plural	{n} step|{n} steps	{n} 个步骤
+@plural	{n} stroke|{n} strokes	{n} 个描边
+	 the object to select  |  	以选择对象  |  
+	 to select multiple objects  |  	以选择多个对象  |  
+	 the object to duplicate	以复制对象
+	 an anchor or path segment to select it  |  	选择锚点或路径段  |  
+	 to move  |  	以移动  |  
+	 to add	以添加
+	 to add a corner point  |  	以添加角点  |  
+	 to add a smooth point  |  	以添加平滑点  |  
+	 to close  |  	以闭合  |  
+	 to finish	以完成
+	 to add smooth points  |  	以添加平滑点  |  
+	 to toggle corner  |  	以切换角点  |  
+	 to create point type  |  	以创建点文字  |  
+	 to create area type  |  	以创建区域文字  |  
+	 to exit editing	以退出编辑
+	 to draw  |  	以绘制  |  
+	 to constrain proportions  |  	以约束比例  |  
+	 from center  |  	以从中心绘制  |  
+	 for exact size	以输入精确尺寸
+	 to set the reference point  |  	以设置参考点  |  
+	 to transform  |  	以变换  |  
+	 for exact values	以输入精确数值
+	 to pan the view	以平移视图
+	 to zoom in  |  	以放大  |  
+	 to zoom out  |  	以缩小  |  
+	 to zoom into an area	以放大指定区域
+	Hold	按住
+	 right or left to zoom in or out  |  	向右以放大、向左以缩小  |  
+	 to keep zooming	以持续缩放
+	 an object to copy its attributes  |  	选择对象以复制其属性  |  
+	 to apply the selection's to it  |  	以将所选对象属性应用到它  |  
+	 to sample a color	以取样颜色
+	 across a selected object to set the gradient direction	横跨所选对象以设置渐变方向
+	 to select an artboard  |  	以选择画板  |  
+	 on the canvas to create one	在画布上以创建画板
+	 a stroke to add a width point  |  	描边可添加宽度点  |  
+	 to change one side  |  	可只更改单侧  |  
+	 to select more points  |  	可选择更多点  |  
+	 a point to edit it  |  	宽度点可编辑  |  
+	 to remove points	可移除点
+	 the art to add a pin  |  	图稿可添加图钉  |  
+	 to select more pins  |  	可选择更多图钉  |  
+	 a pin to warp  |  	图钉可变形  |  
+	 near a selected pin to rotate  |  	所选图钉附近可旋转  |  
+	 to remove pins	可移除图钉
+	 across paths to push them along  |  	横越路径可推移路径  |  
+	 to size the brush (	可调整画笔大小 (
+	 keeps its proportions)	可维持比例)
+	 over paths, and hold still to keep going  |  	经过路径，停住不动可持续作用  |  
+	 over paths to roughen their outlines  |  	经过路径可使轮廓粗糙化  |  
+	 to move in perspective  |  	可在透视中移动  |  
+	 to copy  |  	可复制  |  
+	 while dragging to move perpendicular to the plane  |  	拖动时可垂直于平面移动  |  
+	 to scale in perspective	可在透视中缩放
+	 an object, then another to blend them  |  	一个对象，再按另一个可创建渐变  |  
+	 to blend from it  |  	可从该处开始渐变  |  
+	 to set spacing and orientation	可设置间距与方向
+	:	：
+	Isolate Selected Group	隔离选择的编组
+	Release Clipping Mask	释放剪切蒙版
+	Make Compound Path	制作复合路径
+	Release Compound Path	释放复合路径
+	  — substituted by {style}	  — 以 {style} 替换
+	  — {n} characters from another font	  — {n} 个字符来自其他字体
+	[Normal Character Style]	[正常字符样式]
+	[Normal Paragraph Style]	[正常段落样式]
+	VectorCraft Defaults	VectorCraft 默认
+	Menu Commands	菜单命令
+	Tool	工具
+	Command	命令
+	Press keys…	请按快捷键…
+	All shortcuts reset to defaults.	所有快捷键已恢复默认。
+	Imported. Press OK to keep the imported set.	已导入。点击确定以保留导入的方案。
+	Simplified Chinese	简体中文
+	Release Image Trace	释放图像描摹
+	Make Text Wrap	创建文本绕排
+	Release Text Wrap	释放文本绕排
+	Basic	基本
+	Shift+Click	Shift+单击
+	Alt+Drag	Alt+拖动
+	Click, then press the new shortcut (Esc cancels)	单击后按下新的快捷键 (Esc 取消)
+	Go to Conflict	转到冲突项
+	Keyboard Shortcuts	键盘快捷键
+	Remove the shortcut	移除快捷键
+	Reset to Defaults	恢复默认值
+	Set:	集：
+	Shortcut	快捷键
+	Use Default	使用默认值
+	RGB:	RGB：
+	Anchors	锚点
+	Image Trace (Make and Expand)	图像描摹 (创建并扩展)
+	Alt+Click	Alt+单击
+	Shift+Drag	Shift+拖动
+	Direct Selection	直接选择
+	Group Selection	编组选择
+	Lasso	套索
+	Pen	钢笔
+	Area Type	区域文字
+	Vertical Type	直排文字
+	Vertical Area Type	直排区域文字
+	Vertical Type on a Path	直排路径文字
+	Touch Type	修饰文字
+	Scissors	剪刀
+	Shaper	Shaper
+	Free Transform	自由变换
+	Mesh	网格
+	Measure	度量
+	Zoom	缩放
+	Hand	抓手
+	Rotate View	旋转视图
+	Artboard	画板
+	Print & Proof	打印与打样
+	Legal	法律用纸
+	Tabloid	小报
+	A3	A3
+	A5	A5
+	A6	A6
+	B5	B5
+	Web 1280×720	Web 1280×720
+	Web 1024×768	Web 1024×768
+	Phone 375×812	手机 375×812
+	Tablet 1024×768	平板 1024×768
+	Social Story 1080×1920	社交故事 1080×1920
+	Video 1920×1080	视频 1920×1080
+	Video 3840×2160	视频 3840×2160
+	Gray	灰
+	Grey	灰
+	Orange	橙
+	Purple	紫
+	Brown	棕
+	Pink	粉
+	Center	居中
+	X:	X：
+	Y:	Y：
+	Text Displayed in Cell	单元格中显示的文本
+	Part of ArtCraft. MIT OR Apache-2.0. Fonts: Source Sans 3, Inter, JetBrains Mono, Noto Sans SC (OFL). Icons: Lucide (ISC) + VectorCraft.	ArtCraft 的一部分。MIT 或 Apache-2.0 许可。字体：Source Sans 3、Inter、JetBrains Mono、Noto Sans SC (OFL)。图标：Lucide (ISC)+ VectorCraft。
+	RGB	RGB
+	Pattern Swatches	图案色板
+	Default Graphic Style	默认图形样式
+	Heavy Ink	重油墨
+	Shades	阴影
+	Tints	淡色
+	Black Outline	黑色轮廓
+	Complementary	互补色
+	Spot Colors (0)	专色 (0)
+	Graphic Styles (4)	图形样式 (4)
+	Expand Object	扩展对象
+	Expand 1 Selected	扩展所选 1 项
+	1 Color Job	单色作业
+	2 Color Job	双色作业
+	3 Color Job	三色作业
+	2-Up	双联
+	4-Up	四联
+	2up	双联
+	4up	四联
+	CRLF (Windows)	CRLF (Windows)
+	LF (macOS, Linux)	LF (macOS、Linux)
+	UTF-16 (Unicode)	UTF-16 (Unicode)
+	WebP	WebP
+	Medium Resolution	中分辨率
+	None (Color Preview)	无 (颜色预览)
+	Preserve	保留
+	CMYK:	CMYK：
+	Art & Illustration	艺术和插画
+	Branding	品牌
+	Film & Video	影片和视频
+	Mobile	移动设备
+	RECENT (1)	最近使用 (1)
+	CMYK Equivalents	CMYK 等效值
+	Color Table (4 colors)	颜色表 (4 种颜色)
+	GIF, 128 colours	GIF，128 色
+	Selected Styles Only (0)	仅所选样式 (0)
+	Selected Swatches Only (0)	仅所选色板 (0)
+	VectorCraft Swatches (.vcswatches)	VectorCraft 色板 (.vcswatches)
+	Social	社交
+	Exact	精确
+	Visible & Printable Layers	可见且可打印的图层
+	SVG 1.1	SVG 1.1
+	Unsorted	不排序
+	Differences from VectorCraft Default:	与 VectorCraft 默认设置的差异：
+	Differences from [Default]:	与 [默认] 的差异：
+	Keeps the document editable: VectorCraft reopens the PDF with nothing lost. For files you'll edit again.	保持文档可编辑：VectorCraft 可无损重新打开该 PDF。适合还会再次编辑的文件。
+	VectorCraft Default	VectorCraft 默认设置
+	PDF 1.7	PDF 1.7
+	[Default]	[默认]
+	[Custom]	[自定义]
+	[High Quality Print]	[高质量打印]
+	[High Resolution]	[高分辨率]
+	[Low Resolution]	[低分辨率]
+	[Medium Resolution]	[中分辨率]
+	[PDF/X-1a:2001]	[PDF/X-1a:2001]
+	[PDF/X-3:2002]	[PDF/X-3:2002]
+	[PDF/X-4:2010]	[PDF/X-4:2010]
+	[Press Quality]	[印刷质量]
+	[Smallest File Size]	[最小文件大小]
+	[VectorCraft Default]	[VectorCraft 默认设置]
+	High Resolution	高分辨率
+	Maximize Editability	最大化可编辑性
+	Preserve Appearance	保留外观
+	▾ Default Actions	▾ 默认动作
+	Convert to Global	转换为全局色
+	Current Colors (0)	当前颜色 (0)
+	Lab Spot Colors	Lab 专色
+	Sunshine	阳光
+	1 Layer	1 个图层
+	Complementary 2	互补色 2
+	Split Complementary	分裂互补色
+	Left Complement	左侧互补
+	Right Complement	右侧互补
+	Analogous	类似色
+	Analogous 2	类似色 2
+	Triad	三色组
+	Tetrad	四色组
+	Monochrome	单色
+	Vivid	鲜艳
+	Muted	柔和
+	Warm	暖色
+	Cool	冷色
+	Reset Printing and Proofing	重置打印和打样
+	Reset Essentials Classic	重置基本功能 (经典)
+	Reset Automation	重置自动化
+	Reset Layout	重置布局
+	Reset Painting	重置绘画
+	Reset Tracing	重置描摹
+	Reset Typography	重置文字排版
+	Reset Web	重置 Web
+	Printing & Proofing	打印和打样
+	Social Landscape Post 1200×630	社交横版帖子 1200×630
+	Social Tall Post 1000×1500	社交竖版帖子 1000×1500
+	Profile Cover 1500×500	个人数据封面 1500×500
+	Page Cover 1640×624	主页封面 1640×624
+	Video Banner 2560×1440	视频横幅 2560×1440
+	Video Thumbnail 1280×720	视频缩略图 1280×720
+	Pixel	像素
+	Language Level 2	语言级别 2
+	Language Level 3	语言级别 3
+	TIFF (Black & White)	TIFF (黑白)
+	TIFF (8-bit Color)	TIFF (8 位彩色)
+	Low Resolution	低分辨率
+	Monochromatic	单色
+	Triad 2	三色组 2
+	Triad 3	三色组 3
+	Tetrad 2	四色组 2
+	Tetrad 3	四色组 3
+	Compound	复合
+	Compound 2	复合 2
+	High Contrast	高对比
+	High Contrast 2	高对比 2
+	High Contrast 3	高对比 3
+	Pentagram	五角星
+	Rasterized Complex Regions	栅格化的复杂区域
+	Transparent Objects	透明对象
+	All Affected Objects	所有受影响的对象
+	Expanded Patterns	扩展的图案
+	Outlined Strokes	轮廓化的描边
+	Outlined Text	轮廓化的文字
+	All Rasterized Regions	所有栅格化区域
+	Perceptual	可感知
+	Relative Colorimetric	相对比色
+	Absolute Colorimetric	绝对比色
+	Simulate	模拟
+	High Fidelity Photo	高保真照片
+	Low Fidelity Photo	低保真照片
+	3 Colors	3 色
+	6 Colors	6 色
+	16 Colors	16 色
+	Shades of Gray	灰度层次
+	Sketched Art	素描摹稿
+	Silhouettes	剪影
+	Line Art	线稿
+	Technical Drawing	技术绘图
+	Photo Low Fidelity	低保真照片
+	Restricted Colors	受限颜色
+	VectorCraft Generic CMYK (SWOP-like)	VectorCraft 通用 CMYK (类 SWOP)
+	sRGB IEC61966-2.1	sRGB IEC61966-2.1
+	Working RGB	工作 RGB
+	Dot Gain 15%	网点扩大 15%
+	Gray Gamma 2.2	灰度 Gamma 2.2
+	of	共
+	Joins:	接合：
+	Gutter:	间距：
+	Length:	长度：
+	Points:	角数：
+	Radius:	半径：
+	Shear:	倾斜：
+	Distance:	距离：
+	Scale X:	水平缩放：
+	Scale Y:	垂直缩放：
+	Current Colors	当前颜色
+	Art and Bright Colors	艺术和亮色
+	Spectrum	光谱
+	Preserve Tints	保留淡色
+	Scale Tints	缩放淡色
+	Tints and Shades	淡色和阴影
+	Hue Shift	色相偏移
+	Harmony Rules	协调规则
+	Variation	变化
+	Drag art, colors and text styles here to reuse them across documents. Libraries are stored on this machine — no account required.	将图稿、颜色和文字样式拖到这里，即可在不同文档中复用。库保存在本机，无需账户。
+
+# The Layers panel, the graphics processor preference and the font menu's filters.
+	All Scripts	所有文字系统
+	Any Kind	所有类型
+	Applies the next time VectorCraft starts.	下次启动 VectorCraft 时生效。
+	Collapse to Icons	折叠为图标
+	Decorative	装饰
+	Dim Images to:	图像变暗至：
+	Expand Panels	展开面板
+	Favorites	收藏
+	Graphics: {adapter}	显卡：{adapter}
+	Japanese	日文
+	Latin	拉丁文
+	Layer Options	图层选项
+	Layers Panel Options	图层面板选项
+	Monospaced	等宽
+	Rounded	圆体
+	Row Size:	行大小：
+	Sans Serif / Gothic	无衬线 / 黑体
+	Script / Brush	手写 / 书法
+	Serif / Mincho	衬线 / 宋体
+	Show Layers Only	仅显示图层
+	Thumbnails:	缩略图：
+	Collapse Panels to Icons	将面板折叠为图标
+	Duplicate Selection	复制所选项
+	Expand Layers Panel Rows	展开图层面板行
+	Flatten Artwork	拼合图稿
+	Graphics Processor	图形处理器
+	Hide Others	隐藏其他
+	High Performance (discrete)	高性能 (独立显卡)
+	Highlight Rows	突出显示行
+	Highlight Variable	突出显示变量
+	Lock Others	锁定其他
+	Merge Selected	合并所选图层
+	Move Rows	移动行
+	New Layer Options…	新建图层选项…
+	Options for Selection…	所选项的选项…
+	Outline Others	轮廓化其他
+	Power Saving (integrated)	节能 (集成显卡)
+	Preview All Layers	预览所有图层
+	Release to Layers (Build)	释放到图层 (累积)
+	Release to Layers (Sequence)	释放到图层 (顺序)
+	Select Art	选择图稿
+	Select Guides	选择参考线
+	Show All Layers	显示所有图层
+	Unlock All Layers	解锁所有图层
+
+# Anchor points, saved selections, paragraph direction and mojikumi (landed alongside the catalog).
+	Delete Anchor Points	删除锚点
+	Edit Selection	编辑所选对象
+	Left-to-Right Paragraph Direction	从左到右段落方向
+	Right-to-Left Paragraph Direction	从右到左段落方向
+	Line-end Punctuation Half Width	行尾标点半角
+	Mojikumi Set	标点挤压集
+	Kinsoku Set	Kinsoku 集
+	Hard	强
+	Soft	弱
+	Saved Selection 1	已保存的选区 1
+	Saved Selection 2	已保存的选区 2
+	Saved Selection 3	已保存的选区 3
+	Saved Selection 4	已保存的选区 4
+	Saved Selection 5	已保存的选区 5
+	Saved Selection 6	已保存的选区 6
+	Saved Selection 7	已保存的选区 7
+	Saved Selection 8	已保存的选区 8
+	Saved Selection 9	已保存的选区 9
+	Saved Selection 10	已保存的选区 10
+	Saved Selection 11	已保存的选区 11
+	Saved Selection 12	已保存的选区 12
+	Saved Selection 13	已保存的选区 13
+	Saved Selection 14	已保存的选区 14
+	Saved Selection 15	已保存的选区 15
+	Saved Selection 16	已保存的选区 16
+	Saved Selection 17	已保存的选区 17
+	Saved Selection 18	已保存的选区 18
+	Saved Selection 19	已保存的选区 19
+	Saved Selection 20	已保存的选区 20
+	Saved Selection 21	已保存的选区 21
+	Saved Selection 22	已保存的选区 22
+	Saved Selection 23	已保存的选区 23
+	Saved Selection 24	已保存的选区 24
+	Saved Selection 25	已保存的选区 25
+
+# About › Contributors / Models (credits.rs)
+	About	关于
+	Contributors	贡献者
+	Models	模型
+	Username	用户名
+	Display name	显示名称
+	Real name	真实姓名
+	Sort	排序
+	Reverse the order	反转顺序
+	Grab bag	名单
+	Table	表格
+	Name (A–Z)	名称 (A–Z)
+	Merged PRs	已合并的 PR
+	Commits	提交
+	Lines added	新增行数
+	Lines deleted	删除行数
+	Line delta	行数变化
+	Binary assets added	新增二进制资源
+	Binary assets removed	删除二进制资源
+	First commit	首次提交
+	Last commit	最近提交
+	First	首次
+	Last	最近
+	{people} contributors · {commits} commits	{people} 位贡献者 · {commits} 次提交
+	No contributor data was built into this copy.	此版本未包含贡献者数据。
+	No model credits were built into this copy.	此版本未包含模型致谢。
+	Company	公司
+	Version	版本
+	% of all commits	占全部提交的百分比
+	Lines +/−	行数 +/−
+	Joins	连接
+	Miter	斜接
+	Bevel	斜角
+	Offset	偏移
+	Axis	轴
+axis	Horizontal	水平
+axis	Vertical	垂直
+axis	Both	两者
+	Drag to move	拖动以移动
+	Drag to float as a toolbar	拖动使其浮动为工具栏
+	Put back in the toolbar	放回工具栏
+	Float Panel	浮动面板
+	Dock Panel	停放面板
+	Drag to float the panel group	拖动以浮动面板组
+	Put back in the dock	放回停放区
+	Drag to float the toolbar	拖动以浮动工具栏
+	Drag to the window's left edge to dock	拖到窗口左边缘以停放
+	Float Tool Group	浮动工具组
+
+# The macOS menu bar (native_menu): the app and Window menus' system items, Settings pages.
+	Services	服务
+	Hide VectorCraft	隐藏 VectorCraft
+	Bring All to Front	前置全部窗口
+	Settings	设置
+	Break Link	断开链接
+	On: one locked object showing the document, updated when it changes.	开启：以一个锁定对象显示文档，文档更改时随之更新。
+	Off: an editable copy of its art, embedded in this document.	关闭：将其图稿的可编辑副本嵌入此文档。
+	Images: link to the file instead of only embedding it.	图像：链接到文件，而不只是嵌入。
+	VectorCraft documents: one locked object, updated when the file changes.	VectorCraft 文档：一个锁定对象，文件更改时随之更新。
+	A file dialog is open: choose there first	文件对话框已打开：请先在其中选择
+	Expand Shaper Group	扩展 Shaper 组
+	Release Shaper Group	释放 Shaper 组
+	Select Shaper Face	选择 Shaper 区域
+	Constrain	约束
+	Perspective Distort	透视扭曲
+
+# Photoshop-style raster effects (Effect menu, their dialogs).
+	Radial Blur…	径向模糊…
+	Smart Blur…	智能模糊…
+	Sharpen	锐化
+	Unsharp Mask…	反锐化遮罩…
+	Pixelate	像素化
+	Color Halftone…	彩色半调…
+	Crystallize…	晶格化…
+	Mezzotint…	铜版雕刻…
+	Pointillize…	点彩…
+	Color Halftone	彩色半调
+	Crystallize	晶格化
+	Mezzotint	铜版雕刻
+	Pointillize	点彩
+	Max. Radius	最大半径
+	Channel 1	色版 1
+	Channel 2	色版 2
+	Channel 3	色版 3
+	Channel 4	色版 4
+	Cell Size	单元格大小
+	Fine Dots	细点
+	Medium Dots	中等点
+	Grainy Dots	颗粒点
+	Coarse Dots	粗点
+	Short Lines	短线
+	Medium Lines	中等线
+	Long Lines	长线
+	Short Strokes	短笔画
+	Medium Strokes	中等笔画
+	Long Strokes	长笔画
+	Radial Blur	径向模糊
+	Smart Blur	智能模糊
+	Unsharp Mask	反锐化遮罩
+	Gaussian Blur	高斯模糊
+	Method	方法
+	Quality	质量
+	Radius	半径
+	Spin	旋转
+	Draft	草稿
+	Good	良好
+	Best	最佳
+	Video	视频
+	De-Interlace…	逐行…
+	De-Interlace	逐行
+	NTSC Colors	NTSC 颜色
+	Eliminate	消除
+	Create New Fields by	创建新场方式
+	Odd Fields	奇数场
+	Even Fields	偶数场
+	Duplication	复制
+	Interpolation	插值
+	Texture	纹理
+	Craquelure…	龟裂缝…
+	Grain…	颗粒…
+	Mosaic Tiles…	马赛克拼贴…
+	Patchwork…	拼缀图…
+	Stained Glass…	染色玻璃…
+	Texturizer…	纹理化…
+	Craquelure	龟裂缝
+	Grain	颗粒
+	Mosaic Tiles	马赛克拼贴
+	Patchwork	拼缀图
+	Stained Glass	染色玻璃
+	Texturizer	纹理化
+	Crack Spacing	裂缝间距
+	Crack Depth	裂缝深度
+	Crack Brightness	裂缝亮度
+	Intensity	强度
+	Grain Type	颗粒类型
+	Tile Size	拼贴大小
+	Grout Width	缝隙宽度
+	Lighten Grout	加亮缝隙
+	Square Size	方形大小
+	Relief	凸现
+	Border Thickness	边框粗细
+	Light Intensity	光照强度
+	Light Direction	光照方向
+	Sprinkles	喷洒
+	Clumped	结块
+	Contrasty	强反差
+	Enlarged	扩大
+	Stippled	点刻
+	Speckle	斑点
+	Brick	砖形
+	Burlap	粗麻布
+	Canvas	画布
+	Sandstone	砂岩
+	Bottom Left	左下
+	Top Left	左上
+	Top Right	右上
+	Bottom Right	右下
+effect	Soft	柔和
+effect	Horizontal	水平
+effect	Vertical	垂直
+	Edge	边缘
+	System Title Bar	系统标题栏
+	Value Axis	数值轴
+	On Left Side	左侧
+	On Right Side	右侧
+	On Both Sides	两侧
+	Short	短
+	Full Width	全宽
+	Distort	扭曲
+	Diffuse Glow…	扩散亮光…
+	Glass…	玻璃…
+	Ocean Ripple…	海洋波纹…
+	Diffuse Glow	扩散亮光
+	Glass	玻璃
+	Ocean Ripple	海洋波纹
+	Graininess	颗粒
+	Glow Amount	发光量
+	Clear Amount	清除数量
+	Ripple Size	波纹大小
+	Ripple Magnitude	波纹幅度
+	Blocks	块状
+	Frosted	磨砂
+	Tiny Lens	小镜头
+	Rename Data Set	重命名数据集
+	Rename Variable	重命名变量
+	Variable Options	变量选项
+	Edit Data Set	编辑数据集
+	Define a variable first	请先定义一个变量
+	Text	文本
+	Visibility	可见性
+
+# Revolve profile guidance.
+
+# Interactive Revolve controls.
+	Lighting	照明
+	Revolve angle	旋转成形角度
+	Axis side	轴的位置
+	Rotation X	X 轴旋转
+	Rotation Y	Y 轴旋转
+	Rotation Z	Z 轴旋转
+	Shading	明暗处理
+	Direction	方向
+	Elevation	仰角
+	Ambient	环境光
+	Segments	分段数
+	Show axis	显示轴
+	Reset all	全部重置
+	Reset to default	重置为默认值
+	Reset all Revolve settings to their defaults.	将所有旋转成形设置重置为默认值。
+	Drag values or labels. Double-click a value to type.	拖动数值或标签。双击数值即可输入。
+	Drag rings to rotate. Shift snaps to 15°.	拖动圆环旋转。按住 Shift 以 15° 为步长调整。
+	Drag the light, or its rings. Shift snaps to 15°.	拖动光源或圆环。按住 Shift 以 15° 为步长调整。
+lighting	Light	光源
+	Keep visible surfaces only when expanding	扩展时仅保留可见表面
+	Trim covered geometry on Expand Appearance. Live preview keeps the full surface. Transparent paints and surfaces exceeding visibility limits retain all faces.	扩展外观时裁剪被遮挡的几何区域。实时预览保留完整表面。透明绘制或超出可见性处理限制的表面保留所有面。
+	Accented Edges…	强化的边缘…
+	Angled Strokes…	成角的线条…
+	Crosshatch…	阴影线…
+	Dark Strokes…	深色线条…
+	Ink Outlines…	墨水轮廓…
+	Spatter…	喷溅…
+	Sprayed Strokes…	喷色描边…
+	Sumi-e…	水墨画…
+	Accented Edges	强化的边缘
+	Angled Strokes	成角的线条
+	Crosshatch	阴影线
+	Dark Strokes	深色线条
+	Ink Outlines	墨水轮廓
+	Spatter	喷溅
+	Sprayed Strokes	喷色描边
+	Sumi-e	水墨画
+	Direction Balance	方向平衡
+	Stroke Length	描边长度
+	Sharpness	锐化程度
+	Strength	力度
+	Balance	平衡
+	Black Intensity	黑色强度
+	White Intensity	白色强度
+	Dark Intensity	深色强度
+	Spray Radius	喷色半径
+	Stroke Direction	描边方向
+	Stroke Width	描边宽度
+	Stroke Pressure	描边压力
+	Right Diagonal	右对角线
+	Left Diagonal	左对角线

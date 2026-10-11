@@ -1,0 +1,45 @@
+{
+  "nodes": {
+    "craft-fonts": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791311399,
+        "narHash": "sha256-4E9OrthE5z39xFXpvpwn4Fn6RH3wX2sF56rZZejZT+I=",
+        "owner": "storytold",
+        "repo": "craft-fonts",
+        "rev": "8dcdacd5153e64560d109541a47d806f26f048c0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "storytold",
+        "repo": "craft-fonts",
+        "rev": "8dcdacd5153e64560d109541a47d806f26f048c0",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1791260994,
+        "narHash": "sha256-Miqqk/ammqnTUxaoCyvtwoPeLbI1ksFyLxi/CazZpWY=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "151fa4e8ddfdd8dd25d945ad94ed54a13de9f6e4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "craft-fonts": "craft-fonts",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

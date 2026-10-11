@@ -1,0 +1,38 @@
+[package]
+name = "vectorcraft-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft text: font database, shaping, layout, glyph outlines"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-doc = { workspace = true }
+kurbo = { workspace = true }
+skrifa = { workspace = true }
+harfrust = { workspace = true }
+log = { workspace = true }
+# Font subsets for embedding (SVG @font-face); MIT OR Apache-2.0, already used by the PDF writer
+# (which turns on `variable-fonts` too: named instances of variable fonts are instanced).
+subsetter = { version = "0.2", default-features = false, features = ["variable-fonts"] }
+unicode-bidi = "0.3.18"
+unicode-general-category = "1"
+unicode-script = "0.5"
+# Builds a small variable font for tests (`test_fonts`; no font file is committed). MIT OR
+# Apache-2.0, already in the build through subsetter.
+write-fonts = { version = "0.48", optional = true }
+
+[features]
+# `vectorcraft_text::test_fonts` for other crates' tests (dev-dependencies only).
+test-fonts = ["dep:write-fonts"]
+
+[dev-dependencies]
+write-fonts = "0.48"
+
+# Fonts registered with Windows outside its font folders ("install as shortcut", installers);
+# MIT OR Apache-2.0, a safe wrapper of the registry API from the windows-rs project.
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.6"

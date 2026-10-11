@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["apps/craftlauncher-android"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Shared suite shell: JNI bridge, updater, storage, SAF (the crate root is
+# `craftapps-android/shared/`, two levels up from this workspace root).
+craftapps-shared = { path = "../../shared" }

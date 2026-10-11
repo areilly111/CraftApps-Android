@@ -1,0 +1,37 @@
+name: Affinity 3 corpus
+
+on:
+  push:
+    branches: [main]
+    paths: ["crates/**", "xtask/**", "Cargo.toml", "Cargo.lock", ".github/workflows/affinity-corpus.yml"]
+  pull_request:
+    paths: ["crates/**", "xtask/**", "Cargo.toml", "Cargo.lock", ".github/workflows/affinity-corpus.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: affinity-corpus-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  affinity3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AFFINITY_CORPUS_REQUIRED: "1"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95"
+      - name: Fetch pinned and checksum-verified corpus
+        run: cargo xtask corpus --affinity
+      - name: Parse every file and freeze actual Affinity 3 feature retention
+        run: cargo test -p vectorcraft-affinity --all-features -- --nocapture
+      - name: Check every artboard, native save, SVG, PDF and PSD exports
+        run: cargo test -p vectorcraft-engine --test affinity_artboards --test affinity_text --test affinity_corpus -- --nocapture

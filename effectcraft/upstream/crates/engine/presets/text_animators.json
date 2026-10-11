@@ -1,0 +1,167 @@
+{
+  "format": "effectcraft.textAnimatorPresets/1",
+  "notes": "Original EffectCraft text animator presets (MIT OR Apache-2.0). Key times are seconds from the current time; paths are relative to the selector.",
+  "presets": [
+    {
+      "id": "typewriter",
+      "name": "Typewriter",
+      "description": "Characters appear one at a time, hard-edged.",
+      "animators": [
+        {
+          "name": "Typewriter",
+          "properties": { "opacity": 0 },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/smoothness": 0 },
+              "keys": { "start": [[0, 0], [2, 100]] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fadeUpCharacters",
+      "name": "Fade Up Characters",
+      "description": "Characters fade in while rising into place, left to right.",
+      "animators": [
+        {
+          "name": "Fade Up",
+          "properties": { "opacity": 0, "position": [0, 40, 0] },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/shape": 1, "advanced/easeHigh": 50, "advanced/easeLow": 50 },
+              "keys": { "offset": [[0, -100], [1.5, 100]] },
+              "ease": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bounceInWords",
+      "name": "Bounce In Words",
+      "description": "Words scale up from nothing with an overshoot, one after another.",
+      "animators": [
+        {
+          "name": "Bounce Scale",
+          "properties": { "scale": [0, 0, 100], "opacity": 0 },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/basedOn": 2, "advanced/shape": 1 },
+              "keys": { "offset": [[0, -100], [1.2, 100]] }
+            }
+          ]
+        },
+        {
+          "name": "Bounce Overshoot",
+          "properties": { "scale": [130, 130, 100] },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/basedOn": 2, "advanced/shape": 3, "end": 35 },
+              "keys": { "offset": [[0.15, -35], [1.5, 100]] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trackingIn",
+      "name": "Tracking In",
+      "description": "Widely spaced text tightens up while fading in.",
+      "animators": [
+        {
+          "name": "Tracking In",
+          "properties": { "tracking": 0, "opacity": 100 },
+          "keys": {
+            "tracking": [[0, 400], [1.6, 0]],
+            "opacity": [[0, 0], [0.8, 100]]
+          },
+          "ease": true,
+          "selectors": []
+        }
+      ]
+    },
+    {
+      "id": "scramble",
+      "name": "Scramble",
+      "description": "Letters cycle through random characters before settling, left to right.",
+      "animators": [
+        {
+          "name": "Scramble",
+          "properties": { "characterOffset": 12 },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/randomize": true, "advanced/smoothness": 0 },
+              "keys": { "start": [[0, 0], [2, 100]] }
+            },
+            {
+              "kind": "wiggly",
+              "set": { "wigglesPerSecond": 8, "correlation": 0 }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blurIn",
+      "name": "Blur In",
+      "description": "Characters come into focus and fade in, left to right.",
+      "animators": [
+        {
+          "name": "Blur In",
+          "properties": { "blur": [40, 40], "opacity": 0, "scale": [140, 140, 100] },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/shape": 1, "advanced/easeLow": 60 },
+              "keys": { "offset": [[0, -100], [1.4, 100]] },
+              "ease": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jitter",
+      "name": "Jitter",
+      "description": "Characters wobble randomly in position and rotation, continuously.",
+      "animators": [
+        {
+          "name": "Jitter",
+          "properties": { "position": [0, 18, 0], "rotation": 12 },
+          "selectors": [
+            { "kind": "range" },
+            {
+              "kind": "wiggly",
+              "set": { "wigglesPerSecond": 3, "correlation": 20 }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dropInLines",
+      "name": "Drop In Lines",
+      "description": "Lines drop from above with a slight rotation, one after another.",
+      "animators": [
+        {
+          "name": "Drop In",
+          "properties": { "position": [0, -120, 0], "rotation": -8, "opacity": 0 },
+          "selectors": [
+            {
+              "kind": "range",
+              "set": { "advanced/basedOn": 3, "advanced/shape": 1, "advanced/easeHigh": 80 },
+              "keys": { "offset": [[0, -100], [1.4, 100]] },
+              "ease": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

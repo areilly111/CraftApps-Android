@@ -1,0 +1,433 @@
+//! Programmatic control of the running app (agents, tests, MCP).
+//!
+//! Methods (JSON-lines over the host's transport):
+//! - `engine.execute {command, params}` / `ui.menu.invoke {command|id, params}`: run any command
+//! - `engine.commands`: engine + UI commands with enablement
+//! - `document.inspect`: document summary; `ui.inspect`: UI state
+//! - `ui.menu.list`: flattened menu tree
+//! - `ui.contextMenu.list`: the canvas context menu for the current selection, flattened
+//! - `ui.tool.select {tool}`, `ui.tool.list`
+//! - `ui.pointer {events:[{kind: down|drag|up|move|doubleclick, x, y, space?: "doc"|"screen"}], mods?}`:
+//!   drive the active tool through the same path as the mouse
+//! - `ui.key {key, shift?, alt?, cmd?}` / `ui.text {text}`: synthetic keyboard input
+//! - `ui.move {x, y}` / `ui.click {x, y, button?, count?, shift?…}` / `ui.drag {x, y, toX, toY, steps?}`:
+//!   real egui pointer input in screen points (reaches every widget: panels, flyouts, dialogs)
+//! - `ui.set {brightness?, panel?, dockTab?, rulers?, outline?, …}`
+//! - `ui.dialog.set {field, value}` / `ui.dialog.confirm` / `ui.dialog.cancel`
+//! - `ui.resize {width, height}`, `ui.focus`, `ui.screenshot {path?, data?}` (`data: true`: the PNG
+//!   comes back as `pngBase64` as well)
+//! - `ui.render {path?, scale?, artboard?, data?}`: render an artboard headlessly (`artboard`: its
+//!   0-based index, default the first; PNG; without a path, or with `data: true`, as `pngBase64`)
+//! - `app.open {path}` (any readable format) / `app.save {path?, svg?: {…SVG options}}` / `app.quit`
+//!   (`file.close`, `file.closeAll` and `app.quit` first open a `saveChanges` dialog for each
+//!   modified document: `ui.dialog.confirm` saves, set `discard: true` then confirm to discard)
+//! - `app.export {path?, format?, …document.export options}`: encoded by the engine, written through
+//!   the host; the document keeps its path. No path → `{dataBase64, format, bytes}` (as headless)
+
+use std::sync::mpsc::Sender;
+
+use serde_json::{Value, json};
+use vectorcraft_tools::{Mods, PointerEvent, PointerKind};
+
+use crate::VectorcraftApp;
+use crate::canvas::Xf;
+
+pub type ControlResponse = Value;
+
+pub struct ControlRequest {
+    pub method: String,
+    pub params: Value,
+    pub reply: Sender<ControlResponse>,
+}
+
+impl ControlRequest {
+    pub fn new(method: impl Into<String>, params: Value) -> (Self, std::sync::mpsc::Receiver<ControlResponse>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        (Self { method: method.into(), params, reply: tx }, rx)
+    }
+}
+
+pub enum Outcome {
+    Done(Value),
+    /// A window capture, answered once a frame was presented: written to `path`, the PNG sent
+    /// back too with `data`.
+    Screenshot {
+        path: Option<String>,
+        data: bool,
+    },
+}
+
+fn ok(v: Value) -> Outcome {
+    Outcome::Done(json!({"ok": true, "result": v}))
+}
+pub(crate) fn err(e: impl std::fmt::Display) -> Outcome {
+    Outcome::Done(json!({"ok": false, "error": e.to_string()}))
+}
+fn wrap(r: Result<Value, String>) -> Outcome {
+    match r {
+        Ok(v) => ok(v),
+        Err(e) => err(e),
+    }
+}
+
+pub fn all_commands(app: &VectorcraftApp) -> Value {
+    let mut v: Vec<Value> = app.session.commands().into_iter().map(|c| serde_json::to_value(c).unwrap_or_default()).collect();
+    for (id, label, sc, params) in crate::menus::UI_COMMANDS {
+        v.push(json!({"id": id, "label": label, "shortcut": sc, "params": params, "enabled": crate::menus::enabled(app, id), "ui": true}));
+    }
+    Value::Array(v)
+}
+
+pub fn inspect(app: &VectorcraftApp, ctx: &egui::Context) -> Value {
+    let r = ctx.content_rect();
+    json!({
+        "tool": app.session.tool_id(),
+        "toolOptions": app.session.tool_options(),
+        "ui": serde_json::to_value(&app.ui).unwrap_or_default(),
+        // Not saved with the UI state, so not in `ui`: 0 normal … 3 Presentation Mode.
+        "screenMode": app.ui.screen_mode,
+        // The Contextual Task Bar: pinned (not saved either) and where it shows.
+        "taskBar": {
+            "pinned": app.ui.task_bar_place.pinned,
+            "rect": crate::canvas::task_bar_rect(ctx).map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
+        },
+        // The Free Transform tool's widget, where it shows.
+        "freeTransformWidget": crate::free_transform::rect(ctx).map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
+        "view": app.view().map(|v| serde_json::to_value(v).unwrap_or_default()),
+        "canvasRect": app.canvas_rect.map(|c| json!([c.left(), c.top(), c.width(), c.height()])),
+        "window": [r.width(), r.height()],
+        "documents": app.session.documents().iter().map(|d| json!({"title": d.title(), "dirty": d.is_dirty()})).collect::<Vec<_>>(),
+        "activeDocument": app.session.active_index(),
+        "perf": {"frameMs": app.perf.frame_ms, "renderMs": app.perf.render_ms, "fps": app.perf.fps},
+        "graphicsAdapter": app.graphics_adapter,
+        // The menus are in the macOS menu bar rather than the window.
+        "nativeMenuBar": app.services.native_menu.is_some(),
+        // Saves and exports still being written in the background (Background Save / Export).
+        "background": app.background.jobs.iter().map(|j| j.label.as_str()).collect::<Vec<_>>(),
+    })
+}
+
+fn key_from(name: &str) -> Option<egui::Key> {
+    egui::Key::from_name(name).or(match name.to_ascii_lowercase().as_str() {
+        "enter" | "return" => Some(egui::Key::Enter),
+        "esc" | "escape" => Some(egui::Key::Escape),
+        "delete" => Some(egui::Key::Delete),
+        "backspace" => Some(egui::Key::Backspace),
+        "left" => Some(egui::Key::ArrowLeft),
+        "right" => Some(egui::Key::ArrowRight),
+        "up" => Some(egui::Key::ArrowUp),
+        "down" => Some(egui::Key::ArrowDown),
+        "space" => Some(egui::Key::Space),
+        "tab" => Some(egui::Key::Tab),
+        _ => None,
+    })
+}
+
+/// The modifier keys a request holds down (`cmd`, `ctrl`, `alt`, `shift`; `cmd` is Command on
+/// macOS, Ctrl elsewhere).
+fn modifiers(p: &Value) -> egui::Modifiers {
+    let b = |n: &str| p.get(n).and_then(Value::as_bool).unwrap_or(false);
+    egui::Modifiers { alt: b("alt"), ctrl: b("ctrl"), shift: b("shift"), mac_cmd: b("cmd") && cfg!(target_os = "macos"), command: b("cmd") }
+}
+
+pub fn handle(app: &mut VectorcraftApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
+    let p = &req.params;
+    let s = |k: &str| p.get(k).and_then(Value::as_str);
+    match req.method.as_str() {
+        "engine.execute" | "ui.menu.invoke" | "command" => {
+            let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
+            let params = p.get("params").cloned().unwrap_or(json!({}));
+            let params = if params.is_null() { json!({}) } else { params };
+            wrap(app.run(id, params))
+        }
+        "engine.commands" => ok(all_commands(app)),
+        "document.inspect" => wrap(app.run("document.inspect", p.clone())),
+        "ui.inspect" => ok(inspect(app, ctx)),
+        "ui.menu.list" => ok(serde_json::to_value(crate::menus::menu_entries(app)).unwrap_or_default()),
+        "ui.contextMenu.list" => ok(serde_json::to_value(crate::menus::context_entries(app)).unwrap_or_default()),
+        "ui.tool.select" => wrap(app.run("tool.select", json!({"tool": s("tool").unwrap_or("")}))),
+        "ui.tool.list" => ok(serde_json::to_value(vectorcraft_tools::TOOL_GROUPS).unwrap_or_default()),
+        "ui.pointer" => {
+            let Some(events) = p.get("events").and_then(Value::as_array) else { return err("missing `events`") };
+            let base_mods: Mods = p.get("mods").and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or_default();
+            let view = app.view_info();
+            let xf = app.canvas_rect.zip(app.view().copied()).map(|(rect, v)| Xf::new(rect, &v));
+            for e in events {
+                let kind = match e.get("kind").and_then(Value::as_str).unwrap_or("") {
+                    "down" => PointerKind::Down,
+                    "drag" => PointerKind::Drag,
+                    "up" => PointerKind::Up,
+                    "move" => PointerKind::Move,
+                    "doubleclick" | "dblclick" => PointerKind::DoubleClick,
+                    other => return err(format!("unknown pointer kind `{other}`")),
+                };
+                let x = e.get("x").and_then(Value::as_f64).unwrap_or(0.0);
+                let y = e.get("y").and_then(Value::as_f64).unwrap_or(0.0);
+                let pos = if e.get("space").and_then(Value::as_str) == Some("screen") {
+                    match xf {
+                        Some(xf) => xf.to_doc(egui::pos2(x as f32, y as f32)),
+                        None => return err("no canvas yet"),
+                    }
+                } else {
+                    vectorcraft_geom::Point::new(x, y)
+                };
+                let mods = e.get("mods").and_then(|m| serde_json::from_value(m.clone()).ok()).unwrap_or(base_mods);
+                crate::canvas::dispatch(app, &PointerEvent { kind, pos, mods, pressure: PointerEvent::json_pressure(e) }, view);
+                let hold = PointerEvent::json_hold(e);
+                if hold > 0.0 {
+                    let r = app.session.tool_tick(hold, view);
+                    crate::canvas::apply_requests(app, r);
+                }
+            }
+            ctx.request_repaint();
+            wrap(app.run("document.inspect", json!({})).map(|d| json!({"selection": d["selection"], "tool": app.session.tool_id()})))
+        }
+        "ui.key" => {
+            let Some(k) = s("key").and_then(key_from) else { return err("unknown or missing `key`") };
+            let m = modifiers(p);
+            app.synthetic.push(egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: m });
+            // Typed text comes with the press, so it shares the key's frame and modifiers.
+            if let Some(t) = s("text") {
+                app.synthetic.push(egui::Event::Text(t.to_string()));
+            }
+            app.synthetic.push(egui::Event::Key { key: k, physical_key: None, pressed: false, repeat: false, modifiers: m });
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
+        "ui.move" => {
+            let pos = egui::pos2(p.get("x").and_then(Value::as_f64).unwrap_or(0.0) as f32, p.get("y").and_then(Value::as_f64).unwrap_or(0.0) as f32);
+            app.synthetic.push(egui::Event::PointerMoved(pos));
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
+        "ui.click" | "ui.drag" => {
+            // Screen-space (egui points) pointer input through egui itself: reaches every widget.
+            let f = |k: &str| p.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let button = match s("button") {
+                Some("right") | Some("secondary") => egui::PointerButton::Secondary,
+                _ => egui::PointerButton::Primary,
+            };
+            let modifiers = modifiers(p);
+            let a = egui::pos2(f("x"), f("y"));
+            let end = if req.method == "ui.drag" { egui::pos2(f("toX"), f("toY")) } else { a };
+            app.synthetic.push(egui::Event::PointerMoved(a));
+            app.synthetic.push(egui::Event::PointerButton { pos: a, button, pressed: true, modifiers });
+            if req.method == "ui.drag" {
+                let steps = p.get("steps").and_then(Value::as_u64).unwrap_or(8).max(1);
+                for i in 1..=steps {
+                    let t = i as f32 / steps as f32;
+                    app.synthetic.push(egui::Event::PointerMoved(a + (end - a) * t));
+                }
+            }
+            app.synthetic.push(egui::Event::PointerButton { pos: end, button, pressed: false, modifiers });
+            let count = p.get("count").and_then(Value::as_u64).unwrap_or(1);
+            for _ in 1..count {
+                app.synthetic.push(egui::Event::PointerButton { pos: end, button, pressed: true, modifiers });
+                app.synthetic.push(egui::Event::PointerButton { pos: end, button, pressed: false, modifiers });
+            }
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
+        "ui.wheel" => {
+            // Mouse wheel notches over screen point (x, y): `dy` up (+) or down, `dx` sideways
+            // (`unit: "point"` for trackpad-like points), with modifiers as `ui.click` takes them.
+            let f = |k: &str| p.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let unit = if s("unit") == Some("point") { egui::MouseWheelUnit::Point } else { egui::MouseWheelUnit::Line };
+            // Notches, not a flood: a turn stays within what a real wheel sends.
+            let delta = egui::vec2(f("dx"), f("dy")).clamp(egui::Vec2::splat(-100.0), egui::Vec2::splat(100.0));
+            app.synthetic.push(egui::Event::PointerMoved(egui::pos2(f("x"), f("y"))));
+            app.synthetic.push(egui::Event::MouseWheel { unit, delta, phase: egui::TouchPhase::Move, modifiers: modifiers(p) });
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
+        "ui.text" => {
+            app.synthetic.push(egui::Event::Text(s("text").unwrap_or("").to_string()));
+            ctx.request_repaint();
+            ok(Value::Null)
+        }
+        "ui.set" => {
+            let mut r = Ok(Value::Null);
+            if let Some(b) = s("brightness") {
+                r = app.run("window.brightness", json!({"brightness": b}));
+            }
+            if let Some(pn) = s("panel") {
+                r = app.run("window.panel", json!({"panel": pn}));
+            }
+            if let Some(st) = s("status") {
+                app.ui.status = st.to_string();
+            }
+            for (k, flag) in [
+                ("rulers", "view.rulers"),
+                ("outline", "view.outline"),
+                ("grid", "view.grid"),
+                ("smartGuides", "view.smartGuides"),
+                ("boundingBox", "view.boundingBox"),
+            ] {
+                if let Some(want) = p.get(k).and_then(Value::as_bool) {
+                    let cur = match k {
+                        "rulers" => app.ui.view.rulers,
+                        "outline" => app.ui.view.outline,
+                        "grid" => app.ui.view.grid,
+                        "smartGuides" => app.ui.view.smart_guides,
+                        _ => app.ui.view.bounding_box,
+                    };
+                    if cur != want {
+                        r = app.run(flag, json!({}));
+                    }
+                }
+            }
+            if let Some(v) = p.get("controlBar").and_then(Value::as_bool) {
+                app.ui.control_bar = v;
+            }
+            if p.get("closePanel").is_some() {
+                app.ui.open_panel = None;
+            }
+            wrap(r)
+        }
+        "ui.dialog.set" => match app.ui.dialog.as_mut() {
+            Some(d) => {
+                let Some(f) = s("field") else { return err("missing `field`") };
+                d.fields.insert(f.to_string(), p.get("value").cloned().unwrap_or(Value::Null));
+                ok(serde_json::to_value(&*d).unwrap_or_default())
+            }
+            None => err("no dialog open"),
+        },
+        "ui.dialog.confirm" => wrap(crate::dialogs::confirm(app)),
+        "ui.dialog.cancel" => {
+            crate::dialogs::cancel(app);
+            ok(Value::Null)
+        }
+        "ui.resize" => {
+            let w = p.get("width").and_then(Value::as_f64).unwrap_or(1440.0) as f32;
+            let h = p.get("height").and_then(Value::as_f64).unwrap_or(900.0) as f32;
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
+            ok(Value::Null)
+        }
+        "ui.focus" => {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ok(Value::Null)
+        }
+        "ui.screenshot" => {
+            // Refused now rather than once the frame comes (it is checked again then).
+            if let Some(Err(e)) = s("path").map(vectorcraft_engine::file_access::check_write) {
+                return err(e);
+            }
+            if p.get("focus").and_then(Value::as_bool).unwrap_or(true) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            ctx.request_repaint();
+            Outcome::Screenshot { path: s("path").map(str::to_string), data: p.get("data").and_then(Value::as_bool) == Some(true) }
+        }
+        "ui.render" => {
+            let Some(st) = app.session.active() else { return err("no document") };
+            let doc = st.doc.clone();
+            // The artboard asked for (0-based, as headless), else the first.
+            let index = p.get("artboard").and_then(Value::as_u64).map_or(Some(0), |i| usize::try_from(i).ok());
+            let Some(r) = index.and_then(|i| doc.artboards.get(i)).map(|a| a.rect) else { return err("no such artboard") };
+            let scale = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0);
+            if let Err(e) = vectorcraft_render::raster_size(r, scale) {
+                return err(e);
+            }
+            let img = app.canvas.renderer.render_region(&doc, r, scale, true);
+            let png = match img.to_png() {
+                Ok(png) => png,
+                Err(e) => return err(e),
+            };
+            let data = p.get("data").and_then(Value::as_bool) == Some(true);
+            match s("path") {
+                Some(path) => match app.services.write.as_mut() {
+                    Some(w) => wrap(
+                        w(path, &png)
+                            .map(|_| with_data(json!({"path": path, "width": img.width, "height": img.height}), data.then_some(png.as_slice()))),
+                    ),
+                    None => err("no writer"),
+                },
+                None => ok(with_data(json!({"width": img.width, "height": img.height}), Some(&png))),
+            }
+        }
+        "app.open" => wrap(app.run("file.open", json!({"path": s("path")}))),
+        "app.save" => wrap(app.run("file.save", if p.is_object() { p.clone() } else { json!({}) })),
+        "app.export" => match s("path") {
+            Some(path) => wrap(crate::io::export(app, s("format"), Some(path.to_string()), p)),
+            // No save dialog for an agent: the bytes come back, as in headless mode.
+            None => wrap(app.run("document.export", p.clone())),
+        },
+        // As the menu's Quit: `{"pending": "saveChanges"}` while a modified document is asked
+        // about; otherwise null, and the host closes the window (#830).
+        "app.quit" => wrap(app.run("app.quit", json!({}))),
+        other => err(format!("unknown method `{other}`")),
+    }
+}
+
+/// `result` with the PNG as `pngBase64` when there is one.
+fn with_data(mut result: Value, png: Option<&[u8]>) -> Value {
+    if let Some(png) = png {
+        result["pngBase64"] = json!(vectorcraft_format::base64_encode(png));
+    }
+    result
+}
+
+/// The reply to `ui.screenshot`: the window capture `image` written to `path`, and sent back as
+/// `pngBase64` with `data`.
+pub fn save_screenshot(app: &mut VectorcraftApp, image: &egui::ColorImage, path: Option<&str>, data: bool) -> Value {
+    let [w, h] = image.size;
+    if path.is_none() && !data {
+        return json!({"ok": true, "result": {"width": w, "height": h}});
+    }
+    let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let img = vectorcraft_render::Rendered { width: w as u32, height: h as u32, pixels: rgba };
+    let png = match img.to_png() {
+        Ok(png) => png,
+        Err(e) => return json!({"ok": false, "error": e}),
+    };
+    let data = data.then_some(png.as_slice());
+    let Some(path) = path else {
+        return json!({"ok": true, "result": with_data(json!({"width": w, "height": h}), data)});
+    };
+    match app.services.write.as_mut() {
+        Some(wr) => match wr(path, &png) {
+            Ok(()) => json!({"ok": true, "result": with_data(json!({"path": path, "width": w, "height": h}), data)}),
+            Err(e) => json!({"ok": false, "error": e}),
+        },
+        None => json!({"ok": false, "error": "no writer configured"}),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+    use vectorcraft_engine::Session;
+
+    use super::ControlRequest;
+    use crate::{Services, VectorcraftApp};
+
+    /// #1004: `ui.render` (the MCP `screenshot` of a connected app) renders the artboard asked
+    /// for, at the scale asked for; the first without one.
+    #[test]
+    fn render_takes_the_artboard_asked_for() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = VectorcraftApp::new(Session::new(), Services::default()).with_control(rx);
+        let mut request = |method: &str, params: Value| {
+            let (req, reply) = ControlRequest::new(method, params);
+            tx.send(req).unwrap();
+            app.drain_control(&egui::Context::default());
+            reply.try_recv().unwrap()
+        };
+        let new = json!({"width": 64, "height": 64, "units": "Points", "artboards": 2});
+        request("engine.execute", json!({"command": "file.new", "params": new}));
+        let board = json!({"index": 1, "x": 100, "y": 0, "width": 96, "height": 48});
+        let r = request("engine.execute", json!({"command": "artboard.setProps", "params": board}));
+        assert_eq!(r["ok"], true, "{r}");
+        for (params, size) in [
+            (json!({}), [64, 64]),
+            (json!({"artboard": 0}), [64, 64]),
+            (json!({"artboard": 1}), [96, 48]),
+            (json!({"artboard": 1, "scale": 0.5}), [48, 24]),
+        ] {
+            let r = request("ui.render", params.clone());
+            let got = [&r["result"]["width"], &r["result"]["height"]].map(Value::as_u64);
+            assert_eq!(got, size.map(Some), "{params}: {r}");
+        }
+        assert!(request("ui.render", json!({"artboard": 2}))["error"].is_string());
+    }
+}

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>VectorCraft</title>
+  <link data-trunk rel="rust" data-bin="vectorcraft-web" data-wasm-opt="z" data-weak-refs />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #262626; }
+    #vectorcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #vectorcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #b8b8b8; font: 14px system-ui, sans-serif; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="vectorcraft_canvas"></canvas>
+  <div id="vectorcraft_loading">Loading VectorCraft&hellip;</div>
+</body>
+</html>

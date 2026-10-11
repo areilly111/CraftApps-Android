@@ -1,0 +1,7 @@
+asset:        Ease Presets.jsx
+title:        EffectCraft bundled ScriptUI panel (Ease Presets) and its built-in ease presets
+author:       EffectCraft contributors
+source:       original work
+license:      MIT OR Apache-2.0
+added:        2026-10-09 by EffectCraft contributors
+notes:        Written from scratch for EffectCraft against After Effects' documented scripting behaviour (Scripting Guide); not derived from any Adobe sample or third-party panel. The twelve built-in curves are our own values, moved unchanged from the core Ease Presets panel (#254).

@@ -1,0 +1,14 @@
+# Netlify / Cloudflare Pages header rules (see HOSTING.md). Other hosts: set the same headers.
+/*
+  X-Content-Type-Options: nosniff
+
+# The file names don't change between releases: revalidate them (HOSTING.md › Any path works).
+/*.wasm
+  Content-Type: application/wasm
+  Cache-Control: no-cache
+
+/*.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache

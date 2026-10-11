@@ -1,0 +1,32 @@
+# Upstream scratch clones (not part of the monorepo)
+upstreams/
+
+# Signing keystores (never commit)
+keystore/
+*.keystore
+*.jks
+
+# Android build outputs
+*/android/**/build/
+*.apk
+*.aab
+
+# Rust build artifacts
+target/
+**/target/
+
+# Gradle
+.gradle/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test junk
+test.txt

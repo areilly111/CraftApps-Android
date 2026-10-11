@@ -1,0 +1,21 @@
+[package]
+name = "designcraft-fonts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft fonts: font database (bundled OFL + system), metrics, glyph outlines, shaping"
+
+[lints]
+workspace = true
+
+[features]
+# Synthetic fonts for other crates' tests (`designcraft_fonts::testing`).
+testing = []
+
+[dependencies]
+kurbo = { workspace = true }
+skrifa = { workspace = true }
+harfrust = { workspace = true }
+unicode-bidi = { workspace = true }
+unicode-script = { workspace = true }
+log = { workspace = true }

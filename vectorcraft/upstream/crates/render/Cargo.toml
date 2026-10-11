@@ -1,0 +1,40 @@
+[package]
+name = "vectorcraft-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft renderer: document to pixels (vello_cpu backend)"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-text = { workspace = true }
+vectorcraft-effects = { workspace = true }
+vectorcraft-brush = { workspace = true }
+vello_cpu = { workspace = true }
+# Filter types (Gaussian blur, drop shadow) are not re-exported by vello_cpu 0.2.
+vello_common = { version = "0.2", default-features = false }
+image = { workspace = true }
+flate2 = { workspace = true }
+jpeg-encoder = { workspace = true }
+gif = { workspace = true }
+# TIFF LZW compression (MIT OR Apache-2.0; already used by the image crate's TIFF reader).
+weezl = "0.1"
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+vello_cpu = { workspace = true, features = ["multithreading"] }
+
+[dev-dependencies]
+vectorcraft-testkit = { workspace = true }
+# Decoders the export tests read their files back with.
+image = { workspace = true, features = ["tga"] }
+tiff = "0.11"
+# Reads the PSD exports back (MIT OR Apache-2.0).
+psd = "0.3"
+proptest = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,208 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+# The Android port is built explicitly (`cargo check -p effectcraft-android
+# --target aarch64-linux-android`); its android-activity / JNI deps don't
+# build for host targets, so it stays out of the default set (the
+# vectorcraft-android port does the same).
+default-members = ["crates/*", "apps/effectcraft", "apps/effectcraft-cli", "apps/effectcraft-web"]
+
+[workspace.package]
+version = "0.7.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/storytold/effectcraft"
+
+[workspace.dependencies]
+# internal
+effectcraft-time = { path = "crates/time" }
+effectcraft-geom = { path = "crates/geom" }
+effectcraft-color = { path = "crates/color" }
+effectcraft-raster = { path = "crates/raster" }
+effectcraft-path = { path = "crates/path" }
+effectcraft-keyframe = { path = "crates/keyframe" }
+effectcraft-project = { path = "crates/project" }
+effectcraft-text = { path = "crates/text" }
+effectcraft-effects = { path = "crates/effects" }
+effectcraft-track = { path = "crates/track" }
+effectcraft-segment = { path = "crates/segment" }
+effectcraft-model = { path = "crates/model" }
+effectcraft-render = { path = "crates/render" }
+effectcraft-gpu = { path = "crates/gpu" }
+effectcraft-media = { path = "crates/media" }
+effectcraft-export = { path = "crates/export" }
+effectcraft-expr = { path = "crates/expr" }
+effectcraft-lottie = { path = "crates/lottie" }
+effectcraft-interchange = { path = "crates/interchange" }
+effectcraft-pdf = { path = "crates/pdf" }
+effectcraft-psd = { path = "crates/psd" }
+effectcraft-vp9enc = { path = "crates/vp9enc" }
+effectcraft-svg = { path = "crates/svg" }
+effectcraft-engine = { path = "crates/engine" }
+effectcraft-host = { path = "crates/host" }
+effectcraft-ui-egui = { path = "crates/ui-egui" }
+effectcraft-automation = { path = "crates/automation" }
+effectcraft-opusenc = { path = "crates/opusenc" }
+effectcraft-script = { path = "crates/script" }
+effectcraft-hevcenc = { path = "crates/hevcenc" }
+effectcraft-av1enc = { path = "crates/av1enc" }
+effectcraft-plugin = { path = "crates/plugin" }
+
+# foundation
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+rayon = "1"
+# std::time::Instant/SystemTime on native; the browser clock on wasm32 (std's panic there).
+web-time = "1"
+gif = "0.14"
+proptest = "1"
+
+# scripting (expressions)
+boa_engine = { version = "0.22", default-features = false }
+# WebAssembly effect plug-ins (sandboxed interpreter; MIT/Apache-2.0, pure Rust)
+wasmi = { version = "2", default-features = false, features = ["std", "validate", "wat", "deterministic", "portable-dispatch"] }
+
+# geometry / fonts
+kurbo = { version = "0.13", features = ["serde"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
+harfrust = { version = "0.12", default-features = false, features = ["std"] }
+exr = "1.74"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# media codecs + containers: FilmCraft's pure-Rust crates, pinned to a revision (plan/adr/0001).
+# Only `crates/media`, `crates/export` and `crates/interchange` may depend on these.
+filmcraft-codecs = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-media = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-frame = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-color = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+# encoders + muxer (crates/export)
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-prores = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-aac = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+# decoder used as the round-trip oracle of effectcraft-opusenc (crates/export dev-dependency)
+filmcraft-opus = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-vp9 = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+# decoders used as the round-trip oracles of effectcraft-hevcenc / effectcraft-av1enc (dev-dependencies only)
+filmcraft-hevc = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-av1 = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+# timeline interchange (EDL, FCP7 XML, FCPXML, OTIO) for Premiere Pro interop (crates/interchange only)
+filmcraft-interchange = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-project = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-geom = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+
+# gpu (the same wgpu eframe / egui-wgpu use)
+wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }
+bytemuck = "1"
+pollster = "0.4"
+
+# ui
+egui = "0.36"
+eframe = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+cpal = "0.16"
+# The operating system's interface language (MIT/Apache-2.0, no dependencies on desktop).
+sys-locale = "0.3"
+
+# Local co-development against a FilmCraft checkout next to this repo: uncomment.
+# [patch."https://github.com/storytold/filmcraft"]
+# filmcraft-codecs = { path = "../filmcraft/crates/codecs" }
+# filmcraft-media = { path = "../filmcraft/crates/media" }
+# filmcraft-frame = { path = "../filmcraft/crates/frame" }
+# filmcraft-color = { path = "../filmcraft/crates/color" }
+# filmcraft-time = { path = "../filmcraft/crates/time" }
+# filmcraft-h264enc = { path = "../filmcraft/crates/h264enc" }
+# filmcraft-prores = { path = "../filmcraft/crates/prores" }
+# filmcraft-aac = { path = "../filmcraft/crates/aac" }
+# filmcraft-isobmff = { path = "../filmcraft/crates/isobmff" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+type_complexity = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+# Pixel hot loops: keep debug builds interactive.
+[profile.dev.package.effectcraft-raster]
+opt-level = 3
+
+[profile.dev.package.effectcraft-render]
+opt-level = 3
+
+[profile.dev.package.effectcraft-gpu]
+opt-level = 3
+
+[profile.dev.package.effectcraft-effects]
+opt-level = 3
+
+[profile.dev.package.effectcraft-track]
+opt-level = 3
+
+[profile.dev.package.effectcraft-path]
+opt-level = 3
+
+[profile.dev.package.effectcraft-media]
+opt-level = 3
+
+[profile.dev.package.effectcraft-opusenc]
+opt-level = 3
+
+[profile.dev.package.effectcraft-export]
+opt-level = 3
+
+[profile.dev.package.effectcraft-vp9enc]
+opt-level = 3
+
+[profile.dev.package.effectcraft-hevcenc]
+opt-level = 3
+
+[profile.dev.package.effectcraft-av1enc]
+opt-level = 3
+
+# FilmCraft codec hot loops (same settings as FilmCraft's own workspace).
+[profile.dev.package.filmcraft-h264]
+opt-level = 3
+
+[profile.dev.package.filmcraft-h264enc]
+opt-level = 3
+
+[profile.dev.package.filmcraft-hevc]
+opt-level = 3
+
+[profile.dev.package.filmcraft-vp9]
+opt-level = 3
+
+[profile.dev.package.filmcraft-prores]
+opt-level = 3
+
+[profile.dev.package.filmcraft-dnx]
+opt-level = 3
+
+[profile.dev.package.filmcraft-av1]
+opt-level = 3
+
+[profile.dev.package.filmcraft-aac]
+opt-level = 3
+
+[profile.dev.package.filmcraft-opus]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

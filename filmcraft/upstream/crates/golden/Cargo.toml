@@ -1,0 +1,28 @@
+[package]
+name = "filmcraft-golden"
+description = "Golden-image tests for the CPU renderer/compositor and GPU-vs-CPU parity (test-only crate)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# Test-only: the library is empty and everything is a dev-dependency, so the crate adds no edges
+# to the layer graph. Goldens live in `goldens/` (see docs/testing.md §3).
+[dependencies]
+
+[dev-dependencies]
+filmcraft-testkit = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-time = { workspace = true }
+filmcraft-geom = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-render = { workspace = true }
+filmcraft-gpu = { workspace = true }
+pollster = "0.4"
+wgpu = { version = "30", features = ["wgsl", "metal", "vulkan", "dx12", "gles"] }

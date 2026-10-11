@@ -1,0 +1,16 @@
+[package]
+name = "filmcraft-audio-dsp"
+description = "Real-time audio DSP for FilmCraft: BS.1770 / EBU R128 loudness metering and audio effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+# Intentionally dependency-free (layer L1): planar `&mut [f32]` slices in, planar slices out.
+[dependencies]
+
+[dev-dependencies]
+filmcraft-testkit = { workspace = true }

@@ -1,0 +1,66 @@
+[package]
+name = "filmcraft-platform"
+description = "OS media integration: hardware video decoding through the operating system's codecs (VideoToolbox on macOS, Media Foundation on Windows, VA-API and NVDEC on Linux), with transparent fallback to the pure-Rust decoders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+# The one crate allowed to contain `unsafe` (OS media FFI; AGENTS.md §0.3, docs/adr/0001-platform-ffi.md).
+# The workspace lints, except that `unsafe_code` is `deny` instead of `forbid`: only the FFI modules
+# opt in with `#[allow(unsafe_code)]`, and every `unsafe` block carries a `// SAFETY:` comment.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+type_complexity = "allow"
+undocumented_unsafe_blocks = "deny"
+
+[dependencies]
+filmcraft-bitstream = { workspace = true }
+filmcraft-codecs = { workspace = true }
+filmcraft-color = { workspace = true }
+filmcraft-export = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-h264 = { workspace = true }
+filmcraft-hevc = { workspace = true }
+filmcraft-isobmff = { workspace = true }
+filmcraft-time = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = "0.3.2"
+objc2-core-media = "0.3.2"
+objc2-core-video = "0.3.2"
+objc2-video-toolbox = "0.3.2"
+
+# Windows: Media Foundation decoder MFTs + Direct3D 11 / DXVA through the official `windows` bindings
+# (MIT OR Apache-2.0; already in the lockfile through wgpu / winit).
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Linux: libva (VA-API) is loaded at run time with libloading (ISC; already in the lockfile through
+# wgpu), so building needs no libva headers and a system without libva simply decodes in software.
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.8"
+
+[dev-dependencies]
+filmcraft-testkit = { workspace = true }
+filmcraft-media = { workspace = true }
+filmcraft-frame = { workspace = true }
+filmcraft-project = { workspace = true }
+filmcraft-render = { workspace = true }

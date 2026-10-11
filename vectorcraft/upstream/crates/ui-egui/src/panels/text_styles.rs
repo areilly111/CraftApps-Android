@@ -1,0 +1,215 @@
+//! Character Styles and Paragraph Styles panels (one implementation, two kinds).
+//!
+//! Click a style to apply it to the selected text (or the Type tool's selected characters);
+//! Alt-click applies it and clears overrides. The style of the selection is highlighted, with a
+//! "+" when the text overrides some of its attributes.
+
+use egui::{Sense, Ui, vec2};
+use serde_json::{Map, Value, json};
+
+use super::character::{text_editing, text_style};
+use super::{pstate, selection_len, set_pstate};
+use crate::VectorcraftApp;
+use crate::theme::Tokens;
+use crate::widgets::{self, menu_item};
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Kind {
+    Char,
+    Para,
+}
+
+impl Kind {
+    fn prefix(self) -> &'static str {
+        if self == Kind::Char { "charStyle" } else { "paraStyle" }
+    }
+    fn what(self) -> &'static str {
+        if self == Kind::Char { "Character" } else { "Paragraph" }
+    }
+    /// `what` in the UI language, for text shown to the user.
+    fn what_label(self) -> &'static str {
+        if self == Kind::Char { tl!("Character") } else { tl!("Paragraph") }
+    }
+    fn key(self) -> &'static str {
+        if self == Kind::Char { "char-style-sel" } else { "para-style-sel" }
+    }
+}
+
+/// (name, attrs, uses) for every style, Normal first.
+fn styles(app: &mut VectorcraftApp, kind: Kind) -> Vec<(String, Map<String, Value>, u64)> {
+    let v = app.session.execute(&format!("{}.list", kind.prefix()), &json!({})).unwrap_or_default();
+    v["styles"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|s| {
+                    (
+                        s["name"].as_str().unwrap_or("").to_string(),
+                        s["attrs"].as_object().cloned().unwrap_or_default(),
+                        s["uses"].as_u64().unwrap_or(0),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The selection's style name (Normal when none) and its attributes, if text is selected.
+fn current(app: &VectorcraftApp, kind: Kind) -> Option<(Option<String>, Map<String, Value>)> {
+    let (c, p) = text_style(app)?;
+    let v = match kind {
+        Kind::Char => serde_json::to_value(&c),
+        Kind::Para => serde_json::to_value(&p),
+    }
+    .ok()?;
+    let mut m = v.as_object()?.clone();
+    let name = m.remove("style_name").and_then(|v| v.as_str().map(str::to_string));
+    Some((name, m))
+}
+
+/// Parameters targeting the selection: the Type tool's selected characters (paragraph styles: the
+/// paragraphs its selection or caret touches), or the selected objects.
+fn target(app: &VectorcraftApp, kind: Kind, mut p: Value) -> Value {
+    if let Some((id, a, b)) = text_editing(app) {
+        p["id"] = json!(id.0);
+        if kind == Kind::Para || b > a {
+            p["start"] = json!(a);
+            p["end"] = json!(b);
+        }
+    }
+    p
+}
+
+pub fn show(app: &mut VectorcraftApp, ui: &mut Ui, kind: Kind) {
+    let t = Tokens::get(ui.ctx());
+    let all = styles(app, kind);
+    let cur = current(app, kind);
+    let normal = all.first().map(|s| s.0.clone()).unwrap_or_default();
+    let cur_name = cur.as_ref().map(|(n, _)| n.clone().unwrap_or_else(|| normal.clone()));
+    let mut clicked: Option<(String, bool)> = None;
+    let mut sel: Option<String> = pstate(ui.ctx(), kind.key());
+    widgets::list_box(ui, |ui| {
+        for (name, attrs, _) in &all {
+            let is_cur = cur_name.as_deref() == Some(name.as_str());
+            // Overrides: an attribute the style sets that the selection doesn't match.
+            let overridden = is_cur && cur.as_ref().is_some_and(|(_, m)| attrs.iter().any(|(k, v)| m.get(k) != Some(v)));
+            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+            if is_cur || sel.as_deref() == Some(name.as_str()) {
+                ui.painter().rect_filled(r, 0.0, if is_cur { t.row_selected } else { t.hover });
+            } else if resp.hovered() {
+                ui.painter().rect_filled(r, 0.0, t.hover);
+            }
+            // The built-in "[Normal … Style]" (listed first) is translated where painted; other names
+            // are user data, brackets or not.
+            let shown = super::label_or_name(name, *name == normal);
+            let label = if overridden { format!("{shown}+") } else { shown.to_string() };
+            ui.painter().text(r.left_center() + vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5), t.text);
+            if resp.clicked() {
+                clicked = Some((name.clone(), ui.input(|i| i.modifiers.alt)));
+            }
+        }
+    });
+    let has_text = cur.is_some();
+    if let Some((name, clear)) = clicked {
+        sel = Some(name.clone());
+        if has_text {
+            let p = target(app, kind, json!({ "name": name, "clearOverrides": clear }));
+            app.run(&format!("{}.apply", kind.prefix()), p).ok();
+        }
+    }
+    set_pstate(ui.ctx(), kind.key(), sel.clone());
+    let deletable = sel.as_ref().is_some_and(|s| *s != normal);
+    widgets::bottom_bar(ui, |ui| {
+        ui.add_space((ui.available_width() - 2.0 * 28.0).max(0.0));
+        if widgets::icon_button_enabled(
+            ui,
+            "dc-new-item",
+            &crate::i18n::fmt(tl!("Create New {kind} Style"), &[("kind", kind.what_label())]),
+            false,
+            true,
+            24.0,
+        )
+        .clicked()
+            && let Ok(r) = app.run(&format!("{}.new", kind.prefix()), target(app, kind, json!({})))
+        {
+            set_pstate(ui.ctx(), kind.key(), r["name"].as_str().map(str::to_string));
+        }
+        if widgets::icon_button_enabled(
+            ui,
+            "trash-2",
+            &crate::i18n::fmt(tl!("Delete {kind} Style"), &[("kind", kind.what_label())]),
+            false,
+            deletable,
+            24.0,
+        )
+        .clicked()
+            && let Some(n) = &sel
+            && app.run(&format!("{}.delete", kind.prefix()), json!({ "name": n })).is_ok()
+        {
+            set_pstate::<Option<String>>(ui.ctx(), kind.key(), None);
+        }
+    });
+}
+
+pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui, kind: Kind) {
+    let sel: Option<String> = pstate(ui.ctx(), kind.key());
+    let normal = if kind == Kind::Char { "[Normal Character Style]" } else { "[Normal Paragraph Style]" };
+    let user = sel.as_ref().is_some_and(|s| s != normal);
+    let has_text = current(app, kind).is_some() || selection_len(app) > 0;
+    let p = kind.prefix();
+    if menu_item(ui, &crate::i18n::fmt(tl!("New {kind} Style…"), &[("kind", kind.what_label())]), true, false) {
+        app.run(&format!("{p}.new"), target(app, kind, json!({}))).ok();
+    }
+    if menu_item(ui, &crate::i18n::fmt(tl!("Duplicate {kind} Style"), &[("kind", kind.what_label())]), sel.is_some(), false)
+        && let Some(n) = &sel
+    {
+        app.run(&format!("{p}.duplicate"), json!({ "name": n })).ok();
+    }
+    if menu_item(ui, &crate::i18n::fmt(tl!("Delete {kind} Style"), &[("kind", kind.what_label())]), user, false)
+        && let Some(n) = &sel
+    {
+        app.run(&format!("{p}.delete"), json!({ "name": n })).ok();
+    }
+    ui.separator();
+    if menu_item(ui, tl!("Clear Overrides"), sel.is_some() && has_text, false)
+        && let Some(n) = &sel
+    {
+        app.run(&format!("{p}.apply"), target(app, kind, json!({ "name": n, "clearOverrides": true }))).ok();
+    }
+    if menu_item(ui, &crate::i18n::fmt(tl!("Redefine {kind} Style"), &[("kind", kind.what_label())]), sel.is_some() && has_text, false)
+        && let Some(n) = &sel
+    {
+        app.run(&format!("{p}.redefine"), target(app, kind, json!({ "name": n }))).ok();
+    }
+    if menu_item(ui, &crate::i18n::fmt(tl!("{kind} Style Options…"), &[("kind", kind.what_label())]), user, false)
+        && let Some(n) = &sel
+    {
+        let label = format!("{} Style Options", kind.what());
+        app.run("ui.paramDialog", json!({ "command": format!("{p}.rename"), "label": label, "params": { "name": n, "to": n } })).ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panels_draw_and_apply_headless() {
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.session.execute("file.new", &json!({"width": 100, "height": 100})).unwrap();
+        let id = app.session.execute("text.create", &json!({"x": 10, "y": 40, "text": "Hi"})).unwrap()["id"].clone();
+        app.session.execute("select.set", &json!({"ids": [id]})).unwrap();
+        app.session.execute("charStyle.new", &json!({"name": "Big", "attrs": {"size": 30.0}})).unwrap();
+        for kind in [Kind::Char, Kind::Para] {
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                show(&mut app, ui, kind);
+                menu(&mut app, ui, kind);
+            });
+            out.textures_delta.clear();
+        }
+        app.run("charStyle.apply", target(&app, Kind::Char, json!({"name": "Big"}))).unwrap();
+        let (name, attrs) = current(&app, Kind::Char).unwrap();
+        assert_eq!((name.as_deref(), attrs["size"].as_f64()), (Some("Big"), Some(30.0)));
+    }
+}

@@ -1,0 +1,7 @@
+asset:        Create Null at Selected Layers.jsx
+title:        EffectCraft sample script (Create Null at Selected Layers)
+author:       EffectCraft contributors
+source:       original work
+license:      MIT OR Apache-2.0
+added:        2026-10-03 by EffectCraft contributors (M13.1)
+notes:        Written from scratch for EffectCraft against the documented scripting behaviour; not derived from any Adobe sample.

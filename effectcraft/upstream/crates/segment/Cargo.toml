@@ -1,0 +1,15 @@
+[package]
+name = "effectcraft-segment"
+description = "Swappable trained models for Roto Brush and face tracking: the MaskModel and FaceModel interfaces, a registry of open-licensed models, PyTorch checkpoint and TensorFlow Lite readers, a pure-Rust MobileSAM and MediaPipe Face Landmarker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+miniz_oxide = "0.8"
+ndarray = { version = "0.17", default-features = false, features = ["std"] }
+rayon = { workspace = true }

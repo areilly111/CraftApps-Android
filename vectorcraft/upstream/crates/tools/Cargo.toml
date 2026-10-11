@@ -1,0 +1,23 @@
+[package]
+name = "vectorcraft-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft tool state machines: pointer events in, commands and overlays out"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-pathops = { workspace = true }
+vectorcraft-text = { workspace = true }
+kurbo = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+vectorcraft-text = { workspace = true, features = ["test-fonts"] }

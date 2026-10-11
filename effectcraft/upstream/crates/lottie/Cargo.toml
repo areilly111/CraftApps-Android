@@ -1,0 +1,25 @@
+[package]
+name = "effectcraft-lottie"
+description = "Lottie JSON import and export: compositions, precomps, shape/solid/null/image/text layers, keyframes with temporal and spatial easing, masks, track mattes and a few effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-time = { workspace = true }
+effectcraft-color = { workspace = true }
+effectcraft-keyframe = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-path = { workspace = true }
+effectcraft-text = { workspace = true }
+effectcraft-effects = { workspace = true }
+kurbo = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+effectcraft-render = { workspace = true }

@@ -1,0 +1,17 @@
+{
+  "name": "EffectCraft",
+  "short_name": "EffectCraft",
+  "description": "Motion graphics and visual effects compositor, in the browser",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1b1c1f",
+  "theme_color": "#1b1c1f",
+  "categories": ["graphics", "photo", "productivity"],
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,58 @@
+# Flatpak manifest for VectorCraft, ready for a Flathub submission.
+#
+# Flatpak builds run offline, so the crate sources must be vendored first. From the repo root:
+#
+#   curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+#   python3 flatpak-cargo-generator.py Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+#   flatpak-builder --user --install --force-clean build-flatpak packaging/linux/flatpak/ai.storyteller.vectorcraft.yml
+#   flatpak run ai.storyteller.vectorcraft
+#
+# For Flathub, replace the `dir` source with a `git` source pinned to a release tag and commit.
+# Release bundles (.flatpak on GitHub Releases) use ai.storyteller.vectorcraft.bundle.yml instead.
+id: ai.storyteller.vectorcraft
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: vectorcraft
+finish-args:
+  # Keep identical to ai.storyteller.vectorcraft.bundle.yml (the release bundle); comments there.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Open/Save dialogs use the file-chooser portal (rfd), and drag-and-drop uses the document
+  # portal, so broad filesystem access isn't needed. Pictures is granted for opening files by
+  # path from the command line.
+  - --filesystem=xdg-pictures
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: vectorcraft
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/vectorcraft/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline build --release --locked -p vectorcraft
+      - install -Dm755 target/release/vectorcraft /app/bin/vectorcraft
+      - install -Dm644 packaging/linux/ai.storyteller.vectorcraft.desktop /app/share/applications/ai.storyteller.vectorcraft.desktop
+      - install -Dm644 packaging/linux/ai.storyteller.vectorcraft.mime.xml /app/share/mime/packages/ai.storyteller.vectorcraft.xml
+      - mkdir -p /app/share/icons && cp -R assets/app-icon/hicolor /app/share/icons/
+      - >-
+        version=$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml);
+        install -d /app/share/metainfo;
+        sed -e "s/@VERSION@/$version/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/"
+        packaging/linux/ai.storyteller.vectorcraft.metainfo.xml.in > /app/share/metainfo/ai.storyteller.vectorcraft.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - target
+          - dist
+          - corpus
+          - build-flatpak
+          - .flatpak-builder
+      - cargo-sources.json

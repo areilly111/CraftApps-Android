@@ -1,0 +1,31 @@
+[package]
+name = "designcraft-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft PDF export (krilla): real text with embedded font subsets, CMYK/spot colour, bleed and printer's marks"
+
+[lints]
+workspace = true
+
+[dependencies]
+designcraft-geom = { workspace = true }
+designcraft-color = { workspace = true }
+designcraft-doc = { workspace = true }
+designcraft-fonts = { workspace = true }
+designcraft-compose = { workspace = true }
+krilla = { workspace = true }
+krilla-svg = { workspace = true }
+designcraft-images = { workspace = true }
+image = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+# The placed-PDF version check names hayro's PdfVersion (krilla::pdf::Pdf::version returns it).
+hayro-syntax = "0.7.2"
+
+[dev-dependencies]
+hayro-interpret = { version = "0.7.0", default-features = false, features = ["embed-fonts"] }
+hayro-cmap = "0.1"
+kurbo = { workspace = true }
+tiff = { workspace = true }
+designcraft-fonts = { workspace = true, features = ["testing"] }

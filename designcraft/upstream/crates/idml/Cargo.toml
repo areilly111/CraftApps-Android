@@ -1,0 +1,20 @@
+[package]
+name = "designcraft-idml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft IDML (InDesign Markup Language) import and export"
+
+[lints]
+workspace = true
+
+[dependencies]
+designcraft-geom = { workspace = true }
+designcraft-color = { workspace = true }
+designcraft-doc = { workspace = true }
+thiserror = { workspace = true }
+quick-xml = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+designcraft-compose = { workspace = true }

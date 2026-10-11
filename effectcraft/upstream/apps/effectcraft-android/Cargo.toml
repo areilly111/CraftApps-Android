@@ -1,0 +1,33 @@
+[package]
+name = "effectcraft-android"
+version = "0.7.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "EffectCraft for Android (tablet): eframe NativeActivity shell around the shared egui app"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+effectcraft-engine = { workspace = true }
+effectcraft-host = { workspace = true }
+effectcraft-ui-egui = { workspace = true }
+# eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
+# feature is a compile error with `android-native-activity` (see eframe 0.36.2
+# src/lib.rs); `effectcraft-ui-egui` gates it off on Android for the same reason.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "persistence", "android-native-activity"] }
+android-activity = { version = "=0.6.1", features = ["native-activity"] }
+jni = "=0.22.4"
+ndk-context = "=0.1.1"
+log = { workspace = true }
+android_logger = "0.15"
+serde_json = { workspace = true }
+# Shared Android shell code (updater, GPU cascade, storage, SAF, JNI bridge).
+craftapps-shared = { path = "../../../../shared" }
+# cpal 0.16 has an Android (AAudio) backend: preview audio without desktop-only probing.
+cpal = "0.16"
+
+# NOTE: this crate does NOT inherit workspace lints: `unsafe_code = "forbid"`
+# there would rule out the JNI calls an Android shell fundamentally needs.
+# Instead lib.rs denies unwrap/expect/panic/todo like every other crate, and
+# every unsafe block carries a SAFETY comment (the photocraft-tablet pattern).

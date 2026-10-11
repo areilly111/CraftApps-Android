@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Release polling + APK downloads. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Hand verified APKs to the system package installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Android 11+ package visibility: the launcher reads each suite app's
+         installed version and fires its launch intent. -->
+    <queries>
+        <package android:name="app.photocraft.android" />
+        <package android:name="app.designcraft.android" />
+        <package android:name="app.vectorcraft.android" />
+        <package android:name="app.lightcraft.android" />
+        <package android:name="app.pdfcraft.android" />
+        <package android:name="app.effectcraft.android" />
+        <package android:name="app.filmcraft.android" />
+        <package android:name="app.craftlauncher.android" />
+    </queries>
+
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <application
+        android:label="CraftApps Launcher"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+
+        <!-- NativeActivity subclass: the Rust eframe UI. -->
+        <activity
+            android:name="app.craftlauncher.android.CraftLauncherActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <meta-data android:name="android.app.lib_name" android:value="craftlauncher_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Serves downloaded APKs from the app cache dir to the installer. -->
+        <provider
+            android:name="app.craftlauncher.android.ApkProvider"
+            android:authorities="app.craftlauncher.android.apkprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

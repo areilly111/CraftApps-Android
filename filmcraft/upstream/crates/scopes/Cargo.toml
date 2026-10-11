@@ -1,0 +1,17 @@
+[package]
+name = "filmcraft-scopes"
+description = "Video scopes maths: waveform, parade, histogram and vectorscopes from a frame's R'G'B' values"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-color = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

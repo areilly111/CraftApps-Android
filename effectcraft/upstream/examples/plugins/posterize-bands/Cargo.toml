@@ -1,0 +1,18 @@
+[package]
+name = "posterize-bands"
+description = "Example EffectCraft effect plug-in (WebAssembly, plug-in API v1): posterizes luminance into tinted bands"
+version = "1.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone: build with `cargo build --release --target wasm32-unknown-unknown` in this folder.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

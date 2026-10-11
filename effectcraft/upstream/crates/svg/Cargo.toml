@@ -1,0 +1,18 @@
+[package]
+name = "effectcraft-svg"
+description = "SVG import: parses SVG 1.1 / SVG 2 static vector content (paths, basic shapes, groups, transforms, use, CSS styles, solid and gradient fills/strokes, opacity) and rasterises it at any scale"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-geom = { workspace = true }
+effectcraft-raster = { workspace = true }
+effectcraft-path = { workspace = true }
+kurbo = { workspace = true }
+roxmltree = "0.21"
+rayon = { workspace = true }

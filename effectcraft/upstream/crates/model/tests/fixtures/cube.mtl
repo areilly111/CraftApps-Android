@@ -1,0 +1,11 @@
+# EffectCraft test fixture: materials for cube.obj (original work).
+newmtl Red
+Kd 1.0 0.0 0.0
+Ns 98
+d 1.0
+
+newmtl Gold
+Kd 1.0 0.766 0.336
+Ke 0.0 0.0 0.0
+Pr 0.3
+Pm 1.0

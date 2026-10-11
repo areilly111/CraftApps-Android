@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#1b1c1f">
+  <meta name="description" content="EffectCraft: motion graphics and visual effects in the browser">
+  <title>EffectCraft</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-256.png">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1c1f; }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+    #loading {
+      position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px;
+      align-items: center; justify-content: center; color: #c9c9cc;
+      font: 14px/1.4 system-ui, sans-serif; pointer-events: none;
+    }
+    #loading img { width: 56px; height: 56px; }
+    #loading .err { color: #ff8a7a; white-space: pre-wrap; max-width: 70ch; pointer-events: auto; }
+    #device-lost {
+      position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
+      align-items: center; justify-content: center; padding: 16px; text-align: center;
+      background: rgb(18 18 18 / 0.85); color: #c8c8c8; font: 14px/1.4 system-ui, sans-serif;
+    }
+    #device-lost strong { color: #e3e3e3; font-size: 16px; }
+    #device-lost p { margin: 0; max-width: 60ch; }
+    #device-lost small { color: #8c8c8c; font-size: 12px; }
+    #device-lost div { display: flex; gap: 8px; }
+    #device-lost button {
+      padding: 6px 14px; border: 1px solid #3a3a3a; border-radius: 4px;
+      background: #232323; color: #e3e3e3; font: inherit; cursor: pointer;
+    }
+    #device-lost button:hover { background: #303030; }
+    #device-lost button:last-child { background: #2d8ceb; border-color: #2d8ceb; }
+    #device-lost button:last-child:hover { background: #4aa0f5; }
+    #device-lost button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <canvas id="effectcraft_canvas"></canvas>
+  <div id="loading"><img src="favicon.svg" alt=""><div id="status">Loading EffectCraft…</div></div>
+  <script type="module">
+    import init, * as ec from "./effectcraft_web.js";
+    const t0 = performance.now();
+    window.effectcraftLoad = {};
+    // The agent / test API: the desktop control channel as promises (docs/web.md).
+    window.effectcraft = {
+      request: (method, params) => ec.request(method, params ?? {}),
+      execute: (command, params) => ec.request("engine.execute", { command, params: params ?? {} }),
+      commands: () => ec.request("engine.commands", {}),
+      inspect: () => ec.request("ui.inspect", {}),
+      screenshot: (params) => ec.request("ui.screenshot", params ?? {}),
+      renderFrame: (params) => ec.request("render.frame", { base64: true, ...(params ?? {}) }),
+      files: () => ec.files(),
+      readFile: (path) => ec.readFile(path),
+      addFile: async (fileOrUrl, name) => {
+        let bytes;
+        if (typeof fileOrUrl === "string") {
+          bytes = new Uint8Array(await (await fetch(fileOrUrl)).arrayBuffer());
+          name = name ?? fileOrUrl.split("/").pop();
+        } else {
+          bytes = new Uint8Array(await fileOrUrl.arrayBuffer());
+          name = name ?? fileOrUrl.name;
+        }
+        return ec.addFile(name, bytes);
+      },
+      info: () => ({
+        ...ec.info(),
+        crossOriginIsolated: self.crossOriginIsolated,
+        webgpu: !!navigator.gpu,
+        serviceWorker: !!(navigator.serviceWorker && navigator.serviceWorker.controller),
+        load: window.effectcraftLoad,
+      }),
+      // Browser storage (OPFS / IndexedDB): save without downloading, list, remove, wait for writes.
+      saveToBrowser: (path) => ec.saveToBrowser(path ?? undefined),
+      listStored: () => ec.listStored(),
+      removeStored: (path) => ec.removeStored(path),
+      flush: () => ec.flush(),
+      // A frame rendered in a frame worker (its GPU by default) vs the page's CPU: {maxDiff, meanDiff, over4, …}.
+      workerFrameCheck: (params) => ec.workerFrameCheck(params ?? {}).then(JSON.parse),
+    };
+    // Offline start and install (PWA): the service worker caches the app's files.
+    if ("serviceWorker" in navigator && !new URLSearchParams(location.search).has("nosw")) {
+      navigator.serviceWorker.register("sw.js").catch((e) => console.warn("service worker:", e));
+    }
+    try {
+      // Compile once: the page and its render workers instantiate the same module.
+      const wasmUrl = new URL("effectcraft_web_bg.wasm", location.href);
+      let module;
+      try {
+        module = await WebAssembly.compileStreaming(fetch(wasmUrl));
+      } catch {
+        module = await WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer());
+      }
+      window.effectcraftModule = module;
+      await init({ module_or_path: module });
+      window.effectcraftLoad.wasmMs = performance.now() - t0;
+      await ec.start("effectcraft_canvas");
+      window.effectcraftLoad.readyMs = performance.now() - t0;
+    } catch (e) {
+      const s = document.getElementById("status");
+      if (s) { s.className = "err"; s.textContent = "EffectCraft failed to start:\n" + (e && e.stack || e); }
+      window.effectcraftLoad.error = String(e);
+      throw e;
+    }
+  </script>
+</body>
+</html>

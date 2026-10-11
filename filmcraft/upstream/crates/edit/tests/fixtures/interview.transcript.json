@@ -1,0 +1,27 @@
+{
+  "language": "en",
+  "source": "manual",
+  "speakers": [{"name": "Speaker 1"}, {"name": "Speaker 2"}],
+  "words": [
+    {"text": "Welcome", "start": 127008000000, "end": 228614400000, "speaker": 0},
+    {"text": "to", "start": 228614400000, "end": 266716800000, "speaker": 0},
+    {"text": "the", "start": 266716800000, "end": 304819200000, "speaker": 0},
+    {"text": "show.", "start": 304819200000, "end": 431827200000, "speaker": 0},
+    {"text": "Um,", "start": 939859200000, "end": 1016064000000, "speaker": 0},
+    {"text": "today", "start": 1041465600000, "end": 1143072000000, "speaker": 0},
+    {"text": "we", "start": 1143072000000, "end": 1181174400000, "speaker": 0},
+    {"text": "talk", "start": 1181174400000, "end": 1257379200000, "speaker": 0},
+    {"text": "about", "start": 1257379200000, "end": 1346284800000, "speaker": 0},
+    {"text": "rivers.", "start": 1346284800000, "end": 1498694400000, "speaker": 0},
+    {"text": "Thanks", "start": 1625702400000, "end": 1727308800000, "speaker": 1},
+    {"text": "for", "start": 1727308800000, "end": 1765411200000, "speaker": 1},
+    {"text": "having", "start": 1765411200000, "end": 1854316800000, "speaker": 1},
+    {"text": "me.", "start": 1854316800000, "end": 1930521600000, "speaker": 1},
+    {"text": "I", "start": 2032128000000, "end": 2057529600000, "speaker": 1},
+    {"text": "uh", "start": 2082931200000, "end": 2159136000000, "speaker": 1},
+    {"text": "love", "start": 2184537600000, "end": 2260742400000, "speaker": 1},
+    {"text": "rivers,", "start": 2260742400000, "end": 2387750400000, "speaker": 1},
+    {"text": "you", "start": 2413152000000, "end": 2451254400000, "speaker": 1},
+    {"text": "know.", "start": 2451254400000, "end": 2540160000000, "speaker": 1}
+  ]
+}

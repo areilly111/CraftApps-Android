@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: packaging/macos/package.sh substitutes @VERSION@ (full, e.g. 0.2.0-rc.1),
+     @SHORT_VERSION@ (numeric X.Y.Z) and @BUILD_SHA@. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>FilmCraft</string>
+  <key>CFBundleName</key>
+  <string>FilmCraft</string>
+  <key>CFBundleExecutable</key>
+  <string>FilmCraft</string>
+  <key>CFBundleIdentifier</key>
+  <string>ai.storyteller.filmcraft</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@SHORT_VERSION@</string>
+  <key>FilmCraftVersion</key>
+  <string>@VERSION@</string>
+  <key>FilmCraftBuildCommit</key>
+  <string>@BUILD_SHA@</string>
+  <key>CFBundleIconFile</key>
+  <string>FilmCraft</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.video</string>
+  <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. Big Sur is the first release on
+       Apple silicon and has the Metal feature set wgpu targets. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSRequiresAquaSystemAppearance</key>
+  <false/>
+  <!-- Voice-over recording (timeline track header ▸ Voice-over Record) reads the microphone.
+       Without this string macOS never asks and the app gets no input. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>FilmCraft uses the microphone to record voice-over onto the timeline.</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © the FilmCraft authors. MIT OR Apache-2.0.</string>
+
+  <!-- Filmcraft's own format. -->
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.filmcraft.project</string>
+      <key>UTTypeDescription</key>
+      <string>FilmCraft Project</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.json</string>
+      </array>
+      <key>UTTypeIconFile</key>
+      <string>FilmCraft</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>fcproj</string></array>
+        <key>public.mime-type</key>
+        <array><string>application/x-filmcraft</string></array>
+      </dict>
+    </dict>
+  </array>
+
+</dict>
+</plist>

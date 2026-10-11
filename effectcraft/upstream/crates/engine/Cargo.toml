@@ -1,0 +1,39 @@
+[package]
+name = "effectcraft-engine"
+description = "The EffectCraft engine: session, undo history, editor state and the command registry every frontend (UI, CLI, control channel, MCP) dispatches through"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-time = { workspace = true }
+effectcraft-geom = { workspace = true }
+effectcraft-color = { workspace = true }
+effectcraft-keyframe = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-raster = { workspace = true }
+effectcraft-path = { workspace = true }
+effectcraft-text = { workspace = true }
+effectcraft-effects = { workspace = true }
+effectcraft-render = { workspace = true }
+effectcraft-segment = { workspace = true }
+effectcraft-track = { workspace = true }
+effectcraft-model = { workspace = true }
+effectcraft-lottie = { workspace = true }
+effectcraft-interchange = { workspace = true }
+effectcraft-psd = { workspace = true }
+kurbo = { workspace = true }
+effectcraft-svg = { workspace = true }
+effectcraft-pdf = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+rayon = { workspace = true }
+image = { workspace = true }
+web-time = { workspace = true }
+exr = { workspace = true }

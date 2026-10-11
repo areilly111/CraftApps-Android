@@ -1,0 +1,3506 @@
+# Traditional Chinese (zh-hant) catalog. Columns, separated by a TAB:  context <TAB> source <TAB> translation
+#
+#   context  empty                a plain UI string; `source` is the English text in the code
+#            @id                  a command id (e.g. file.saveAs): wins over the English text for
+#                                 that menu item, so one id can read differently from its twin
+#            @plural              `source` is "one|other" (English forms); Chinese has one form, so
+#                                 the translation is a single string (see `plural` in i18n/mod.rs)
+#            anything else        a disambiguating context passed to `tr_ctx`
+#   escapes  \n  \t  \\  inside a column. `{name}` placeholders must appear in both columns.
+#   lines starting with # and blank lines are ignored.
+#
+# Clean-room: every entry was written from the plain meaning of the English label using the
+# vector-drawing vocabulary in everyday use in Taiwan (錨點, 路徑, 筆畫, 填色, 工作區域, 路徑管理員 ...).
+# No proprietary localisation resource, string table or product UI was consulted or copied; add
+# entries the same way. Product and technology names (VectorCraft, ArtCraft, SVG, OpenType, CMYK,
+# Lab ...) and paper sizes (Letter, Tabloid) stay in Latin letters; the trailing "…" of dialog
+# commands is kept. Full-width punctuation (，。：) inside sentences; half-width parentheses and
+# the " · " separators as in the English. Terms shared with PhotoCraft use the same words as its
+# zh-hant catalog (圖層, 選取, 偏好設定, 混合模式 ...), so the two apps read alike.
+	Glowing Edges…	發光邊緣…
+	Glowing Edges	發光邊緣
+	Edge Width	邊緣寬度
+	Edge Brightness	邊緣亮度
+	Smoothness	平滑度
+
+	  — missing	  — 遺失
+	 to search every command	 以搜尋所有指令
+	(closest)	(最接近)
+	+ Add Scale	+ 新增縮放比例
+	0.2 (quality) to 100 (speed)	0.2 (品質) 至 100 (速度)
+	1 Color Job…	1 色印刷作業…
+	1 {unit} on the artboard stands for {real} {unit} in the scene.	工作區域上的1 {unit}代表場景中的{real} {unit}。
+	2 Color Job…	2 色印刷作業…
+	3 Color Job…	3 色印刷作業…
+	30° Angles	30° 角度
+	3D and Materials	3D 與材質
+	3D Ribbon	3D 緞帶
+	45° Angles	45° 角度
+	60° Angles	60° 角度
+	90° & 45° & 30° Angles	90°、45° 與 30° 角度
+	90° & 45° Angles	90° 與 45° 角度
+	90° Angles	90° 角度
+	< 1 sec	< 1 秒
+	<Opacity Mask>	<不透明度遮色片>
+	[1P-High View]	[一點透視-高視角]
+	[1P-Low View]	[一點透視-低視角]
+	[1P-Normal View]	[一點透視-正常視角]
+	[2P-High View]	[兩點透視-高視角]
+	[2P-Low View]	[兩點透視-低視角]
+	[2P-Normal View]	[兩點透視-正常視角]
+	[3P-Low View]	[三點透視-低視角]
+	[3P-Normal View]	[三點透視-正常視角]
+	[Default] is protected: New… starts an editable copy.	[預設] 受到保護：「新增…」會開始一份可編輯的複本。
+	[Unnamed]	[未命名]
+	A File…	一個檔案…
+	A lower value follows the stroke closely; a higher one gives fewer points and smoother curves.	數值較小時會貼近筆畫，較大時則錨點較少、曲線較平滑。
+	A new preset starting from the selected one	以所選預設集為基礎建立新預設集
+	A saved copy of the selected preset	所選預設集的已儲存拷貝
+	About VectorCraft	關於 VectorCraft
+	above	以上
+	Absolute Position	絕對位置
+	Accurate	精確
+	Abutting	相鄰
+	Action {n}	動作 {n}
+	Actions	動作
+	Activate Document	啟用文件
+	Active Perspective Plane	作用中的透視平面
+	Actual Size	實際尺寸
+	Add	新增
+	Add Anchor (Pen)	增加錨點 (鋼筆)
+	Add Anchor Point	增加錨點
+	Add Anchor Point Tool	增加錨點工具
+	Add Anchor Points	增加錨點
+	Add Effect	新增效果
+	Add Freeform Line	新增任意線條
+	Add Freeform Point	新增任意形狀錨點
+	Add Guide	新增參考線
+	Add Mesh Line	新增網格線
+	Add New	新增
+	Add New Effect	新增效果
+	Add New Fill	新增填色
+	Add New Stroke	新增筆畫
+	Add Selected Artwork (Alt: as one asset)	新增所選圖稿 (Alt：合為一個資產)
+	Add Selected Artwork as Multiple Assets	將所選圖稿新增為多個資產
+	Add Selected Artwork as One Asset	將所選圖稿新增為一個資產
+	Add Spine Point	新增脊線點
+	Add Swatches	新增色票
+	Add to Graphic Styles	新增至繪圖樣式
+	Add to Profiles	新增至描述檔
+	Add to Profiles…	加入描述檔…
+	Add to Selection	加入選取範圍
+	Add to Swatches	新增至色票
+	Add Used Colors	新增使用中的顏色
+	Additional Plug-ins Folder	額外的增效模組資料夾
+	Additional Fonts Folder	額外的字體資料夾
+	Adjust Adjoining Width Points	調整相鄰寬度點
+	Adjust Color Balance…	調整色彩平衡…
+	Adjust Colors	調整顏色
+	Adjust Options:	調整選項：
+	Advanced	進階
+	Advanced Options	進階選項
+	Align	對齊
+	Align center	置中對齊
+	Align left	靠左對齊
+	Align Objects:	對齊物件：
+	Align On:	對齊於：
+	Align right	靠右對齊
+	Align Stroke to Center	筆畫對齊中央
+	Align Stroke to Inside	筆畫對齊內側
+	Align Stroke to Outside	筆畫對齊外側
+	Align Stroke:	對齊筆畫：
+	Align to Artboard	對齊工作區域
+	Align to Glyph Bounds	對齊字符邊界
+	Align to Key Object	對齊關鍵物件
+	Align to Page	對齊頁面
+	Align to Path	對齊路徑
+	Align to Selection	對齊選取範圍
+	Align To:	對齊至：
+	Align:	對齊：
+	Alignment Guides	對齊參考線
+	Alignment:	對齊方式：
+	All	全部
+	All Artwork Above	上方所有圖稿
+	All Caps	全部大寫
+	All Categories	所有類別
+	All colours are within the CMYK gamut	所有顏色皆在 CMYK 色域內
+	All on Active Artboard	作用中工作區域上的全部
+	All on Same Layers	相同圖層上的全部
+	All printer's marks	所有印表機標記
+	All Scripts	所有文字
+	All Text Objects	所有文字物件
+	All the art	所有圖稿
+	All Tools	所有工具
+	Alt	Alt
+	Alt:	Alt：
+	Alter Paths for Appearance	依外觀調整路徑
+	Amount	數量
+	Amount:	數量：
+	Anchor Point	錨點
+	Anchor Point Tool	錨點工具
+	Anchor Points	錨點
+	Anchor Points, Handle, and Bounding Box Display	錨點、控制把手與邊框顯示
+	Anchor/Path Labels	錨點/路徑標籤
+	Anchors:	錨點：
+	Angle	角度
+	Angle:	角度：
+	Angles	角度
+	Animated Zoom	動畫縮放
+	Anti-alias	消除鋸齒
+	Anti-Alias	消除鋸齒
+	Anti-alias Rasters	點陣影像消除鋸齒
+	Anti-aliased Artwork	消除鋸齒的圖稿
+	Anti-aliasing:	消除鋸齒：
+	Any Kind	所有類型
+	Appearance	外觀
+	Appearance Attribute	外觀屬性
+	Appearance Item	外觀項目
+	Appearance of Black	黑色外觀
+	Appearance Panel	外觀面板
+	Appearance panel	外觀面板
+	Applies when the linked file is relinked or updated.	重新連結或更新連結檔案時套用。
+	Applies the next time VectorCraft starts.	下次啟動 VectorCraft 時生效。
+	Apply	套用
+	Apply Brush	套用筆刷
+	Apply Character Style	套用字元樣式
+	Apply Effect	套用效果
+	Apply Graphic Style	套用繪圖樣式
+	Apply Last Color	套用上次的顏色
+	Apply Last Effect	套用上次的效果
+	Apply Last Gradient	套用上次的漸層
+	Apply Paragraph Style	套用段落樣式
+	Apply SVG Filter…	套用 SVG 濾鏡…
+	Apply to All	全部套用
+	Apply to All ({count} more missing)	全部套用 (另有 {count} 個遺失)
+	Arc	弧形
+	Arc Lower…	下弧形…
+	Arc Tool	弧形工具
+	Arc Upper…	上弧形…
+	Arch…	拱形…
+	Arc…	弧形…
+	Area / Path Type	區域／路徑文字
+	Area Graph Tool	面積圖工具
+	Area Text Objects	區域文字物件
+	Area Type Options	區域文字選項
+	Area Type Options…	區域文字選項…
+	Area Type Tool	區域文字工具
+	Around Object	繞物件
+	Arrange	排列順序
+	Arrange: Bring to Front	排列順序：移至最前
+	Arrowheads:	箭頭：
+	Art	圖稿
+	Art using a deleted global swatch keeps its colour.	使用已刪除整體色票的圖稿會保留其顏色。
+	Artboard Options	工作區域選項
+	Artboard Options: edit with the Artboard tool	工作區域選項：請使用工作區域工具編輯
+	Artboard Options…	工作區域選項…
+	Artboard Tool	工作區域工具
+	Artboard {number}	工作區域 {number}
+	Artboard:	工作區域：
+	Artboards	工作區域
+	ArtCraft Website	ArtCraft 網站
+	ArtCraft website	ArtCraft 網站
+	Artwork Colors	圖稿顏色
+	As Multiple Assets	作為多個資產
+	As Single Asset	作為單一資產
+	Ascender	上緣
+	Ask When Modified	修改時詢問
+	Aspect Ratio	長寬比
+	Asset Export	資產匯出
+	Asset Export Settings	資產匯出設定
+	Assets	資產
+	Assign	指定
+	Assign Profile…	指定描述檔…
+	Assign:	指定：
+	Attach to Active Plane	附加至作用中平面
+	Attributes	屬性
+	Author Title:	作者職稱：
+	Author:	作者：
+	Auto	自動
+	Automatic	自動
+	Auto Size New Area Type	自動調整新區域文字大小
+	Auto Spell Check	自動拼字檢查
+	Auto-Collapse Iconic Panels	自動收合圖示面板
+	Ellipse Properties:	橢圓屬性：
+	Invert Pie	反轉扇形
+	Side Length:	邊長：
+	Make Sides Equal	使各邊等長
+	Pie End Angle:	扇形終止角度：
+	Pie Start Angle:	扇形起始角度：
+	Show Tool Group Labels	顯示工具組標籤
+	Auto-Rotate (turn the paper to each artboard)	自動旋轉 (將紙張轉向各工作區域)
+	Automatic flatness	自動平滑度
+	Automatically	自動
+	Automatically Save Recovery Data	自動儲存復原資料
+	Automation	自動化
+	Average	平均
+	Average…	平均…
+	Axis:	軸：
+	Background Color:	背景顏色：
+	Background Contents	背景內容
+	Background Contents:	背景內容：
+	Background:	背景：
+	Backspace	Backspace
+	Bar Graph Tool	橫條圖工具
+	Baseline	基線
+	Baseline Shift	基線位移
+	Basic Latin	基本拉丁文
+	Batch	批次
+	Begin Recording	開始錄製
+	Bend:	彎曲：
+	Bevel Join	斜角
+	Bitmap	點陣圖
+	Black	黑色
+	Black and White	黑白
+	Black and White Logo	黑白標誌
+	BLANK DOCUMENT PRESETS	空白文件預設集
+	Bleed	出血
+	Bleed:	出血：
+	Bleeds	出血
+	Blend	漸變
+	Blend Front to Back	由前至後漸變
+	Blend Horizontally	水平漸變
+	Blend Info	漸變資訊
+	Blend Options	漸變選項
+	Blend Options…	漸變選項…
+	Blend Tool	漸變工具
+	Blend Vertically	垂直漸變
+	Blending Mode	混合模式
+	Blends and Transparency	混合與透明度
+	Bloat Tool	膨脹工具
+	Blob Brush	點滴筆刷
+	Blob Brush Tool	點滴筆刷工具
+	Blue	藍
+	Blur	模糊
+	Bottom	下
+	Bottom in Front	下方置前
+	Bottom-to-Bottom Leading	基線至基線行距
+	Burasagari	標點懸掛
+	Force	強制
+	Bottom:	下：
+	Bounds	邊界
+	Bounds (Fill Proportionally)	邊界 (按比例填滿)
+	Bounds (Fit Proportionally)	邊界 (按比例符合)
+	Break Link to Graphic Style	中斷繪圖樣式連結
+	Break Link to Symbol	中斷符號連結
+	Brick by Column	依欄磚狀
+	Brick by Row	依列磚狀
+	Brick Offset:	磚塊位移：
+	Brightness	亮度
+	Brightness/Contrast…	亮度/對比…
+	Brights	亮色
+	Bring Forward	前移
+	Bring to Front	移至最前
+	Bristle	鬃毛
+	Bristle Brush Strokes	鬃毛筆刷筆畫
+	Browser	瀏覽器
+	Brush Affects:	筆刷影響：
+	Brush Definition	筆刷定義
+	Brush Libraries	筆刷資料庫
+	Brush Libraries (on the roadmap)	筆刷資料庫 (規劃中)
+	Brush Options…	筆刷選項…
+	Brush Strokes	筆刷筆畫
+	Brushes	筆刷
+	Built-in Libraries	內建資料庫
+	Built-in presets are read-only: New… starts an editable copy.	內建預設集為唯讀：「新增…」會建立可編輯的複本。
+	Built-in presets don't change: New makes a copy you can edit.	內建預設集無法變更：「新增」會建立可編輯的拷貝。
+	Built-in presets don't change: New… starts an editable copy.	內建預設集不會變動：「新增…」會建立可編輯的複本。
+	Bulge…	鼓起…
+	Bullet	項目符號
+	Butt Cap	平端點
+	Byte Order:	位元組順序：
+	Calligraphic	書法
+	Can't print these settings: see the Summary	無法列印這些設定：請見摘要
+	Cancel	取消
+	Cancel Key Object	取消關鍵物件
+	Canvas Color	畫布顏色
+	Cap	端點
+	Cap:	端點：
+	Cascade	重疊顯示
+	Center	置中
+	Center Artwork	圖稿置中
+	Center on Artboard	在工作區域置中
+	Center-Justified Tab	置中對齊定位點
+	Centimeters	公分
+	Change	變更
+	Change All	全部變更
+	Change Case	變更大小寫
+	Change Screen Mode (F)	變更螢幕模式 (F)
+	Change to Global Rulers	變更為全域尺標
+	Change to Right-to-Left Layout	變更為由右至左版面配置
+	Changed since the last Refresh.	自上次重新整理後已變更。
+	Changes allowed:	允許的變更：
+	Changes made since it was last saved will be lost.	自上次儲存後所做的變更將會遺失。
+	Changing these settings changes how raster effects look when exported, flattened or expanded.	變更這些設定會改變點陣效果在匯出、平面化或展開時的外觀。
+	Channel	色版
+	Character	字元
+	Character / Paragraph	字元／段落
+	Character Alignment	字元對齊
+	Character Rotation	字元旋轉
+	Character Set:	字元集：
+	Character Style	字元樣式
+	Character Style Options	字元樣式選項
+	Character Styles	字元樣式
+	Check Links	檢查連結
+	Check Spelling…	拼字檢查…
+	Choose a folder	選擇資料夾
+	Choose…	選擇…
+	Circle	圓形
+	Classic Defaults	經典預設值
+	Clean Up…	清除…
+	Clear	清除
+	Clear All Tabs	清除所有定位點
+	Above Text	文字上方
+	Position Panel Above Text	將面板置於文字上方
+	Clear Appearance	清除外觀
+	Clear Guides	清除參考線
+	Clear Overrides	清除覆寫
+	Clear Recent Files	清除最近檔案
+	Click	按一下
+	Click an anchor point	按一下錨點
+	Click or drag	按一下或拖曳
+	Click the art with the Gradient tool to add or select points.	以漸層工具點擊圖稿，即可新增或選取點。
+	Click the first point	按一下第一個點
+	Click the ramp or a type button to apply a gradient.	點擊漸層條或類型按鈕以套用漸層。
+	Click to add a tab stop, drag to move it, drag it off the ruler to delete it	點擊以新增定位點，拖曳可移動，拖出尺標即可刪除
+	Click to choose a swatch, Shift-click to mix a colour	點擊以選擇色票，Shift+點擊可混合顏色
+	Click to edit the mask; Alt-click to view only the mask; Shift-click to disable or enable it	點擊以編輯遮色片；Alt+點擊僅檢視遮色片；Shift+點擊可停用或啟用
+	Click to place each file at 100%, or drag to size it; arrow keys switch files, Esc skips one.	按一下以 100% 置入每個檔案，或拖曳以調整大小；方向鍵可切換檔案，Esc 可略過一個。
+	Click to select, double-click to edit	按一下以選取，按兩下以編輯
+	Click to toggle visibility	點擊以切換可見性
+	Click to zoom in, Alt-click to zoom out, drag to pan, double-click to fit	按一下放大顯示，Alt 加按一下縮小顯示，拖曳以平移，按兩下以符合視窗
+	Client-side (.html)	用戶端 (.html)
+	Clip	剪裁
+	Clip Complex Regions	剪裁複雜區域
+	Clip to Art	剪裁至圖稿
+	Clip to Artboard	剪裁至工作區域
+	Clip to Bounding Box	剪裁至邊框
+	Clipboard as PDF	剪貼簿存為 PDF
+	Clipboard as PNG	剪貼簿存為 PNG
+	Clipboard as SVG	剪貼簿存為 SVG
+	Clipboard as Text	剪貼簿存為文字
+	Clipboard Formats	剪貼簿格式
+	Clipboard Handling	剪貼簿處理
+	Clipping Mask	剪裁遮色片
+	Clipping Masks	剪裁遮色片
+	Close	關閉
+	Close All	全部關閉
+	Close Library	關閉資料庫
+	Close Path	封閉路徑
+	Close paths when ends are within:	端點相距在以下範圍內時封閉路徑：
+	Cmd	Cmd
+	CMYK	CMYK
+	CMYK Color	CMYK 色彩
+	CMYK colours print with their own values; off, they go through the colour settings too.	CMYK 顏色以其本身的數值列印；關閉時，也會經過色彩設定處理。
+	Collapse Panels to Icons	將面板收合為圖示
+	Collapse to Icons	收合為圖示
+	Collate	逐份列印
+	Collect for Export	收集以供匯出
+	Collect in New Layer	收集至新圖層
+	Collect Links in a Separate Folder	將連結收集到獨立的資料夾
+	Color	顏色
+	Color (,)	顏色 (,)
+	Color Adjustments	色彩調整
+	Color bars	色彩條
+	Color blindness – Deuteranopia-type	色盲 – 綠色盲型
+	Color blindness – Protanopia-type	色盲 – 紅色盲型
+	Color Burn	加深顏色
+	Color conversion:	色彩轉換：
+	Color Dodge	加亮顏色
+	Color Group	顏色群組
+	Color Group:	顏色群組：
+	Color Group: {name}	顏色群組：{name}
+	Color Guide	色彩參考
+	Color Guide Options	色彩參考選項
+	Color Guide Options…	色彩參考選項…
+	Color images	彩色影像
+	Color Library	顏色資料庫
+	Color Library…	色彩資料庫…
+	Color Management	色彩管理
+	Color Mixer (Shift-click the chip)	混色器 (Shift-按一下色塊)
+	Color Mode	色彩模式
+	Color Mode:	色彩模式：
+	Color Model:	色彩模型：
+	Color Models	色彩模型
+	Color Picker	顏色選擇器
+	Color Picker…	顏色選擇器…
+	Color Reduction:	色彩縮減：
+	Color Settings	色彩設定
+	Color Settings…	色彩設定…
+	Color Space	色彩空間
+	Color Swatches	色票
+	Color Table	色彩表
+	Color Table ({n} color)	顏色表 ({n} 色)
+	Color Table ({n} colors)	顏色表 ({n} 色)
+	Color Theme	色彩主題
+	Color Themes	色彩主題
+	Color Type:	顏色類型：
+	Color:	顏色：
+	Colorize	上色
+	Colors	顏色
+	Colors:	顏色：
+	Column Graph Tool	長條圖工具
+	Columns:	欄數：
+	Column…	欄…
+	Combine Slices	合併切片
+	Coming soon — tracked in the parity plan	即將推出 — 已列入功能對等計畫
+	Command Click to Select Objects Behind	Cmd 加按一下可選取後方物件
+	Command Dialog	指令對話框
+	Community	社群
+	Compatibility:	相容性：
+	Compatible Gradient and Gradient Mesh Printing	相容的漸層與漸層網格列印
+	Complement	互補色
+	Complexity:	複雜度：
+	Composite colours are converted to it; separations separate with it when it is a CMYK profile.	複合顏色會轉換為此描述檔；其為 CMYK 描述檔時，分色也會使用它。
+	Compound Path	複合路徑
+	Compress (RLE)	壓縮 (RLE)
+	Compress text and line art	壓縮文字與線條圖
+	Compression	壓縮
+	Compression › Color › Above Ppi	壓縮 › 顏色 › 高於 ppi
+	Compression:	壓縮：
+	Condition identifier:	條件識別碼：
+	Conflict {n} of {count}	衝突 {n}／{count}
+	Connect Selected End Points	連接所選端點
+	Consolidate All Windows	合併所有視窗
+	Constrain Angle	強制角度
+	Constrain Width and Height Proportions	強制寬度與高度比例
+	Construction Guides	建構參考線
+	Contextual Alternates	前後關聯替代字
+	Contextual Task Bar	快捷工作列
+	Pin Bar Position	釘選工作列位置
+	Reset Bar Position	重設工作列位置
+	Contrast	對比
+	Control	控制
+	Convert	轉換
+	Convert All Spot Colors to Process	將所有特別色轉換為印刷色
+	Convert All Strokes to Outlines	將所有筆畫轉換為外框
+	Convert All Text to Outlines	將所有文字轉換為外框
+	Convert Anchor Point	轉換錨點
+	Convert Anchor Points	轉換錨點
+	Convert Color	轉換顏色
+	Convert Document Color Mode	轉換文件色彩模式
+	Convert Process to Global	將印刷色轉換為整體色
+	Convert Selected Anchor Points to Corner	將所選錨點轉換為尖角
+	Convert Selected Anchor Points to Smooth	將所選錨點轉換為平滑
+	Convert text to outlines	將文字轉換為外框
+	Convert To Area Type	轉換為區域文字
+	Convert to Artboards	轉換為工作區域
+	Convert to CMYK	轉換為 CMYK
+	Convert to Grayscale	轉換為灰階
+	Convert To Outlines	轉換為外框
+	Convert To Point Type	轉換為點狀文字
+	Convert to RGB	轉換為 RGB
+	Convert to Shape	轉換為形狀
+	Convert to sRGB	轉換為 sRGB
+	Convert:	轉換：
+	Copied the CSS of {rules} object(s)	已複製 {rules} 個物件的 CSS
+	Copies:	份數：
+	Copy	複製
+	Copy (make a transformed copy)	複製 (製作變形後的拷貝)
+	Copy All Objects	複製所有物件
+	Copy All Styles	複製所有樣式
+	Copy Color Value (Hex)	複製顏色值 (Hex)
+	Copy Fonts Used in the Document	複製文件中使用的字體
+	Copy Links	複製連結
+	Copy Selected Style	複製所選樣式
+	Copy to User Defined	複製到使用者定義
+	Copy Width Point	複製寬度點
+	Copyright	版權
+	Copyright Info URL:	著作權資訊網址：
+	Copyright Notice:	著作權聲明：
+	Copyright Status:	著作權狀態：
+	Copyright Symbol	著作權符號
+	Corner Radius	圓角半徑
+	Corner Radius:	圓角半徑：
+	Corner:	轉角：
+	Corners	轉角
+	Cut Path	切斷路徑
+	Descender	下緣
+	Flip	翻轉
+	Round	圓角
+	Radius:	半徑：
+	Inverted Round	反向圓角
+	Corners…	轉角…
+	Chamfer	倒角
+	Couldn't copy to the system clipboard: {e}	無法複製到系統剪貼簿：{e}
+	Couldn't paste from the clipboard: {e}	無法從剪貼簿貼上：{e}
+	Couldn't save recovery data: {e}	無法儲存復原資料：{e}
+	Couldn't {} {name}: {e}	無法{} {name}：{e}
+	Create	建立
+	Create Clipping Mask	建立剪裁遮色片
+	Create Document	建立文件
+	Create from Guides	從參考線建立
+	Create from Selection	從選取範圍建立
+	Create From:	建立來源：
+	Create Gradient Mesh…	建立漸層網格…
+	Create Graph	建立圖表
+	Create New Layer	建立新圖層
+	Create New Sublayer	建立新子圖層
+	Create New Swatch…	建立新色票…
+	Create New {kind} Style	建立新的{kind}樣式
+	Create Object Mosaic…	建立物件馬賽克…
+	Create Outlines	建立外框
+	Create Path	建立路徑
+	Create PDF layers from layers and sublayers	從圖層和子圖層建立 PDF 圖層
+	Create PDF-Compatible File	建立與 PDF 相容的檔案
+	Create Report	建立報告
+	Create Slice	建立切片
+	Create Sub-folders	建立子資料夾
+	Create Text	建立文字
+	Create Trim Marks	建立剪裁標記
+	Created	建立時間
+	Created:	建立時間：
+	Crop	裁切
+	Crop Image	裁切影像
+	Mask	遮色片
+	Crop Marks	裁切標記
+	Crop To	裁切至
+	Crystallize Tool	結晶化工具
+	CSS Properties	CSS 屬性
+	Ctrl	Ctrl
+	Currency & Symbols	貨幣與符號
+	Current Brush	目前的筆刷
+	Current Colors ({total})	目前顏色 ({total})
+	Current Symbol	目前的符號
+	Curvature	曲率
+	Curvature Tool	曲線工具
+	Curves…	曲線…
+	Custom	自訂
+	Customize…	自訂…
+	Cut	剪下
+	Cut Path at Selected Anchor Points	在所選錨點處切斷路徑
+	Cyan	青色
+	Dark	深色
+	Darken	變暗
+	dash	虛線
+	Dash Pattern	虛線樣式
+	Dashed	虛線
+	Dashed Line	虛線
+	Data Recovery	資料復原
+	Data…	資料…
+	Dates	日期
+	Decimal-Justified Tab	小數點對齊定位點
+	Decimal:	小數：
+	Decorative	裝飾
+	Default	預設
+	Default Actions	預設動作
+	Default Figure	預設數字
+	Default Fill and Stroke	預設填色與筆畫
+	Default Fill and Stroke (D)	預設填色與筆畫 (D)
+	Default Language	預設語言
+	Default Printer	預設印表機
+	Default Swatches	預設色票
+	Define Grid…	定義格點…
+	Define Perspective Grid	定義透視格點
+	Define Perspective Grid…	定義透視格點…
+	Delete	刪除
+	Delete All	全部刪除
+	Delete Anchor Point	刪除錨點
+	Delete Anchor Point Tool	刪除錨點工具
+	Delete Anchor Points	刪除錨點
+	Delete Artboard	刪除工作區域
+	Delete Artboards	刪除工作區域
+	Delete Brush	刪除筆刷
+	Delete Character Style	刪除字元樣式
+	Delete Empty Artboards	刪除空白工作區域
+	Delete Freeform Point	刪除任意形狀錨點
+	Delete Graphic Style	刪除繪圖樣式
+	Delete Graphic Style (Alt-click: without asking)	刪除繪圖樣式 (Alt+點擊：不詢問)
+	Delete Layer	刪除圖層
+	Delete Mesh Point	刪除網格點
+	Delete Paragraph Style	刪除段落樣式
+	Delete Pattern	刪除圖樣
+	Delete PDF Preset	刪除 PDF 預設集
+	Delete Perspective Grid Preset	刪除透視格點預設集
+	Delete Point	刪除點
+	Delete Preset	刪除預設集
+	Delete Print Preset	刪除列印預設集
+	Delete Profile	刪除描述檔
+	Delete Save for Web Preset	刪除儲存為網頁用預設集
+	Delete Selected Item	刪除所選項目
+	Delete Selection	刪除選取範圍
+	Delete Slices	刪除切片
+	Delete Spine Point	刪除脊線點
+	Delete Stop	刪除色標
+	Delete Swatch	刪除色票
+	Delete Symbol	刪除符號
+	Delete Tab	刪除定位點
+	Delete the graphic style “{name}”?	要刪除繪圖樣式「{name}」嗎？
+	Delete Theme	刪除主題
+	Delete theme	刪除主題
+	Delete these {count} swatches and groups?	要刪除這 {count} 個色票和群組嗎？
+	Delete these {n} graphic styles?	要刪除這 {n} 個繪圖樣式嗎？
+	Delete this saved preset	刪除此已儲存的預設集
+	Delete this {n} graphic style?	要刪除這 {n} 個繪圖樣式嗎？
+	Delete Transparency Flattener Preset	刪除透明度平面化預設集
+	Delete Width Point	刪除寬度點
+	Delete Workspace	刪除工作區
+	Delete {kind} Style	刪除{kind}樣式
+	Delete “{name}”?	要刪除「{name}」嗎？
+	Depth:	深度：
+	Description	描述
+	Description:	說明：
+	Deselect	取消選取
+	Design…	設計…
+	Destination:	目的地：
+	Detail:	細節：
+	Devices	裝置
+	Dialog	對話方塊
+	Diamond	菱形
+	Difference	差異化
+	Differences from {preset}:	與{preset}的差異：
+	Dim Copies to:	將拷貝調暗至：
+	Dim Images to:	影像變暗至：
+	Dimensions	尺寸
+	Direct Selection Tool	直接選取工具
+	Direction Handles	控制把手
+	Disable Auto Add/Delete	停用自動增加/刪除
+	Disable Opacity Mask	停用不透明度遮色片
+	Discard	捨棄
+	Discard Empty Type	捨棄空白文字
+	Discard Recovered Documents	捨棄已復原的文件
+	Discard White Overprint in Output	輸出時捨棄白色疊印
+	Discarded {} recovered document(s)	已捨棄 {} 份復原的文件
+	Discord	Discord
+	Discretionary Hyphen	選擇性連字號
+	Discretionary Ligatures	任意連字
+	Display All Blacks Accurately	精確顯示所有黑色
+	Display All Blacks as Rich Black	將所有黑色顯示為濃黑
+	Display Bitmaps as Anti-aliased Images in Pixel Preview	在像素預視中將點陣圖顯示為消除鋸齒的影像
+	Display Options	顯示選項
+	Display Print Size at 100% Zoom	以 100% 縮放顯示列印尺寸
+	Distort & Transform	扭曲與變形
+	Distort Appearance	扭曲外觀
+	Distort Linear Gradients	扭曲線性漸層
+	Distort Pattern Fills	扭曲圖樣填色
+	Distortion	扭曲
+	Distribute	均分
+	Distribute Objects:	均分物件：
+	Distribute Spacing	均分間距
+	Distribute Spacing:	均分間距：
+	Dither:	仿色：
+	Divide	分割
+	Divide Horizontally Into	水平分割為
+	Divide Objects Below	分割下方物件
+	Divide Slices	分割切片
+	Divide Slices…	分割切片…
+	Divide Vertically Into	垂直分割為
+	Do Not Move	不移動
+	Do you want to save the changes you made to “{name}”?	要儲存對「{name}」所做的變更嗎？
+	Can't open “{name}”.	無法開啟「{name}」。
+	Document	文件
+	Document Color Mode	文件色彩模式
+	Document Info	文件資訊
+	Document Ink Options	文件油墨選項
+	Document JSON	文件 JSON
+	Document open password	文件開啟密碼
+	Document profile	文件描述檔
+	Document Raster Effects Settings	文件點陣效果設定
+	Document Raster Effects Settings Dialog	文件點陣效果設定對話框
+	Document Raster Effects Settings…	文件點陣效果設定…
+	Document Setup	文件設定
+	Document Setup…	文件設定…
+	Document Swatches	文件色票
+	Document Title:	文件標題：
+	Documents you create appear here.	您建立的文件會顯示在這裡。
+	Don't Save	不儲存
+	Don't Show Center	不顯示中心點
+	Done	完成
+	Dots	點
+	Double Click To Isolate	按兩下以隔離
+	Double Left Quotation Marks	左雙引號
+	Double Quotes:	雙引號：
+	Double Right Quotation Marks	右雙引號
+	Double-click	按兩下
+	Double-click to edit the characters' paint	按兩下以編輯字元的上色
+	Double-click to insert	按兩下以插入
+	Double-click to rename	按兩下以重新命名
+	Double-click to target the contents	按兩下以指定內容
+	Download	下載
+	Download:	下載：
+	Downloaded {what}	已下載 {what}
+	Downloaded {} file(s)	已下載 {} 個檔案
+	Drag	拖曳
+	Drag a handle	拖曳控制把手
+	Drag art here, or select it and click +. Hold Alt for one asset of several objects.	將圖稿拖曳到這裡，或選取後按一下 +。按住 Alt 可將多個物件合為一個資產。
+	Drag onto art to apply this appearance	拖曳到圖稿上以套用此外觀
+	Drag the art to move it on the paper	拖曳圖稿以在紙張上移動
+	Draw	繪製
+	Draw Behind	背後繪圖
+	Draw in Perspective	在透視中繪製
+	Draw Inside	內部繪圖
+	Draw Normal	正常繪圖
+	Draw:	繪製：
+	Drawing Mode	繪圖模式
+	Drop Shadow	製作陰影
+	Drop Shadow…	陰影…
+	Duotone Gradients	雙色調漸層
+	Duplicate	製作複本
+	Duplicate and Offset 10 pt	製作複本並位移 10 pt
+	Duplicate Artboard	製作工作區域複本
+	Copy Artboard	複製工作區域
+	Cut Artboard	剪下工作區域
+	Duplicate Artboards	製作工作區域複本
+	Duplicate Brush	製作筆刷複本
+	Duplicate Character Style	製作字元樣式複本
+	Duplicate Effect	製作效果複本
+	Duplicate Graphic Style	製作繪圖樣式複本
+	Duplicate Item	製作項目複本
+	Duplicate Layer	製作圖層複本
+	Duplicate Paragraph Style	製作段落樣式複本
+	Duplicate Selected Item	製作所選項目的複本
+	Duplicate Selection	製作選取範圍複本
+	Duplicate Slice	製作切片複本
+	Duplicate Swatch	製作色票複本
+	Duplicate Symbol	製作符號複本
+	Duplicate {kind} Style	製作{kind}樣式的複本
+	Dutch	荷蘭文
+	DXF Import Options	DXF 匯入選項
+	DXF Info	DXF 資訊
+	DXF Options	DXF 選項
+	DXF Options Dialog	DXF 選項對話框
+	e.g. 1-3, 5	例如 1-3, 5
+	Each page prints as one image, at the document's raster effects resolution.	每頁會以文件的點陣效果解析度列印為單一影像。
+	Earth Tones	大地色系
+	East Asian Type	東亞文字
+	Edit	編輯
+	Edit Artboards	編輯工作區域
+	Edit Clipping Path	編輯剪裁路徑
+	Edit Color Group	編輯顏色群組
+	Edit Colors	編輯顏色
+	Edit Contents	編輯內容
+	Edit Custom Dictionary…	編輯自訂字典…
+	Edit Envelope	編輯封套
+	Edit Freeform Point	編輯任意形狀錨點
+	Edit Gradient	編輯漸層
+	Edit Opacity Mask	編輯不透明度遮色片
+	Edit or Apply Color Group	編輯或套用顏色群組
+	Edit or Apply Color Group…	編輯或套用顏色群組…
+	Edit or Apply Colors	編輯或套用顏色
+	Edit Original	編輯原稿
+	Edit Pattern	編輯圖樣
+	Edit PDF Preset	編輯 PDF 預設集
+	Edit Print Preset	編輯列印預設集
+	Edit selected paths within:	在以下範圍內編輯選取的路徑：
+	Edit Selection	編輯選取範圍
+	Edit Selection…	編輯選取範圍…
+	Edit Symbol	編輯符號
+	Edit Text	編輯文字
+	Edit the applied effect, or add another one?	要編輯已套用的效果，還是新增另一個？
+	Edit the selected point's colour in the Color panel	在顏色面板中編輯所選點的顏色
+	Edit the stop	編輯色標
+	Edit Theme	編輯主題
+	Edit theme	編輯主題
+	Edit Toolbar	編輯工具列
+	Edit Views	編輯檢視
+	Edit Views…	編輯檢視…
+	Edit…	編輯…
+	Effect	效果
+	Effect Options	效果選項
+	Effective PPI	有效 PPI
+	Effects	效果
+	Effect…	效果…
+	Ellipse	橢圓形
+	Ellipse Tool	橢圓工具
+	Ellipse…	橢圓形…
+	Ellipsis	刪節號
+	Em Box Bottom/Left	全形字框下 / 左
+	Em Box Center	全形字框中央
+	Em Box Top/Right	全形字框上 / 右
+	ICF Top/Right	ICF 上 / 右
+	ICF Bottom/Left	ICF 下 / 左
+	Em Dash	長破折號
+	Em Space	全形空格
+	Embed	嵌入
+	Embed Fonts (for other applications)	內嵌字體 (供其他應用程式使用)
+	Embed Fonts (Glyphs Used)	內嵌字體 (使用的字符)
+	Embed ICC Profile	內嵌 ICC 描述檔
+	Embed ICC Profiles	內嵌 ICC 描述檔
+	Embed Image	內嵌影像
+	Embed Image(s)	內嵌影像
+	Embed page thumbnails	嵌入頁面縮圖
+	Embedded	已內嵌
+	Embedded Image	嵌入的影像
+	Embedded {n} image(s)	已嵌入 {n} 張影像
+	Embedded {n} image(s); {missing} missing: relink them first	已嵌入 {n} 張影像；{missing} 張遺失：請先重新連結
+	Emulsion:	藥膜：
+	En Dash	短破折號
+	En Space	半形空格
+	Enable Background Export	啟用背景匯出
+	Enable Background Save	啟用背景儲存
+	Enable Contextual Task Bar	啟用快捷工作列
+	Enable copying of text, images and other content	啟用複製文字、影像與其他內容
+	Enable in-menu font previews	啟用選單內字體預覽
+	Enable Missing Glyph Protection	啟用遺失字符保護
+	Enable Opacity Mask	啟用不透明度遮色片
+	Enable plaintext metadata	啟用純文字中繼資料
+	Enable Rubber Band for	啟用橡皮筋預覽，適用於
+	Enable text access for screen readers	啟用螢幕閱讀器的文字存取
+	Enable Touch Gestures	啟用觸控手勢
+	Enable Touch Workspace	啟用觸控工作區
+	Encoding	編碼
+	Encoding:	編碼：
+	Encryption: {name} (set by Compatibility)	加密：{name} (由相容性設定)
+	End arrowhead	結尾箭頭
+	English	English
+	English: UK	英文：英國
+	English: USA	英文：美國
+	Enter	Enter
+	Enter Isolation Mode	進入隔離模式
+	Entire Font	整個字體
+	Envelope Distort	封套扭曲
+	Envelope Info	封套資訊
+	Envelope Mesh	封套網格
+	Envelope Options	封套選項
+	Envelope Options…	封套選項…
+	EPS Options	EPS 選項
+	EPS Options Dialog	EPS 選項對話框
+	Eraser	橡皮擦
+	Eraser Tool	橡皮擦工具
+	Error	錯誤
+	Esc	Esc
+	Essentials	基本功能
+	Essentials Classic	基本功能 經典
+	Every (minutes)	每隔 (分鐘)
+	Every option is at its default.	所有選項皆為預設值。
+	Every option matches {base}.	所有選項皆與{base}相同。
+	Every-line Composer	逐行排版程式
+	Exact dash lengths	精確虛線長度
+	Exceptions (comma separated)	例外 (以逗號分隔)
+	Exclude	差集
+	Exclusion	排除
+	Exit Isolation Mode	結束隔離模式
+	Expand	展開
+	Expand Appearance	展開外觀
+	Expand applies to compound shapes (Alt-click a shape mode) — on the roadmap	展開適用於複合形狀 (按住 Alt 按一下形狀模式)，已列入開發計畫
+	Expand Brush Strokes	展開筆刷筆畫
+	Expand Compound Shape	展開複合形狀
+	Expand Gradient Mesh	展開漸層網格
+	Expand Gradient To	展開漸層為
+	Expand Layers Panel Rows	展開圖層面板列
+	Expand Options	展開選項
+	Expand Panels	展開面板
+	Expand Repeat	展開重複
+	Expand Shape	展開形狀
+	Expand:	展開：
+	Expand…	展開…
+	Export	匯出
+	Export All…	全部匯出…
+	Export and Clipboard Transparency Flattener Settings	匯出與剪貼簿透明度平面化設定
+	Export Artboard	匯出工作區域
+	Export As	匯出為
+	Export As PNG…	匯出為 PNG…
+	Export As SVG…	匯出為 SVG…
+	Export Asset	匯出資產
+	Export Assets	匯出資產
+	Export As…	匯出為…
+	Export CSS	匯出 CSS
+	Export CSS…	匯出 CSS…
+	Export Document	匯出文件
+	Export DXF	匯出 DXF
+	Export EPS	匯出 EPS
+	Export for Screens	匯出為螢幕適用
+	Export for Screens Settings	匯出為螢幕適用設定
+	Export for Screens…	匯出為螢幕適用…
+	Export Keyboard Shortcuts…	匯出鍵盤快速鍵…
+	Export Option	匯出選項
+	Export PDF	匯出 PDF
+	Export PDF Presets	匯出 PDF 預設集
+	Export Perspective Grid Presets	匯出透視格點預設集
+	Export Print Presets	匯出列印預設集
+	Export Selected Art Only	僅匯出選取的圖稿
+	Export Selected CSS…	匯出選取的 CSS…
+	Export Selection…	匯出選取範圍…
+	Export Settings	匯出設定
+	Export the selected assets (else all of them)	匯出選取的資產 (未選取時匯出全部)
+	Export to:	匯出至：
+	Export Transparency Flattener Presets	匯出透明度平面化預設集
+	Export {count} Selected	匯出 {count} 個選取項目
+	Export:	匯出：
+	Exported {count} file(s) to {folder}	已匯出 {count} 個檔案至 {folder}
+	Exported {path}	已匯出 {path}
+	Exported {what}	已匯出 {what}
+	Exported {what} with {} note(s): {first}	已匯出 {what}，附 {} 則附註：{first}
+	Exporting {}	正在匯出 {}
+	Export…	匯出…
+	Extrude & Bevel…	突出與斜角…
+	Eyedropper	滴管
+	Eyedropper Applies:	滴管套用：
+	Eyedropper Options	滴管選項
+	Eyedropper Picks Up:	滴管擷取：
+	Eyedropper Tool	滴管工具
+	Eyedropper: click the art to sample the stop's colour	滴管：點擊圖稿以取樣色標的顏色
+	Favorites	我的最愛
+	Feather…	羽化…
+	Feet	英呎
+	Feet & Inches	英呎與英吋
+	Fewer <tspan> Elements	減少 <tspan> 元素
+	Fidelity:	精確度：
+	Figure Space	數字空格
+	Figure:	數字：
+	File	檔案
+	File Dimensions	檔案尺寸
+	File Format:	檔案格式：
+	File Formats	檔案格式
+	File Handling	檔案處理
+	File Info	檔案資訊
+	File Info Dialog	檔案資訊對話框
+	File Info…	檔案資訊…
+	File Name:	檔案名稱：
+	File › Place… brings in an image, linked or embedded.	檔案 › 置入… 可置入影像，可選擇連結或內嵌。
+	Files	檔案
+	Files of a PDF standard can't be password-protected.	PDF 標準的檔案無法設定密碼保護。
+	Files of this standard tag their colours with ICC profiles.	此標準的檔案會以 ICC 描述檔標記顏色。
+	Fill	填色
+	Fill & Stroke	填色與筆畫
+	Fill (X), double-click for the Color Picker	填色 (X)，按兩下開啟檢色器
+	Fill and Stroke	填色與筆畫
+	Fill Color	填色顏色
+	Fill new strokes	為新筆畫套用填色
+	Fill New Type Objects With Placeholder Text	以預留位置文字填滿新文字物件
+	Fill Rule	填色規則
+	Fill with Placeholder Text	以預留位置文字填滿
+	Insert Inline Symbol	插入行內符號
+	Fill:	填色：
+	Fill: click for swatches, Shift-click for the color mixer	填色：按一下開啟色票，按住 Shift 按一下開啟混色器
+	Find	尋找
+	Find and Replace…	尋找與取代…
+	Find Font	尋找字體
+	Find Font…	尋找字體…
+	Find Next	尋找下一個
+	Find Objects	尋找物件
+	First Page	第一頁
+	First-line Left Indent	首行左縮排
+	Fisheye…	魚眼…
+	Fish…	魚形…
+	Fit All	符合全部
+	Fit All in Window	全部符合視窗
+	Fit Artboard in Window	使工作區域符合視窗
+	Fit dashes to corners and ends	讓虛線貼合轉角與端點
+	Fit Headline	符合標題
+	Decrease Font Size	縮小字體大小
+	Increase Font Size	放大字體大小
+	Spacing	間距
+	Step Type	依增量調整文字
+	Fit in View	符合檢視
+	Fit in Window	符合視窗
+	Fit on Screen	顯示全頁
+	Fit to Artwork Bounds	符合圖稿邊界
+	Fit to Selected Art	符合選取的圖稿
+	Flag…	旗形…
+	Flare	光暈
+	Flare Tool	光暈工具
+	Flare Tool Options	光暈工具選項
+	Halo	光暈
+	Rays	射線
+	Rings	光環
+	Diameter:	直徑：
+	Brightness:	亮度：
+	Growth:	增大：
+	Fuzziness:	模糊度：
+	Number:	數量：
+	Longest:	最長：
+	Path:	路徑：
+	Largest:	最大：
+	Direction:	方向：
+	Symbolism Tools Options	符號工具選項
+	Symbol Set Density:	符號組密度：
+	Flat Image	平面影像
+	Flatness:	平滑度：
+	Flatten Artwork	將圖稿平面化
+	Flatten Transparency	透明度平面化
+	Flatten Transparency…	透明度平面化…
+	Flattener preset:	平面化預設集：
+	Flattener presets	平面化預設集
+	Flattener Preview	平面化預視
+	Flip Across	跨軸翻轉
+	Flip Along	沿軸翻轉
+	Flip Along Horizontal Axis	沿水平軸翻轉
+	Flip Along Vertical Axis	沿垂直軸翻轉
+	Flip Horizontal	水平翻轉
+	Flip Row Order	反轉列順序
+	Flip Vertical	垂直翻轉
+	Float in Window	在視窗中浮動
+	Focal Fill	焦點填色
+	Focal Stroke	焦點筆畫
+	Folder	資料夾
+	Folder Name:	資料夾名稱：
+	Font	字體
+	Font Family	字體家族
+	Font Family & Style	字體家族與樣式
+	Font Family, Style & Size	字體家族、樣式與大小
+	Font List	字體清單
+	Font Preview Size	字體預覽大小
+	Font Size	字體大小
+	Font:	字體：
+	Fonts	字體
+	Fonts in Document	文件中的字體
+	Fonts in Document: {count}	文件中的字體：{count}
+	Fonts whose licence doesn't allow embedding are not copied.	授權不允許嵌入的字體不會複製。
+	Forced Line Break	強制換行
+	Format	格式
+	Format Options	格式選項
+	Format Settings	格式設定
+	Format:	格式：
+	Formats:	格式：
+	Fractional Widths	小數字寬
+	Fractions	分數
+	Free	自由
+	Free Distort	隨意扭曲
+	Free Distort…	隨意扭曲…
+	Free Transform Tool	任意變形工具
+	Freeform Gradient	任意形狀漸層
+	French	法文
+	Frequencies and angles are the output device's to apply.	頻率與角度由輸出裝置負責套用。
+	Frequency	頻率
+	Full Document	完整文件
+	Full Screen Mode	全螢幕模式
+	Full Screen Mode with Menu Bar	含選單列的全螢幕模式
+	Gamma	Gamma
+	Gamut Check	色域檢查
+	Gamut Warning	色域警告
+	gap	間隙
+	Gap Options…	間隙選項…
+	Gaussian Blur…	高斯模糊…
+	General	一般
+	General › Placement › X	一般 › 位置 › X
+	General › Thumbnails	一般 › 縮圖
+	Generate CSS	產生 CSS
+	Generate CSS: the whole document's CSS while nothing is selected	產生 CSS：未選取任何物件時，產生整份文件的 CSS
+	German	德文
+	Get Preferences	取得偏好設定
+	Get Text Range	取得文字範圍
+	Global	全域
+	Global Brush Dimensions	整體筆刷尺寸
+	Global Process Color	整體印刷色
+	Global Process Color, CMYK	整體印刷色，CMYK
+	glyph {id}	字符 {id}
+	Glyphs	字符
+	Go to Artboard	前往工作區域
+	Go To Link	前往連結
+	GPL palettes keep solid colours only, as RGB.	GPL 調色盤僅保留純色，並以 RGB 儲存。
+	GPU Performance	GPU 效能
+	Gradient	漸層
+	Gradient (.)	漸層 (.)
+	Gradient across stroke	橫跨筆畫的漸層
+	Gradient along stroke	沿筆畫的漸層
+	Gradient and Mesh Resolution:	漸層與網格解析度：
+	Gradient Fill: click to apply, drag onto art	漸層填色：點擊以套用，或拖曳到圖稿上
+	Gradient Finishes	漸層質感
+	Gradient Mesh	漸層網格
+	Gradient swatches	漸層色票
+	Gradient Tool	漸層工具
+	Gradient Vector	漸層向量
+	Gradient within stroke	筆畫內的漸層
+	Gradients	漸層
+	Graph	圖表
+	Graph Data	圖表資料
+	Graph Type	圖表類型
+	Graphic Style	繪圖樣式
+	Graphic Style Libraries	繪圖樣式資料庫
+	Graphic Style Libraries Menu	繪圖樣式資料庫選單
+	Graphic Style Library	繪圖樣式資料庫
+	Graphic Style Options	繪圖樣式選項
+	Graphic Style Options…	繪圖樣式選項…
+	Graphic Styles	繪圖樣式
+	Graphic Styles Options	繪圖樣式選項
+	Graphics	圖形
+	Graphics Processor	圖形處理器
+	Graphics: {adapter}	圖形：{adapter}
+	Gravity	重力
+	Grays	灰色
+	Grays and Neutrals	灰色與中性色
+	Grayscale	灰階
+	Flat Logo	扁平標誌
+	Grayscale images	灰階影像
+	Greek & Cyrillic	希臘文與西里爾文
+	Green	綠
+	Grid	格點
+	Grid Color & Opacity	格點顏色與不透明度
+	Grid Colors:	格點顏色：
+	Grid Size:	格點大小：
+	Gridline every	格線間隔
+	Gridline every:	格線間隔：
+	Grids In Back	格點置於後方
+	Group	群組
+	Group Selection Tool	群組選取工具
+	Guides	參考線
+	Guides & Grid	參考線與格點
+	H Spacing:	水平間距：
+	H:	高：
+	Hair Space	極細空格
+	Hand Tool	手形工具
+	Hand-Drawn	手繪
+	Handles	控制把手
+	Hard Light	實光
+	Harmony Rules:	色彩調和規則：
+	Harmony Sets	色彩調和組
+	Height	高度
+	Height:	高度：
+	Help	說明
+	Help › Search Commands…	說明 › 搜尋指令…
+	Hex by Column	六角形 (依欄)
+	Hex by Row	六角形 (依列)
+	Hide	隱藏
+	Hide Artboards	隱藏工作區域
+	Hide Bounding Box	隱藏邊框
+	Hide Code	隱藏程式碼
+	Hide Bar	隱藏工作列
+	More Options	更多選項
+	Show Properties Panel	顯示內容面板
+	Hide Corner Widget	隱藏轉角 Widget
+	Hide Corner Widget for angles greater than	角度大於以下數值時隱藏轉角 Widget
+	Hide Edges	隱藏邊緣
+	Hide Gradient Annotator	隱藏漸層註解者
+	Hide Grid	隱藏格點
+	Hide Guides	隱藏參考線
+	Hide Hidden Characters	隱藏隱藏字元
+	Hide Note	隱藏註解
+	Hide Options	隱藏選項
+	Hide Others	隱藏其他
+	Hide Print Tiling	隱藏列印分頁
+	Hide Rulers	隱藏尺標
+	Hide Slices	隱藏切片
+	Hide Text Threads	隱藏文字串連
+	Hide Thumbnail	隱藏縮圖
+	Hide Thumbnails	隱藏縮圖
+	Hide Transparency Grid	隱藏透明度格點
+	High	高
+	High (300 ppi)	高 (300 ppi)
+	High Performance (discrete)	高效能 (獨立顯示卡)
+	Highlight Alternate Glyphs	醒目提示替代字符
+	Highlight anchors on mouse over	滑鼠移過時醒目提示錨點
+	Highlight Rows	反白顯示列
+	Highlight Variable	突出顯示變數
+	Highlight Substituted Fonts	醒目提示被取代的字體
+	Highlight Substituted Glyphs	醒目提示被取代的字符
+	History	步驟記錄
+	History Options…	步驟記錄選項…
+	History States	步驟記錄狀態
+	Hollow	空心
+	Home	首頁
+	Horizon Height:	地平線高度：
+	Horizontal	水平
+	Horizontal %	水平 %
+	Horizontal Align Center	水平置中對齊
+	Horizontal Align Left	水平靠左對齊
+	Horizontal Align Right	水平靠右對齊
+	Horizontal Distribute Center	水平均分中心
+	Horizontal Distribute Left	水平均分左緣
+	Horizontal Distribute Right	水平均分右緣
+	Horizontal Distribute Space	水平均分間距
+	Horizontal Grid:	水平格點：
+	Horizontal Plane	水平面
+	Horizontal Scale %	水平縮放 %
+	Horizontal:	水平：
+	How colours outside the press's gamut are separated.	印刷機色域以外的顏色如何分色。
+	Hue	色相
+	Hue/Saturation…	色相/飽和度…
+	Hyphenate	使用連字號
+	Hyphenation	連字號
+	Hyphenation…	連字號…
+	ICC Profile	ICC 描述檔
+	Identify Objects By	識別物件依據
+	Ignore	略過
+	Ignore Artboards (all the art as one page)	忽略工作區域 (所有圖稿視為單一頁面)
+	Ignore White	忽略白色
+	Palette:	調色盤：
+	Limited	有限
+	Full Tone	全色調
+	Document Library	文件資料庫
+	Library:	資料庫：
+	Image	影像
+	Image Info	影像資訊
+	Image Map:	影像地圖：
+	Image Size	影像尺寸
+	Image Trace	影像描圖
+	Image Tracing	影像描圖物件
+	Tracing Presets	描圖預設集
+	Image Trace Presets	影像描圖預設集
+	Image:	影像：
+	Images:	影像：
+	Import Keyboard Shortcuts…	匯入鍵盤快速鍵…
+	Import PDF	匯入 PDF
+	Import PDF Presets	匯入 PDF 預設集
+	Import Perspective Grid Presets	匯入透視格點預設集
+	Import Print Presets	匯入列印預設集
+	Import Transparency Flattener Presets	匯入透明度平面化預設集
+	Imported {what}: {}	已匯入 {what}：{}
+	Import…	匯入…
+	In Tangent Handles	內側切線控制把手
+	In the selected objects	在選取的物件中
+	Inches	英吋
+	Include Blacks with CMY:	包含 CMY 的黑色：
+	Include Bleed	包含出血
+	Include Cmy Blacks	包含 CMY 黑色
+	Include CMYK PostScript in RGB Files	在 RGB 檔案中包含 CMYK PostScript
+	Include Document Thumbnails	包含文件縮圖
+	Include Hidden Layers	包含隱藏圖層
+	Include Linked Files	包含連結檔案
+	Include Metadata	包含中繼資料
+	Include non-printing layers	包含不列印的圖層
+	Include SVG Code	包含 SVG 程式碼
+	Include Swatches for Tints	包含色調的色票
+	Inflate…	膨脹…
+	Info	資訊
+	Ink	油墨
+	Inner Glow…	內光暈…
+	Input Black	輸入黑色
+	Input White	輸入白色
+	Insert Break Character	插入分行字元
+	Insert Character	插入字元
+	Insert Special Character	插入特殊字元
+	Insert Whitespace Character	插入空白字元
+	Inspect Document	檢查文件
+	Inspect Object	檢查物件
+	Install Plug-in	安裝增效模組
+	Install Plug-in…	安裝增效模組…
+	Installed plug-in {}	已安裝增效模組 {}
+	Intensity:	強度：
+	Intent:	目的：
+	Interlaced	交錯
+	Internal CSS	內部 CSS
+	Internet Standard RGB (sRGB)	網際網路標準 RGB (sRGB)
+	Intersect	交集
+	Inverse	反轉
+	Invert	反轉
+	Invert Colors	反轉顏色
+	Invert Mask	反轉遮色片
+	Isolate	隔離
+	Isolate Blending	隔離混合
+	Isolate Group	隔離群組
+	Italian	義大利文
+	Japanese	日文
+	Join	連接
+	Join Our Discord	加入我們的 Discord
+	Join our Discord	加入我們的 Discord
+	Join the ArtCraft community on Discord (discord.gg/artcraft)	加入 Discord 上的 ArtCraft 社群 (discord.gg/artcraft)
+	Join the lines of each paragraph	合併每個段落的各行
+	Join Tool	連接工具
+	Justification…	對齊設定…
+	Justify all lines	兩端對齊所有行
+	Justify with last line aligned center	兩端對齊，最後一行置中
+	Justify with last line aligned left	兩端對齊，最後一行靠左
+	Justify with last line aligned right	兩端對齊，最後一行靠右
+	Keep a link to an image file instead of only embedding it	保留影像檔案的連結，而不只是嵌入
+	Keep both sides the same width	保持兩側寬度相同
+	Keep Formatting	保留格式
+	Keep Original	保留原稿
+	Keep Plain Text	保留純文字
+	Keep the pasted color as a new swatch with a numbered name.	將貼上的顏色保留為新色票，並以編號命名。
+	Keep this row's colors (exclude)	保留此列的顏色 (排除)
+	Keep:	保留：
+	Kerning (0 = Auto)	字距微調 (0 = 自動)
+	Keyboard Increment	鍵盤增量
+	Keyboard Shortcut Conflicts	鍵盤快速鍵衝突
+	Keyboard Shortcut Set	鍵盤快速鍵組
+	Keyboard Shortcuts…	鍵盤快速鍵…
+	Keywords:	關鍵字：
+	Knife	美工刀
+	Knockout Group	去底群組
+	Lab	Lab
+	Lab Spot Colors:	Lab 特別色：
+	Lab Values	Lab 值
+	Landscape	橫向
+	Interface Language	介面語言
+	Language	語言
+	Language Options	語言選項
+	Language:	語言：
+	Large	大
+	Large List View	大型清單檢視
+	Large Tabs	大型頁籤
+	Large Thumbnail View	大縮圖檢視
+	Large Thumbnails	大縮圖
+	Lasso Tool	套索工具
+	Last Effect: {name}	最後一次效果：{name}
+	Last Effect: {}	上次效果：{}
+	Last Effect…	最後一次效果…
+	Last Page	最後一頁
+	Latin	拉丁文
+	Latin Extended	拉丁文擴充
+	Latin-1 Supplement	拉丁文-1 補充
+	Layer	圖層
+	Layer Names	圖層名稱
+	Layer Options	圖層選項
+	Layer Options…	圖層選項…
+	Layers	圖層
+	Layers Panel Options	圖層面板選項
+	Layout	版面配置
+	Layout:	版面配置：
+	Leader:	前導字元：
+	Leading	行距
+	Left	左
+	Left Grid:	左側格點：
+	Left in Front	左側在前
+	Left Indent	左縮排
+	Left Plane	左平面
+	Left-Justified Tab	靠左定位點
+	Left-to-Right Paragraph Direction	從左至右段落方向
+	Left:	左：
+	Legacy Macintosh RGB (Gamma 1.8)	舊版 Macintosh RGB (Gamma 1.8)
+	Legacy vector clipboard	舊版向量剪貼簿
+	Legacy vector clipboard (no transparency)	舊版向量剪貼簿 (無透明度)
+	Less	較少
+	Letter	Letter
+	Levels…	色階…
+	Libraries	資料庫
+	Ligatures are off while the text is tracked.	文字套用字距時，連字功能會關閉。
+	Light	淺色
+	Light Blue	淺藍色
+	Lighten	變亮
+	Lightness	亮度
+	Limit Color Guide to Library	將色彩參考限制於資料庫
+	Limit colors to swatch library	將顏色限制於色票資料庫
+	Limit colors to swatch library: {name}	將顏色限制於色票資料庫：{name}
+	Limit to Library:	限定於資料庫：
+	Limit:	限度：
+	Line	直線
+	Line Art and Text Resolution:	線條圖與文字解析度：
+	Line Breaks	換行
+	Line Color	線條顏色
+	Line Cut	線條切割
+	Line Cut Tool	線條切割工具
+	Line Endings:	換行字元：
+	Line Graph Tool	折線圖工具
+	Line Segment	線段
+	Line Segment Tool	線段工具
+	Line Segment Tool Options	線段工具選項
+	Line-end Punctuation Half Width	行尾標點半形
+	Linear Gradient	線性漸層
+	Lines	直線
+	Lines: clicks add points joined by a line	線條：每次點擊會新增以線連接的點
+	Link	連結
+	Link harmony colors	連結調和顏色
+	Link Info	連結資訊
+	Link Opacity Mask	連結不透明度遮色片
+	Link start and end arrowhead scales	連結起點與終點箭頭的縮放
+	Link the mask	連結遮色片
+	Linked	已連結
+	Linked File	連結檔案
+	Linked File Not Found	找不到連結檔案
+	Links	連結
+	Liquify	液化
+	List Graphic Styles	列出繪圖樣式
+	List Keyboard Shortcuts	列出鍵盤快速鍵
+	List Patterns	列出圖樣
+	List Plug-ins	列出增效模組
+	List Preferences	列出偏好設定
+	List Slices	列出切片
+	List View	清單檢視
+	List Workspaces	列出工作區
+	Live Paint	即時上色
+	Live Paint Bucket	即時上色油漆桶
+	Live Paint Bucket (Stroke)	即時上色油漆桶 (筆畫)
+	Live Paint Info	即時上色資訊
+	Live Paint Selection Tool	即時上色選取工具
+	Live Shape Properties	即時形狀內容
+	Load Color Profile…	載入色彩描述檔…
+	Load Image into Clipboard	將影像載入剪貼簿
+	Load Metafile into Clipboard	將中繼檔載入剪貼簿
+	Load PDF into Clipboard	將 PDF 載入剪貼簿
+	Load Place Cursor	載入置入游標
+	Load Profile…	載入描述檔…
+	Load SVG into Clipboard	將 SVG 載入剪貼簿
+	Load Text into Clipboard	將文字載入剪貼簿
+	Local Libraries	本機資料庫
+	Locate Object	尋找物件
+	Location	位置
+	Location:	位置：
+	Lock	鎖定
+	Lock (⌘2)	鎖定 (⌘2)
+	Lock Grid	鎖定格點
+	Lock Guides	鎖定參考線
+	Lock Others	鎖定其他
+	Lock Slices	鎖定切片
+	Lock Station Point	鎖定基準點
+	Lossless (lossy WebP isn't available yet)	無失真 (尚未提供有失真的 WebP)
+	Lossy:	失真度：
+	Low	低
+	lowercase	全部小寫
+	Luminosity	明度
+	LZW Compression	LZW 壓縮
+	Mac	Mac
+	Magenta	洋紅色
+	Magic Wand	魔術棒
+	Magic Wand Options	魔術棒選項
+	Magic Wand Settings	魔術棒設定
+	Magic Wand Tool	魔術棒工具
+	Maintain Envelope Shape	維持封套形狀
+	Make	製作
+	Make a theme on Create and save it.	按一下「建立」即可製作主題並儲存。
+	Make all bleed settings the same	將所有出血設定設為相同
+	Make and Expand	製作並展開
+	Make Clipping Mask	製作剪裁遮色片
+	Make Compound Shape	製作複合形狀
+	Make Envelope	製作封套
+	Make Guides	製作參考線
+	Make Mask	製作遮色片
+	Make Opacity Mask	製作不透明度遮色片
+	Make Pixel Perfect	像素完美化
+	Make the bleed values differ	讓出血值各自不同
+	Make with Mesh…	以網格製作…
+	Make with Top Object	以最上層物件製作
+	Make with Warp…	以彎曲製作…
+	Make/Release Clipping Mask	製作／釋放剪裁遮色片
+	Manage Workspaces	管理工作區
+	Manage Workspaces…	管理工作區…
+	Manually	手動
+	Mark as trapped	標示為已陷印
+	Mark Older Files as [Converted] When Opened	開啟舊檔時標示為 [已轉換]
+	Marker…	標記…
+	Marks	標記
+	Marks and Bleed	標記與出血
+	Marks and Bleeds	標記與出血
+	Match User Interface Brightness	符合使用者介面亮度
+	Light Gray	淺灰色
+	Medium Gray	中灰色
+	Dark Gray	深灰色
+	Materials…	材質…
+	Matte	邊緣色
+	Matte:	遮色：
+	Maximize	最大化
+	Maximum	最大
+	Maximum Editability	最高可編輯性
+	Measure Tool	測量工具
+	Measurement Labels	測量標籤
+	Media	媒體
+	Medium	中
+	Medium (150 ppi)	中 (150 ppi)
+	Medium Dark	中等深色
+	Medium Light	中等淺色
+	Medium Thumbnail View	中縮圖檢視
+	Medium Thumbnails	中縮圖
+	Menu Dialog	選單對話框
+	Merge	合併
+	Merge colors into one row	將顏色合併為一列
+	Merge Graphic Styles	合併繪圖樣式
+	Merge Graphic Styles…	合併繪圖樣式…
+	Merge Layers	合併圖層
+	Merge Selected	合併選取的項目
+	Merge Swatches	合併色票
+	Mesh Tool	網格工具
+	Message:	訊息：
+	Metadata:	中繼資料：
+	Metallic Gradients	金屬漸層
+	Meters	公尺
+	Method:	方法：
+	Millimeters	公釐
+	Minify	縮減檔案大小
+	Minimal	最少
+	Minimize	最小化
+	Minus Back	去除後方
+	Minus Front	去除前方
+	Mirror	鏡射
+	Mirror & Cut	鏡射並切割
+	Mirror & Cut Tool	鏡射並切割工具
+	Missing	遺失
+	Missing: {path}	遺失：{path}
+	Miter Join	尖角
+	Miter Limit	尖角限度
+	Miter Limit:	尖角限度：
+	Mixed Appearances	混合外觀
+	Mixed Objects	混雜物件
+	Mode:	模式：
+	Model	模型
+	Modified	已修改
+	Modified since it was read: {path}	讀取後已被修改：{path}
+	Modified:	修改時間：
+	Modify	修改
+	Mojikumi Set	標點間距
+	Kinsoku Set	Kinsoku 集
+	Hard	強
+	Soft	弱
+	Monitor RGB	顯示器 RGB
+	Mono	單色
+	Monochrome images	單色影像
+	Monospaced	等寬
+	More	更多
+	More Pathfinder options	更多路徑管理員選項
+	More Align options	更多對齊選項
+	More Paragraph options	更多段落選項
+	More Settings	更多設定
+	Move	移動
+	Move All Objects	移動所有物件
+	Move Anchors	移動錨點
+	Move Appearance	移動外觀
+	Move Artboard	移動工作區域
+	Move Artboard Up/Down	上移／下移工作區域
+	Move Direction Handle	移動控制把手
+	Move Down	下移
+	Move Effect	移動效果
+	Move Envelope Mesh Point	移動封套網格點
+	Move Graphic Style	移動繪圖樣式
+	Move Guide	移動參考線
+	Move in Perspective	在透視中移動
+	Move Locked and Hidden Artwork with Artboard	移動工作區域時一併移動鎖定與隱藏的圖稿
+	Move Mesh Point	移動網格點
+	Move Plane	移動平面
+	Move Plane to Match Object	移動平面以符合物件
+	Move Rows	移動列
+	Move Slices	移動切片
+	Move Spine Point	移動脊線點
+	Move Swatch	移動色票
+	Move Up	上移
+	Move…	移動…
+	Multiply	色彩增值
+	My Themes	我的主題
+	N pt per	每 N pt
+	N slices …, evenly spaced	N 個切片…，等距分佈
+	Name	名稱
+	Name 40%	名稱 40%
+	Name* @ 66.67 % (RGB/Preview)	名稱* @ 66.67 % (RGB/預覽)
+	Name* @ 66.67% (RGB/Preview)	名稱* @ 66.67% (RGB/預覽)
+	Name:	名稱：
+	Navigate	導覽
+	Navigator	導覽器
+	Needs the desktop app	需要桌面版應用程式
+	Neutral Gradients	中性漸層
+	New	新增
+	New Art Appearance	新增圖稿外觀
+	New Art Brush from Selection	從選取範圍新增藝術筆刷
+	New Art Has Basic Appearance	新圖稿具有基本外觀
+	New Artboard	新增工作區域
+	Artboard	工作區域
+	Exit	結束
+	New Bristle Brush	新增鬃毛筆刷
+	Calligraphic Brush Options	書法筆刷選項
+	Bristle Brush Options	鬃毛筆刷選項
+	Scatter Brush Options	散佈筆刷選項
+	Art Brush Options	藝術筆刷選項
+	Pattern Brush Options	圖樣筆刷選項
+	Scatter:	散佈：
+	Rotation:	旋轉：
+	Rotation relative to:	旋轉相對於：
+	Brush Scale Options	筆刷縮放選項
+	Scale Proportionately	等比例縮放
+	Stretch to Fit Stroke Length	延伸以符合筆畫長度
+	Stretch Between Guides	在參考線之間延伸
+	Start:	起點：
+	End:	終點：
+	Left to Right	由左至右
+	Right to Left	由右至左
+	Top to Bottom	由上而下
+	Bottom to Top	由下而上
+	Flip:	翻轉：
+	Outer Corner Tile	外角拼貼
+	Side Tile	邊線拼貼
+	Inner Corner Tile	內角拼貼
+	Start Tile	起點拼貼
+	End Tile	終點拼貼
+	Fit	符合
+	Stretch to fit	延伸以符合
+	Add space to fit	增加間距以符合
+	Approximate path	近似路徑
+	Colorization	上色
+	Tints	淺色
+	Tints and Shades	淺色與暗色
+	Hue Shift	色相偏移
+	Key Color:	主要顏色：
+	Roundness:	圓度：
+	Fixed	固定
+	Pressure	壓力
+	Shape:	形狀：
+	Bristle Length:	鬃毛長度：
+	Bristle Density:	鬃毛密度：
+	Bristle Thickness:	鬃毛粗細：
+	Paint Opacity:	上色不透明度：
+	Stiffness:	硬度：
+	Round Point	圓尖頭
+	Flat Point	扁尖頭
+	Round Blunt	圓鈍頭
+	Flat Blunt	扁鈍頭
+	Round Curve	圓彎頭
+	Flat Curve	扁彎頭
+	Round Angle	圓斜頭
+	Flat Angle	扁斜頭
+	Round Fan	圓扇頭
+	Flat Fan	扁扇頭
+	New Brush…	新增筆刷…
+	New Calligraphic Brush	新增書法筆刷
+	New Character Style	新增字元樣式
+	New Color Group	新增顏色群組
+	New Color Group…	新增顏色群組…
+	New Document Presets	新增文件預設集
+	New file	新增檔案
+	New from Template	從範本新增
+	New from Template…	從範本新增…
+	New Graphic Style	新增繪圖樣式
+	New Graphic Style (Alt-click to name it)	新增繪圖樣式 (Alt+點擊可命名)
+	New Graphic Style…	新增繪圖樣式…
+	New Layer Options…	新圖層選項…
+	New Layer…	新增圖層…
+	New Opacity Masks Are Clipping	新的不透明度遮色片為剪裁
+	New Opacity Masks Are Inverted	新的不透明度遮色片為反轉
+	New Paragraph Style	新增段落樣式
+	New Pattern Brush from Selection	從選取範圍新增圖樣筆刷
+	New PDF Preset	新增 PDF 預設集
+	New Print Preset	新增列印預設集
+	New Scatter Brush from Selection	從選取範圍新增散布筆刷
+	New Sublayer…	新增子圖層…
+	New Swatch	新增色票
+	New Swatch…	新增色票…
+	New Symbol	新增符號
+	New Symbol…	新增符號…
+	New theme from the current color	以目前顏色新增主題
+	New View	新增檢視
+	New View…	新增檢視…
+	New Window	新增視窗
+	New Workspace	新增工作區
+	New Workspace…	新增工作區…
+	New {kind} Style…	新增{kind}樣式…
+	New…	新增…
+	Next	下一個
+	Next Library	下一個資料庫
+	Next Object Above	上方的下一個物件
+	Next Object Below	下方的下一個物件
+	Next Page	下一頁
+	Next page	下一頁
+	No actions. Press ● to record.	沒有動作。按 ● 開始錄製。
+	No assets	沒有資產
+	No assets yet. Collect art with Object › Collect for Export, or drag it into the Asset Export panel.	尚無資產。請使用「物件 › 收集以供匯出」收集圖稿，或將圖稿拖曳到資產匯出面板。
+	No Break	不斷行
+	No brushes	沒有筆刷
+	No colors to recolor (preserved colors are left out).	沒有可重新上色的顏色 (已保留的顏色不計入)。
+	No CSS	無 CSS
+	No document	無文件
+	No Document	無文件
+	No document open	沒有開啟的文件
+	No document open.	沒有開啟的文件。
+	No filter plug-ins installed	未安裝濾鏡增效模組
+	No fonts are available.	沒有可用的字體。
+	No gradient swatches	沒有漸層色票
+	No graphic styles	沒有繪圖樣式
+	No images	沒有影像
+	No matches.	沒有相符項目。
+	No matching fonts	沒有相符的字體
+	No options	沒有選項
+	No printer settings to open here	此處沒有可開啟的印表機設定
+	No saved themes	沒有已儲存的主題
+	No saved views (View → New View…)	沒有已儲存的檢視 (檢視 → 新增檢視…)
+	No Selection	未選取
+	No selection	未選取
+	No symbols in this document	此文件中沒有符號
+	No text selected	未選取文字
+	No Thumbnails	無縮圖
+	Noise	雜訊
+	Create:	建立：
+	Fills	填色
+	Strokes	筆畫
+	Nonbreaking Hyphen	不斷行連字號
+	Nonbreaking Space	不斷行空格
+	None	無
+	None (/)	無 (/)
+	None (keep transparency)	無 (保留透明度)
+	None.	無。
+	Normal	正常
+	Normal Screen Mode	正常螢幕模式
+	Note:	註解：
+	Nothing matches the Show filter.	沒有項目符合「顯示」篩選條件。
+	Nothing to print	沒有可列印的內容
+	Nudge	微移
+	Nudge in Perspective	在透視中微移
+	Number of Artboards:	工作區域數量：
+	Number of Colors:	顏色數量：
+	Number of Recent Files to Display	最近使用檔案的顯示數量
+	Number of Recent Fonts	最近使用字體的數量
+	Numbers Without Units Are Points	無單位的數字視為 pt
+	Object	物件
+	Object Highlighting	物件醒目提示
+	Object IDs:	物件 ID：
+	Object Name	物件名稱
+	Object Properties	物件內容
+	Object Selection by Path Only	僅依路徑選取物件
+	Objects	物件
+	Objects using them keep their look but are no longer linked.	使用它們的物件會保持外觀，但不再連結。
+	of characters used	使用的字元
+	of {count}	共 {count}
+	Off	關
+	Offset Path	位移複製
+	Offset Path…	位移複製…
+	Offset X	X 位移
+	Offset:	位移：
+	OK	確定
+	On	開
+	On Copy	複製時
+	On Paste	貼上時
+	On Screen	螢幕上
+	One file per artboard: <name>-<artboard>.{ext}	每個工作區域一個檔案：<name>-<artboard>.{ext}
+	One page per artboard.	每個工作區域一頁。
+	One Point	一點
+	One Point Perspective	一點透視
+	One Point Perspective Preset 1	一點透視預設集 1
+	One Point Perspective Preset 2	一點透視預設集 2
+	One Point Perspective Preset 3	一點透視預設集 3
+	One Point Perspective Preset 4	一點透視預設集 4
+	One Point Perspective Preset 5	一點透視預設集 5
+	Only Web Colors	僅限網頁色彩
+	Opacity	不透明度
+	Opacity & Mask Define Knockout Shape	不透明度與遮色片定義挖空形狀
+	Opacity Mask	不透明度遮色片
+	Opacity Mask Info	不透明度遮色片資訊
+	Opacity Mask Options	不透明度遮色片選項
+	Opacity:	不透明度：
+	Opacity: 50% Multiply	不透明度：50% 色彩增值
+	Opacity: Default	不透明度：預設
+	Opacity: {value}	不透明度：{value}
+	Opaque	不透明
+	Open	開啟
+	Open a document to edit its patterns.	開啟文件以編輯其圖樣。
+	Open a document to navigate it.	開啟文件以進行導覽。
+	Open a document to preview its flattening.	開啟文件以預覽其平面化結果。
+	Open a document to preview its pages	開啟文件即可預覽其頁面
+	Open a document to see its artboards.	開啟文件以檢視其工作區域。
+	Open a document to see its graphic styles.	開啟文件即可檢視其繪圖樣式。
+	Open a document to see its history.	開啟文件以檢視其步驟記錄。
+	Open a document to see its swatches.	開啟文件以檢視其色票。
+	Open Document	開啟文件
+	Open Documents As Tabs	以分頁開啟文件
+	Open Graphic Style Library	開啟繪圖樣式資料庫
+	Open Location after Export	匯出後開啟位置
+	Open password:	開啟密碼：
+	Open Paths	開放路徑
+	Open Recent File 1	開啟最近使用的檔案 1
+	Open Recent File 10	開啟最近使用的檔案 10
+	Open Recent File 11	開啟最近使用的檔案 11
+	Open Recent File 12	開啟最近使用的檔案 12
+	Open Recent File 13	開啟最近使用的檔案 13
+	Open Recent File 14	開啟最近使用的檔案 14
+	Open Recent File 15	開啟最近使用的檔案 15
+	Open Recent File 16	開啟最近使用的檔案 16
+	Open Recent File 17	開啟最近使用的檔案 17
+	Open Recent File 18	開啟最近使用的檔案 18
+	Open Recent File 19	開啟最近使用的檔案 19
+	Open Recent File 2	開啟最近使用的檔案 2
+	Open Recent File 20	開啟最近使用的檔案 20
+	Open Recent File 21	開啟最近使用的檔案 21
+	Open Recent File 22	開啟最近使用的檔案 22
+	Open Recent File 23	開啟最近使用的檔案 23
+	Open Recent File 24	開啟最近使用的檔案 24
+	Open Recent File 25	開啟最近使用的檔案 25
+	Open Recent File 26	開啟最近使用的檔案 26
+	Open Recent File 27	開啟最近使用的檔案 27
+	Open Recent File 28	開啟最近使用的檔案 28
+	Open Recent File 29	開啟最近使用的檔案 29
+	Open Recent File 3	開啟最近使用的檔案 3
+	Open Recent File 30	開啟最近使用的檔案 30
+	Open Recent File 4	開啟最近使用的檔案 4
+	Open Recent File 5	開啟最近使用的檔案 5
+	Open Recent File 6	開啟最近使用的檔案 6
+	Open Recent File 7	開啟最近使用的檔案 7
+	Open Recent File 8	開啟最近使用的檔案 8
+	Open Recent File 9	開啟最近使用的檔案 9
+	Open Recent Files	開啟最近使用的檔案
+	Open Swatch Library	開啟色票資料庫
+	Open the URL in the web browser	在網頁瀏覽器中開啟網址
+	Opened with {} note(s): {}	已開啟，附 {} 則附註：{}
+	OpenType	OpenType
+	Open…	開啟…
+	Optical Margin Alignment	視覺邊界對齊
+	Optimize for fast web view	最佳化以便快速網頁檢視
+	Optimized	最佳化
+	Options	選項
+	Options for Selection…	選取範圍的選項…
+	Options:	選項：
+	Options…	選項…
+	or more spaces with a tab	個以上的空格取代為定位字元
+	Order:	順序：
+	Ordinals	序數字
+	Orientation	方向
+	Orientation:	方向：
+	Original	原始
+	Original: click to restore	原始：按一下以回復
+	Other	其他
+	Other Layers	其他圖層
+	Other Libraries	其他資料庫
+	Other Library…	其他資料庫…
+	Other Script…	其他指令碼…
+	Out of Gamut Warning	超出色域警告
+	Out of Web Color Warning	非網頁安全色警告
+	Out Tangent Handles	外切線控制把手
+	Outer Glow…	外光暈…
+	Outline	外框
+	Outline Others	其他以外框檢視
+	Outline Stroke	外框筆畫
+	Outline Text	外框文字
+	Outlines and Rules	外框與規則線
+	Output	輸出
+	Output All Blacks Accurately	精確輸出所有黑色
+	Output All Blacks as Rich Black	以濃黑輸出所有黑色
+	Output Black	輸出黑色
+	Output condition:	輸出條件：
+	Output Intent	輸出目的
+	Output intent profile:	輸出目的描述檔：
+	Output White	輸出白色
+	Output › Mode	輸出 › 模式
+	Output:	輸出：
+	Overlap:	重疊：
+	Overlapping	重疊
+	Overlay	覆蓋
+	Overprint	疊印
+	Overprint and Transparency Flattener	疊印與透明度平面化
+	Overprint and Transparency Flattener Options	疊印與透明度平面化選項
+	Overprint Black…	疊印黑色…
+	Overprint Fill	疊印填色
+	Overprint Preview	疊印預視
+	Overprint Preview (separations)	疊印預視 (分色)
+	Overprint Stroke	疊印筆畫
+	Overprint:	疊印：
+	Overprints:	疊印：
+	Override Character Color	覆寫字元顏色
+	Package	封裝
+	Package collects a saved document with its linked files and fonts.	封裝會將已儲存的文件連同其連結檔案與字體一併收集。
+	Package created	已建立封裝
+	Packaged {n} file(s) in {folder}{note}	已將 {n} 個檔案封裝於 {folder}{note}
+	Packaged {n} file(s){note}	已封裝 {n} 個檔案{note}
+	Package…	封裝…
+	Page	頁面
+	Page information	頁面資訊
+	Page Isolated Blending	頁面隔離混合
+	Page Knockout Group	頁面挖空群組
+	Pages	頁面
+	Paintbrush	繪圖筆刷
+	Paintbrush Tool	繪圖筆刷工具
+	Painting	繪畫
+	Panel menu	面板選單
+	Panel Options…	面板選項…
+	Panels	面板
+	Paragraph	段落
+	Paragraph Style	段落樣式
+	Paragraph Style Options	段落樣式選項
+	Paragraph Styles	段落樣式
+	Paragraph Symbol	段落符號
+	Part of ArtCraft. MIT OR Apache-2.0. Fonts: Source Sans 3, Inter, JetBrains Mono (OFL). Icons: Lucide (ISC) + VectorCraft.	ArtCraft 的一部分。MIT OR Apache-2.0。字體：Source Sans 3、Inter、JetBrains Mono (OFL)。圖示：Lucide (ISC) + VectorCraft。
+	Password	密碼
+	Paste	貼上
+	Paste in Back	貼至後方
+	Paste in Front	貼至前方
+	Paste in Place	原地貼上
+	Paste Offset	貼上位移
+	Paste on All Artboards	貼至所有工作區域
+	Paste Remembers Layers	貼上時記住圖層
+	Paste without Formatting	貼上但不含格式
+	Pasted	已貼上
+	Pastels	粉彩
+	Path	路徑
+	Path Eraser	路徑橡皮擦
+	Path Eraser Tool	路徑橡皮擦工具
+	Pathfinder	路徑管理員
+	Pathfinder Options…	路徑管理員選項…
+	Pathfinders:	路徑管理員：
+	Paths	路徑
+	Paths: {paths}    Anchors: {anchors}    Colors: {colors}	路徑：{paths}    錨點：{anchors}    顏色：{colors}
+	Pattern	圖樣
+	Pattern Editing	圖樣編輯
+	Pattern Options	圖樣選項
+	Pattern options are available in pattern editing mode.	圖樣選項可在圖樣編輯模式中使用。
+	PDF	PDF
+	PDF 1.3 files have no transparency: the preset flattens it.	PDF 1.3 檔案不支援透明度：預設集會將其平面化。
+	PDF Info	PDF 資訊
+	PDF Preset	PDF 預設集
+	PDF Preset:	PDF 預設集：
+	PDF Presets	PDF 預設集
+	PDF Presets…	PDF 預設集…
+	PDF Settings	PDF 設定
+	PDF/A files carry their own output intent.	PDF/A 檔案自帶輸出目的。
+	PDF/X-1a files are CMYK: every colour is converted to the destination (blank: the output intent's CMYK profile), untagged.	PDF/X-1a 檔案為 CMYK：所有顏色都會轉換至目的地 (留空：輸出目的的 CMYK 描述檔)，且不加標記。
+	Pen Tool	筆型工具
+	Pencil	鉛筆
+	Pencil Tool	鉛筆工具
+	per slice	每個切片
+	Percent:	百分比：
+	Perceptual Scales	感知尺度
+	Performance	效能
+	Performance & Storage	效能與儲存空間
+	Permissions	權限
+	Permissions password:	權限密碼：
+	Perspective	透視
+	Perspective Grid	透視格點
+	Perspective Grid Options	透視格點選項
+	Perspective Grid Preset	透視格點預設集
+	Perspective Grid Presets	透視格點預設集
+	Perspective grid presets	透視格點預設集
+	Perspective Grid Presets…	透視格點預設集…
+	Perspective Grid Settings	透視格點設定
+	Perspective Grid Tool	透視格點工具
+	Perspective Plane Options…	透視平面選項…
+	Perspective Selection Tool	透視選取工具
+	Phone 390×844	手機 390×844
+	Picas	派卡
+	Pie Graph Tool	圓餅圖工具
+	Pixel Preview	像素預視
+	Pixels	像素
+	Place	置入
+	Place DXF	置入 DXF
+	Place onto a new locked, dimmed template layer below the current layer	置入至目前圖層下方新的鎖定且淡化的範本圖層
+	Place PDF	置入 PDF
+	Place Symbol Instance	置入符號範例
+	Place the pages with the placement again	以擺放方式重新放置頁面
+	Placed File Info	已置入檔案資訊
+	Placement Options	置入選項
+	Placement Options…	置入選項…
+	Placement:	擺放方式：
+	Place…	置入…
+	Plates	色版
+	Platform:	平台：
+	Play Current Selection	播放目前選取項目
+	Plug-in Info	增效模組資訊
+	Plug-ins	增效模組
+	Plug-in…	增效模組…
+	Point Sample	單點取樣
+	Point Text Objects	點狀文字物件
+	Points	點
+	Points: clicks add free points	點：按一下即新增自由點
+	Polar Grid	極座標格點
+	Polar Grid Tool	極座標格點工具
+	Polygon	多邊形
+	Polygon Properties:	多邊形內容：
+	Polygon Tool	多邊形工具
+	Portrait	直向
+	Power Saving (integrated)	節能 (內建顯示晶片)
+	Portuguese	葡萄牙文
+	Position	位置
+	Postcard	明信片
+	PostScript:	PostScript：
+	PPI	PPI
+	Preferences	偏好設定
+	Preferences…	偏好設定…
+	Prefix:	前綴：
+	Presentation Attributes	呈現屬性
+	Presentation Mode	簡報模式
+	Preserve Alpha Transparency	保留 Alpha 透明度
+	Preserve Appearance and Overprints	保留外觀與疊印
+	Preserve CMYK Numbers	保留 CMYK 數值
+	Preserve Editing Capabilities	保留編輯功能
+	Preserve editing capabilities	保留編輯功能
+	Preserve Lightness	保留亮度
+	Preserve Overprints and Spot Colors	保留疊印與特別色
+	Preserve Paths	保留路徑
+	Preserve Shape Using:	保留形狀的方式：
+	Preserve Spot Colors	保留特別色
+	Preserve Text Appearance	保留文字外觀
+	Preserve Text Editability	保留文字可編輯性
+	Preserve:	保留：
+	PRESET DETAILS	預設集詳細資料
+	Preset Name	預設集名稱
+	Preset name:	預設集名稱：
+	Preset {}	預設集 {}
+	Preset:	預設集：
+	Presets you save with the Save Preset button appear here.	以「儲存預設集」按鈕儲存的預設集會顯示在這裡。
+	Presets:	預設集：
+	Press 	按下 
+	Preview	預覽
+	Preview All Layers	預覽所有圖層
+	Preview in Browser	在瀏覽器中預覽
+	Preview in Browser needs the desktop app (the web downloads files instead)	在瀏覽器中預覽需要桌面版應用程式 (網頁版會改為下載檔案)
+	Preview Mode	預覽模式
+	Preview the document as it is now	以目前狀態預覽文件
+	Previous	上一個
+	Previous Library	上一個資料庫
+	Previous Page	上一頁
+	Previous page	上一頁
+	Primary	主要
+	Print	列印
+	Print as Bitmap	以點陣圖列印
+	Print Layers:	列印圖層：
+	Print Preset	列印預設集
+	Print Preset:	列印預設集：
+	Print Presets	列印預設集
+	Print presets	列印預設集
+	Print Presets…	列印預設集…
+	Print Preview	列印預覽
+	Print Setup	列印設定
+	Print Tiling	列印拼貼
+	Print Tiling Pages	列印拼貼頁面
+	Print Tiling Tool	列印拼貼工具
+	Printer	印表機
+	Printer mark type:	印表機標記類型：
+	Printer profile:	印表機描述檔：
+	Printer Setup…	印表機設定…
+	Printer:	印表機：
+	Printers	印表機
+	Printing / Exporting	列印／匯出
+	Printing allowed:	允許列印：
+	Printing and Proofing	列印與校樣
+	Print…	列印…
+	Process Color	印刷色
+	Profile inclusion:	描述檔內嵌：
+	Profile:	描述檔：
+	Progressive	漸進式
+	Projecting Cap	方端點
+	Proof Colors	校樣色彩
+	Proof Setup	校樣設定
+	Properties	內容
+	Proportional Oldstyle	比例舊式數字
+	Pucker & Bloat…	縮攏與膨脹…
+	Pucker Tool	縮攏工具
+	Punctuation	標點符號
+	Punctuation Space	標點空格
+	Puppet Warp	操控彎曲
+	Puppet Warp Pins	操控彎曲圖釘
+	Puppet Warp Tool	操控彎曲工具
+	Quality {quality}	品質 {quality}
+	Quality:	品質：
+	Quarter Space	四分之一空格
+	Quick Actions	快速動作
+	Quickly start a new file	快速開始新檔案
+	Quit VectorCraft	結束 VectorCraft
+	Radar Graph Tool	雷達圖工具
+	Radial	放射狀
+	Radial Glows	放射狀光暈
+	Radial Gradient	放射狀漸層
+	Radius 1	半徑 1
+	Radius 2	半徑 2
+	Radius1	半徑1
+	Radius2	半徑2
+	Rainbow	彩虹
+	Random	隨機
+	Randomize Colors	隨機排列顏色
+	Randomly change color order	隨機變更顏色順序
+	Randomly change saturation and brightness	隨機變更飽和度與亮度
+	Range:	範圍：
+	Raster Effects	點陣效果
+	Raster File Format:	點陣檔案格式：
+	Raster Sample Size:	點陣取樣大小：
+	Raster/Vector Balance:	點陣／向量平衡：
+	Rasterize	點陣化
+	Rasterize Unsupported Art	點陣化不支援的圖稿
+	Rasterize…	點陣化…
+	Rasters	點陣圖
+	Rating:	評等：
+	Real World:	真實世界：
+	Real-time Drawing and Editing	即時繪圖與編輯
+	Rearrange All Artboards	重新排列所有工作區域
+	Rearrange All	全部重新排列
+	Layout Order:	版面配置順序：
+	Change to Left-to-Right Layout	變更為由左至右版面配置
+	Grid by Row	依列格狀排列
+	Grid by Column	依欄格狀排列
+	Arrange by Row	排成一列
+	Arrange by Column	排成一欄
+	Move Artwork with Artboard	隨工作區域移動圖稿
+	Scale Artwork with Artboard	隨工作區域縮放圖稿
+	Artboards: {n}	工作區域：{n}
+	Rearrange All Artboards…	重新排列所有工作區域…
+	Recall Selection	叫出選取範圍
+	RECENT	最近使用
+	Recent	最近使用
+	Recent Colors	最近使用的顏色
+	Recent File	最近使用的檔案
+	Recent Files	最近使用的檔案
+	Recent Font	最近使用的字體
+	Recent Font 1	最近使用的字體 1
+	Recent Font 10	最近使用的字體 10
+	Recent Font 11	最近使用的字體 11
+	Recent Font 12	最近使用的字體 12
+	Recent Font 13	最近使用的字體 13
+	Recent Font 14	最近使用的字體 14
+	Recent Font 15	最近使用的字體 15
+	Recent Font 2	最近使用的字體 2
+	Recent Font 3	最近使用的字體 3
+	Recent Font 4	最近使用的字體 4
+	Recent Font 5	最近使用的字體 5
+	Recent Font 6	最近使用的字體 6
+	Recent Font 7	最近使用的字體 7
+	Recent Font 8	最近使用的字體 8
+	Recent Font 9	最近使用的字體 9
+	Recent Fonts	最近使用的字體
+	Recent URLs	最近使用的網址
+	Recolor	重新上色
+	Recolor Artwork	重新上色圖稿
+	Recolor Artwork…	重新上色圖稿…
+	Recolor this row	重新上色此列
+	Recolor with Preset	以預設集重新上色
+	Recover Documents	找回文件
+	Recovery Data	救援資料
+	Rectangle	矩形
+	Rectangle Cut	矩形切割
+	Rectangle Cut Tool	矩形切割工具
+	Rectangle Properties:	矩形內容：
+	Rectangle Tool	矩形工具
+	Rectangle: Sunshine	矩形：陽光
+	Rectangle…	矩形…
+	Rectangular Grid	矩形格線
+	Rectangular Grid Tool	矩形格線工具
+	Red	紅色
+	Redefine Character Style	重新定義字元樣式
+	Redefine Graphic Style	重新定義繪圖樣式
+	Redefine Graphic Style “{name}”	重新定義繪圖樣式「{name}」
+	Redefine Paragraph Style	重新定義段落樣式
+	Redefine Symbol	重新定義符號
+	Redefine {kind} Style	重新定義{kind}樣式
+	Redo	重做
+	Redo {name}	重做 {name}
+	Redo {}	重做 {}
+	Reduce Colors	縮減顏色
+	Reduce to Basic Appearance	縮減至基本外觀
+	Reduction:	縮減：
+	Reference Point	參考點
+	Reflect	鏡射
+	Reflect Horizontal	水平鏡射
+	Reflect Tool	鏡射工具
+	Reflect X	鏡射 X
+	Reflect Y	鏡射 Y
+	Reflect…	鏡射…
+	Refresh	重新整理
+	Refresh Font List	重新整理字體清單
+	Missing Fonts	遺失的字體
+	Missing Fonts Dialog	遺失的字體對話框
+	These fonts aren't available. Their text shows in another font.	這些字體無法使用。其文字以其他字體顯示。
+	Search Fonts Folder	搜尋 Fonts 資料夾
+	Find in Folder…	在資料夾中尋找…
+	Find Fonts in Folder…	在資料夾中尋找字體…
+	Find Font Files	尋找字體檔案
+	Add Font Files	新增字體檔案
+	Add Fonts	新增字體
+	Find Fonts	尋找字體
+	Stop	停止
+	Searching…	搜尋中…
+	Not found	找不到
+	{folders} folder(s) and {files} file(s) searched	已搜尋 {folders} 個資料夾、{files} 個檔案
+	{count} folder(s) skipped, such as other apps' and the system's folders and hidden ones	已略過 {count} 個資料夾，例如其他應用程式和系統的資料夾，以及隱藏的資料夾
+	{count} folder(s) or file(s) couldn't be read	有 {count} 個資料夾或檔案無法讀取
+	The search stopped at its limit: search a smaller folder.	搜尋已達上限而停止：請搜尋較小的資料夾。
+	Copy only fonts you own or are licensed to install.	只複製您擁有或已取得安裝授權的字體。
+	VectorCraft copies the fonts to {folder}.	VectorCraft 會將字體複製到 {folder}。
+	Registered Trademark Symbol	註冊商標符號
+	Registration marks	對位標記
+	Registry name:	登錄名稱：
+	Regular	標準
+	Release	釋放
+	Release Compound Shape	釋放複合形狀
+	Release Guides	釋放參考線
+	Release Opacity Mask	釋放不透明度遮色片
+	Release Selection	釋放選取範圍
+	Release to Layers (Build)	釋放至圖層 (累加)
+	Release to Layers (Sequence)	釋放至圖層 (順序)
+	Release with Perspective	釋放透視
+	Relink	重新連結
+	Relink Linked Files to the Document	將連結檔案重新連結至文件
+	Relink to Folder…	重新連結至資料夾…
+	Relinked {n} image(s)	已重新連結 {n} 張影像
+	Relinked {n} image(s); not in that folder: {}	已重新連結 {n} 張影像；不在該資料夾中：{}
+	Relinked {} image(s)	已重新連結 {} 張影像
+	Relink…	重新連結…
+	Reload Plug-ins	重新載入增效模組
+	Remove	移除
+	Remove Anchor Points	移除錨點
+	Remove Asset	移除資產
+	Remove blank lines between paragraphs	移除段落之間的空白行
+	Remove Brush Stroke	移除筆刷筆畫
+	Remove Effect	移除效果
+	Remove Guide	移除參考線
+	Remove Item	移除項目
+	Remove Plug-in	移除增效模組
+	Remove Selected Assets	移除所選資產
+	Remove Threading	移除串連
+	Remove “{keyword}”	移除「{keyword}」
+	Rename	重新命名
+	Rename Asset	重新命名資產
+	Rename Character Style	重新命名字元樣式
+	Rename Graphic Style	重新命名繪圖樣式
+	Rename Paragraph Style	重新命名段落樣式
+	Rename Workspace	重新命名工作區
+	Render Threads (-1 = Automatic)	算圖執行緒 (-1 = 自動)
+	Rendering intent:	演算目的：
+	Reorder	重新排序
+	Reorder Appearance Item	重新排序外觀項目
+	Repeat	重複
+	Repeat Options	重複選項
+	Repeat Pathfinder	重複路徑管理員
+	Repeat Tab	重複定位點
+	Repeat {name}	重複 {name}
+	Replace	取代
+	Replace Font	取代字體
+	Replace it with another file, or ignore it: its images keep showing the preview saved with the document.	以其他檔案取代，或忽略：其影像會繼續顯示隨文件儲存的預覽。
+	Replace Spine	取代軸線
+	Replace Symbol	取代符號
+	Replace With Font	取代為字體
+	Replaces the saved preset of that name.	取代同名的已儲存預設集。
+	Replace…	取代…
+	Require a password to open the document	開啟文件時需要密碼
+	Reselect	重新選取
+	Reset	重設
+	Reset Bounding Box	重設邊框
+	Reset Envelope Mesh	重設封套網格
+	Reset Envelope Shape	重設封套形狀
+	Reset Essentials	重設基本功能
+	Reset Keyboard Shortcuts	重設鍵盤快速鍵
+	Reset OpenType Features	重設 OpenType 功能
+	Reset Panel	重設面板
+	Reset Preferences	重設偏好設定
+	Reset Profiles	重設描述檔
+	Reset Rotate View	重設旋轉檢視
+	Reset the rows to the artwork's colors	將各列重設為圖稿的顏色
+	Reset to Default	重設為預設值
+	Reset to White, Black	重設為白色、黑色
+	Reset with Mesh	以網格重設
+	Reset with Mesh…	以網格重設…
+	Reset with Warp	以彎曲重設
+	Reset with Warp…	以彎曲重設…
+	Reset {name}	重設 {name}
+	Reset {}	重設 {}
+	Reshape	改變外框
+	Reshape Segment	改變線段外框
+	Reshape Tool	改變外框工具
+	Reshape Type Area	改變區域文字外框
+	Resolution:	解析度：
+	Responsive	回應式
+	Restore	還原
+	Restore every preference to its default (applied on OK)	將所有偏好設定還原為預設值 (按下確定後套用)
+	Restore Recovered Documents	還原找回的文件
+	Restored documents open unsaved: save them to keep them.	還原的文件會以未儲存狀態開啟：請儲存以保留。
+	Restored {} recovered document(s): save them to keep them	已還原 {} 份復原的文件：請儲存以保留
+	Restrict printing, editing and other tasks	限制列印、編輯及其他操作
+	Reverse Front to Back	反轉前後順序
+	Reverse Gradient	反轉漸層
+	Reverse Order	反轉順序
+	Reverse Path Direction	反轉路徑方向
+	Reverse Path Direction Off	關閉反轉路徑方向
+	Reverse Path Direction On	開啟反轉路徑方向
+	Reverse Spine	反轉軸線
+	Revert	回復
+	Revert to the saved version of “{name}”?	要回復為「{name}」已儲存的版本嗎？
+	Replace “{name}”, the file this document was opened from?	要取代「{name}」（開啟此文件的來源檔案）嗎？
+	Opening it left out what VectorCraft can't read yet ({what}), so replacing it loses that for good. Save under another name to keep it.	開啟時略過了 VectorCraft 尚無法讀取的內容（{what}），取代該檔案會永久遺失這些內容。若要保留，請以其他名稱儲存。
+	Revolve…	迴轉…
+	RGB Color	RGB 色彩
+	Right	右
+	Right Grid:	右側格點：
+	Right in Front	右側在前
+	Right Indent	右縮排
+	Right Plane	右側平面
+	Right-Justified Tab	靠右定位點
+	Right-to-Left Paragraph Direction	從右至左段落方向
+	Right:	右：
+	Rise…	上升…
+	Roman Baseline	羅馬基線
+	Roman Hanging Punctuation	羅馬懸掛標點
+	Rotate	旋轉
+	Rotate 90° CW	順時針旋轉 90°
+	Rotate Tool	旋轉工具
+	Rotate View Tool	旋轉檢視工具
+	Rotate…	旋轉…
+	Rotation	旋轉
+	Roughen…	粗糙效果…
+	Round Cap	圓端點
+	Round Corners…	圓角…
+	Round Join	圓角
+	Rounded	圓體
+	Rounded Rectangle	圓角矩形
+	Rounded Rectangle Tool	圓角矩形工具
+	Rounded Rectangle…	圓角矩形…
+	Row Size:	列尺寸：
+	Rows:	列數：
+	Rule:	規則線：
+	Rulers	尺標
+	Rulers & Grids	尺標與格點
+	Run Plug-in	執行增效模組
+	Same	相同
+	Same As Source	與來源相同
+	Sample Color	取樣顏色
+	Sans Serif / Gothic	無襯線 / 黑體
+	Saturate	飽和
+	Saturate…	增加飽和度…
+	Saturation	飽和度
+	Save	儲存
+	Save a Copy	儲存拷貝
+	Save a Copy…	儲存拷貝…
+	Save As	另存新檔
+	Save as PDF…	儲存為 PDF…
+	Save as preset:	儲存為預設集：
+	Save as Template	另存範本
+	Save as Template…	另存範本…
+	Save As…	另存新檔…
+	Save changes to {name}	儲存對 {name} 的變更
+	Save color group to Swatch panel	將顏色群組儲存至色票面板
+	Save Colors as Swatches	將顏色儲存為色票
+	Save Document	儲存文件
+	Save Document Info…	儲存文件資訊…
+	Save each artboard to a separate file	將每個工作區域儲存為個別檔案
+	Save for Office Documents	儲存為 Office 文件用
+	Save for Office Documents…	儲存為 Office 文件用…
+	Save for Web	儲存為網頁用
+	Save for Web (Legacy)…	儲存為網頁用 (舊版)…
+	Save for Web Presets	儲存為網頁用預設集
+	Save for Web Preview	儲存為網頁用預覽
+	Save for Web Settings	儲存為網頁用設定
+	Save Graphic Style Library	儲存繪圖樣式資料庫
+	Save Graphic Style Library…	儲存繪圖樣式資料庫…
+	Save Grid as Preset	將格點儲存為預設集
+	Save Grid as Preset…	將格點儲存為預設集…
+	Save PDF	儲存 PDF
+	Save PDF Dialog	儲存 PDF 對話框
+	Save PDF Preset	儲存 PDF 預設集
+	Save Perspective Grid Preset	儲存透視格點預設集
+	Save Preset	儲存預設集
+	Save Preset…	儲存預設集…
+	Save Print Preset	儲存列印預設集
+	Save Recovery Data	儲存救援資料
+	Save Save for Web Preset	儲存「儲存為網頁用」預設集
+	Save selected colors as swatches	將所選顏色儲存為色票
+	Save Selection…	儲存選取範圍…
+	Save Swatch Library	儲存色票資料庫
+	Save Swatch Library…	儲存色票資料庫…
+	Save the current layout under this name	以此名稱儲存目前的版面配置
+	Save the document first?	要先儲存文件嗎？
+	Save the selected preset to a file	將所選預設集儲存為檔案
+	Save the settings as a preset	將設定儲存為預設集
+	Save Theme	儲存主題
+	Save theme to My Themes	將主題儲存至「我的主題」
+	Save these settings as a preset	將這些設定儲存為預設集
+	Save these settings as a print preset	將這些設定儲存為列印預設集
+	Save to Swatches	儲存至色票
+	Save To:	儲存至：
+	Save Transparency Flattener Preset	儲存透明度平面化預設集
+	Save Transparency Flattener Preset…	儲存透明度平面化預設集…
+	SAVED	已儲存
+	Saved	已儲存
+	Saved recovery data for {title}	已儲存 {title} 的復原資料
+	Saved Selection 1	已儲存的選取範圍 1
+	Saved Selection 10	已儲存的選取範圍 10
+	Saved Selection 11	已儲存的選取範圍 11
+	Saved Selection 12	已儲存的選取範圍 12
+	Saved Selection 13	已儲存的選取範圍 13
+	Saved Selection 14	已儲存的選取範圍 14
+	Saved Selection 15	已儲存的選取範圍 15
+	Saved Selection 16	已儲存的選取範圍 16
+	Saved Selection 17	已儲存的選取範圍 17
+	Saved Selection 18	已儲存的選取範圍 18
+	Saved Selection 19	已儲存的選取範圍 19
+	Saved Selection 2	已儲存的選取範圍 2
+	Saved Selection 20	已儲存的選取範圍 20
+	Saved Selection 21	已儲存的選取範圍 21
+	Saved Selection 22	已儲存的選取範圍 22
+	Saved Selection 23	已儲存的選取範圍 23
+	Saved Selection 24	已儲存的選取範圍 24
+	Saved Selection 25	已儲存的選取範圍 25
+	Saved Selection 3	已儲存的選取範圍 3
+	Saved Selection 4	已儲存的選取範圍 4
+	Saved Selection 5	已儲存的選取範圍 5
+	Saved Selection 6	已儲存的選取範圍 6
+	Saved Selection 7	已儲存的選取範圍 7
+	Saved Selection 8	已儲存的選取範圍 8
+	Saved Selection 9	已儲存的選取範圍 9
+	Saved Selections	已儲存的選取範圍
+	Saved to User Defined: {}	已儲存至使用者自訂：{}
+	Saved View 1	已儲存的檢視 1
+	Saved View 10	已儲存的檢視 10
+	Saved View 2	已儲存的檢視 2
+	Saved View 3	已儲存的檢視 3
+	Saved View 4	已儲存的檢視 4
+	Saved View 5	已儲存的檢視 5
+	Saved View 6	已儲存的檢視 6
+	Saved View 7	已儲存的檢視 7
+	Saved View 8	已儲存的檢視 8
+	Saved View 9	已儲存的檢視 9
+	Saved Views	已儲存的檢視
+	Saved {n} files beside {path}	已將 {n} 個檔案儲存於 {path} 旁
+	Saved {path}	已儲存 {path}
+	Saved {path} with {} note(s): {first}	已儲存 {path}，附 {} 則附註：{first}
+	Saves the current bars, toolbar and panel layout.	儲存目前的列、工具列與面板配置。
+	Save…	儲存…
+	Saving	正在儲存
+	Saving Poster.vectorcraft	正在儲存 Poster.vectorcraft
+	Saving recovery data for {}	正在儲存 {} 的復原資料
+	Saving {}	正在儲存 {}
+	Scale	縮放
+	Scale Corners	縮放圓角
+	Scale Cursor Proportional to UI	游標依介面比例縮放
+	Scale Lineweights	縮放線條寬度
+	Scale Strokes & Effects	縮放筆畫與效果
+	Scale to Fit Artboard	縮放至符合工作區域
+	Scale Tool	縮放工具
+	Scale:	縮放比例：
+	Scale…	縮放…
+	Scaling	縮放
+	Scaling:	縮放：
+	Scallop Tool	扇形化工具
+	Scans:	掃描：
+	Scatter	散佈
+	Scatter Graph Tool	散佈圖工具
+	Scissors Tool	剪刀工具
+	Scratch Disks	暫存磁碟
+	Screen	濾色
+	Screen (72 ppi)	螢幕 (72 ppi)
+	Screen Mode	螢幕模式
+	Screens	螢幕
+	Scribble…	塗抹…
+	Script / Brush	手寫 / 書法
+	Scripts	指令碼
+	Search	搜尋
+	Search All	搜尋全部
+	Search commands and tools	搜尋指令與工具
+	Search commands and tools…	搜尋指令與工具…
+	Search Commands…	搜尋指令…
+	Secondary	次要
+	Section Symbol	章節符號
+	Security	安全性
+	Select	選取
+	Select a text object	選取文字物件
+	Select a text object to edit its character attributes.	選取文字物件以編輯其字元屬性。
+	Select a text object to edit its paragraph attributes.	選取文字物件以編輯其段落屬性。
+	Select a text object to set its tab stops.	選取文字物件以設定其定位點。
+	Select All	全選
+	Select All Art on Layer	選取圖層上的所有圖稿
+	Select All Assets	選取所有資產
+	Select All Instances	選取所有範例
+	Select All Pins	全選圖釘
+	Select All Unused	選取所有未使用項目
+	Select an image to see its Link Info.	選取影像以檢視其連結資訊。
+	Select an image to trace	選取要描圖的影像
+	Select Anchors	選取錨點
+	Select Appearance Item	選取外觀項目
+	Select Art	選取圖稿
+	Select art and choose Object › Pattern › Make.	選取圖稿，然後選擇「物件 › 圖樣 › 製作」。
+	Select art and click New Symbol to make one.	選取圖稿並按一下「新增符號」即可建立。
+	Select art and use New Brush to make one.	選取圖稿，然後使用「新增筆刷」來製作。
+	Select Freeform Point	選取任意形狀點
+	Select Gradient Stop	選取漸層色標
+	Select Guides	選取參考線
+	Select Objects	選取物件
+	Select objects to see their CSS, or Generate CSS for the whole document.	選取物件以檢視其 CSS，或對整份文件「產生 CSS」。
+	Select Same Tint %	選取相同色調 %
+	Select Slices	選取切片
+	Select styled art and click New Graphic Style.	選取已套用樣式的圖稿並按一下「新增繪圖樣式」。
+	Select text	選取文字
+	Select Text by Font	依字體選取文字
+	Select text or click into text with the Type tool to insert glyphs	使用文字工具選取文字或按一下文字內部，以插入字符
+	Select text to set its OpenType features.	選取文字以設定其 OpenType 功能。
+	Select the art (and, on top of it, the mask object)	選取圖稿 (以及位於其上方的遮色片物件)
+	Select Tool	選取工具
+	Select:	選取：
+	Selected Artwork	選取的圖稿
+	Selected Styles Only	僅限選取的樣式
+	Selected Swatches	選取的色票
+	Selected Swatches Only	僅限選取的色票
+	Selection	選取範圍
+	Selection & Anchor Display	選取和錨點顯示
+	Selection Only	僅限選取範圍
+	Selection Tool	選取工具
+	Send Backward	後移
+	Send to Back	移至最後
+	Send to Current Layer	移至目前圖層
+	Sentence case	句首大寫
+	Separate colors into rows	將顏色分成多列
+	Separate several keywords with commas.	多個關鍵字請以逗號分隔。
+	Separations list the document's inks here: one page per ink that prints.	分色會在此列出文件的油墨：每種會列印的油墨各一頁。
+	Separations Preview	分色預視
+	Serialize Document	序列化文件
+	Serif / Mincho	襯線 / 明體
+	Server-side (.map)	伺服器端 (.map)
+	Set 1	組 1
+	Set Anchors	設定錨點
+	Set base color	設定基準色
+	Set base color to the current color	將基本色設為目前顏色
+	Set Bounds	設定邊界
+	Set Current Layer	設定目前圖層
+	Set Key Object	設定關鍵物件
+	Set Keyboard Shortcut	設定鍵盤快速鍵
+	Set Mesh Point Color	設定網格點顏色
+	Set Preference	設定偏好設定
+	Set Slice Rectangle	設定切片矩形
+	Set Tab Stops	設定定位點
+	Set Text	設定文字
+	Set the selected color to the current color	將選取的顏色設為目前顏色
+	Set Zoom	設定縮放
+	Settings…	設定…
+	Setup…	設定…
+	Shadows and Glows	陰影與光暈
+	Shape	形狀
+	Shape Builder	形狀建立
+	Shape Builder Regions	形狀建立區域
+	Shape Builder Tool	形狀建立工具
+	Shape Effects	形狀效果
+	Shape Modes:	形狀模式：
+	Shape Properties:	形狀內容：
+	Shaper Tool	Shaper 工具
+	Shapes	形狀
+	Shear	傾斜
+	Shear Tool	傾斜工具
+	Shear…	傾斜…
+	Shell Lower…	下弧形…
+	Shell Upper…	上弧形…
+	Shift	Shift
+	Shift to Color…	位移至顏色…
+	Shifts the tints of global and spot colors; other colors stay.	位移整體色與特別色的色調；其他顏色維持不變。
+	Show	顯示
+	Show Active Plane Widget	顯示作用中平面 Widget
+	Show All	全部顯示
+	Show All Hidden Attributes	顯示所有隱藏屬性
+	Show All Layers	顯示所有圖層
+	Show All Plates	顯示所有色版
+	Show all plates	顯示所有色版
+	Show All Swatches	顯示所有色票
+	Show and print from the Lab definition; PDF files carry it as the ink's alternate color.	依 Lab 定義顯示與列印；PDF 檔案會將其作為油墨的替代色。
+	Show and separate through the working CMYK space, as in older documents.	如同舊文件，透過工作 CMYK 色彩空間顯示與分色。
+	Show Artboards	顯示工作區域
+	Show Bounding Box	顯示邊框
+	Show Brush Size	顯示筆刷大小
+	Show Center	顯示中心點
+	Show Code	顯示程式碼
+	Show Color Groups	顯示顏色群組
+	Show Color Swatches	顯示顏色色票
+	Show Corner Widget	顯示轉角 Widget
+	Show East Asian Options	顯示東亞選項
+	Show Edges	顯示邊緣
+	Show Embedded	顯示已嵌入
+	Show Find Field	顯示尋找欄位
+	Show Font Names in English	以英文顯示字體名稱
+	Show Gradient Annotator	顯示漸層註解者
+	Show Gradient Swatches	顯示漸層色票
+	Show Grid	顯示格點
+	Show Grid (⌘')	顯示格點 (⌘')
+	Show Guides	顯示參考線
+	Show handles when multiple anchors are selected	選取多個錨點時顯示控制把手
+	Show Hidden Characters	顯示隱藏字元
+	Bold	粗體
+	Italic	斜體
+	Show Images in Outline Mode	在外框模式中顯示影像
+	Show in Folder	在資料夾中顯示
+	Show Indic Options	顯示印度文字選項
+	Show Layers Only	僅顯示圖層
+	Show Link Info	顯示連結資訊
+	Show List View	顯示清單檢視
+	Show Mesh	顯示網格
+	Show Missing	顯示遺失
+	Show Modified	顯示已修改
+	Show Note	顯示註解
+	Show Options	顯示選項
+	Show Package	顯示封裝
+	Show Panel	顯示面板
+	Show Pattern Swatches	顯示圖樣色票
+	Show Perspective Grid	顯示透視格點
+	Show Pixel Grid (Above 600% Zoom)	顯示像素格點 (縮放超過 600% 時)
+	Show Print Tiling	顯示列印分頁
+	Show Rulers	顯示尺標
+	Show Rulers (⌘R)	顯示尺標 (⌘R)
+	Show Slice Numbers	顯示切片編號
+	Show Slices	顯示切片
+	Show Swatch Bounds	顯示色票邊界
+	Show Swatch Kinds	顯示色票種類
+	Show Text Threads	顯示文字串連
+	Show The Home Screen When No Documents Are Open	沒有開啟文件時顯示首頁
+	Show Thumbnail	顯示縮圖
+	Show Thumbnail View	顯示縮圖檢視
+	Show Thumbnails	顯示縮圖
+	Show Tile Edge	顯示拼貼邊緣
+	Show Tints/Shades	顯示淺色調/深色調
+	Show Tool Tips	顯示工具提示
+	Show Transparency Grid	顯示透明度格點
+	Show Video Rulers	顯示視訊尺標
+	Show Vivid/Muted	顯示鮮豔/柔和
+	Show Warm/Cool	顯示暖色/冷色
+	Show {kind} Brushes	顯示{kind}筆刷
+	Show/hide plate (Alt-click: only this plate)	顯示／隱藏色版 (Alt-按一下：僅此色版)
+	Show:	顯示：
+	Shown with the optimised preview.	於最佳化預覽時顯示。
+	Side 1:	側面 1：
+	Side 2:	側面 2：
+	Sides:	邊數：
+	Simplify	簡化
+	Simplify:	簡化：
+	Simplify…	簡化…
+	Simulate Colored Paper	模擬有色紙張
+	Simulate Paper	模擬紙張
+	Double Column	雙欄
+	Single Left Quotation Mark	左單引號
+	Single Quotes:	單引號：
+	Single Right Quotation Mark	右單引號
+	Single-line Composer	單行排版程式
+	Sixth Space	六分之一空格
+	Size	大小
+	Size Tile to Art	拼貼符合圖稿大小
+	Size/Leading	大小/行距
+	Size:	大小：
+	Size: {size}  Tracking: {tracking}	大小：{size}  字距：{tracking}
+	Skew	傾斜
+	Skin Tone Ramps	膚色漸階
+	Skip Blank Artboards	略過空白工作區域
+	Sky Gradients	天空漸層
+	Slice	切片
+	Slice Options	切片選項
+	Slice Options…	切片選項…
+	Slice Selection Tool	切片選取工具
+	Slice Tool	切片工具
+	Slice Type:	切片類型：
+	Slices	切片
+	slices across, evenly spaced	個橫向切片，間距均等
+	slices down, evenly spaced	個縱向切片，間距均等
+	Slices:	切片：
+	Small	小
+	Small Caps	小型大寫
+	Small Caps (on the roadmap)	小型大寫字母 (規劃中)
+	Small Caps:	小型大寫字母：
+	Small List View	小型清單檢視
+	Small Thumbnail View	小縮圖檢視
+	Small Thumbnails	小縮圖
+	Smaller ↔ Larger	較小 ↔ 較大
+	Smart Guides	智慧型參考線
+	Smart Guides (View → Smart Guides)	智慧型參考線 (檢視 → 智慧型參考線)
+	Smart Guides (⌘U)	智慧型參考線 (⌘U)
+	Smart Punctuation…	智慧型標點…
+	Smooth	平滑
+	Corner	角點
+	Relative	相對
+	Absolute	絕對
+	Smooth Color	平滑顏色
+	Smooth Tool	平滑工具
+	Snap Curves To Lines	將曲線靠齊線條
+	View:	檢視：
+	Tracing Result	描圖結果
+	Tracing Result with Outlines	描圖結果（含外框）
+	Outlines	外框
+	Outlines with Source Image	外框（含來源影像）
+	Source Image	來源影像
+	Image Trace View	影像描圖檢視
+	Snap Options	靠齊選項
+	Snap to Glyph	靠齊字符
+	Snap to Grid	靠齊格點
+	Snap to Pixel	靠齊像素
+	Snap to Point	靠齊控制點
+	Snapping Tolerance	靠齊容許度
+	Social Square Post 1080×1080	社群正方形貼文 1080×1080
+	Soft Light	柔光
+	Solid	實心
+	Sort by Kind	依類型排序
+	Sort by Name	依名稱排序
+	Sort by Status	依狀態排序
+	Source code on GitHub	GitHub 上的原始碼
+	Source Sans 3	Source Sans 3
+	Space After Paragraph	段後間距
+	Space Before Paragraph	段前間距
+	Spaces	空格
+	Spacing Guides	間距參考線
+	Spacing:	間距：
+	Spanish	西班牙文
+	Specified Distance	指定距離
+	Specified Steps	指定階數
+	Specify:	指定：
+	Spectrum Gradients	光譜漸層
+	Spelling	拼字
+	Spiral	螺旋
+	Spiral Tool	螺旋工具
+	Split Freeform Line	分割任意形狀線條
+	Split Into Grid	分割為格線
+	Split Into Grid…	分割為格線…
+	Split Path	分割路徑
+	spot	特別色
+	Spot Color	特別色
+	Spot Colors	特別色
+	Spot Colors…	特別色…
+	Spread:	擴散：
+	Square	正方形
+	Squeeze…	擠壓…
+	Stacked Bar Graph Tool	堆疊橫條圖工具
+	Stacked Column Graph Tool	堆疊長條圖工具
+	Stair Step	階梯
+	Standard Ligatures	標準連字
+	Standard Vertical Roman Alignment	標準垂直羅馬字對齊
+	Standard:	標準：
+	Star	星形
+	Star Tool	星形工具
+	Start arrowhead	起點箭頭
+	Start Global Edit	開始整體編輯
+	Status	狀態
+	Steps:	步驟：
+	Stop Editing Opacity Mask	停止編輯不透明度遮色片
+	Stop editing the opacity mask	停止編輯不透明度遮色片
+	Stop Playing/Recording	停止播放/錄製
+	Stray Points	零散錨點
+	Strikethrough	刪除線
+	Stroke	筆畫
+	Stroke (X), double-click for the Color Picker	筆畫 (X)，按兩下開啟檢色器
+	Stroke Color	筆畫顏色
+	Stroke Options	筆畫選項
+	Character:	字元：
+	Character options	字元選項
+	Stroke options	筆畫選項
+	Transform options	變形選項
+	Stroke Weight	筆畫寬度
+	Stroke:	筆畫：
+	Stroke: click for swatches, Shift-click for the color mixer	筆畫：按一下開啟色票，按住 Shift 按一下開啟混色器
+	Style	樣式
+	Style Attributes	樣式屬性
+	Style Attributes (Entity References)	樣式屬性 (實體參照)
+	Style Name:	樣式名稱：
+	Style:	樣式：
+	Styling:	樣式設定：
+	Stylize	風格化
+	Subdivisions	細分
+	Subscript	下標
+	Subscript (on the roadmap)	下標 (規劃中)
+	Subscript:	下標：
+	Subset fonts below:	字體子集化門檻：
+	Subtract	減去
+	Suffix	後綴
+	Summary	摘要
+	Superscript	上標
+	Superscript (on the roadmap)	上標 (規劃中)
+	Superscript:	上標：
+	SVG Filters	SVG 濾鏡
+	SVG Interactivity	SVG 互動性
+	SVG Options	SVG 選項
+	SVG Profile:	SVG 描述檔：
+	Swap Fill and Stroke	對調填色和筆畫
+	Swap Fill and Stroke (Shift+X)	對調填色與筆畫 (Shift+X)
+	Swap start and end arrowheads	對調起點與終點箭頭
+	Swap the selected object for the file, keeping its place and transform	以檔案取代選取的物件，並保留其位置與變形
+	Swash	花體字
+	Swatch Conflict	色票衝突
+	Swatch Conflicts	色票衝突
+	Swatch exchange files keep solid colors only.	色票交換檔案僅保留純色。
+	Swatch Libraries	色票資料庫
+	Swatch Libraries Menu	色票資料庫選單
+	Swatch Library	色票資料庫
+	Swatch Name:	色票名稱：
+	Swatch Options	色票選項
+	Swatch Options…	色票選項…
+	Swatch Tiles	色票拼貼
+	Swatches	色票
+	Switch workspace	切換工作區
+	Add Content	新增內容
+	Click to apply to the selected type	按一下以套用到所選文字
+	Create New Library	建立新資料庫
+	Create New Library…	建立新資料庫…
+	Rename Library…	重新命名資料庫…
+	Delete the library “{name}”?	要刪除資料庫「{name}」嗎？
+	Drag art or swatches here, or use + to add the selection's colors and text styles.	將圖稿或色票拖到此處，或使用 + 加入所選物件的顏色和文字樣式。
+	Its graphics, colors and text styles are deleted from this machine.	其圖形、顏色和文字樣式將從此電腦中刪除。
+	Keep graphics, colors and text styles here to use them in any document. Libraries are stored on this machine — no account required.	在此保存圖形、顏色和文字樣式，即可在任何文件中使用。資料庫儲存在此電腦上，無需帳號。
+	This library is empty	此資料庫是空的
+	Add to Library	加入資料庫
+	Delete Library	刪除資料庫
+	Delete Library Item	刪除資料庫項目
+	No results	沒有結果
+	No items in this library match “{query}”.	此資料庫中沒有符合「{query}」的項目。
+	Right-click an item to move it into this group.	在項目上按一下右鍵，即可將其移至此群組。
+	New Group	新增群組
+	New Group…	新增群組…
+	Move to Group	移至群組
+	No Group	無群組
+	Rename Group…	重新命名群組…
+	Delete Group	刪除群組
+	Import Library…	匯入資料庫…
+	Export Library…	匯出資料庫…
+	Import Library	匯入資料庫
+	Export Library	匯出資料庫
+	New Library Group	新增資料庫群組
+	Rename Library Group	重新命名資料庫群組
+	Delete Library Group	刪除資料庫群組
+	Move Library Item to Group	將資料庫項目移至群組
+	Library	資料庫
+	Rename Library	重新命名資料庫
+	Show Library	顯示資料庫
+	Use Library Item	使用資料庫項目
+	Graphic	圖形
+	Show all open documents	顯示所有開啟的文件
+	Symbol Instance	符號範例
+	Symbol Libraries	符號資料庫
+	Symbol Libraries (on the roadmap)	符號資料庫 (已列入路線圖)
+	Symbol Screener Tool	符號濾色器工具
+	Symbol Scruncher Tool	符號緊縮器工具
+	Symbol Shifter Tool	符號移位器工具
+	Symbol Sizer Tool	符號縮放器工具
+	Symbol Spinner Tool	符號旋轉器工具
+	Symbol Sprayer	符號噴灑器
+	Symbol Sprayer Tool	符號噴灑器工具
+	Symbol Stainer Tool	符號染色器工具
+	Symbol Styler Tool	符號樣式器工具
+	Symbolism Tool	符號工具
+	Symbols	符號
+	System Layout	系統配置
+	Tab	定位字元
+	Tab Stops	定位點
+	Tabs	定位點
+	Tabular Lining	等寬齊線數字
+	Tabular Oldstyle	等寬舊式數字
+	Target	目標
+	Target Contents	目標內容
+	Target:	目標：
+	Tate-chu-yoko	縱中橫
+	Temperature	色溫
+	Temperature/Tint…	色溫/色調…
+	Template	範本
+	Templates	範本
+	Templates Folder	範本資料夾
+	Templates…	範本…
+	Text Displayed in Cell:	儲存格中顯示的文字：
+	Text Export Options	文字匯出選項
+	Text Fill Color	文字填色
+	Text Import Options	文字匯入選項
+	Text Stroke Color	文字筆畫顏色
+	Text Wrap	文字繞圖
+	Text Wrap Options	文字繞圖選項
+	Text Wrap Options…	文字繞圖選項…
+	The bounds of the visible art.	可見圖稿的邊界。
+	The cell shows the type object's text as HTML.	儲存格以 HTML 顯示文字物件的文字。
+	The document has no colour swatches.	文件中沒有色票。
+	The edge of the paper the printer can't reach: the art goes inside it, and the preview shows it dashed.	印表機無法觸及的紙張邊緣：圖稿會放在其內側，預覽中會以虛線顯示。
+	The page as it prints	頁面列印時的樣子
+	the preset	該預設集
+	The Print Tiling tool placed the pages.	已由列印拼貼工具放置頁面。
+	The selected objects have no CSS of their own (see below).	選取的物件沒有自己的 CSS (請見下方)。
+	The system's settings of this printer	此印表機的系統設定
+	Thin Space	細空格
+	Third Space	三分之一空格
+	Third Vanishing Point:	第三消失點：
+	This document already has a swatch named “{name}” with another color.	此文件已有名為「{name}」但顏色不同的色票。
+	This library is empty.	此資料庫是空的。
+	This panel is on the roadmap (see the parity plan).	此面板已列入規劃 (請見對等計畫)。
+	Threaded Text	串連文字
+	Threads	串連
+	Three Point	三點
+	Three Point Perspective	三點透視
+	Three Point Perspective Preset 1	三點透視預設集 1
+	Three Point Perspective Preset 2	三點透視預設集 2
+	Three Point Perspective Preset 3	三點透視預設集 3
+	Three Point Perspective Preset 4	三點透視預設集 4
+	Three Point Perspective Preset 5	三點透視預設集 5
+	Threshold	臨界值
+	Thumbnail View	縮圖檢視
+	Thumbnails:	縮圖：
+	Tile	並排顯示
+	Tile Edge Color	拼貼邊緣顏色
+	Tile Edge Color…	拼貼邊緣顏色…
+	Tile Full Pages	並排完整頁面
+	Tile Range:	拼貼範圍：
+	Tile Type:	拼貼類型：
+	tile {number}	拼貼 {number}
+	Tiles are numbered across, then down; leave the range empty for every tile.	拼貼先由左至右再由上至下編號；範圍留空表示全部拼貼。
+	Tint	色調
+	Tip extends past the end point	尖端延伸超過終點
+	Tip on the end point	尖端位於終點
+	Title Case	標題式大小寫
+	to	至
+	Toggle Fill/Stroke Focus	切換填色/筆畫焦點
+	Toggle Selection	切換選取
+	Toggle single/double column	切換單欄/雙欄
+	Tolerance	容許度
+	Tolerance:	容許度：
+	Tool Option	工具選項
+	Tool Options…	工具選項…
+	Toolbar: Advanced / Basic	工具列：進階 / 基本
+	Toolbar: Single/Double Column	工具列：單欄/雙欄
+	Toolbars	工具列
+	Tools	工具
+	Top	上
+	Top in Front	上方在前
+	Top-to-Top Leading	上緣至上緣行距
+	Top:	上：
+	Total Width:	總寬度：
+	Touch Type Tool	觸控文字工具
+	Trace	描圖
+	Trace the image with the Default preset	使用「預設」預設集描圖影像
+	Tracing	描圖中
+	Tracking	字距
+	Trademark Symbol	商標符號
+	Transform	變形
+	Transform Again	再次變形
+	Transform Both	兩者皆變形
+	Transform Each	個別變形
+	Transform Each…	個別變形…
+	Transform in Perspective	透視變形
+	Transform Object Only	僅變形物件
+	Transform Panel	變形面板
+	Transform Pattern Only	僅變形圖樣
+	Transform Pattern Tiles	變形圖樣拼貼
+	Transform Patterns	變形圖樣
+	Transform Tools	變形工具
+	Transforms	變形
+	Transform…	變形…
+	Transparency	透明度
+	Transparency Flattener Presets	透明度平面化預設集
+	Transparency Flattener Presets…	透明度平面化預設集…
+	Transparency Grid	透明度格點
+	Transparency Info	透明度資訊
+	Transparency is flattened with the preset. Type is written as outlines; gradients as bands of colour.	透明度會依預設集平面化。文字以外框寫出；漸層以色帶寫出。
+	Transparency is flattened with the preset. Type is written as outlines; gradients stay smooth.	透明度會依預設集平面化。文字以外框寫出；漸層維持平滑。
+	Transparency Options	透明度選項
+	Transparent	透明
+	Transparent (Default)	透明 (預設)
+	Transparent Background	透明背景
+	Transverse (the page a quarter turn on the paper)	橫向轉置 (頁面在紙張上轉四分之一圈)
+	Trap…	補漏白…
+	Trim	剪裁
+	Trim mark weight:	剪裁標記寬度：
+	Trim marks	剪裁標記
+	Trim View	剪裁檢視
+	True colour needs version 2004 or later: the nearest of 256 colours is written.	全彩需要 2004 或更新的版本：會寫入 256 色中最接近的顏色。
+	Turn off Data Recovery for complex documents	對複雜文件關閉資料復原
+	Tweak…	隨意筆畫…
+	Twirl Rate:	旋轉速率：
+	Twirl Tool	旋轉扭曲工具
+	Twist…	螺旋…
+	Two Point	兩點
+	Two Point Perspective	兩點透視
+	Two Point Perspective Preset 1	兩點透視預設集 1
+	Two Point Perspective Preset 2	兩點透視預設集 2
+	Two Point Perspective Preset 3	兩點透視預設集 3
+	Two Point Perspective Preset 4	兩點透視預設集 4
+	Two Point Perspective Preset 5	兩點透視預設集 5
+	Type	文字
+	Type becomes outlines, and strokes a CAD line can't draw become filled shapes.	文字會變成外框，CAD 線條無法繪製的筆畫會變成填色形狀。
+	Type Object Selection by Path Only	僅以路徑選取文字物件
+	Type on a Path	路徑文字
+	Type on a Path Options	路徑文字選項
+	Type on a Path Options…	路徑文字選項…
+	Type on a Path Tool	路徑文字工具
+	Type Orientation	文字方向
+	Type stays text, and every stroke is a line with its lineweight and dashes.	文字維持為文字，每個筆畫都是帶有線寬與虛線的線條。
+	Type Tool	文字工具
+	Type:	類型：
+	Type…	文字…
+	Typography	字體排印
+	UI Brightness	介面亮度
+	UI Scaling	介面縮放
+	Underline	底線
+	Undo	復原
+	Undo {name}	復原{name}
+	Undo {}	復原 {}
+	Unembed	取消嵌入
+	Unembedded to {}	已取消嵌入至 {}
+	Unembed…	取消嵌入…
+	Ungroup	解散群組
+	Ungroup Color Group	解散顏色群組
+	Unicode	Unicode
+	Unicode (UTF-16)	Unicode (UTF-16)
+	Unicode (UTF-8)	Unicode (UTF-8)
+	Uniform	等比例
+	Unique	唯一
+	Unite	聯集
+	Unite and Simplify	聯集並簡化
+	Units	單位
+	Units:	單位：
+	Units: {units}	單位：{units}
+	Unlink harmony colors	取消連結調和色彩
+	Unlink Opacity Mask	取消連結不透明度遮色片
+	Unlink the mask	取消連結遮色片
+	Unlock	解除鎖定
+	Unlock All	全部解除鎖定
+	Unlock All Layers	解除鎖定所有圖層
+	Unlock Grid	解除鎖定格點
+	Unlock Guides	解除鎖定參考線
+	Unnamed Objects	未命名物件
+	Unprintable margin:	不可列印邊界：
+	Unshift	取消位移
+	Untitled	未命名
+	Update Link	更新連結
+	Update Links	更新連結
+	Update Changed Links	更新已變更的連結
+	{count} linked image(s) changed on disk. Show the new versions?	有 {count} 個連結影像已在磁碟上變更。要顯示新版本嗎？
+@msg	Updated {_1} linked file(s) changed on disk	已更新 {_1} 個在磁碟上變更的連結檔案
+	Update Modified Links	更新已修改的連結
+	Updated {} image(s)	已更新 {} 張影像
+	UPPERCASE	全部大寫
+	URL:	URL：
+	Use 	使用 
+	Use Artboards	使用工作區域
+	Use Black Point Compensation	使用黑點補償
+	Use Compression	使用壓縮
+	Use document bleed settings	使用文件的出血設定
+	Use Even-Odd Fill Rule	使用奇偶填色規則
+	Use Japanese Crop Marks	使用日式裁切標記
+	Use Low Resolution Proxy for Linked EPS	連結的 EPS 使用低解析度代理
+	Use Non-Zero Winding Fill Rule	使用非零纏繞填色規則
+	Use Precise Cursors	使用精確游標
+	Use Pressure Pen	使用壓感筆
+	Use Preview Bounds	使用預覽邊界
+	Use Registration Point for Symbol	符號使用參考點
+	Use Square for Previews	預覽使用方形
+	Use Text for Previews	預覽使用文字
+	Use the document's swatch: pasted colors take its color.	使用文件的色票：貼上的顏色會採用其顏色。
+	Use the Selected Text's Font	使用選取文字的字體
+	Use Typographer's Quotes	使用印刷體引號
+	User Defined	使用者定義
+	User Defined Libraries	使用者定義資料庫
+	User Graphic Style Library 1	使用者繪圖樣式資料庫 1
+	User Graphic Style Library 10	使用者繪圖樣式資料庫 10
+	User Graphic Style Library 2	使用者繪圖樣式資料庫 2
+	User Graphic Style Library 3	使用者繪圖樣式資料庫 3
+	User Graphic Style Library 4	使用者繪圖樣式資料庫 4
+	User Graphic Style Library 5	使用者繪圖樣式資料庫 5
+	User Graphic Style Library 6	使用者繪圖樣式資料庫 6
+	User Graphic Style Library 7	使用者繪圖樣式資料庫 7
+	User Graphic Style Library 8	使用者繪圖樣式資料庫 8
+	User Graphic Style Library 9	使用者繪圖樣式資料庫 9
+	User Interface	使用者介面
+	User Library	使用者資料庫
+	User Preset	使用者預設集
+	User Swatch Library 1	使用者色票資料庫 1
+	User Swatch Library 10	使用者色票資料庫 10
+	User Swatch Library 2	使用者色票資料庫 2
+	User Swatch Library 3	使用者色票資料庫 3
+	User Swatch Library 4	使用者色票資料庫 4
+	User Swatch Library 5	使用者色票資料庫 5
+	User Swatch Library 6	使用者色票資料庫 6
+	User Swatch Library 7	使用者色票資料庫 7
+	User Swatch Library 8	使用者色票資料庫 8
+	User Swatch Library 9	使用者色票資料庫 9
+	V Spacing:	垂直間距：
+	V:	V：
+	Variable Width Profile	可變寬度描述檔
+	Variables	變數
+	New Variable	新增變數
+	Delete Variable	刪除變數
+	List Variables	列出變數
+	Bind Variable	綁定變數
+	Unbind Variable	解除變數綁定
+	New Data Set	新增資料集
+	Delete Data Set	刪除資料集
+	List Data Sets	列出資料集
+	Select Data Set	選取資料集
+	Next Data Set	下一個資料集
+	Previous Data Set	上一個資料集
+	Data Sets	資料集
+	New Variable…	新增變數…
+	New Data Set…	新增資料集…
+	Edit Data Set…	編輯資料集…
+	Data Set	資料集
+	Kind	類型
+	Variable	變數
+	no document	沒有文件
+	no data set to edit	沒有可編輯的資料集
+	Make Text Dynamic	使文字動態化
+	Make Visibility Dynamic	使可見性動態化
+	Capture Data Set	擷取資料集
+	Update Data Set	更新資料集
+	Rename Data Set…	重新命名資料集…
+	Variable Options…	變數選項…
+	Select Bound Object	選取繫結的物件
+	Select All Bound Objects	選取所有繫結的物件
+	Multiple objects	多個物件
+	New Name	新名稱
+	no variable to rename	沒有可重新命名的變數
+	no data set to rename	沒有可重新命名的資料集
+	Variation:	變化：
+	Vector Effects	向量效果
+	Vector Halftone	向量半色調
+	Vector Halftone…	向量半色調…
+	Vector illustration — fast, open, scriptable.	向量插圖：快速、開放、可用指令碼操控。
+	VectorCraft	VectorCraft
+	VectorCraft didn't quit normally last time. These documents had unsaved changes:	VectorCraft 上次未正常結束。下列文件有未儲存的變更：
+	VectorCraft Help…	VectorCraft 說明…
+	VectorCraft on getartcraft.com	getartcraft.com 上的 VectorCraft
+	VectorCraft on GitHub	GitHub 上的 VectorCraft
+	Vectors	向量
+	Version {version} — open-source vector illustration in pure Rust.	版本 {version} — 以純 Rust 打造的開放原始碼向量插畫軟體。
+	Version:	版本：
+	Vertical	垂直
+	Vertical %	垂直 %
+	Vertical Align Bottom	垂直靠下對齊
+	Vertical Align Center	垂直置中對齊
+	Vertical Align Top	垂直靠上對齊
+	Vertical Area Type Tool	垂直區域文字工具
+	Vertical Distribute Bottom	垂直均分下緣
+	Vertical Distribute Center	垂直均分中心
+	Vertical Distribute Space	垂直均分間距
+	Vertical Distribute Top	垂直均分上緣
+	Vertical Scale %	垂直縮放 %
+	Vertical Type on a Path Tool	垂直路徑文字工具
+	Vertical Type Tool	垂直文字工具
+	Vertical:	垂直：
+	Very High	極高
+	View	檢視
+	View Artboard Only	僅檢視工作區域
+	View Opacity Mask	檢視不透明度遮色片
+	View PDF after saving	儲存後檢視 PDF
+	View {n}	檢視 {n}
+	Viewing Angle:	檢視角度：
+	Viewing Distance:	檢視距離：
+	W:	寬：
+	Warnings	警告
+	Warp	彎曲
+	Warp Options	彎曲選項
+	Warp Tool	彎曲工具
+	Wave…	波形…
+	Web	網頁
+	Web 1920×1080	網頁 1920×1080
+	Web Safe 216	網頁安全色 216
+	Web Safe RGB	網頁安全 RGB
+	Web Shift	網頁位移
+	Web Snap:	網頁靠齊：
+	Weight	寬度
+	Weight:	寬度：
+	Welcome to VectorCraft	歡迎使用 VectorCraft
+	When pasting text	貼上文字時
+	White	白色
+	Widget Position:	Widget 位置：
+	Width	寬度
+	Width and Height	寬度與高度
+	Width Point	寬度點
+	Width Point Edit	寬度點編輯
+	Width Point Edit…	寬度點編輯…
+	Width Profile	寬度描述檔
+	Width Profiles	寬度描述檔
+	Width Tool	寬度工具
+	Width:	寬度：
+	Window	視窗
+	Windows	Windows
+	Working CMYK	使用中的 CMYK
+	Working CMYK (don't tag)	工作 CMYK (不加標記)
+	Workspace	工作區
+	Workspace {i}	工作區 {i}
+	Wrinkle Tool	皺摺工具
+	Write Layers	寫入圖層
+	XML ID	XML ID
+	Yards	碼
+	Yellow	黃色
+	Your browser downloads the files (several as one .zip).	瀏覽器會下載這些檔案 (多個檔案會合為一個 .zip)。
+	Your changes will be lost if you don't save them.	若不儲存，您的變更將會遺失。
+	Zig Zag…	鋸齒化…
+	Zoom In	放大顯示
+	Zoom Out	縮小顯示
+	Zoom to Selection	縮放至選取範圍
+	Zoom Tool	縮放工具
+	Zoom with Mouse Wheel	使用滑鼠滾輪縮放
+	Scrub Numeric Fields by Dragging	拖曳以調整數值欄位
+	{count} file(s) in {folder}{note}. Show the package folder?	{folder} 中有 {count} 個檔案{note}。要顯示封裝資料夾嗎？
+	{count} linked file(s) not found	找不到 {count} 個連結檔案
+	fonts not copied: {fonts}	未複製的字體：{fonts}
+	{count} linked image(s) changed since this document was saved. Show the new versions?	自儲存此文件後，有 {count} 個連結影像已變更。要顯示新版本嗎？
+	{count} more rules: Export writes every one.	另有 {count} 條規則：匯出時會全部寫出。
+	{count} unnamed objects left out: name them, or turn on Unnamed Objects in the panel menu.	已略過 {count} 個未命名物件：請為它們命名，或在面板選單中開啟「未命名物件」。
+	{effect} is already applied	已套用 {effect}
+	{format} Options	{format} 選項
+	{kind} Gradient	{kind}漸層
+	{kind} Style Options…	{kind}樣式選項…
+	{kind}, {model}	{kind}，{model}
+	{name} (spot)	{name} (特別色)
+	{pages} in all, {count} per copy	共 {pages}，每份 {count}
+	{page} of {count}	第 {page} 頁，共 {count} 頁
+	{percent}% opacity	不透明度 {percent}%
+	{secs} sec	{secs} 秒
+	{shortcut} with the tool sizes the brush	以工具搭配 {shortcut} 調整筆刷大小
+	{title} (selection)	{title} (選取範圍)
+	{tool} Options	{tool}選項
+	{tool} Tool Options	{tool}工具選項
+	{warning}: click to correct to the closest color ({hex})	{warning}：按一下以修正為最接近的顏色 ({hex})
+	“{file}” is protected by a password.	「{file}」受密碼保護。
+	● Recording	● 錄製中
+@plural	{n} item|{n} items	{n} 個項目
+@plural	Color Table ({n} color)|Color Table ({n} colors)	色彩表 ({n} 色)
+@plural	Delete this {n} graphic style?|Delete these {n} graphic styles?	要刪除這 {n} 個繪圖樣式嗎？
+@plural	{n} Layer|{n} Layers	{n} 個圖層
+@plural	{n} Object|{n} Objects	{n} 個物件
+@plural	{n} area highlighted|{n} areas highlighted	已標示 {n} 個區域
+@plural	{n} color|{n} colors	{n} 色
+@plural	{n} fill|{n} fills	{n} 個填色
+@plural	{n} glyph|{n} glyphs	{n} 個字符
+@plural	{n} object highlighted|{n} objects highlighted	已標示 {n} 個物件
+@plural	{n} star|{n} stars	{n} 個星芒
+@plural	{n} step|{n} steps	{n} 個步驟
+@plural	{n} stroke|{n} strokes	{n} 個筆畫
+	 the object to select  |  	物件以選取  |  
+	 to select multiple objects  |  	可選取多個物件  |  
+	 the object to duplicate	物件可製作複本
+	 an anchor or path segment to select it  |  	錨點或路徑線段以選取  |  
+	 to move  |  	可移動  |  
+	 to add	可新增
+	 to add a corner point  |  	可新增尖角錨點  |  
+	 to add a smooth point  |  	可新增平滑錨點  |  
+	 to close  |  	可封閉路徑  |  
+	 to finish	可結束
+	 to add smooth points  |  	可新增平滑錨點  |  
+	 to toggle corner  |  	可切換尖角  |  
+	 to create point type  |  	可建立點狀文字  |  
+	 to create area type  |  	可建立區域文字  |  
+	 to exit editing	可結束編輯
+	 to draw  |  	可繪製  |  
+	 to constrain proportions  |  	可等比例  |  
+	 from center  |  	可從中心繪製  |  
+	 for exact size	可輸入精確尺寸
+	 to set the reference point  |  	可設定參考點  |  
+	 to transform  |  	可變形  |  
+	 for exact values	可輸入精確數值
+	 to pan the view	可平移檢視
+	 to zoom in  |  	可放大  |  
+	 to zoom out  |  	可縮小  |  
+	 to zoom into an area	可放大至指定區域
+	Hold	按住
+	 right or left to zoom in or out  |  	向右可放大、向左可縮小  |  
+	 to keep zooming	可持續縮放
+	 an object to copy its attributes  |  	物件可複製其屬性  |  
+	 to apply the selection's to it  |  	可將選取範圍的屬性套用至該物件  |  
+	 to sample a color	可取樣顏色
+	 across a selected object to set the gradient direction	橫越所選物件可設定漸層方向
+	 to select an artboard  |  	可選取工作區域  |  
+	 on the canvas to create one	畫布可建立工作區域
+	 a stroke to add a width point  |  	筆畫可新增寬度點  |  
+	 to change one side  |  	可只變更單側  |  
+	 to select more points  |  	可選取更多點  |  
+	 a point to edit it  |  	寬度點可編輯  |  
+	 to remove points	可移除點
+	 the art to add a pin  |  	圖稿可新增圖釘  |  
+	 to select more pins  |  	可選取更多圖釘  |  
+	 a pin to warp  |  	圖釘可彎曲  |  
+	 near a selected pin to rotate  |  	所選圖釘附近可旋轉  |  
+	 to remove pins	可移除圖釘
+	 across paths to push them along  |  	橫越路徑可推移路徑  |  
+	 to size the brush (	可調整筆刷大小 (
+	 keeps its proportions)	可維持比例)
+	 over paths, and hold still to keep going  |  	經過路徑，停住不動可持續作用  |  
+	 over paths to roughen their outlines  |  	經過路徑可使外框粗糙化  |  
+	 to move in perspective  |  	可在透視中移動  |  
+	 to copy  |  	可複製  |  
+	 while dragging to move perpendicular to the plane  |  	拖曳時可垂直於平面移動  |  
+	 to scale in perspective	可在透視中縮放
+	 an object, then another to blend them  |  	一個物件，再按另一個可建立漸變  |  
+	 to blend from it  |  	可從該處開始漸變  |  
+	 to set spacing and orientation	可設定間距與方向
+	:	：
+	Isolate Selected Group	隔離選取的群組
+	Release Clipping Mask	釋放剪裁遮色片
+	Make Compound Path	製作複合路徑
+	Release Compound Path	釋放複合路徑
+	  — substituted by {style}	  — 以 {style} 取代
+	  — {n} characters from another font	  — {n} 個字符來自其他字體
+	[Normal Character Style]	[正常字元樣式]
+	[Normal Paragraph Style]	[正常段落樣式]
+
+# About › Contributors / Models (credits.rs)
+	About	關於
+	Contributors	貢獻者
+	Models	模型
+	Username	使用者名稱
+	Display name	顯示名稱
+	Real name	真實姓名
+	Sort	排序
+	Reverse the order	反轉順序
+	Grab bag	全部列出
+	Table	表格
+	Name (A–Z)	名稱 (A–Z)
+	Merged PRs	已合併的 PR
+	Commits	提交
+	Lines added	新增行數
+	Lines deleted	刪除行數
+	Line delta	行數增減
+	Binary assets added	新增的二進位資產
+	Binary assets removed	移除的二進位資產
+	First commit	首次提交
+	Last commit	最近一次提交
+	First	首次
+	Last	最近
+	{people} contributors · {commits} commits	{people} 位貢獻者 · {commits} 次提交
+	No contributor data was built into this copy.	此版本未內建貢獻者資料。
+	No model credits were built into this copy.	此版本未內建模型致謝資料。
+	Company	公司
+	Version	版本
+	% of all commits	佔全部提交的比例
+	Lines +/−	行數 +/−
+	Joins	轉角
+	Miter	尖角
+	Bevel	斜角
+	Offset	位移
+	Axis	軸
+axis	Horizontal	水平
+axis	Vertical	垂直
+axis	Both	兩者
+	Drag to move	拖曳以移動
+	Drag to float as a toolbar	拖曳使其浮動為工具列
+	Put back in the toolbar	放回工具列
+	Float Panel	浮動面板
+	Dock Panel	停駐面板
+	Drag to float the panel group	拖曳以浮動面板群組
+	Put back in the dock	放回停駐區
+	Drag to float the toolbar	拖曳以浮動工具列
+	Drag to the window's left edge to dock	拖曳到視窗左側邊緣以停駐
+	Float Tool Group	浮動工具組
+
+# The macOS menu bar (native_menu): the app and Window menus' system items, Settings pages.
+	Services	服務
+	Hide VectorCraft	隱藏 VectorCraft
+	Zoom	縮放
+	Bring All to Front	將全部移至最前
+	Settings	設定
+	Break Link	中斷連結
+	On: one locked object showing the document, updated when it changes.	開啟：以單一鎖定物件顯示文件，文件變更時隨之更新。
+	Off: an editable copy of its art, embedded in this document.	關閉：將其圖稿的可編輯副本內嵌在此文件中。
+	Images: link to the file instead of only embedding it.	影像：連結至檔案，而不只是嵌入。
+	VectorCraft documents: one locked object, updated when the file changes.	VectorCraft 文件：單一鎖定物件，檔案變更時隨之更新。
+	A file dialog is open: choose there first	檔案對話方塊已開啟：請先在其中選擇
+	Shaper	Shaper
+	Expand Shaper Group	展開 Shaper 群組
+	Release Shaper Group	釋放 Shaper 群組
+	Select Shaper Face	選取 Shaper 區域
+	Constrain	強制
+	Free Transform	任意變形
+	Perspective Distort	透視扭曲
+
+# Photoshop-style raster effects (Effect menu, their dialogs).
+	Radial Blur…	放射狀模糊…
+	Smart Blur…	智慧型模糊…
+	Sharpen	銳利化
+	Unsharp Mask…	反銳利化遮罩…
+	Pixelate	像素化
+	Color Halftone…	彩色半色調…
+	Crystallize…	結晶化…
+	Mezzotint…	網線銅版…
+	Pointillize…	點描…
+	Color Halftone	彩色半色調
+	Crystallize	結晶化
+	Mezzotint	網線銅版
+	Pointillize	點描
+	Max. Radius	最大半徑
+	Channel 1	色版 1
+	Channel 2	色版 2
+	Channel 3	色版 3
+	Channel 4	色版 4
+	Cell Size	單元大小
+	Fine Dots	細點
+	Medium Dots	中等點
+	Grainy Dots	顆粒點
+	Coarse Dots	粗點
+	Short Lines	短線
+	Medium Lines	中等線
+	Long Lines	長線
+	Short Strokes	短筆畫
+	Medium Strokes	中等筆畫
+	Long Strokes	長筆畫
+	Radial Blur	放射狀模糊
+	Smart Blur	智慧型模糊
+	Unsharp Mask	反銳利化遮罩
+	Gaussian Blur	高斯模糊
+	Method	方法
+	Quality	品質
+	Radius	半徑
+	Spin	旋轉
+	Draft	草稿
+	Good	良好
+	Best	最佳
+	Video	視訊
+	De-Interlace…	反交錯…
+	De-Interlace	反交錯
+	NTSC Colors	NTSC 色彩
+	Eliminate	消除
+	Create New Fields by	建立新圖場以
+	Odd Fields	奇數圖場
+	Even Fields	偶數圖場
+	Duplication	複製
+	Interpolation	內插
+	RGB:	RGB：
+	CMYK:	CMYK：
+	Texture	紋理
+	Craquelure…	龜裂紋…
+	Grain…	顆粒…
+	Mosaic Tiles…	馬賽克拼貼…
+	Patchwork…	拼綴圖…
+	Stained Glass…	彩色玻璃…
+	Texturizer…	紋理化…
+	Craquelure	龜裂紋
+	Grain	顆粒
+	Mosaic Tiles	馬賽克拼貼
+	Patchwork	拼綴圖
+	Stained Glass	彩色玻璃
+	Texturizer	紋理化
+	Crack Spacing	裂紋間距
+	Crack Depth	裂紋深度
+	Crack Brightness	裂紋亮度
+	Intensity	強度
+	Grain Type	顆粒類型
+	Tile Size	拼貼大小
+	Grout Width	縫隙寬度
+	Lighten Grout	加亮縫隙
+	Square Size	方塊大小
+	Relief	浮雕
+	Border Thickness	邊框粗細
+	Light Intensity	光源強度
+	Light Direction	光源方向
+	Sprinkles	噴灑
+	Clumped	結塊
+	Contrasty	高反差
+	Enlarged	放大
+	Stippled	點刻
+	Speckle	斑點
+	Brick	磚塊
+	Burlap	粗麻布
+	Canvas	畫布
+	Sandstone	砂岩
+	Bottom Left	左下
+	Top Left	左上
+	Top Right	右上
+	Bottom Right	右下
+effect	Soft	柔和
+	Edge	邊緣
+	System Title Bar	系統標題列
+	Value Axis	數值軸
+	On Left Side	左側
+	On Right Side	右側
+	On Both Sides	兩側
+	Short	短
+	Full Width	全寬
+	Distort	扭曲
+	Diffuse Glow…	擴散光暈…
+	Glass…	玻璃…
+	Ocean Ripple…	海洋波紋…
+	Diffuse Glow	擴散光暈
+	Glass	玻璃
+	Ocean Ripple	海洋波紋
+	Graininess	顆粒
+	Glow Amount	光暈量
+	Clear Amount	清除量
+	Ripple Size	波紋大小
+	Ripple Magnitude	波紋強度
+	Blocks	塊狀
+	Frosted	磨砂
+	Tiny Lens	小鏡頭
+	Rename Data Set	重新命名資料集
+	Rename Variable	重新命名變數
+	Variable Options	變數選項
+	Edit Data Set	編輯資料集
+	Define a variable first	請先定義一個變數
+	Text	文字
+	Visibility	可見性
+
+# Revolve profile guidance.
+
+# Interactive Revolve controls.
+	Lighting	照明
+	Revolve angle	旋轉成形角度
+	Axis side	軸的位置
+	Rotation X	X 軸旋轉
+	Rotation Y	Y 軸旋轉
+	Rotation Z	Z 軸旋轉
+	Shading	明暗處理
+	Direction	方向
+	Elevation	仰角
+	Ambient	環境光
+	Segments	分段數
+	Show axis	顯示軸
+	Reset all	全部重設
+	Reset to default	重設為預設值
+	Reset all Revolve settings to their defaults.	將所有旋轉成形設定重設為預設值。
+	Drag values or labels. Double-click a value to type.	拖曳數值或標籤。按兩下數值即可輸入。
+	Drag rings to rotate. Shift snaps to 15°.	拖曳圓環旋轉。按住 Shift 以 15° 為間距調整。
+	Drag the light, or its rings. Shift snaps to 15°.	拖曳光源或圓環。按住 Shift 以 15° 為間距調整。
+lighting	Light	光源
+	Keep visible surfaces only when expanding	展開時僅保留可見表面
+	Trim covered geometry on Expand Appearance. Live preview keeps the full surface. Transparent paints and surfaces exceeding visibility limits retain all faces.	展開外觀時裁剪被遮擋的幾何區域。即時預覽保留完整表面。透明繪製或超出可見性處理限制的表面保留所有面。
+	Accented Edges…	強調邊緣…
+	Angled Strokes…	傾斜筆觸…
+	Crosshatch…	交叉影線…
+	Dark Strokes…	深色筆觸…
+	Ink Outlines…	墨水輪廓…
+	Spatter…	噴濺…
+	Sprayed Strokes…	噴灑筆觸…
+	Sumi-e…	水墨畫…
+	Accented Edges	強調邊緣
+	Angled Strokes	傾斜筆觸
+	Crosshatch	交叉影線
+	Dark Strokes	深色筆觸
+	Ink Outlines	墨水輪廓
+	Spatter	噴濺
+	Sprayed Strokes	噴灑筆觸
+	Sumi-e	水墨畫
+	Direction Balance	方向平衡
+	Stroke Length	筆觸長度
+	Sharpness	銳利度
+	Strength	力度
+	Balance	平衡
+	Black Intensity	黑色強度
+	White Intensity	白色強度
+	Dark Intensity	暗部強度
+	Spray Radius	噴灑半徑
+	Stroke Direction	筆觸方向
+	Stroke Width	筆觸寬度
+	Stroke Pressure	筆觸壓力
+	Right Diagonal	右對角線
+	Left Diagonal	左對角線

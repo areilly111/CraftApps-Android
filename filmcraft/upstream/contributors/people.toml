@@ -1,0 +1,76 @@
+# Contributor names for the About window (craftrules standards/contributors.md).
+#
+# Everyone who contributes is credited by GitHub username automatically. Anything more is up to
+# you: add YOUR OWN entry below, in your own PR (commit it yourself). Never add someone else; a
+# maintainer may add a person only when that person asked, recording where in consent_source.
+#
+# Easiest: python3 ../../craftrules/scripts/contributors.py --add-me . \
+#            [--real-name "Ada Lovelace"] [--display-name "Ada"] [--sync-github-name]
+#
+# Or copy this block, replacing your-github-username (every field is optional):
+#
+#   [people.your-github-username]
+#   real_name = "Your Name"        # shown when the viewer picks "Real name"
+#   display_name = "Nickname"      # shown when the viewer picks "Display name"
+#   sync_github_name = true        # or: use the name on your public GitHub profile as display name
+#
+# To remove your names, delete your entry (or set fields empty) in a PR. The next
+# contributors.py run, and the next build, drop them.
+
+[people.echelon]
+real_name = "Brandon Thomas"
+display_name = "Brandon Thomas"
+sync_github_name = false
+
+[people.ahmedhosnypro]
+real_name = "Ahmed Hosny"
+display_name = "Ahmed Hosny"
+sync_github_name = false
+
+[people.sanyamsingh001]
+display_name = "sanyamsingh001"
+sync_github_name = false
+
+[people.switch87]
+real_name = "Gert Pellin"
+display_name = "Gert Pellin"
+sync_github_name = false
+
+[people.swillunderscore]
+display_name = "Swill Software"
+
+
+[people.IppSec]
+sync_github_name = true
+
+[people.ItzBloxy]
+display_name = "Bloxy"
+
+[people.Hathor875]
+real_name = "Krzysztof Cieślik"
+sync_github_name = true
+
+[people.ReReddo]
+display_name = "ReReddo"
+sync_github_name = false
+
+[people.liangforstudy]
+sync_github_name = true
+
+[people.keller-lukas]
+real_name = "Lukas Keller"
+display_name = "Lukas Keller"
+sync_github_name = false
+
+[people.maxm11]
+real_name = "Max Murphy"
+display_name = "Max Murphy"
+sync_github_name = false
+
+[people.ossini]
+sync_github_name = true
+
+[people.vangel76]
+real_name = "Valentin Klein"
+display_name = "Valentin Klein"
+sync_github_name = false

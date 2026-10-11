@@ -1,0 +1,22 @@
+{
+  "Brotli-Prototype-FileA.pdf": "open-error",
+  "REDHAT-1531897-0.pdf": "open-error",
+  "auth-event-ef-open.pdf": "open-error",
+  "bug1020226.pdf": "open-error",
+  "bug1782186.pdf": "open-error",
+  "bug1978317.pdf": "timeout",
+  "encrypted-attachment.pdf": "open-error",
+  "issue15590.pdf": "open-error",
+  "issue15893_reduced.pdf": "open-error",
+  "issue16263.pdf": "timeout",
+  "issue21579.pdf": "open-error",
+  "issue3371.pdf": "open-error",
+  "issue6010_1.pdf": "open-error",
+  "issue6010_2.pdf": "open-error",
+  "issue9105_other.pdf": "open-error",
+  "poppler-742-0-fuzzed.pdf": "open-error",
+  "poppler-937-0-fuzzed.pdf": "open-error",
+  "pr6531_1.pdf": "open-error",
+  "print_protection.pdf": "open-error",
+  "saslprep-r6.pdf": "open-error"
+}

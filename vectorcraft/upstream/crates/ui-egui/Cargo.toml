@@ -1,0 +1,41 @@
+[package]
+name = "vectorcraft-ui-egui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft egui frontend (menus, panels, tools and canvas); swappable — nothing below depends on it"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-brush = { workspace = true }
+vectorcraft-render = { workspace = true }
+vectorcraft-text = { workspace = true }
+vectorcraft-tools = { workspace = true }
+vectorcraft-engine = { workspace = true }
+vectorcraft-svg = { workspace = true }
+vectorcraft-effects = { workspace = true }
+vectorcraft-three-d = { workspace = true }
+vectorcraft-plugins = { workspace = true }
+vectorcraft-pdf = { workspace = true }
+vectorcraft-cad = { workspace = true }
+vectorcraft-eps = { workspace = true }
+vectorcraft-format = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+vectorcraft-testkit = { workspace = true }
+wat = { workspace = true }
+
+[build-dependencies]
+serde_json = { workspace = true }
+toml = "1"

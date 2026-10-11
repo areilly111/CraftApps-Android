@@ -1,0 +1,8 @@
+asset:        effectcraft-hero.png
+title:        EffectCraft main window
+author:       EffectCraft contributors
+source:       original work (headless render of the EffectCraft UI via crates/ui-egui/examples/snapshot.rs)
+license:      MIT OR Apache-2.0
+license-file:
+added:        2026-10-01 by Claude (agent) for Brandon Thomas
+notes:        Screenshot of EffectCraft only, showing procedurally generated demo content from crates/engine/src/demo.rs and built-in effects. EffectCraft main window: the demo composition "EffectCraft Intro" at 0:00:03:00 with the EFFECTCRAFT text layer selected, Properties panel (Layer Transform, Text, Paragraph, Text Animation), Project panel and Timeline.

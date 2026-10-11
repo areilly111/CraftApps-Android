@@ -1,0 +1,38 @@
+[package]
+name = "vectorcraft-svg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft SVG import and export"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-effects = { workspace = true }
+vectorcraft-brush = { workspace = true }
+vectorcraft-text = { workspace = true }
+kurbo = { workspace = true }
+usvg = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+# Live effect params read from filters.
+serde_json = { workspace = true }
+# SVGZ (gzip, pure-Rust backend: builds for wasm).
+flate2 = { workspace = true }
+image = { workspace = true }
+# Colour / transform / length parsing for the <text> fallback (MIT OR Apache-2.0; already used by usvg).
+svgtypes = "0.16"
+
+[dev-dependencies]
+# Reading embedded font subsets back.
+skrifa = { workspace = true }
+# A variable font built in code (no font file is committed).
+vectorcraft-text = { workspace = true, features = ["test-fonts"] }
+resvg = { version = "0.45", default-features = false }
+vectorcraft-testkit = { workspace = true }
+proptest = { workspace = true }
+image = { workspace = true }

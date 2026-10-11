@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Updater: download releases + hand the APK to the package installer. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Shared suite storage (/sdcard/CraftApps): the app reads and writes its
+         documents, settings and presets there directly. Sideload-only, so Play
+         policy is irrelevant. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <application
+        android:label="LightCraft"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true">
+
+        <!-- NativeActivity subclass: forwards SAF picker results to Rust. -->
+        <activity
+            android:name="app.lightcraft.android.LightCraftActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <meta-data android:name="android.app.lib_name" android:value="lightcraft_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Serves downloaded APKs from the app cache dir to the installer. -->
+        <provider
+            android:name="app.lightcraft.android.ApkProvider"
+            android:authorities="app.lightcraft.android.apkprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

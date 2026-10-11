@@ -1,0 +1,19 @@
+[package]
+name = "designcraft-doc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft document model: spreads, pages, parents, layers, frames, stories, styles, swatches"
+
+[lints]
+workspace = true
+
+[dependencies]
+designcraft-geom = { workspace = true }
+designcraft-color = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

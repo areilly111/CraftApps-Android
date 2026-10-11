@@ -1,0 +1,90 @@
+# shellcheck shell=bash
+# Shared setup for the packaging scripts. Source it: `. "$(dirname "$0")/../env.sh"`.
+#
+# Exports:
+#   ROOT                    workspace root
+#   VERSION                 [workspace.package] version from Cargo.toml (override: PDFCRAFT_VERSION)
+#   DIST                    output directory for release artifacts (default: $ROOT/dist/release)
+#   PDFCRAFT_BUILD_SHA    git commit, recorded in the macOS Info.plist (PdfCraftBuildCommit)
+#   PDFCRAFT_BUILD_DATE   UTC build date, YYYY-MM-DD
+#   CARGO_TARGET_DIR        cargo's target dir (default: $ROOT/target)
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ROOT
+
+# The version lives in exactly one place: `[workspace.package] version` in the root Cargo.toml.
+# (`cargo xtask version` prints the same thing; awk avoids compiling xtask here.)
+workspace_version() {
+  awk '
+    /^\[/ { in_pkg = ($0 == "[workspace.package]") ; next }
+    in_pkg && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }
+  ' "$ROOT/Cargo.toml"
+}
+
+VERSION="${PDFCRAFT_VERSION:-$(workspace_version)}"
+if [ -z "$VERSION" ]; then
+  echo "error: could not read [workspace.package] version from $ROOT/Cargo.toml" >&2
+  exit 1
+fi
+export VERSION
+
+DIST="${DIST:-$ROOT/dist/release}"
+mkdir -p "$DIST"
+export DIST
+
+if [ -z "${PDFCRAFT_BUILD_SHA:-}" ]; then
+  PDFCRAFT_BUILD_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+fi
+export PDFCRAFT_BUILD_SHA
+export PDFCRAFT_BUILD_DATE="${PDFCRAFT_BUILD_DATE:-$(date -u +%Y-%m-%d)}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+
+# Emit a GitHub Actions warning (plain stderr outside Actions).
+warn() {
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$*"; else echo "warning: $*" >&2; fi
+}
+
+# Copy licence and readme files that exist into a package directory.
+copy_docs() {
+  local dest="$1" f
+  for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE COPYRIGHT NOTICE; do
+    if [ -f "$ROOT/$f" ]; then cp "$ROOT/$f" "$dest/"; fi
+  done
+  copy_font_licences "$dest"
+}
+
+# Builds made with the optional craft-fonts input (CRAFT_FONTS_DIR, set for every release) embed
+# its fonts, so the package carries their licences: fonts/<family>/OFL.txt -> OFL-<family>.txt.
+copy_font_licences() {
+  local dest="$1" f family
+  [ -n "${CRAFT_FONTS_DIR:-}" ] || return 0
+  for f in "$CRAFT_FONTS_DIR"/fonts/*/OFL.txt; do
+    [ -f "$f" ] || continue
+    family="$(basename "$(dirname "$f")")"
+    cp "$f" "$dest/OFL-$family.txt"
+  done
+}
+
+# Fetch the OCR models into a package directory (#103): `cargo xtask models DEST` downloads every
+# ATTRIBUTION.toml `kind = "model"` file, verified by SHA-256, with its licence text and an
+# ATTRIBUTION.txt crediting them. DEST must be where pdfcraft_ocr::Models::dirs_beside_exe looks
+# from the installed executable. Nothing here names a model file, so a model added to the manifest
+# later ships without changing the packaging.
+stage_models() {
+  local dest="$1"
+  mkdir -p "$dest"
+  dest="$(cd "$dest" && pwd)"
+  (cd "$ROOT" && cargo xtask models "$dest")
+  rm -f "$dest"/*.part
+  if ! ls "$dest"/*.LICENCE.txt >/dev/null 2>&1 || [ ! -s "$dest/ATTRIBUTION.txt" ]; then
+    echo "error: no OCR models in $dest after cargo xtask models" >&2
+    exit 1
+  fi
+  echo "OCR models in $dest:"
+  ls -l "$dest"
+}
+
+# Portable SHA-256 of a file (prints just the hash).
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}

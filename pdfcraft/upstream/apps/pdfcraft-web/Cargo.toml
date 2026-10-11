@@ -1,0 +1,20 @@
+[package]
+name = "pdfcraft-web"
+description = "PdfCraft in the browser (wasm32; build with `trunk build --release` in this directory)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pdfcraft-ui-egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "glow", "persistence", "accesskit"] }
+egui = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "HtmlElement", "Location", "Url", "UrlSearchParams", "Response", "Event", "MessageEvent", "EventTarget"] }
+js-sys = "0.3"

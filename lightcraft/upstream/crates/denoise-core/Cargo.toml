@@ -1,0 +1,26 @@
+[package]
+name = "lightcraft-denoise-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LightCraft denoise model metadata, Bayer tiling and cache formats (L1; no inference backend)"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+rawnind-model = []
+
+[dependencies]
+lightcraft-raster = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+miniz_oxide = { workspace = true }
+rayon = { workspace = true }
+web-time = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

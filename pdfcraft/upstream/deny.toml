@@ -1,0 +1,50 @@
+# cargo-deny policy (M0.4). Run with `cargo xtask deny`; part of `cargo xtask ci`.
+# Code dependencies follow the same rule as assets (AGENTS.md): permissive licences only.
+# Copyleft (GPL, AGPL, LGPL) is never linked; such tools run only as external oracle processes.
+
+[graph]
+all-features = true
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[advisories]
+yanked = "warn"
+ignore = [
+    # Marvin (RSA private-key timing side channel, no fixed `rsa` release). pdfcraft-sign uses
+    # `rsa` only for public-key signature verification, which the advisory does not affect; RSA
+    # private-key operations use aws-lc-rs on native targets and are refused in the browser
+    # (ADR-0009). Revisit when a fixed `rsa` ships.
+    { id = "RUSTSEC-2023-0071", reason = "rsa is used for verification only (ADR-0009)" },
+]
+
+# egui's default UI fonts (Ubuntu-Light, Hack, emoji-icon-font): font licences on the AGENTS.md
+# §1.2 allowlist, attributed in ATTRIBUTION.toml as dependency-bundled assets.
+[[licenses.exceptions]]
+crate = "epaint_default_fonts"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]

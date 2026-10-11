@@ -1,0 +1,66 @@
+apply plugin: 'com.android.application'
+
+def keystoreProps = new Properties()
+// Suite keystore, shared by all CraftApps-Android ports (never per-app keys).
+def keystorePropsFile = rootProject.file("../../keystore/keystore.properties")
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace 'app.craftlauncher.android'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "app.craftlauncher.android"
+        minSdk 29
+        targetSdk 34
+        // Injected by scripts/build-apk.sh (derived from the Rust VERSION_NAME:
+        // 1.0.0-port1 -> 10001).
+        versionCode project.hasProperty("versionCode") ? project.property("versionCode") as int : 100
+        versionName project.hasProperty("versionName") ? project.property("versionName") as String : "0.1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (!keystorePropsFile.exists()) {
+                throw new GradleException(
+                    "Missing ../../keystore/keystore.properties — the suite keystore lives " +
+                    "at craftapps-android/keystore/ (craftapps-suite.keystore).")
+            }
+            // storeFile in the properties is relative to the repo root.
+            storeFile rootProject.file("../../" + keystoreProps['storeFile'])
+            storePassword keystoreProps['storePassword']
+            keyAlias keystoreProps['keyAlias']
+            keyPassword keystoreProps['keyPassword']
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            // Never shipped: the debug key dies with the VM. Release only.
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            // Prebuilt Rust cdylibs, copied here by scripts/build-apk.sh.
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+}
+
+// No external dependencies: the app is Rust + one tiny Java ContentProvider.
+dependencies {
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+<defs><clipPath id="panel"><rect width="232" height="400"/></clipPath><filter id="grain" x="0" y="0" width="100%" height="100%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7"/>
+  <feColorMatrix values="0 0 0 0 0.04  0 0 0 0 0.04  0 0 0 0 0.05  0.5 0 0 0 -0.225"/>
+</filter></defs>
+
+<rect width="660" height="400" fill="#efe9dc"/><rect width="660" height="400" filter="url(#grain)"/>
+<g clip-path="url(#panel)"><rect width="232" height="400" fill="#e8573f"/><g transform="translate(-62.5,-31.0) scale(1.05)"><image href="../../../assets/app-icon/vectorcraft-small.svg" width="512" height="512"/></g></g>
+<line x1="232.5" y1="0" x2="232.5" y2="400" stroke="#0b0b0c" stroke-width="1.2"/>
+<line x1="236.5" y1="0" x2="236.5" y2="400" stroke="#0b0b0c" stroke-width="0.5"/>
+<text x="266" y="72" font-family="Inter" font-weight="600" font-size="30" letter-spacing="-0.5" fill="#0b0b0c">VectorCraft</text>
+<line x1="267" y1="88.5" x2="624" y2="88.5" stroke="#0b0b0c" stroke-width="0.6"/>
+<path d="M271.5,81.5 L276,88.5 L271.5,95.5 L267,88.5 Z" fill="#e8573f"/>
+<text x="267" y="112" font-family="JetBrains Mono" font-size="9" fill="#0b0b0c" fill-opacity="0.7">Path · 2 anchors · 2 pt stroke</text>
+<path d="M412,213 C438,169 452,237 482,205" fill="none" stroke="#0b0b0c" stroke-width="2"/><rect x="408.5" y="209.5" width="7" height="7" fill="#efe9dc" stroke="#e8573f" stroke-width="1.4"/><path d="M494.8,201.9 L484.3,211.9 L480.5,199.5 Z" fill="#0b0b0c"/>
+<line x1="267" y1="335.5" x2="624" y2="335.5" stroke="#0b0b0c" stroke-width="0.6"/>
+<text x="267" y="358" font-family="Inter" font-weight="500" font-size="11" letter-spacing="1.5"
+      fill="#0b0b0c" fill-opacity="0.65">DRAG ONTO APPLICATIONS TO INSTALL</text>
+
+</svg>

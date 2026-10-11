@@ -1,0 +1,17 @@
+[package]
+name = "effectcraft-model"
+description = "3D models: glTF 2.0 (.gltf/.glb) and Wavefront OBJ/MTL import, PBR metallic-roughness materials, node hierarchy, skinning and animation, parametric primitives, and extruded/bevelled outline meshes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-geom = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+image = { workspace = true }

@@ -1,0 +1,74 @@
+VectorCraft
+Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
+not open source and are not covered by the license above; their terms are in
+docs/brand/LICENSE-brand.txt.
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below. The per-file
+list (author, source, license) is in ASSETS.md.
+
+- Lucide icons (assets/icons/*.svg except dc-*.svg) — ISC License; the icons Lucide derived from Feather are also under the MIT License (Cole Bemis). See assets/icons/LICENSE-lucide.txt.
+- Source Sans 3 and Source Serif 4 (assets/fonts/Source*) — SIL Open Font License 1.1. See assets/fonts/OFL-SourceSans3.txt, OFL-SourceSerif4.txt.
+- Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
+- JetBrains Mono (assets/fonts/JetBrainsMono-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-JetBrainsMono.txt.
+- egui's default fonts, compiled into the app through the epaint_default_fonts crate — Ubuntu Light
+  (Ubuntu Font Licence 1.0), Hack (MIT), Noto Emoji (SIL Open Font License 1.1) and emoji-icon-font
+  (MIT). Their license texts ship with that crate.
+
+Rust dependencies (vello_cpu, kurbo, peniko, skrifa, harfrust, usvg, linesweeper, egui, eframe, …) are
+fetched through crates.io under their own permissive licenses (mostly MIT and/or Apache-2.0; also
+BSD, ISC, Zlib, BSL-1.0 and Unicode-3.0).
+
+JPEG export uses the jpeg-encoder crate (MIT OR Apache-2.0, and the IJG License): this software is
+based in part on the work of the Independent JPEG Group.
+
+WebAssembly plug-ins run in the wasmi interpreter (MIT OR Apache-2.0); its wasmparser dependency is
+under the Apache License 2.0 with the LLVM exception.
+
+The experimental Windows 7 build (packaging/windows/windows7.ps1) compiles a modified copy of the
+windows-link crate 0.2.1 (vendor/windows-link; Microsoft, MIT OR Apache-2.0) that binds CoTaskMemFree
+through ole32.dll. Its license texts are in vendor/windows-link and ship in that build's ZIP; every
+other build uses the unmodified crate from crates.io.
+
+Builds made with craft-fonts (the CRAFT_FONTS_DIR build option; all official releases) embed the
+fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md (BIZ UDPGothic,
+Shippori Mincho, BIZ UDMincho, Noto Sans CJK SC and Noto Sans Arabic in the current manifest;
+web builds BIZ UDPGothic Regular only) under the SIL
+Open Font License 1.1. Their license texts ship with the release packages as OFL-<family>.txt.
+
+PDF import decodes CJK text with Adobe's CMap resources (https://github.com/adobe-type-tools/cmap-resources),
+compiled into the app through the hayro-cmap crate under the BSD 3-Clause License:
+
+Copyright 1990-2023 Adobe. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+Neither the name of Adobe nor the names of its contributors may be
+used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

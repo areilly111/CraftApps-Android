@@ -1,0 +1,51 @@
+[package]
+name = "effectcraft-ui-egui"
+description = "The EffectCraft egui frontend (swappable): docking panels, composition viewer, timeline, effect controls, control channel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+effectcraft-time = { workspace = true }
+effectcraft-geom = { workspace = true }
+effectcraft-color = { workspace = true }
+effectcraft-keyframe = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-path = { workspace = true }
+effectcraft-text = { workspace = true }
+effectcraft-render = { workspace = true }
+effectcraft-engine = { workspace = true }
+effectcraft-gpu = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+rayon = { workspace = true }
+web-time = { workspace = true }
+kurbo = { workspace = true }
+image = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+sys-locale = { workspace = true }
+
+# eframe 0.36.2 refuses `accesskit` + `android-native-activity` together
+# (compile_error in its lib.rs), and the Android port needs the latter while
+# nothing in this crate uses accesskit APIs; the desktop app enables the
+# feature itself. So accesskit stays on everywhere except Android.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+eframe = { workspace = true, features = ["accesskit"] }
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["eframe", "wgpu"] }
+pollster = "0.4"
+effectcraft-host = { workspace = true }
+exr = { workspace = true }
+
+[build-dependencies]
+serde_json = { workspace = true }
+toml = "1"

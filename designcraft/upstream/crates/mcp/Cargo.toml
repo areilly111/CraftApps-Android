@@ -1,0 +1,20 @@
+[package]
+name = "designcraft-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DesignCraft MCP server: JSON-RPC 2.0 over stdio, driving a running app or a headless session"
+
+[lints]
+workspace = true
+
+[dependencies]
+designcraft-engine = { workspace = true }
+designcraft-render = { workspace = true }
+designcraft-tools = { workspace = true }
+designcraft-geom = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }

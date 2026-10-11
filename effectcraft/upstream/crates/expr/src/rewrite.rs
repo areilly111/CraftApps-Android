@@ -1,0 +1,676 @@
+//! Source-to-source rewrite that gives JavaScript After Effects' array maths.
+//!
+//! AE's legacy expression engine lets `+ - * /` operate on arrays (`value + [10, 0]`,
+//! `[1, 2] * 2`). We get the same by rewriting every binary `+ - * /` into a helper call
+//! (`__add(a, b)`, `__sub`, `__mul`, `__div`) and unary minus into `__neg(a)`; the helpers fall
+//! back to the native operator for numbers and strings, so string concatenation is unchanged.
+//! Compound assignments (`x += [1, 0]`) become `x = __add(x, (…))`.
+//!
+//! The rewriter is a small tokenizer plus a precedence-aware operand/chain parser over bracket
+//! groups. It is deliberately lenient: anything it does not understand is copied verbatim, and
+//! every newline is preserved so the engine's error line numbers match the user's text.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Ident,
+    Num,
+    Str,
+    Template,
+    Regex,
+    Punct,
+}
+
+#[derive(Clone, Debug)]
+struct Tok {
+    kind: Kind,
+    text: String,
+    /// Whitespace (comments become spaces/newlines) before the token.
+    ws: String,
+    /// A line break precedes the token.
+    nl: bool,
+}
+
+impl Tok {
+    fn is(&self, p: &str) -> bool {
+        self.kind == Kind::Punct && self.text == p
+    }
+    fn is_kw(&self, k: &[&str]) -> bool {
+        self.kind == Kind::Ident && k.contains(&self.text.as_str())
+    }
+}
+
+enum Item {
+    Tok(Tok),
+    Group { open: Tok, inner: Vec<Item>, close: Option<Tok> },
+}
+
+impl Item {
+    fn tok(&self) -> Option<&Tok> {
+        if let Item::Tok(t) = self { Some(t) } else { None }
+    }
+    fn is(&self, p: &str) -> bool {
+        self.tok().is_some_and(|t| t.is(p))
+    }
+    fn group(&self) -> Option<&str> {
+        if let Item::Group { open, .. } = self { Some(open.text.as_str()) } else { None }
+    }
+    fn ws(&self) -> &str {
+        match self {
+            Item::Tok(t) => &t.ws,
+            Item::Group { open, .. } => &open.ws,
+        }
+    }
+    fn nl(&self) -> bool {
+        match self {
+            Item::Tok(t) => t.nl,
+            Item::Group { open, .. } => open.nl,
+        }
+    }
+}
+
+/// Keywords that end an operand chain (statement or lower-precedence syntax).
+const DELIM_KW: &[&str] = &[
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "do",
+    "else",
+    "export",
+    "extends",
+    "finally",
+    "for",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "let",
+    "return",
+    "switch",
+    "throw",
+    "try",
+    "var",
+    "while",
+    "with",
+    "yield",
+    "of",
+];
+/// Prefix operators spelled as keywords.
+const PREFIX_KW: &[&str] = &["typeof", "void", "delete", "await", "new"];
+/// Keywords followed by a parenthesised header that is not an operand.
+const HEADER_KW: &[&str] = &["if", "while", "for", "switch", "catch", "with"];
+
+const PUNCT: &[&str] = &[
+    ">>>=", "...", "===", "!==", "**=", "<<=", ">>=", ">>>", "&&=", "||=", "??=", "=>", "==", "!=", "<=", ">=", "&&", "||", "??", "?.", "++", "--", "+=", "-=",
+    "*=", "/=", "%=", "&=", "|=", "^=", "**", "<<", ">>",
+];
+
+fn is_ident_start(c: char) -> bool {
+    c.is_alphabetic() || c == '_' || c == '$' || (!c.is_ascii() && !c.is_whitespace())
+}
+fn is_ident_part(c: char) -> bool {
+    is_ident_start(c) || c.is_ascii_digit()
+}
+
+/// Can a `/` after `prev` start a regular expression literal?
+fn regex_allowed(prev: Option<&Tok>) -> bool {
+    match prev {
+        None => true,
+        Some(t) => match t.kind {
+            Kind::Num | Kind::Str | Kind::Template | Kind::Regex => false,
+            Kind::Ident => t.is_kw(DELIM_KW) || t.is_kw(PREFIX_KW),
+            Kind::Punct => !matches!(t.text.as_str(), ")" | "]" | "}" | "++" | "--"),
+        },
+    }
+}
+
+fn skip_string(c: &[char], mut i: usize) -> usize {
+    let q = c[i];
+    i += 1;
+    while i < c.len() && c[i] != q && c[i] != '\n' {
+        if c[i] == '\\' {
+            i += 1;
+        }
+        i += 1;
+    }
+    (i + 1).min(c.len())
+}
+
+fn skip_template(c: &[char], mut i: usize) -> usize {
+    i += 1;
+    let mut depth = 0usize;
+    while i < c.len() {
+        match c[i] {
+            '\\' => i += 1,
+            '`' if depth == 0 => return i + 1,
+            '$' if c.get(i + 1) == Some(&'{') => {
+                depth += 1;
+                i += 1;
+            }
+            '{' if depth > 0 => depth += 1,
+            '}' if depth > 0 => depth -= 1,
+            '\'' | '"' if depth > 0 => {
+                i = skip_string(c, i);
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    c.len()
+}
+
+fn skip_number(c: &[char], mut i: usize) -> usize {
+    if c[i] == '0' && c.get(i + 1).is_some_and(|x| matches!(x, 'x' | 'X' | 'b' | 'B' | 'o' | 'O')) {
+        i += 2;
+        while i < c.len() && (c[i].is_ascii_alphanumeric() || c[i] == '_') {
+            i += 1;
+        }
+        return i;
+    }
+    let mut seen_dot = false;
+    while i < c.len() {
+        let x = c[i];
+        if x.is_ascii_digit() || x == '_' {
+            i += 1;
+        } else if x == '.' && !seen_dot {
+            seen_dot = true;
+            i += 1;
+        } else if (x == 'e' || x == 'E') && c.get(i + 1).is_some_and(|y| y.is_ascii_digit() || *y == '+' || *y == '-') {
+            i += 2;
+            while i < c.len() && c[i].is_ascii_digit() {
+                i += 1;
+            }
+            break;
+        } else {
+            break;
+        }
+    }
+    if c.get(i) == Some(&'n') {
+        i += 1;
+    }
+    i
+}
+
+fn skip_regex(c: &[char], mut i: usize) -> usize {
+    i += 1;
+    let mut class = false;
+    while i < c.len() && c[i] != '\n' {
+        match c[i] {
+            '\\' => i += 1,
+            '[' => class = true,
+            ']' => class = false,
+            '/' if !class => break,
+            _ => {}
+        }
+        i += 1;
+    }
+    i += 1;
+    while i < c.len() && is_ident_part(c[i]) {
+        i += 1;
+    }
+    i.min(c.len())
+}
+
+fn punct_len(c: &[char], i: usize) -> usize {
+    for p in PUNCT {
+        let n = p.chars().count();
+        if i + n <= c.len() && c[i..i + n].iter().copied().eq(p.chars()) {
+            // `a?.5:b` is a conditional, not optional chaining.
+            if *p == "?." && c.get(i + 2).is_some_and(|d| d.is_ascii_digit()) {
+                return 1;
+            }
+            return n;
+        }
+    }
+    1
+}
+
+fn tokenize(src: &str) -> (Vec<Tok>, String) {
+    let c: Vec<char> = src.chars().collect();
+    let mut out: Vec<Tok> = Vec::new();
+    let mut ws = String::new();
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        if ch.is_whitespace() {
+            ws.push(ch);
+            i += 1;
+            continue;
+        }
+        if ch == '/' && c.get(i + 1) == Some(&'/') {
+            while i < c.len() && c[i] != '\n' {
+                i += 1;
+            }
+            ws.push(' ');
+            continue;
+        }
+        if ch == '/' && c.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < c.len() && !(c[i] == '*' && c.get(i + 1) == Some(&'/')) {
+                if c[i] == '\n' {
+                    ws.push('\n');
+                }
+                i += 1;
+            }
+            i = (i + 2).min(c.len());
+            ws.push(' ');
+            continue;
+        }
+        let start = i;
+        let kind = if ch == '"' || ch == '\'' {
+            i = skip_string(&c, i);
+            Kind::Str
+        } else if ch == '`' {
+            i = skip_template(&c, i);
+            Kind::Template
+        } else if ch.is_ascii_digit() || (ch == '.' && c.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
+            i = skip_number(&c, i);
+            Kind::Num
+        } else if is_ident_start(ch) {
+            while i < c.len() && is_ident_part(c[i]) {
+                i += 1;
+            }
+            Kind::Ident
+        } else if ch == '/' && regex_allowed(out.last()) {
+            i = skip_regex(&c, i);
+            Kind::Regex
+        } else {
+            i += punct_len(&c, i);
+            Kind::Punct
+        };
+        let nl = ws.contains('\n');
+        out.push(Tok { kind, text: c[start..i].iter().collect(), ws: std::mem::take(&mut ws), nl });
+    }
+    (out, ws)
+}
+
+fn closer(open: &str) -> &'static str {
+    match open {
+        "(" => ")",
+        "[" => "]",
+        _ => "}",
+    }
+}
+
+/// Bracket tree. Stray closers stay as plain tokens (the engine reports the syntax error).
+fn build(toks: Vec<Tok>) -> Vec<Item> {
+    let mut stack: Vec<(Tok, Vec<Item>)> = Vec::new();
+    let mut cur: Vec<Item> = Vec::new();
+    for t in toks {
+        if t.kind == Kind::Punct && matches!(t.text.as_str(), "(" | "[" | "{") {
+            stack.push((t, std::mem::take(&mut cur)));
+        } else if t.kind == Kind::Punct
+            && matches!(t.text.as_str(), ")" | "]" | "}")
+            && stack.last().is_some_and(|(o, _)| closer(&o.text) == t.text)
+            && let Some((open, parent)) = stack.pop()
+        {
+            let inner = std::mem::replace(&mut cur, parent);
+            cur.push(Item::Group { open, inner, close: Some(t) });
+        } else {
+            cur.push(Item::Tok(t));
+        }
+    }
+    while let Some((open, parent)) = stack.pop() {
+        let inner = std::mem::replace(&mut cur, parent);
+        cur.push(Item::Group { open, inner, close: None });
+    }
+    cur
+}
+
+/// A rewritten operand or expression: leading whitespace kept apart so helper calls start where
+/// the expression did (keeps automatic semicolon insertion unchanged).
+struct Piece {
+    ws: String,
+    body: String,
+}
+
+fn raw(item: &Item) -> Piece {
+    match item {
+        Item::Tok(t) => Piece { ws: t.ws.clone(), body: t.text.clone() },
+        Item::Group { open, inner, close } => {
+            let mut body = open.text.clone();
+            body.push_str(&rewrite_seq(inner));
+            if let Some(c) = close {
+                body.push_str(&c.ws);
+                body.push_str(&c.text);
+            }
+            Piece { ws: open.ws.clone(), body }
+        }
+    }
+}
+
+fn starts_operand(items: &[Item], i: usize) -> bool {
+    match &items[i] {
+        Item::Group { open, .. } => open.text != "{",
+        Item::Tok(t) => match t.kind {
+            Kind::Num | Kind::Str | Kind::Template | Kind::Regex => true,
+            Kind::Ident => !t.is_kw(DELIM_KW),
+            Kind::Punct => matches!(t.text.as_str(), "-" | "+" | "!" | "~" | "++" | "--"),
+        },
+    }
+}
+
+/// Parse one unary/postfix operand starting at `i`.
+fn operand(items: &[Item], i: usize) -> Option<(Piece, usize)> {
+    let first = items.get(i)?;
+    if !starts_operand(items, i) {
+        return None;
+    }
+    // Prefix operators.
+    if let Some(t) = first.tok()
+        && (t.kind == Kind::Punct || t.is_kw(PREFIX_KW))
+    {
+        let (inner, j) = operand(items, i + 1)?;
+        let body = if t.is("-") {
+            if items[i + 1].tok().is_some_and(|n| n.kind == Kind::Num) {
+                format!("-{}{}", inner.ws, inner.body)
+            } else {
+                format!("__neg({}{})", inner.ws, inner.body)
+            }
+        } else {
+            let sep = if t.kind == Kind::Ident && inner.ws.is_empty() { " " } else { "" };
+            format!("{}{sep}{}{}", t.text, inner.ws, inner.body)
+        };
+        return Some((Piece { ws: t.ws.clone(), body }, j));
+    }
+    let mut p = raw(first);
+    let mut j = i + 1;
+    // `function name(args) { body }` is one atom.
+    if first.tok().is_some_and(|t| t.is_kw(&["function"])) {
+        if items.get(j).is_some_and(|x| x.is("*")) {
+            push(&mut p, &items[j]);
+            j += 1;
+        }
+        if items.get(j).and_then(Item::tok).is_some_and(|t| t.kind == Kind::Ident) {
+            push(&mut p, &items[j]);
+            j += 1;
+        }
+        for g in ["(", "{"] {
+            if items.get(j).and_then(Item::group) == Some(g) {
+                push(&mut p, &items[j]);
+                j += 1;
+            }
+        }
+    }
+    // Postfix: member access, calls, indexing, tagged templates, `x++`.
+    while let Some(it) = items.get(j) {
+        let member = it.is(".") || it.is("?.");
+        let call = matches!(it.group(), Some("(" | "[")) || it.tok().is_some_and(|t| t.kind == Kind::Template);
+        let incr = (it.is("++") || it.is("--")) && !it.nl();
+        if !(member || call || incr) {
+            break;
+        }
+        push(&mut p, it);
+        j += 1;
+        if member
+            && let Some(n) = items.get(j)
+            && (n.tok().is_some_and(|t| t.kind == Kind::Ident) || matches!(n.group(), Some("(" | "[")))
+        {
+            push(&mut p, n);
+            j += 1;
+        }
+    }
+    // Exponentiation binds tighter than `*` and is right-associative: keep it native.
+    if items.get(j).is_some_and(|x| x.is("**"))
+        && let Some((rhs, k)) = operand(items, j + 1)
+    {
+        p.body.push_str(items[j].ws());
+        p.body.push_str("**");
+        p.body.push_str(&rhs.ws);
+        p.body.push_str(&rhs.body);
+        j = k;
+    }
+    Some((p, j))
+}
+
+fn push(p: &mut Piece, item: &Item) {
+    let r = raw(item);
+    p.body.push_str(&r.ws);
+    p.body.push_str(&r.body);
+}
+
+fn helper(op: &str) -> Option<&'static str> {
+    Some(match op {
+        "+" => "__add",
+        "-" => "__sub",
+        "*" => "__mul",
+        "/" => "__div",
+        _ => return None,
+    })
+}
+
+/// Fold `a op b op c…` with `* / %` binding tighter than `+ -`.
+fn fold(operands: Vec<Piece>, ops: Vec<(String, String)>) -> Piece {
+    let mut terms: Vec<Piece> = Vec::new();
+    let mut add_ops: Vec<(String, String)> = Vec::new();
+    let mut it = operands.into_iter();
+    let mut acc = it.next().unwrap_or(Piece { ws: String::new(), body: String::new() });
+    for ((op, ws), rhs) in ops.into_iter().zip(it) {
+        if op == "+" || op == "-" {
+            terms.push(acc);
+            add_ops.push((op, ws));
+            acc = rhs;
+        } else {
+            acc = bin(acc, &op, &ws, rhs);
+        }
+    }
+    terms.push(acc);
+    let mut it = terms.into_iter();
+    let mut acc = it.next().unwrap_or(Piece { ws: String::new(), body: String::new() });
+    for ((op, ws), rhs) in add_ops.into_iter().zip(it) {
+        acc = bin(acc, &op, &ws, rhs);
+    }
+    acc
+}
+
+fn bin(a: Piece, op: &str, op_ws: &str, b: Piece) -> Piece {
+    let body = match helper(op) {
+        Some(h) => format!("{h}({}, {op_ws}{}{})", a.body, b.ws, b.body),
+        None => format!("({}{op_ws}{op}{}{})", a.body, b.ws, b.body),
+    };
+    Piece { ws: a.ws, body }
+}
+
+fn is_arith(item: &Item) -> bool {
+    item.tok().is_some_and(|t| t.kind == Kind::Punct && matches!(t.text.as_str(), "+" | "-" | "*" | "/" | "%"))
+}
+
+/// Parse `operand (op operand)*` from `i`.
+fn chain(items: &[Item], i: usize) -> Option<(Piece, usize)> {
+    let (first, mut j) = operand(items, i)?;
+    let mut operands = vec![first];
+    let mut ops = Vec::new();
+    while let Some(op) = items.get(j).filter(|x| is_arith(x)).and_then(Item::tok) {
+        let Some((rhs, k)) = operand(items, j + 1) else { break };
+        ops.push((op.text.clone(), op.ws.clone()));
+        operands.push(rhs);
+        j = k;
+    }
+    Some((fold(operands, ops), j))
+}
+
+/// End of the right-hand side of an assignment starting at `i`.
+fn assignment_end(items: &[Item], i: usize) -> usize {
+    let mut j = i;
+    while j < items.len() {
+        let it = &items[j];
+        if it.is(";") || it.is(",") {
+            break;
+        }
+        if j > i && it.nl() && !items.get(j - 1).is_some_and(|p| p.tok().is_some_and(|t| t.kind == Kind::Punct && !t.is(")") && !t.is("]"))) {
+            break;
+        }
+        j += 1;
+    }
+    j
+}
+
+fn rewrite_seq(items: &[Item]) -> String {
+    let mut out = String::new();
+    let mut i = 0;
+    while i < items.len() {
+        let it = &items[i];
+        if it.tok().is_some_and(|t| t.is_kw(HEADER_KW)) && items.get(i + 1).and_then(Item::group) == Some("(") {
+            push_piece(&mut out, raw(it));
+            push_piece(&mut out, raw(&items[i + 1]));
+            i += 2;
+            continue;
+        }
+        if let Some((p, j)) = chain(items, i) {
+            // Compound assignment: `x += v` → `x = __add(x, (v))` (the target is evaluated twice,
+            // which only matters for targets with side effects).
+            if let Some(op) = items.get(j).and_then(Item::tok).filter(|t| t.kind == Kind::Punct && matches!(t.text.as_str(), "+=" | "-=" | "*=" | "/=")) {
+                let end = assignment_end(items, j + 1);
+                let rhs = rewrite_seq(&items[j + 1..end]);
+                let h = helper(&op.text[..1]).unwrap_or("__add");
+                out.push_str(&p.ws);
+                out.push_str(&format!("{} ={}{h}({}, ({rhs}))", p.body, op.ws, p.body));
+                i = end;
+                continue;
+            }
+            push_piece(&mut out, p);
+            i = j;
+        } else {
+            push_piece(&mut out, raw(it));
+            i += 1;
+        }
+    }
+    out
+}
+
+fn push_piece(out: &mut String, p: Piece) {
+    out.push_str(&p.ws);
+    out.push_str(&p.body);
+}
+
+/// The deepest nesting (brackets, plus chains of prefix operators) an expression may have,
+/// before and after the rewrite (which nests a call per arithmetic operator). The JavaScript
+/// parser recurses per level and a 2 MiB thread overflows its stack (aborting the app) at
+/// about 60 levels, so deeper expressions are rejected with an error instead.
+pub const MAX_NESTING: usize = 32;
+
+fn nesting(toks: &[Tok]) -> usize {
+    let (mut depth, mut prefix, mut max) = (0usize, 0usize, 0usize);
+    for t in toks {
+        if t.kind == Kind::Punct && matches!(t.text.as_str(), "(" | "[" | "{") {
+            depth += 1;
+        } else if t.kind == Kind::Punct && matches!(t.text.as_str(), ")" | "]" | "}") {
+            depth = depth.saturating_sub(1);
+        }
+        let is_prefix = (t.kind == Kind::Punct && matches!(t.text.as_str(), "!" | "~" | "-" | "+")) || t.is_kw(&["typeof", "void", "delete"]);
+        prefix = if is_prefix { prefix + 1 } else { 0 };
+        max = max.max(depth + prefix);
+    }
+    max
+}
+
+/// An error when `src` nests deeper than [`MAX_NESTING`] levels (before or after the rewrite).
+pub fn check_nesting(src: &str) -> Result<(), String> {
+    let (toks, tail) = tokenize(src);
+    if nesting(&toks) > MAX_NESTING {
+        return Err(too_deep());
+    }
+    let mut out = rewrite_seq(&build(toks));
+    out.push_str(&tail);
+    if nesting(&tokenize(&out).0) > MAX_NESTING {
+        return Err(too_deep());
+    }
+    Ok(())
+}
+
+fn too_deep() -> String {
+    format!("Error: expression is nested too deeply (more than {MAX_NESTING} levels of brackets or chained operators)")
+}
+
+/// Rewrite an expression's source for array-aware arithmetic. Line breaks are preserved.
+/// An expression nested deeper than [`MAX_NESTING`] becomes a `throw` of that error.
+pub fn rewrite(src: &str) -> String {
+    let (toks, tail) = tokenize(src);
+    if nesting(&toks) > MAX_NESTING {
+        return throw_too_deep();
+    }
+    let mut out = rewrite_seq(&build(toks));
+    out.push_str(&tail);
+    if nesting(&tokenize(&out).0) > MAX_NESTING {
+        return throw_too_deep();
+    }
+    out
+}
+
+fn throw_too_deep() -> String {
+    format!("throw new RangeError({:?})", too_deep().trim_start_matches("Error: "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_NESTING, check_nesting, rewrite};
+
+    /// Compare ignoring spaces (newlines are significant).
+    fn n(s: &str) -> String {
+        s.replace(' ', "")
+    }
+
+    #[test]
+    fn precedence_and_unary() {
+        assert_eq!(n(&rewrite("a + b * c")), n("__add(a,  __mul(b,  c))"));
+        assert_eq!(n(&rewrite("-x * 2")), n("__mul(__neg(x),  2)"));
+        assert_eq!(n(&rewrite("-2*x")), n("__mul(-2, x)"));
+        assert_eq!(n(&rewrite("a % b + c")), n("__add((a % b),  c)"));
+        assert_eq!(n(&rewrite("a - b - c")), n("__sub(__sub(a,  b),  c)"));
+    }
+
+    #[test]
+    fn calls_members_and_groups() {
+        assert_eq!(n(&rewrite("f(a+b)[0] / 2")), n("__div(f(__add(a, b))[0],  2)"));
+        assert_eq!(n(&rewrite("thisComp.layer(\"A\").transform.position[0] + 1")), n("__add(thisComp.layer(\"A\").transform.position[0],  1)"));
+        assert_eq!(n(&rewrite("x = a ? b + 1 : c")), n("x = a ? __add(b,  1) : c"));
+        assert_eq!(n(&rewrite("if (a) -b; else c")), n("if (a) __neg(b); else c"));
+        assert_eq!(n(&rewrite("return -x")), n("return __neg(x)"));
+    }
+
+    #[test]
+    fn strings_regex_comments_and_lines() {
+        assert_eq!(n(&rewrite("'a+b' + \"c\"")), n("__add('a+b',  \"c\")"));
+        assert_eq!(n(&rewrite("s.replace(/a+b/g, '')")), n("s.replace(/a+b/g, '')"));
+        assert_eq!(n(&rewrite("a // x + y\n+ b")), n("__add(a,  \n b)"));
+        assert_eq!(rewrite("a /* + */ * b").matches("__mul").count(), 1);
+        assert_eq!(rewrite("x\n\n+ 1").lines().count(), 3);
+        assert_eq!(n(&rewrite("`${a+b}` + 1")), n("__add(`${a+b}`,  1)"));
+    }
+
+    #[test]
+    fn compound_assignment_and_functions() {
+        assert_eq!(n(&rewrite("x += [1, 0];")), n("x = __add(x, ( [1, 0]));"));
+        assert_eq!(n(&rewrite("function f(a) { return a * 2 }")), n("function f(a) { return __mul(a,  2) }"));
+        assert_eq!(n(&rewrite("var g = (a) => a - 1")), n("var g = (a) => __sub(a,  1)"));
+        assert_eq!(n(&rewrite("typeof a + 'x'")), n("__add(typeof a,  'x')"));
+        assert_eq!(n(&rewrite("i++ + 1")), n("__add(i++,  1)"));
+        assert_eq!(n(&rewrite("2 ** 3 * 2")), n("__mul(2 ** 3,  2)"));
+    }
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_stack_overflow() {
+        // Each level costs the JavaScript parser stack: ~60 nested brackets overflowed a 2 MiB
+        // thread and aborted the app; 100 000 overflowed the rewriter itself.
+        for n in [MAX_NESTING + 1, 100, 100_000] {
+            let parens = "(".repeat(n) + "1" + &")".repeat(n);
+            let unclosed = "[".repeat(n);
+            let sum = vec!["x"; n + 1].join(" + ");
+            let nots = "!".repeat(n) + "x";
+            for src in [parens, unclosed, sum, nots] {
+                assert!(rewrite(&src).starts_with("throw new RangeError("), "{n}");
+                assert!(check_nesting(&src).is_err());
+                assert!(crate::check_syntax(&src).unwrap_err().contains("nested too deeply"));
+            }
+        }
+        let ok = "(".repeat(MAX_NESTING - 2) + "a + b" + &")".repeat(MAX_NESTING - 2);
+        assert!(check_nesting(&ok).is_ok());
+        assert!(crate::check_syntax(&ok).is_ok());
+        assert!(check_nesting(&vec!["x"; 20].join(" + ")).is_ok());
+    }
+}

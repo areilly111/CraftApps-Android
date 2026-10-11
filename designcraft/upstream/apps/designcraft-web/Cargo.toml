@@ -1,0 +1,32 @@
+[package]
+name = "designcraft-web"
+description = "DesignCraft in the browser (eframe web runner, WebGPU with WebGL2 fallback)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "designcraft-web"
+path = "src/main.rs"
+
+[dependencies]
+designcraft-engine = { workspace = true }
+designcraft-format = { workspace = true }
+form_urlencoded = "1.2"
+designcraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# `wgpu` pulls egui-wgpu's defaults: WebGPU plus the WebGL2 fallback.
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit"] }
+rfd = { workspace = true }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }

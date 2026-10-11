@@ -1,0 +1,375 @@
+use std::collections::HashMap;
+
+use super::extrude::{BevelStyle, ExtrudeParams, Outline, extrude, group_contours};
+use super::prim::{PrimParams, PrimitiveKind, mesh};
+use super::triangulate::{signed_area, triangulate};
+use super::*;
+
+fn fixture(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+}
+
+fn resolver(name: &str) -> Option<Vec<u8>> {
+    std::fs::read(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).ok()
+}
+
+fn check_quad(m: &Model) {
+    assert_eq!(m.nodes.len(), 2);
+    assert_eq!(m.roots, vec![0]);
+    assert_eq!(m.nodes[0].children, vec![1]);
+    assert_eq!(m.meshes.len(), 1);
+    let p = &m.meshes[0].primitives[0];
+    assert_eq!(p.positions.len(), 4);
+    assert_eq!(p.indices, vec![0, 1, 2, 0, 2, 3]);
+    assert_eq!(p.uvs[0], [0.0, 1.0]);
+    assert_eq!(p.normals[2], [0.0, 0.0, 1.0]);
+    let mat = &m.materials[0];
+    assert_eq!(mat.name, "Painted");
+    assert_eq!(mat.base_color, [1.0, 0.5, 0.25, 1.0]);
+    assert!((mat.metallic - 0.25).abs() < 1e-6 && (mat.roughness - 0.75).abs() < 1e-6);
+    assert_eq!(mat.emissive, [0.1, 0.2, 0.3]);
+    assert!(mat.double_sided);
+    let t = &m.textures[mat.base_color_tex.unwrap().texture];
+    assert_eq!((t.width, t.height), (2, 2));
+    assert_eq!(t.data[0], [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(t.data[3], [1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(t.wrap, [Wrap::Clamp, Wrap::Repeat]);
+    // Hierarchy: scale 2 under a +1 Y translation.
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((lo[0] + 1.0).abs() < 1e-9 && (hi[0] - 1.0).abs() < 1e-9);
+    assert!((lo[1] - 0.0).abs() < 1e-9 && (hi[1] - 2.0).abs() < 1e-9);
+    // Animation: root translation (0,1,0) → (2,1,0) over 1 s.
+    assert_eq!(m.animations.len(), 1);
+    assert_eq!(m.animations[0].name, "Move");
+    assert!((m.animations[0].duration() - 1.0).abs() < 1e-9);
+    let inst = m.instances(Some(0), 0.5);
+    assert_eq!(inst.len(), 1);
+    let c = inst[0].world.apply(vec3(0.0, 0.0, 0.0));
+    assert!((c.x - 1.0).abs() < 1e-6 && (c.y - 1.0).abs() < 1e-6, "{c:?}");
+}
+
+#[test]
+fn gltf_with_data_uris() {
+    let m = gltf::parse(&fixture("quad.gltf"), &|_| None).unwrap();
+    check_quad(&m);
+}
+
+#[test]
+fn glb_matches_gltf() {
+    let m = load("quad.glb", &fixture("quad.glb"), &resolver).unwrap();
+    check_quad(&m);
+    let g = gltf::parse(&fixture("quad.gltf"), &|_| None).unwrap();
+    assert_eq!(m.meshes, g.meshes);
+    assert_eq!(m.materials, g.materials);
+}
+
+#[test]
+fn gltf_errors_are_reported() {
+    assert!(gltf::parse(b"{\"asset\":{\"version\":\"1.0\"}}", &|_| None).is_err());
+    assert!(gltf::parse(b"not json", &|_| None).is_err());
+    let missing = br#"{"asset":{"version":"2.0"},"buffers":[{"uri":"nowhere.bin","byteLength":4}]}"#;
+    assert!(matches!(gltf::parse(missing, &|_| None), Err(ModelError::Missing(_))));
+    assert!(gltf::split_glb(b"glTF\x01\0\0\0").is_err());
+}
+
+#[test]
+fn base64_and_uri_decoding() {
+    assert_eq!(gltf::base64_decode("aGVsbG8=").unwrap(), b"hello");
+    assert_eq!(gltf::base64_decode("aGVsbG8").unwrap(), b"hello");
+    assert_eq!(gltf::uri_decode("my%20file.bin"), "my file.bin");
+}
+
+#[test]
+fn obj_with_mtl() {
+    let m = load("cube.obj", &fixture("cube.obj"), &resolver).unwrap();
+    assert_eq!(m.materials.len(), 2);
+    let red = &m.materials[0];
+    assert_eq!(red.name, "Red");
+    assert_eq!(red.base_color, [1.0, 0.0, 0.0, 1.0]);
+    assert!((red.roughness - (2.0f32 / 100.0).sqrt()).abs() < 1e-6);
+    assert_eq!(red.metallic, 0.0);
+    let gold = &m.materials[1];
+    assert_eq!((gold.metallic, gold.roughness), (1.0, 0.3));
+    let prims = &m.meshes[0].primitives;
+    assert_eq!(prims.len(), 2);
+    assert_eq!(prims[0].material, Some(0));
+    assert_eq!(prims.iter().map(|p| p.triangle_count()).sum::<usize>(), 12);
+    // Four unique (v, vt, vn) corners per face.
+    assert_eq!(m.vertex_count(), 24);
+    // Every face is wound counter-clockwise from outside (face normal agrees with vn).
+    for p in prims {
+        for t in p.indices.chunks(3) {
+            let (a, b, c) = (p.positions[t[0] as usize], p.positions[t[1] as usize], p.positions[t[2] as usize]);
+            let f = cross(sub(b, a), sub(c, a));
+            assert!(dot(f, p.normals[t[0] as usize]) > 0.0);
+        }
+    }
+    let (lo, hi) = m.bounds().unwrap();
+    assert_eq!((lo, hi), ([-0.5; 3], [0.5; 3]));
+    // V is flipped to the image's top-down rows.
+    assert_eq!(prims[0].uvs[0], [0.0, 1.0]);
+}
+
+#[test]
+fn obj_without_normals_gets_them() {
+    let src = b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    let m = obj::parse(src, &|_| None).unwrap();
+    let p = &m.meshes[0].primitives[0];
+    assert_eq!(p.normals, vec![[0.0, 0.0, 1.0]; 3]);
+    assert!(obj::parse(b"v 0 0 0\n", &|_| None).is_err());
+}
+
+#[test]
+fn channel_interpolation_modes() {
+    let mut c = Channel { node: 0, path: ChannelPath::Translation, interp: Interp::Step, times: vec![0.0, 1.0], values: vec![0.0, 0.0, 0.0, 10.0, 0.0, 0.0] };
+    assert_eq!(c.sample(0.7).unwrap()[0], 0.0);
+    c.interp = Interp::Linear;
+    assert!((c.sample(0.7).unwrap()[0] - 7.0).abs() < 1e-9);
+    assert_eq!(c.sample(5.0).unwrap()[0], 10.0);
+    // Cubic spline with zero tangents: smoothstep.
+    c.interp = Interp::CubicSpline;
+    c.values = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    assert!((c.sample(0.5).unwrap()[0] - 5.0).abs() < 1e-9);
+    assert!((c.sample(0.25).unwrap()[0] - 10.0 * (3.0 * 0.0625 - 2.0 * 0.015625)).abs() < 1e-9);
+    // Rotation: slerp keeps unit length, half way around Z.
+    let r =
+        Channel { node: 0, path: ChannelPath::Rotation, interp: Interp::Linear, times: vec![0.0, 1.0], values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0] };
+    let q = r.sample(0.5).unwrap();
+    assert!((q[2] - (0.5f64).sqrt()).abs() < 1e-9 && (q[3] - (0.5f64).sqrt()).abs() < 1e-9);
+}
+
+#[test]
+fn skinning_moves_vertices_with_joints() {
+    let mut p = mesh(PrimitiveKind::Plane, &PrimParams { size: [2.0, 2.0, 0.0], ..Default::default() });
+    p.joints = vec![[0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]];
+    p.weights = vec![[1.0, 0.0, 0.0, 0.0]; 4];
+    let mut m = Model::single(Mesh { name: "s".into(), primitives: vec![p] }, vec![Material::default()]);
+    m.nodes[0].skin = Some(0);
+    m.nodes.push(Node::default());
+    m.nodes.push(Node { translation: [0.0, 0.0, 5.0], ..Node::default() });
+    m.roots = vec![0, 1, 2];
+    m.skins.push(Skin { joints: vec![1, 2], inverse_bind: vec![Mat4::IDENTITY; 2] });
+    let inst = m.instances(None, 0.0);
+    let pr = &inst[0].mesh.primitives[0];
+    assert_eq!(skin_point(&inst[0], pr, 0, pr.positions[0])[2], 0.0);
+    assert_eq!(skin_point(&inst[0], pr, 1, pr.positions[1])[2], 5.0);
+}
+
+/// Edges of a mesh welded by position: (undirected edge → uses, directed edge → uses).
+fn edge_stats(p: &Primitive) -> (HashMap<(u32, u32), usize>, HashMap<(u32, u32), usize>) {
+    let mut weld: HashMap<[u32; 3], u32> = HashMap::new();
+    let ids: Vec<u32> = p
+        .positions
+        .iter()
+        .map(|q| {
+            let k = q.map(|v| (v + 0.0).to_bits());
+            let n = weld.len() as u32;
+            *weld.entry(k).or_insert(n)
+        })
+        .collect();
+    let mut und = HashMap::new();
+    let mut dir = HashMap::new();
+    for t in p.indices.chunks(3) {
+        let v = [ids[t[0] as usize], ids[t[1] as usize], ids[t[2] as usize]];
+        if v[0] == v[1] || v[1] == v[2] || v[0] == v[2] {
+            continue;
+        }
+        for k in 0..3 {
+            let (a, b) = (v[k], v[(k + 1) % 3]);
+            *und.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+            *dir.entry((a, b)).or_insert(0) += 1;
+        }
+    }
+    (und, dir)
+}
+
+fn assert_watertight(p: &Primitive) {
+    let (und, dir) = edge_stats(p);
+    for (e, n) in &und {
+        assert_eq!(*n, 2, "edge {e:?} used {n} times");
+    }
+    for (e, n) in &dir {
+        assert_eq!(*n, 1, "directed edge {e:?} used {n} times (inconsistent winding)");
+    }
+}
+
+/// Signed volume (positive when faces wind outward).
+fn volume(p: &Primitive) -> f64 {
+    p.indices
+        .chunks(3)
+        .map(|t| {
+            let [a, b, c] = [0, 1, 2].map(|k| p.positions[t[k] as usize].map(|v| v as f64));
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+        })
+        .sum()
+}
+
+/// Vertex normals agree with the faces they belong to.
+fn assert_normals_outward(p: &Primitive) {
+    for t in p.indices.chunks(3) {
+        let (a, b, c) = (p.positions[t[0] as usize], p.positions[t[1] as usize], p.positions[t[2] as usize]);
+        let f = cross(sub(b, a), sub(c, a));
+        if dot(f, f) < 1e-10 {
+            continue;
+        }
+        for &i in t {
+            let n = p.normals[i as usize];
+            assert!((dot(n, n) - 1.0).abs() < 1e-3, "normal not unit");
+            assert!(dot(f, n) > 0.0, "normal {n:?} faces away from triangle {f:?}");
+        }
+    }
+}
+
+#[test]
+fn primitive_vertex_counts_and_normals() {
+    let pr = PrimParams { segments: 16, rings: 8, ..Default::default() };
+    let cases = [
+        (PrimitiveKind::Cube, 24, 36),
+        (PrimitiveKind::Plane, 4, 6),
+        (PrimitiveKind::Sphere, 17 * 9, 6 * 16 * 7),
+        (PrimitiveKind::Torus, 17 * 9, 6 * 16 * 8),
+        (PrimitiveKind::Cylinder, 2 * 17 + 2 * 18, 6 * 16 + 2 * 3 * 16),
+        (PrimitiveKind::Cone, 2 * 17 + 18, 3 * 16 + 3 * 16),
+    ];
+    for (k, v, i) in cases {
+        let m = mesh(k, &pr);
+        assert_eq!((m.positions.len(), m.indices.len()), (v, i), "{k:?}");
+        assert_eq!(m.normals.len(), v);
+        assert_eq!(m.uvs.len(), v);
+        assert_eq!(m.tangents.len(), v);
+        assert_normals_outward(&m);
+        if k != PrimitiveKind::Plane {
+            assert!(volume(&m) > 0.0, "{k:?} winds inward");
+            assert_watertight(&m);
+        }
+    }
+    // Volumes approach the analytic ones.
+    let cube = mesh(PrimitiveKind::Cube, &PrimParams { size: [2.0, 3.0, 4.0], ..Default::default() });
+    assert!((volume(&cube) - 24.0).abs() < 1e-4);
+    let s = mesh(PrimitiveKind::Sphere, &PrimParams { radius: 1.0, segments: 128, rings: 64, ..Default::default() });
+    assert!((volume(&s) - 4.0 / 3.0 * std::f64::consts::PI).abs() < 0.01);
+}
+
+#[test]
+fn triangulation_covers_polygon_with_hole() {
+    let outer = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [5.0, 12.0], [0.0, 10.0]];
+    let hole = vec![[3.0, 3.0], [3.0, 7.0], [7.0, 7.0], [7.0, 3.0]];
+    let pts: Vec<[f64; 2]> = outer.iter().chain(hole.iter()).copied().collect();
+    let tris = triangulate(&outer, std::slice::from_ref(&hole));
+    let area: f64 = tris.iter().map(|t| signed_area(&[pts[t[0]], pts[t[1]], pts[t[2]]]) * 0.5).sum();
+    let expect = signed_area(&outer).abs() * 0.5 - 16.0;
+    assert!((area - expect).abs() < 1e-9, "{area} vs {expect}");
+    assert!(tris.iter().all(|t| signed_area(&[pts[t[0]], pts[t[1]], pts[t[2]]]) >= 0.0));
+    // A concave "C".
+    let c = vec![[0.0, 0.0], [6.0, 0.0], [6.0, 2.0], [2.0, 2.0], [2.0, 4.0], [6.0, 4.0], [6.0, 6.0], [0.0, 6.0]];
+    let tris = triangulate(&c, &[]);
+    let area: f64 = tris.iter().map(|t| signed_area(&[c[t[0]], c[t[1]], c[t[2]]]) * 0.5).sum();
+    assert!((area - 28.0).abs() < 1e-9);
+}
+
+fn ring_outline() -> Outline {
+    let circle =
+        |r: f64, n: usize| -> Vec<[f64; 2]> { (0..n).map(|i| (i as f64 / n as f64) * std::f64::consts::TAU).map(|a| [r * a.cos(), r * a.sin()]).collect() };
+    Outline { outer: circle(100.0, 48), holes: vec![circle(50.0, 32)] }
+}
+
+#[test]
+fn extrusion_is_watertight_with_outward_normals() {
+    let square = Outline { outer: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], holes: vec![] };
+    for bevel in BevelStyle::ALL {
+        for o in [square.clone(), ring_outline()] {
+            let p = ExtrudeParams { bevel, bevel_depth: 8.0, hole_bevel: 0.5, depth: 40.0 };
+            let m = extrude(std::slice::from_ref(&o), &p);
+            assert_watertight(&m);
+            assert_normals_outward(&m);
+            assert!(volume(&m) > 0.0, "{bevel:?}: inward winding");
+            let (lo, hi) = m.bounds().unwrap();
+            assert!(lo[2].abs() < 1e-6 && (hi[2] - 40.0).abs() < 1e-4);
+        }
+    }
+    // Without a bevel the square block's volume is exact.
+    let m = extrude(&[square], &ExtrudeParams { bevel: BevelStyle::None, bevel_depth: 0.0, hole_bevel: 1.0, depth: 10.0 });
+    assert!((volume(&m) - 100_000.0).abs() < 1e-2);
+    // Front cap faces the camera (−z), back cap away.
+    assert!(m.normals.iter().any(|n| n[2] < -0.99) && m.normals.iter().any(|n| n[2] > 0.99));
+}
+
+#[test]
+fn bevels_shrink_the_caps() {
+    let square = Outline { outer: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], holes: vec![] };
+    let m = extrude(std::slice::from_ref(&square), &ExtrudeParams { bevel: BevelStyle::Angular, bevel_depth: 10.0, hole_bevel: 1.0, depth: 50.0 });
+    // Front cap vertices (z = 0) are inset by the bevel.
+    let front: Vec<_> = m.positions.iter().filter(|p| p[2] == 0.0).collect();
+    assert!(front.iter().all(|p| p[0] >= 9.999 && p[0] <= 90.001));
+    // The widest ring (the walls) still reaches the outline.
+    assert!(m.positions.iter().any(|p| p[0] == 0.0 && p[2] == 10.0));
+    // Convex bevels have more profile steps than angular ones.
+    let c = extrude(std::slice::from_ref(&square), &ExtrudeParams { bevel: BevelStyle::Convex, bevel_depth: 10.0, hole_bevel: 1.0, depth: 50.0 });
+    assert!(c.positions.len() > m.positions.len());
+}
+
+#[test]
+fn contours_group_into_outlines_by_nesting() {
+    let sq = |x: f64, y: f64, s: f64| vec![[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
+    // "O" (outer + hole) next to an island inside another hole.
+    let g = group_contours(vec![sq(0.0, 0.0, 10.0), sq(2.0, 2.0, 6.0), sq(20.0, 0.0, 10.0), sq(22.0, 2.0, 6.0), sq(24.0, 4.0, 2.0)]);
+    assert_eq!(g.len(), 3);
+    assert_eq!(g.iter().map(|o| o.holes.len()).sum::<usize>(), 2);
+}
+
+#[test]
+fn gltf_cameras_and_punctual_lights() {
+    let doc = r#"{
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0, 2]}],
+        "nodes": [
+            {"name": "Rig", "translation": [0, 0, 10], "children": [1]},
+            {"name": "Cam", "camera": 0, "translation": [1, 0, 0]},
+            {"name": "Sun", "rotation": [-0.7071068, 0, 0, 0.7071068], "extensions": {"KHR_lights_punctual": {"light": 1}}},
+            {"name": "Orphan", "camera": 1}
+        ],
+        "cameras": [
+            {"type": "perspective", "name": "Shot", "perspective": {"yfov": 0.5, "znear": 0.1, "aspectRatio": 1.5}},
+            {"type": "orthographic", "orthographic": {"xmag": 2, "ymag": 1, "znear": 0, "zfar": 10}}
+        ],
+        "extensions": {"KHR_lights_punctual": {"lights": [
+            {"type": "spot", "name": "Key", "color": [1, 0.5, 0.25], "intensity": 3, "spot": {"innerConeAngle": 0.2, "outerConeAngle": 0.4}},
+            {"type": "directional", "intensity": 2}
+        ]}}
+    }"#;
+    let m = crate::gltf::parse(doc.as_bytes(), &|_| None).unwrap();
+    assert_eq!(m.cameras.len(), 2);
+    assert_eq!(m.cameras[0].name, "Shot");
+    assert_eq!(m.cameras[0].projection, CameraProjection::Perspective { yfov: 0.5, aspect: Some(1.5), znear: 0.1 });
+    assert_eq!(m.cameras[1].projection, CameraProjection::Orthographic { xmag: 2.0, ymag: 1.0 });
+    assert_eq!(m.lights.len(), 2);
+    assert_eq!(m.lights[0].kind, ModelLightKind::Spot { inner: 0.2, outer: 0.4 });
+    assert_eq!(m.lights[0].color, [1.0, 0.5, 0.25]);
+    assert_eq!(m.lights[1].kind, ModelLightKind::Directional);
+    assert_eq!(m.lights[1].name, "Light 2");
+    // Only nodes of the scene are placed; the camera node inherits its parent's translation.
+    let cams = m.placed(false, None, 0.0);
+    assert_eq!(cams.len(), 1);
+    assert_eq!((cams[0].index, cams[0].node), (0, 1));
+    let eye = cams[0].world.apply(vec3(0.0, 0.0, 0.0));
+    assert!((eye.x - 1.0).abs() < 1e-9 && (eye.z - 10.0).abs() < 1e-9, "{eye:?}");
+    let lights = m.placed(true, None, 0.0);
+    assert_eq!(lights.len(), 1);
+    // −90° about X: the light's −Z axis points down (−Y in glTF).
+    let d = lights[0].world.apply_vec(vec3(0.0, 0.0, -1.0));
+    assert!((d.y + 1.0).abs() < 1e-6, "{d:?}");
+}
+
+#[test]
+fn stacked_extrusions_move_towards_the_camera() {
+    let square = Outline { outer: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]], holes: vec![] };
+    let p = ExtrudeParams { bevel: BevelStyle::None, bevel_depth: 0.0, hole_bevel: 1.0, depth: 10.0 };
+    let base = extrude(std::slice::from_ref(&square), &p);
+    let up = super::extrude::extrude_stacked(std::slice::from_ref(&square), &p, 3);
+    assert_eq!(base.indices, up.indices);
+    for (a, b) in base.positions.iter().zip(&up.positions) {
+        assert!((a[2] - b[2] - 3.0 * super::extrude::STACK_GAP as f32).abs() < 1e-6);
+        assert_eq!((a[0], a[1]), (b[0], b[1]));
+    }
+}

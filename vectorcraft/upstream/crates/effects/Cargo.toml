@@ -1,0 +1,22 @@
+[package]
+name = "vectorcraft-effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VectorCraft live effects evaluated to geometry"
+
+[lints]
+workspace = true
+
+[dependencies]
+vectorcraft-geom = { workspace = true }
+vectorcraft-three-d = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-pathops = { workspace = true }
+vectorcraft-text = { workspace = true }
+vectorcraft-plugins = { workspace = true }
+kurbo = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+vectorcraft-color = { workspace = true }

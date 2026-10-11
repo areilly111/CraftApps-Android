@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: packaging/macos/package.sh substitutes @VERSION@ (full, e.g. 0.2.0-rc.1),
+     @SHORT_VERSION@ (numeric X.Y.Z) and @BUILD_SHA@. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>EffectCraft</string>
+  <key>CFBundleName</key>
+  <string>EffectCraft</string>
+  <key>CFBundleExecutable</key>
+  <string>EffectCraft</string>
+  <key>CFBundleIdentifier</key>
+  <string>ai.storyteller.effectcraft</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@SHORT_VERSION@</string>
+  <key>EffectCraftVersion</key>
+  <string>@VERSION@</string>
+  <key>EffectCraftBuildCommit</key>
+  <string>@BUILD_SHA@</string>
+  <key>CFBundleIconFile</key>
+  <string>EffectCraft</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.graphics-design</string>
+  <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. Big Sur is the first release on
+       Apple silicon and has the Metal feature set wgpu targets. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSRequiresAquaSystemAppearance</key>
+  <false/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © the EffectCraft authors. MIT OR Apache-2.0.</string>
+
+  <!-- Projects open from Finder (double-click, Open With, Dock); src/apple_events.rs. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>EffectCraft Project</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>EffectCraft</string>
+      <key>LSItemContentTypes</key>
+      <array><string>ai.storyteller.effectcraft.document</string></array>
+    </dict>
+  </array>
+  <!-- EffectCraft's own format: the project (.ecproj) and its XML copy (.ecprojx). -->
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.effectcraft.document</string>
+      <key>UTTypeDescription</key>
+      <string>EffectCraft Project</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeIconFile</key>
+      <string>EffectCraft</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>ecproj</string>
+          <string>ecprojx</string>
+        </array>
+        <key>public.mime-type</key>
+        <array><string>application/x-effectcraft</string></array>
+      </dict>
+    </dict>
+  </array>
+  <!-- Types macOS may not know; the system's own declaration wins when it has one. -->
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.adobe.photoshop-large-image</string>
+      <key>UTTypeDescription</key>
+      <string>Photoshop Large Document</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.image</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>psb</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.effectcraft.qoi</string>
+      <key>UTTypeDescription</key>
+      <string>QOI Image</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.image</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>qoi</string></array>
+      </dict>
+    </dict>
+  </array>
+
+</dict>
+</plist>
