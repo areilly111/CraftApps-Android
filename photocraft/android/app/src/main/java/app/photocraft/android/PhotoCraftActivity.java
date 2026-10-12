@@ -49,7 +49,6 @@ public class PhotoCraftActivity extends NativeActivity {
         boolean penRelevant =
                 tool == MotionEvent.TOOL_TYPE_STYLUS
                         || tool == MotionEvent.TOOL_TYPE_ERASER
-                        || tool == MotionEvent.TOOL_TYPE_PALM
                         || (buttons
                                         & (MotionEvent.BUTTON_STYLUS_PRIMARY
                                                 | MotionEvent.BUTTON_STYLUS_SECONDARY))

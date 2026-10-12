@@ -824,6 +824,7 @@ dependencies = [
  "jni",
  "log",
  "ndk-context",
+ "serde",
  "serde_json",
 ]
 
