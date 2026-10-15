@@ -12,6 +12,18 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use filmcraft_ui_egui::AudioOut;
 
+/// Append a line to /sdcard/FilmCraft-audio-log.txt for debugging (user requested file logging).
+fn audio_log(msg: &str) {
+    use std::io::Write;
+    if let Ok(external) = std::env::var("EXTERNAL_STORAGE") {
+        let path = format!("{external}/FilmCraft-audio-log.txt");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{msg}");
+        }
+    }
+    log::info!("{msg}");
+}
+
 pub struct AndroidAudioOut {
     stream: Option<cpal::Stream>,
     played: Arc<AtomicU64>,
@@ -22,7 +34,16 @@ pub struct AndroidAudioOut {
 
 impl AndroidAudioOut {
     pub fn new() -> Self {
-        AndroidAudioOut { stream: None, played: Arc::new(AtomicU64::new(0)), failed: Arc::new(AtomicBool::new(false)), rate: 0, channels: 0 }
+        // Query the device for its default config so sample_rate()/channels()
+        // return valid values even before start() is called. This fixes the
+        // chicken-and-egg where start_source_audio() checks sample_rate()==0
+        // and returns early, preventing start() from ever being called.
+        let (rate, channels) = cpal::default_host()
+            .default_output_device()
+            .and_then(|dev| dev.default_output_config().ok())
+            .map(|cfg| (cfg.sample_rate().0, cfg.channels()))
+            .unwrap_or((0, 0));
+        AndroidAudioOut { stream: None, played: Arc::new(AtomicU64::new(0)), failed: Arc::new(AtomicBool::new(false)), rate, channels }
     }
 
     fn stream_error(failed: &Arc<AtomicBool>, e: cpal::StreamError) {
@@ -45,6 +66,7 @@ impl AudioOut for AndroidAudioOut {
         let cfg = dev.default_output_config().map_err(|e| format!("no output config: {e}"))?;
         let channels = cfg.channels() as usize;
         let rate = cfg.sample_rate().0;
+        audio_log(&format!("audio: device channels={channels} rate={rate} format={:?}", cfg.sample_format()));
         if channels == 0 || rate == 0 {
             return Err("the output device returned an invalid channel count or sample rate".into());
         }
@@ -56,15 +78,22 @@ impl AudioOut for AndroidAudioOut {
         let played = self.played.clone();
         let failed = self.failed.clone();
         let stream = match cfg.sample_format() {
-            cpal::SampleFormat::F32 => dev.build_output_stream(
+            cpal::SampleFormat::F32 => {
+                audio_log("audio: using F32 format");
+                dev.build_output_stream(
                 &config,
                 move |buf: &mut [f32], _| {
                     fill(buf, channels);
+                    // Log first few samples to see if there's actual audio data
+                    let sum: f32 = buf.iter().take(100).map(|s| s.abs()).sum();
+                    if sum > 0.001 {
+                        log::debug!("audio: F32 callback, buf len={}, sum={sum}", buf.len());
+                    }
                     played.fetch_add((buf.len() / channels.max(1)) as u64, Ordering::SeqCst);
                 },
                 move |e| Self::stream_error(&failed, e),
                 None,
-            ),
+            )},
             // The device doesn't take f32: convert through an f32 staging buffer.
             cpal::SampleFormat::I16 => dev.build_output_stream(
                 &config,
@@ -103,7 +132,7 @@ impl AudioOut for AndroidAudioOut {
         .map_err(|e| format!("couldn't open the audio output: {e}"))?;
         stream.play().map_err(|e| format!("couldn't start audio output: {e}"))?;
         self.stream = Some(stream);
-        log::info!("audio output: {channels} channels at {rate} Hz");
+        audio_log(&format!("audio output: {channels} channels at {rate} Hz"));
         Ok(rate)
     }
 

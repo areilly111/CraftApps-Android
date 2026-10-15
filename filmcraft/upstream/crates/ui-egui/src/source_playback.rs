@@ -174,9 +174,9 @@ impl FilmcraftApp {
         };
         audio.stop();
         let cursor = self.session.state.source_playhead.to_units_floor(i64::from(sr));
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         let fill = crate::play_ahead::spawn(mix, cursor, sr, audio.channels(), self.source_playback.clock.audio_stats.clone());
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
         let fill = {
             let (mix, mut cursor) = (mix, cursor);
             Box::new(move |buf: &mut [f32], ch: usize| {
