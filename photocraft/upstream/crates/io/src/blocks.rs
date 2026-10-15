@@ -214,6 +214,13 @@ pub(crate) fn enum_of<'a>(d: &'a Descriptor, key: &str) -> Option<&'a [u8]> {
     }
 }
 
+/// A gradient's interpolation method code. Photoshop (27.11, checked by saving gradient fill
+/// layers) stores it as the enum `gradientsInterpolationMethod` (`Perc`, `Lnr `, `Smoo`, `Gcls`);
+/// `gs99` is kept as a fallback.
+pub(crate) fn gradient_method(d: &Descriptor) -> Option<&[u8]> {
+    enum_of(d, "gradientsInterpolationMethod").or_else(|| enum_of(d, "gs99"))
+}
+
 pub(crate) fn bool_of(d: &Descriptor, key: &str) -> bool {
     matches!(d.get(key), Some(Value::Boolean(true)))
 }
@@ -245,7 +252,7 @@ pub(crate) fn gradient_style_value(s: GradientStyle) -> Value {
 pub(crate) type Stops = (Vec<(f32, Color)>, Vec<(f32, f32)>);
 
 /// Stops of a `Grdn` descriptor, baked to Photoshop's interpolation (smoothness `Intr`, stop
-/// midpoints, and the parent's `gs99` interpolation method when given).
+/// midpoints, and the parent's interpolation method when given, see [`gradient_method`]).
 pub(crate) fn gradient_stops_with(grad: &Descriptor, method: Option<&[u8]>) -> Stops {
     let raw = gradient_stops_raw(grad);
     let stops = if raw.stops.len() >= 2 {
@@ -406,7 +413,7 @@ pub fn fill_from_desc(key: &[u8; 4], d: &Descriptor) -> Option<Fill> {
         b"GdFl" => {
             let angle = num(d.get("Angl")).unwrap_or(90.0) as f32;
             let scale = num(d.get("Scl ")).map_or(1.0, |v| v as f32 / 100.0);
-            let raw = get_desc(d, "Grad").map(|g| gradient_stops_editable(g, enum_of(d, "gs99")));
+            let raw = get_desc(d, "Grad").map(|g| gradient_stops_editable(g, gradient_method(d)));
             let (mut stops, midpoints) = raw.map(|r| (r.stops, r.mids)).unwrap_or_default();
             // Opacity stops with Photoshop's smoothness and opacity midpoints applied (raw when
             // the interpolation is plain); none when fully opaque.
@@ -575,6 +582,22 @@ pub(crate) fn parse_prefix_versioned(data: &[u8]) -> Option<Descriptor> {
     VersionedDescriptor::parse_prefix(data).ok().map(|(v, _)| v.descriptor)
 }
 
+/// The source-space box Photoshop maps onto a placed layer's `Trnf` quad: the bounding box of a
+/// single-patch custom warp's 16 control points, which may spill past the source, else the source
+/// rect `0..w × 0..h`. Mapping the source rect instead counts the overhang twice and stretches the
+/// placement. A degenerate or non-finite box falls back to the source rect.
+pub(crate) fn placed_frame(warp: Option<&photocraft_geom::warp::Warp>, w: f64, h: f64) -> [f64; 4] {
+    let rect = [0.0, 0.0, w, h];
+    let Some(m) = warp.filter(|wp| wp.style == photocraft_geom::warp::WarpStyle::Custom).and_then(|wp| wp.mesh.as_ref()).filter(|m| m.points.len() == 16)
+    else {
+        return rect;
+    };
+    let inf = f64::INFINITY;
+    let b = m.points.iter().fold([inf, inf, -inf, -inf], |b, [x, y]| [b[0].min(*x), b[1].min(*y), b[2].max(*x), b[3].max(*y)]);
+    let ok = b.iter().all(|v| v.is_finite()) && b[2] - b[0] > 1e-9 && b[3] - b[1] > 1e-9;
+    if ok { b } else { rect }
+}
+
 /// Smart object identifier and transform from `SoLd`/`PlLd` (best effort).
 pub fn parse_smart(key: &[u8; 4], data: &[u8]) -> (String, Affine) {
     // SoLd: 'soLD' + version(4) + versioned descriptor.
@@ -589,7 +612,10 @@ pub fn parse_smart(key: &[u8; 4], data: &[u8]) -> (String, Affine) {
         let p: Vec<f64> = pts.iter().filter_map(|v| num(Some(v))).collect();
         let (w, h) = (num(sz.get("Wdth")).unwrap_or(0.0), num(sz.get("Hght")).unwrap_or(0.0));
         if p.len() == 8 && w > 0.0 && h > 0.0 {
-            affine = Affine { m: [(p[2] - p[0]) / w, (p[3] - p[1]) / w, (p[6] - p[0]) / h, (p[7] - p[1]) / h, p[0], p[1]] };
+            let [x0, y0, x1, y1] = placed_frame(parse_placed_warp(key, data).as_ref(), w, h);
+            let (bw, bh) = (x1 - x0, y1 - y0);
+            let (a, b, c, d) = ((p[2] - p[0]) / bw, (p[3] - p[1]) / bw, (p[6] - p[0]) / bh, (p[7] - p[1]) / bh);
+            affine = Affine { m: [a, b, c, d, p[0] - a * x0 - c * y0, p[1] - b * x0 - d * y0] };
         }
     }
     (id, affine)
@@ -654,6 +680,31 @@ mod tests {
         let (k, data) = super::write_fill(&Fill::gradient(vec![(0.0, red), (1.0, Color::WHITE)], 0.0, 1.0, GradientStyle::Linear, false));
         let Some(Fill::Gradient { opacity_stops, .. }) = super::parse_fill(&k, &data) else { panic!("gradient") };
         assert!(opacity_stops.is_empty());
+    }
+
+    /// Photoshop 27.11 stores a gradient's method as the enum `gradientsInterpolationMethod`
+    /// (seen in gradient fill layers saved by scripted Photoshop): a black→white Linear gradient
+    /// is at 188 of 255 halfway (measured), where Classic gives 128. The key used to be read as
+    /// `gs99`, which Photoshop doesn't write, so every gradient opened as Classic.
+    #[test]
+    fn gradient_fill_reads_the_interpolation_method() {
+        use photocraft_color::Color;
+        use photocraft_doc::{Fill, GradientStyle};
+        use photocraft_psd::descriptor::{Id, Value};
+        let f = Fill::gradient(vec![(0.0, Color::BLACK), (1.0, Color::WHITE)], 0.0, 1.0, GradientStyle::Linear, false);
+        let (k, data) = super::write_fill(&f);
+        let d = super::parse_prefix_versioned(&data).unwrap();
+        let mid = |code: &str| {
+            let d =
+                d.clone().with("gradientsInterpolationMethod", Value::Enumerated { type_id: Id::new("gradientInterpolationMethodType"), value: Id::new(code) });
+            let back = super::fill_from_desc(&k, &d).unwrap();
+            let ramp = photocraft_compose::gradient_fill::Ramp::new(&back).unwrap();
+            (ramp.sample(0.5)[0] * 255.0).round()
+        };
+        assert_eq!(mid("Gcls"), 128.0);
+        assert!((mid("Lnr ") - 188.0).abs() <= 1.0, "Linear: {}", mid("Lnr "));
+        assert!((mid("Perc") - 99.0).abs() <= 2.0, "Perceptual: {}", mid("Perc"));
+        assert!((mid("Smoo") - 99.0).abs() <= 2.0, "Smooth: {}", mid("Smoo"));
     }
 
     #[test]
@@ -865,6 +916,63 @@ mod more_tests {
         assert_eq!(id, "uuid-1");
         assert_eq!(a.m, [2.0, 0.0, 0.0, 2.0, 10.0, 20.0]);
         assert_eq!(parse_smart(b"PlLd", &data).0, "");
+    }
+
+    /// `SoLd` data with a 50 × 25 source, the quad `trnf` and, when given, a custom warp whose
+    /// 16 control points are `pts`.
+    fn sold_with_warp(trnf: [f64; 8], pts: Option<&[[f64; 2]]>) -> Vec<u8> {
+        use photocraft_psd::descriptor::ObjectArray;
+        let e = |t: &str, v: &str| Value::Enumerated { type_id: Id::new(t), value: Id::new(v) };
+        let mut d = Descriptor::new("null")
+            .with("Idnt", Value::Text(UnicodeString::new_nul("uuid-1")))
+            .with("Trnf", Value::List(trnf.map(Value::Double).to_vec()))
+            .with("Sz  ", Value::Descriptor(Descriptor::new("Pnt ").with("Wdth", Value::Double(50.0)).with("Hght", Value::Double(25.0))));
+        if let Some(pts) = pts {
+            let bounds = Descriptor::new("Rctn")
+                .with("Top ", Value::Double(0.0))
+                .with("Left", Value::Double(0.0))
+                .with("Btom", Value::Double(25.0))
+                .with("Rght", Value::Double(50.0));
+            let mesh = Descriptor::new("null")
+                .with("Hrzn", Value::UnitFloats { unit: *b"#Pxl", values: pts.iter().map(|p| p[0]).collect() })
+                .with("Vrtc", Value::UnitFloats { unit: *b"#Pxl", values: pts.iter().map(|p| p[1]).collect() });
+            let warp = Descriptor::new("warp").with("warpStyle", e("warpStyle", "warpCustom")).with("bounds", Value::Descriptor(bounds)).with(
+                "customEnvelopeWarp",
+                Value::Descriptor(Descriptor::new("customEnvelopeWarp").with("meshPoints", Value::ObjectArray(ObjectArray { prefix: 16, body: mesh }))),
+            );
+            d = d.with("warp", Value::Descriptor(warp));
+        }
+        let mut data = b"soLD".to_vec();
+        data.extend_from_slice(&4u32.to_be_bytes());
+        data.extend(VersionedDescriptor::new(d).to_bytes());
+        data
+    }
+
+    /// Photoshop's `Trnf` is the image of the custom warp's control-point bounding box, not of the
+    /// source rect: a mesh spilling to x = -10, y = -5 and x = 60 frames a 70 × 30 box.
+    #[test]
+    fn smart_transform_maps_the_warp_control_box_onto_the_quad() {
+        let mut pts = photocraft_geom::warp::BezierMesh::identity([0.0, 0.0, 50.0, 25.0], 1, 1).points;
+        pts[0] = [-10.0, -5.0];
+        pts[15] = [60.0, 25.0];
+        let quad = [100.0, 200.0, 240.0, 200.0, 240.0, 260.0, 100.0, 260.0];
+        let (_, a) = parse_smart(b"SoLd", &sold_with_warp(quad, Some(&pts)));
+        assert_eq!(a.m, [2.0, 0.0, 0.0, 2.0, 120.0, 210.0]);
+        // Without a warp the source rect is the frame, as before.
+        assert_eq!(parse_smart(b"SoLd", &sold_with_warp(quad, None)).1.m, [2.8, 0.0, 0.0, 2.4, 100.0, 200.0]);
+    }
+
+    /// A custom mesh with no area (every control point on one spot) can't frame the quad: the
+    /// source rect does, with no division by zero.
+    #[test]
+    fn smart_transform_with_a_degenerate_warp_box_uses_the_source_rect() {
+        let quad = [100.0, 200.0, 240.0, 200.0, 240.0, 260.0, 100.0, 260.0];
+        let (_, a) = parse_smart(b"SoLd", &sold_with_warp(quad, Some(&[[7.0, 7.0]; 16])));
+        assert_eq!(a.m, [2.8, 0.0, 0.0, 2.4, 100.0, 200.0]);
+        let mut warp = photocraft_geom::warp::Warp::preset(photocraft_geom::warp::WarpStyle::Custom, 0.0, [0.0, 0.0, 50.0, 25.0]);
+        warp.mesh = Some(photocraft_geom::warp::BezierMesh { us: vec![0.0, 1.0], vs: vec![0.0, 1.0], points: vec![[f64::NAN, 1.0]; 16] });
+        assert_eq!(placed_frame(Some(&warp), 50.0, 25.0), [0.0, 0.0, 50.0, 25.0]);
+        assert_eq!(placed_frame(None, 50.0, 25.0), [0.0, 0.0, 50.0, 25.0]);
     }
 
     #[test]

@@ -30,7 +30,7 @@ fn images(d: &Document) -> Vec<(&Node, &ImageObject)> {
     art(d)
         .into_iter()
         .filter_map(|n| match &n.kind {
-            NodeKind::Image(im) => Some((n, im)),
+            NodeKind::Image(im) => Some((n, &**im)),
             _ => None,
         })
         .collect()

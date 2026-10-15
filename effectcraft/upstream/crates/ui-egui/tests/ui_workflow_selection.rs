@@ -177,7 +177,6 @@ fn effect_scrubbing_uses_adaptive_resolution_and_settles_on_release() {
     h.state_mut().session.execute("layer.select", json!({"layers":[id.0]})).unwrap();
     h.state_mut().session.execute("effect.apply", json!({"effect":"Gaussian Blur"})).unwrap();
     h.state_mut().session.execute("view.fastPreviewMode", json!({"mode":"adaptive"})).unwrap();
-    h.state_mut().ui.viewer.res = effectcraft_ui_egui::state::Resolution::Auto;
     let ctx = h.ctx.clone();
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.panel", json!({"panel":"effectControls"})).unwrap();
     h.run_steps(3);
@@ -188,12 +187,12 @@ fn effect_scrubbing_uses_adaptive_resolution_and_settles_on_release() {
     h.run_steps(2);
     assert!(h.state().ui.viewer.property_interacting);
     assert!(h.state().viewer_scale(1.0, 1.0) < 1.0);
-    h.state_mut().ui.viewer.res = effectcraft_ui_egui::state::Resolution::Full;
+    h.state_mut().session.execute("view.res.full", json!({})).unwrap();
     assert_eq!(h.state().viewer_scale(1.0, 1.0), 1.0);
     pointer(&mut h, a + vec2(30.0, 0.0), false, Modifiers::NONE);
     h.run_steps(2);
     assert!(!h.state().ui.viewer.property_interacting);
-    h.state_mut().ui.viewer.res = effectcraft_ui_egui::state::Resolution::Auto;
+    h.state_mut().session.execute("view.res.auto", json!({})).unwrap();
     assert_eq!(h.state().viewer_scale(1.0, 1.0), 1.0);
 }
 
@@ -429,4 +428,83 @@ fn timeline_selected_effect_row_highlights() {
     click(&mut h, name.center(), Modifiers::NONE);
     assert!(h.state().session.state.selected_props.contains(&(id, fx)), "the click selects the effect");
     assert!(highlighted(&h), "the selected effect's row is highlighted");
+}
+
+/// Right-clicking a layer in the Timeline keeps the selection when the layer is part of it,
+/// so the context menu's commands act on every selected layer; right-clicking an unselected
+/// layer selects only it (After Effects). Reported on Discord: Pre-compose and Delete from the
+/// menu acted on the right-clicked layer only (#878).
+#[test]
+fn timeline_context_menu_acts_on_the_whole_selection() {
+    let right_click = |h: &mut Harness<'_, EffectcraftApp>, p: Pos2| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerMoved(p));
+            h.input_mut().events.push(Event::PointerButton { pos: p, button: PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+            h.step();
+        }
+        h.run_steps(3);
+    };
+    let row = |h: &Harness<'_, EffectcraftApp>, id: LayerId| {
+        let r = rect(h, &format!("timeline.layer.{}.row", id.0));
+        pos2(r.min.x + 210.0, r.center().y)
+    };
+    let bar = |h: &Harness<'_, EffectcraftApp>, id: LayerId| rect(h, &format!("timeline.layer.{}.bar", id.0)).center();
+    let mut h = harness();
+    let ids: Vec<LayerId> = h.state().session.active_comp().unwrap().layers.iter().map(|l| l.id).collect();
+    // Outline row: Delete removes both selected layers.
+    h.state_mut().session.execute("layer.select", json!({"layers":[ids[0].0, ids[1].0]})).unwrap();
+    h.run_steps(3);
+    let p = row(&h, ids[1]);
+    right_click(&mut h, p);
+    assert_eq!(h.state().session.state.selected_layers, vec![ids[0], ids[1]]);
+    h.get_by_label("Delete").click();
+    h.run_steps(3);
+    let left: Vec<LayerId> = h.state().session.active_comp().unwrap().layers.iter().map(|l| l.id).collect();
+    assert_eq!(left, vec![ids[2], ids[3]]);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    // Layer bar: same, with Duplicate.
+    h.state_mut().session.execute("layer.select", json!({"layers":[ids[2].0, ids[3].0]})).unwrap();
+    h.run_steps(3);
+    let p = bar(&h, ids[3]);
+    right_click(&mut h, p);
+    h.get_by_label("Duplicate").click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.active_comp().unwrap().layers.len(), 6);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    // An unselected row: right-clicking selects only it.
+    h.state_mut().session.execute("layer.select", json!({"layers":[ids[0].0, ids[1].0]})).unwrap();
+    h.run_steps(3);
+    let p = row(&h, ids[3]);
+    right_click(&mut h, p);
+    assert_eq!(h.state().session.state.selected_layers, vec![ids[3]]);
+}
+
+/// The Project panel's Move to Project Root acts on every selected item when the right-clicked
+/// item is part of the selection, as Delete and Label do.
+#[test]
+fn project_context_move_to_root_acts_on_the_whole_selection() {
+    let mut h = harness();
+    let solids: Vec<u64> = {
+        let p = &h.state().session.project;
+        p.items.values().filter(|i| matches!(i.kind, effectcraft_engine::project::ItemKind::Solid(_))).map(|i| i.id.0).collect()
+    };
+    assert!(solids.len() >= 2);
+    let folder = h.state_mut().session.execute("project.newFolder", json!({"name":"Bin"})).unwrap()["item"].as_u64().unwrap();
+    h.state_mut().session.execute("project.move", json!({"items": solids, "folder": folder})).unwrap();
+    h.state_mut().ui.project_open_folders.insert(folder);
+    h.state_mut().session.execute("project.select", json!({"items": [solids[0], solids[1]]})).unwrap();
+    h.run_steps(3);
+    let p = rect(&h, &format!("project.item.{}.name", solids[1])).center();
+    for pressed in [true, false] {
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.input_mut().events.push(Event::PointerButton { pos: p, button: PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(3);
+    h.get_by_label("Move to Project Root").click();
+    h.run_steps(3);
+    let project = &h.state().session.project;
+    for id in &solids[..2] {
+        assert_eq!(project.item(effectcraft_engine::project::ItemId(*id)).unwrap().parent, None);
+    }
 }

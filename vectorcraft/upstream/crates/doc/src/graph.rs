@@ -80,6 +80,122 @@ impl GraphKind {
     }
 }
 
+/// A graph design (Object › Graph › Design…): named art that graphs draw in place of their default marks.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GraphDesign {
+    pub name: String,
+    pub art: std::sync::Arc<crate::Node>,
+}
+
+impl GraphDesign {
+    /// Most designs a document keeps, objects in one design's art, and characters in a design's name.
+    pub const MAX: usize = 1000;
+    pub const MAX_NODES: usize = 2000;
+    pub const MAX_NAME: usize = 64;
+
+    /// A design name cleaned up: trimmed, without control characters, at most [`Self::MAX_NAME`] long; `None` when
+    /// nothing is left.
+    pub fn clean_name(name: &str) -> Option<String> {
+        let n: String = name.trim().chars().filter(|c| !c.is_control()).take(Self::MAX_NAME).collect();
+        Some(n.trim().to_string()).filter(|n| !n.is_empty())
+    }
+
+    /// `art` as plain design art: a graph inside it becomes the plain group it draws as, so a marker never holds a
+    /// graph of its own (that its commands would then edit).
+    pub fn plain_art(art: &crate::Node) -> crate::Node {
+        let mut n = art.clone();
+        {
+            let mut e = n.extras_mut();
+            e.graph = None;
+            e.series_index = None;
+        }
+        if let Some(ch) = n.children_mut() {
+            let old = std::mem::take(ch);
+            *ch = old.iter().map(|c| std::sync::Arc::new(Self::plain_art(c))).collect();
+        }
+        n
+    }
+}
+
+impl crate::Document {
+    /// The graph designs a file gave, made safe to list and draw: at most [`GraphDesign::MAX`], each with a clean,
+    /// unique name, art of at most [`GraphDesign::MAX_NODES`] objects and no graph inside.
+    pub fn tidy_graph_designs(&mut self) {
+        let mut kept: Vec<GraphDesign> = vec![];
+        for d in std::mem::take(&mut self.graph_designs) {
+            if kept.len() >= GraphDesign::MAX {
+                break;
+            }
+            let Some(name) = GraphDesign::clean_name(&d.name) else { continue };
+            if kept.iter().any(|k| k.name == name) || d.art.count() > GraphDesign::MAX_NODES {
+                continue;
+            }
+            kept.push(GraphDesign { name, art: std::sync::Arc::new(GraphDesign::plain_art(&d.art)) });
+        }
+        self.graph_designs = kept;
+    }
+}
+
+/// The character style a graph's labels keep through regeneration once formatted (Format the text in graphs): the
+/// value axis numbers, the category labels (category axis, radar spokes, pie names) and the legend labels (beside or
+/// across the top, or in pie wedges). `None` draws the default 9 pt black.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LabelStyles {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub values: Option<crate::CharStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub categories: Option<crate::CharStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legend: Option<crate::CharStyle>,
+}
+
+impl LabelStyles {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Graph Type › Position for pie graphs with several pies: the same size (Even), sized by their totals (Ratio), or
+/// stacked one on another, sized by their totals (Stacked).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PiePosition {
+    #[default]
+    Even,
+    Ratio,
+    Stacked,
+}
+
+/// Graph Type › Sort for pie graphs: wedges in data order (None), largest first in each pie (All), or in the first
+/// pie's largest-first order in every pie (First).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PieSort {
+    #[default]
+    None,
+    All,
+    First,
+}
+
+macro_rules! ids {
+    ($t:ty { $($v:ident => $id:literal),* }) => {
+        impl $t {
+            pub fn id(self) -> &'static str {
+                match self { $(Self::$v => $id),* }
+            }
+            pub fn parse(s: &str) -> Option<Self> {
+                [$(Self::$v),*].into_iter().find(|k| k.id().eq_ignore_ascii_case(s))
+            }
+            fn is_default(&self) -> bool {
+                *self == Self::default()
+            }
+        }
+    };
+}
+ids!(PiePosition { Even => "even", Ratio => "ratio", Stacked => "stacked" });
+ids!(PieSort { None => "none", All => "all", First => "first" });
+
 /// Graph Type › Value Axis: which side of the plot the value axis is drawn on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,9 +288,9 @@ pub struct GraphSpec {
     /// in a version that doesn't know blanks. Cells past the end of a short row are blank too.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub blanks: Vec<[usize; 2]>,
-    /// Column/bar width as a % of the available category width (90).
+    /// Column/bar width as a % of the available category width (90); past 100 the columns overlap.
     pub column_width: f64,
-    /// Cluster width as a % (80).
+    /// Cluster width as a % (80); past 100 the clusters overlap.
     pub cluster_width: f64,
     /// Legend on the right (Graph Type options: Add Legend Across Top = false).
     pub legend: bool,
@@ -200,6 +316,35 @@ pub struct GraphSpec {
     pub right_axis_min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub right_axis_max: Option<f64>,
+    /// The labels' character styles, kept from formatting them.
+    #[serde(skip_serializing_if = "LabelStyles::is_default")]
+    pub label_styles: LabelStyles,
+    /// Graph Type › First Row in Front (each series' first category drawn over the next when columns overlap) and
+    /// First Column in Front (the first series drawn over the others); Draw Filled Lines (lines as filled bands).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub first_row_in_front: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub first_column_in_front: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub filled_lines: bool,
+    /// Graph Type › Add Drop Shadow (behind columns, bars, lines and pie wedges) and Add Legend Across Top (the
+    /// legend in rows above the plot instead of a column on its right).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub drop_shadow: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub legend_across_top: bool,
+    /// Pie graphs: Legends in Wedges (the series labels inside their wedges instead of a legend beside the pies),
+    /// Position and Sort.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pie_legend_in_wedges: bool,
+    #[serde(skip_serializing_if = "PiePosition::is_default")]
+    pub pie_position: PiePosition,
+    #[serde(skip_serializing_if = "PieSort::is_default")]
+    pub pie_sort: PieSort,
+    /// Object › Graph › Marker: the graph design each series' data points (and legend swatch) are drawn with, by
+    /// series index, for line, scatter and radar series; `None` and missing entries draw the default square.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub series_markers: Vec<Option<String>>,
     /// Graph Type › Tick Marks for the value axis (the left one, or the bottom one of bar graphs) and the right one:
     /// length, and tick marks per division (0 and 1 = one, at the labels).
     #[serde(skip_serializing_if = "TickLength::is_short")]
@@ -302,6 +447,16 @@ impl Default for GraphSpec {
             right_ticks: 0,
             right_axis_min: None,
             right_axis_max: None,
+            series_markers: vec![],
+            label_styles: LabelStyles::default(),
+            first_row_in_front: false,
+            first_column_in_front: false,
+            filled_lines: false,
+            drop_shadow: false,
+            legend_across_top: false,
+            pie_legend_in_wedges: false,
+            pie_position: PiePosition::Even,
+            pie_sort: PieSort::None,
             tick_length: TickLength::Short,
             tick_marks: 1,
             right_tick_length: TickLength::Short,

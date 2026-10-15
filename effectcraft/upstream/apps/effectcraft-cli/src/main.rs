@@ -117,6 +117,9 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
                                            (app.project, comps, layers, properties…); prints writeLn
                                            output and the result; errors exit 1 with file:line:col
   mcp [--autosave | --bridge PORT]         MCP server (JSON-RPC over stdio); --autosave preserves unsaved headless work
+      [--automation-read-root DIR] [--automation-write-root DIR]
+                                           confine the agent's file access: reads under a read or write root,
+                                           writes under a write root (each repeatable); scripts are refused
 options: --project F.ecproj | --demo | --empty   --save | --save-as F   --bridge PORT   --json   --gpu
 <comp>: id or name, '-' = active comp; <layer>: id, '#n' or name; <value>: JSON or bare string";
 
@@ -163,6 +166,9 @@ const VALUED: &[&str] = &[
     "--webm-codec",
     "--audio-bitrate",
     "--opus-app",
+    // mcp
+    "--automation-read-root",
+    "--automation-write-root",
 ];
 
 /// Options without a value. Any other `--option` is a usage error.
@@ -231,6 +237,10 @@ impl Args {
     }
     fn flag(&self, k: &str) -> bool {
         self.opts.iter().any(|(o, _)| o == k)
+    }
+    /// Every value of a repeatable option, in order.
+    fn opts(&self, k: &str) -> Vec<&str> {
+        self.opts.iter().filter(|(o, _)| o == k).filter_map(|(_, v)| v.as_deref()).collect()
     }
     fn opt(&self, k: &str) -> Option<&str> {
         self.opts.iter().rev().find(|(o, _)| o == k).and_then(|(_, v)| v.as_deref())
@@ -595,7 +605,12 @@ fn run(cmd: &str, args: &Args, json_out: bool) -> Result<(), Failure> {
             if args.flag("--autosave") && args.opt("--bridge").is_some() {
                 return usage_err("--autosave is for headless MCP; the bridged app owns its auto-saves");
             }
-            let b = backend(args, false)?;
+            let mut b = backend(args, false)?;
+            let (read, write) = (args.opts("--automation-read-root"), args.opts("--automation-write-root"));
+            if !read.is_empty() || !write.is_empty() {
+                let roots = |r: Vec<&str>| r.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+                b.confine(effectcraft_automation::confine::Confinement::new(&roots(read), &roots(write))?);
+            }
             let server = McpServer::new(b);
             let mut server = if args.flag("--autosave") {
                 let root =

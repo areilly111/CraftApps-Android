@@ -177,7 +177,13 @@ fn prepared_exports_run_on_another_thread() {
 
 /// Issue #78: a GPU render whose work never ran (a driver that drops a submission without an
 /// error) gave an all-black export. The export must come from the CPU instead — the same
-/// image — with the reason recorded.
+/// image — with the reason recorded on the export itself.
+///
+/// Issue #675: this test runs beside every other engine test, many of them rendering on the GPU.
+/// It asks only about its own export (`Exported::gpu_fallback`), never the process-wide
+/// `lightcraft_gpu::last_fallback` another thread's render overwrites, and the simulated failure
+/// switches the GPU off for this thread alone, so neither the fault nor `reset_failures` reaches
+/// the other tests.
 #[test]
 fn export_falls_back_to_the_cpu_when_gpu_work_is_lost() {
     let mut s = Session::with_demo();
@@ -192,18 +198,26 @@ fn export_falls_back_to_the_cpu_when_gpu_work_is_lost() {
     let gpu = lightcraft_gpu::available();
     let healthy = mean(&export_photo(&mut s, id, &o, 1).unwrap().bytes);
     lightcraft_gpu::inject_fault(lightcraft_gpu::Fault::DropWork);
-    let faulted = export_photo(&mut s, id, &o, 1).unwrap().bytes;
+    let faulted = export_photo(&mut s, id, &o, 1).unwrap();
     if gpu {
-        let why = lightcraft_gpu::last_fallback().unwrap_or_default();
+        let why = faulted.gpu_fallback.clone().unwrap_or_default();
         assert!(why.contains("incomplete"), "{why}");
-        // the GPU is off for the process now: this export renders on the CPU
+        // the GPU is off for this thread now: the next export is not even tried on it
         assert!(!lightcraft_gpu::available());
+        assert!(lightcraft_gpu::unavailable_reason().unwrap_or_default().contains("incomplete"), "{:?}", lightcraft_gpu::unavailable_reason());
+        // the thread's own `inject_fault` stopped only its own GPU use: the others still have it
+        let elsewhere = std::thread::spawn(|| (lightcraft_gpu::available(), lightcraft_gpu::unavailable_reason())).join().unwrap();
+        assert_eq!(elsewhere, (true, None), "a simulated failure must not switch the GPU off for the other threads");
+    } else {
+        assert_eq!(faulted.gpu_fallback, None);
     }
-    let cpu = export_photo(&mut s, id, &o, 1).unwrap().bytes;
+    let cpu = export_photo(&mut s, id, &o, 1).unwrap();
+    assert_eq!(cpu.gpu_fallback, None, "not tried on the GPU: no fallback to report");
     lightcraft_gpu::reset_failures();
+    assert_eq!(lightcraft_gpu::available(), gpu, "reset_failures gives this thread the GPU back");
     let px = |b: &[u8]| lightcraft_codecs::decode(b, Default::default()).unwrap().image.data;
-    assert!(px(&faulted) == px(&cpu), "the fallback is the CPU render");
-    let m = mean(&faulted);
+    assert!(px(&faulted.bytes) == px(&cpu.bytes), "the fallback is the CPU render");
+    let m = mean(&faulted.bytes);
     assert!(m > 0.02, "not black: mean {m}");
     assert!((m - healthy).abs() < 0.01, "GPU {healthy} vs CPU {m}");
 }
@@ -439,4 +453,409 @@ fn hdr_avif_export_is_pq_rec2020() {
     assert!(hdr.bytes.windows(4).any(|w| w == b"clli"), "content light level box");
     // a photo without an HDR edit exports as an ordinary (sRGB) AVIF
     assert!(nclx(&sdr.bytes).is_none_or(|c| c[3] != 16));
+}
+
+/// "Remove location info" holds for the file-copying formats too: the sidecar and the DNG's
+/// packet carry no location, and an original that embeds GPS is refused rather than copied.
+#[test]
+fn remove_location_holds_for_original_and_dng_exports() {
+    let dir = temp_dir("export-noloc");
+    let gps =
+        lightcraft_meta::Metadata { gps: Some(lightcraft_meta::Gps { latitude: 48.85, longitude: 2.35, altitude: None }), ..Default::default() };
+    // a raw with no embedded GPS, located in the catalog
+    let raw = dir.join("Raw.dng");
+    std::fs::write(&raw, synthetic_dng_with(None, Default::default())).unwrap();
+    // a JPEG with GPS in its EXIF
+    let jpg = dir.join("Geo.jpg");
+    let img = lightcraft_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 8) as u8, (y * 10) as u8, 90, 255]);
+    let exif = lightcraft_meta::write_exif(&gps);
+    let meta = lightcraft_codecs::EncodeMeta { exif: Some(&exif), ..Default::default() };
+    std::fs::write(&jpg, lightcraft_codecs::encode_jpeg(&lightcraft_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &meta).unwrap())
+        .unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [raw.to_string_lossy(), jpg.to_string_lossy()]})).unwrap();
+    let id = |s: &Session, n: &str| s.catalog.photos().find(|p| p.file_name == n).unwrap().id;
+    let (rid, jid) = (id(&s, "Raw.dng"), id(&s, "Geo.jpg"));
+    s.execute("photo.setMeta", &json!({"ids": [rid.0, jid.0], "gps": [48.85, 2.35], "city": "Paris"})).unwrap();
+    let opts = |f: &str, remove: bool| ExportOptions::from_json(&json!({"format": f, "removeLocation": remove}));
+
+    // original raw: the sidecar keeps the location unless it is removed
+    let side = |e: &crate::export::Exported| lightcraft_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
+    let kept = side(&export_photo(&mut s, rid, &opts("original", false), 1).unwrap());
+    assert!(kept.gps.is_some() && kept.city.is_some());
+    let gone = side(&export_photo(&mut s, rid, &opts("original", true), 1).unwrap());
+    assert!(gone.gps.is_none() && gone.city.is_none(), "{gone:?}");
+
+    // dng: the embedded packet
+    let e = export_photo(&mut s, rid, &opts("dng", false), 1).unwrap();
+    assert!(lightcraft_meta::extract(&e.bytes).gps.is_some());
+    let e = export_photo(&mut s, rid, &opts("dng", true), 1).unwrap();
+    let m = lightcraft_meta::extract(&e.bytes);
+    assert!(m.gps.is_none() && m.city.is_none(), "{m:?}");
+
+    // original JPEG embedding GPS: copied as is normally, refused when the location must go
+    let e = export_photo(&mut s, jid, &opts("original", false), 1).unwrap();
+    assert!(lightcraft_meta::extract(&e.bytes).gps.is_some());
+    let err = export_photo(&mut s, jid, &opts("original", true), 1).err().unwrap();
+    assert!(err.contains("can't remove the location") && err.contains("export as JPEG"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An original raw whose own metadata holds GPS is refused under "Remove location info".
+#[test]
+fn remove_location_refuses_a_raw_that_embeds_gps() {
+    let dir = temp_dir("export-noloc-raw");
+    let gps = lightcraft_meta::Metadata { gps: Some(lightcraft_meta::Gps { latitude: 10.0, longitude: 20.0, altitude: None }), ..Default::default() };
+    let raw = dir.join("Geo.dng");
+    let bytes = synthetic_dng_with(Some(&lightcraft_meta::write_xmp(&gps, None)), Default::default());
+    assert!(lightcraft_meta::extract(&bytes).gps.is_some(), "fixture embeds GPS");
+    std::fs::write(&raw, bytes).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [raw.to_string_lossy()]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    let err = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "original", "removeLocation": true})), 1).err().unwrap();
+    assert!(err.contains("can't remove the location"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn hdr_png_export_is_16_bit_pq_rec2020() {
+    let mut s = Session::with_demo();
+    let id = sunset(&mut s);
+    let o = ExportOptions::from_json(&json!({"longEdge": 160, "format": "png", "hdr": true}));
+    assert!(o.hdr_output());
+    assert_eq!(o.effective_space(), lightcraft_pipeline::OutputSpace::Rec2020);
+    // a photo without an HDR edit exports as an ordinary (sRGB, 8-bit) PNG
+    let sdr = export_photo(&mut s, id, &o, 1).unwrap();
+    assert!(!sdr.bytes.windows(4).any(|w| w == b"cICP"));
+    assert_eq!(sdr.bytes[24], 8, "8-bit");
+    s.execute("develop.hdr", &json!({"enabled": true, "maxEv": 2})).unwrap();
+    let hdr = export_photo(&mut s, id, &o, 1).unwrap();
+    let at = hdr.bytes.windows(4).position(|w| w == b"cICP").expect("cICP chunk");
+    assert_eq!(&hdr.bytes[at + 4..at + 8], &[9, 16, 0, 1], "BT.2020, PQ, RGB, full range");
+    assert_eq!(hdr.bytes[24], 16, "16-bit");
+    // the highlights above SDR white are there: MaxCLL beyond the 203 cd/m² of SDR white
+    let at = hdr.bytes.windows(4).position(|w| w == b"cLLI").expect("cLLI chunk");
+    let max_cll = u32::from_be_bytes(hdr.bytes[at + 4..at + 8].try_into().unwrap()) as f32 / 10_000.0;
+    assert!(max_cll > 250.0 && max_cll <= 4.0 * 203.0 + 1.0, "MaxCLL {max_cll}");
+    // HDR output off: the HDR edit exports its SDR rendition
+    let plain = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"longEdge": 160, "format": "png"})), 1).unwrap();
+    assert!(!plain.bytes.windows(4).any(|w| w == b"cICP"));
+}
+
+#[test]
+fn hdr_jxl_export_is_pq_rec2020() {
+    let mut s = Session::with_demo();
+    let id = sunset(&mut s);
+    let o = ExportOptions::from_json(&json!({"longEdge": 160, "format": "jxl", "hdr": true, "quality": 90}));
+    assert!(o.hdr_output());
+    let sdr = export_photo(&mut s, id, &o, 1).unwrap();
+    s.execute("develop.hdr", &json!({"enabled": true, "maxEv": 2})).unwrap();
+    let hdr = export_photo(&mut s, id, &o, 1).unwrap();
+    let encoding = |b: &[u8]| {
+        let img = jxl_oxide::JxlImage::builder().read(std::io::Cursor::new(b)).unwrap();
+        let m = &img.image_header().metadata;
+        (format!("{:?}", m.colour_encoding), m.bit_depth.bits_per_sample())
+    };
+    let (c, bits) = encoding(&hdr.bytes);
+    assert!(c.contains("Bt2100") && c.contains("Pq"), "{c}");
+    assert_eq!(bits, 16);
+    // a photo without an HDR edit exports as an ordinary SDR file
+    let (c, _) = encoding(&sdr.bytes);
+    assert!(!c.contains("Pq"), "{c}");
+}
+
+#[test]
+fn jxl_export_writes_metadata() {
+    let mut s = Session::with_demo();
+    let id = sunset(&mut s);
+    let o = ExportOptions::from_json(&json!({"longEdge": 120, "format": "jxl", "quality": 80}));
+    let e = export_photo(&mut s, id, &o, 1).unwrap();
+    let d = lightcraft_codecs::decode(&e.bytes, Default::default()).unwrap();
+    assert_eq!(d.width.max(d.height), 120);
+    assert!(d.xmp.as_deref().is_some_and(|x| x.contains("Golden horizon")), "title in the XMP box");
+    assert!(d.exif.is_some(), "EXIF box");
+}
+
+/// Issue #236: Add to Apple Photos after an export. A fake runner stands in for osascript: tests
+/// never start it, nor Photos.
+#[cfg(not(target_arch = "wasm32"))]
+mod apple_photos {
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::{Value, json};
+
+    use super::disk_batch;
+    use crate::Session;
+    use crate::apple_photos::{Imports, MARKER, Output, Runner};
+    use crate::export::{AfterExport, Destination, ExportOptions};
+    use crate::tests_xmp::temp_dir;
+
+    type Calls = Arc<Mutex<Vec<Vec<String>>>>;
+
+    /// Records the arguments; Photos "imports" the first `keep` files (all: `usize::MAX`).
+    fn fake(keep: usize) -> (Runner, Calls) {
+        let calls: Calls = Arc::default();
+        let c = calls.clone();
+        let r: Runner = Arc::new(move |args: &[String], _| {
+            c.lock().unwrap().push(args.to_vec());
+            let files = args.len() - args.iter().position(|a| a == MARKER).unwrap() - 2;
+            let ids: Vec<String> = (0..files.min(keep)).map(|i| format!("ID-{i}/L0/001")).collect();
+            Ok(Output { status: Some(0), stdout: ids.join("\n") + "\n", stderr: String::new() })
+        });
+        (r, calls)
+    }
+
+    /// The paths after the album: the files Photos was asked to import.
+    fn imported_paths(args: &[String]) -> Vec<String> {
+        args[args.iter().position(|a| a == MARKER).unwrap() + 2..].to_vec()
+    }
+
+    fn export_two(s: &mut Session, tag: &str) -> Vec<Value> {
+        let dir = temp_dir(tag);
+        let ids: Vec<_> = s.visible().iter().copied().take(2).collect();
+        let o = ExportOptions::from_json(&json!({"longEdge": 48, "naming": "{name}-{seq}"}));
+        let to = Destination { dir: dir.to_string_lossy().into(), exact: None };
+        let mut files = Vec::new();
+        for id in ids {
+            files.extend(disk_batch(s, id, &o, &to).unwrap());
+        }
+        files
+    }
+
+    #[test]
+    fn exported_files_go_to_photos_in_order() {
+        let mut s = Session::with_demo();
+        let files = export_two(&mut s, "photos-flow");
+        let written: Vec<String> = files.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+        assert_eq!(written.len(), 2);
+        let (runner, calls) = fake(usize::MAX);
+        let imports = Imports::default();
+        let after = AfterExport::apple_photos(runner.clone(), "  Trip \"2026\"\n ", &imports).unwrap();
+        // a skipped file and a failed photo are not sent
+        let mut results = files.clone();
+        results.insert(1, json!({"skipped": "/elsewhere/x.jpg"}));
+        results.push(json!({"photo": 9, "file": "y", "error": "no source"}));
+        let out = after.run(&results, false).unwrap();
+        assert_eq!(out["imported"], 2, "{out}");
+        assert_eq!(out["requested"], 2);
+        assert_eq!(out["ids"], json!(["ID-0/L0/001", "ID-1/L0/001"]));
+        assert_eq!(out["album"], "Trip \"2026\"");
+        assert!(out.get("warning").is_none());
+        let args = calls.lock().unwrap()[0].clone();
+        assert_eq!(imported_paths(&args), written, "the files written, in order, as whole arguments");
+        assert!(written.iter().all(|p| std::path::Path::new(p).is_absolute()));
+        assert_eq!(args[args.iter().position(|a| a == MARKER).unwrap() + 1], "Trip \"2026\"");
+        // a cancelled export adds nothing
+        let out = AfterExport::apple_photos(runner.clone(), "", &imports).unwrap().run(&files, true).unwrap();
+        assert!(out["skipped"].as_str().unwrap().contains("cancelled"));
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        // Photos took one of the two: said so, not an error
+        let (runner, _) = fake(1);
+        let out = AfterExport::apple_photos(runner, "", &Imports::default()).unwrap().run(&files, false).unwrap();
+        assert_eq!((out["imported"].as_u64(), out["requested"].as_u64()), (Some(1), Some(2)));
+        assert!(out["warning"].as_str().unwrap().contains("1 of 2"), "{out}");
+        assert!(out["album"].is_null());
+        // permission refused: the outcome says where to allow it; the files stay written
+        let denied: Runner = Arc::new(|_: &[String], _| {
+            Ok(Output {
+                status: Some(1),
+                stdout: String::new(),
+                stderr: "execution error: Not authorized to send Apple events to Photos. (-1743)".into(),
+            })
+        });
+        let out = AfterExport::apple_photos(denied, "", &Imports::default()).unwrap().run(&files, false).unwrap();
+        assert!(out["error"].as_str().unwrap().contains("Privacy & Security › Automation"), "{out}");
+        assert!(written.iter().all(|p| std::path::Path::new(p).is_file()));
+        // nothing asked: nothing done
+        assert!(AfterExport::default().is_none());
+        assert_eq!(AfterExport::default().run(&files, false), None);
+    }
+
+    #[test]
+    fn photos_is_refused_before_anything_is_written_when_it_cannot_be_reached() {
+        let mut s = Session::with_demo();
+        assert!(s.apple_photos.is_none(), "only with_fs installs the runner");
+        let on = ExportOptions { add_to_photos: true, ..Default::default() };
+        let e = s.after_export(&on).err().unwrap();
+        if cfg!(target_os = "macos") {
+            assert!(e.contains("isn't connected in this session"), "{e}");
+        } else {
+            assert_eq!(e, "Apple Photos is only available on macOS");
+        }
+        assert!(s.after_export(&ExportOptions::default()).unwrap().is_none());
+        // with a runner: macOS adds, other platforms still refuse
+        let (runner, calls) = fake(usize::MAX);
+        s.apple_photos = Some(runner);
+        let after = s.after_export(&on);
+        assert_eq!(after.is_ok(), cfg!(target_os = "macos"), "{:?}", after.as_ref().err());
+        match after {
+            Ok(after) => {
+                let files = export_two(&mut s, "photos-session");
+                assert_eq!(after.run(&files, false).unwrap()["imported"], 2);
+                assert_eq!(calls.lock().unwrap().len(), 1);
+            }
+            Err(e) => assert!(e.contains("only available on macOS"), "{e}"),
+        }
+    }
+
+    #[test]
+    fn the_add_to_photos_command_needs_a_runner_and_checks_its_input() {
+        let mut s = Session::with_demo();
+        let files = export_two(&mut s, "photos-cmd");
+        let paths: Vec<String> = files.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+        let info = |s: &Session| s.commands().into_iter().find(|c| c.id == "export.addToPhotos").unwrap();
+        // no runner: listed, disabled, with the reason
+        let i = info(&s);
+        assert!(!i.enabled);
+        let why = i.disabled_reason.unwrap();
+        assert!(why.contains(if cfg!(target_os = "macos") { "isn't connected" } else { "only available on macOS" }), "{why}");
+        let e = s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap_err().to_string();
+        assert!(e.contains("Apple Photos"), "{e}");
+        let (runner, calls) = fake(usize::MAX);
+        s.apple_photos = Some(runner);
+        assert!(info(&s).enabled);
+        // no window: it waits for Photos by default
+        let r = s.execute("export.addToPhotos", &json!({"paths": paths, "album": "Läufe/日本 \\ \"q\""})).unwrap();
+        assert_eq!((r["imported"].as_u64(), r["running"].as_bool(), r["job"].as_u64()), (Some(2), Some(false), Some(1)), "{r}");
+        assert_eq!(r["album"], "Läufe/日本 \\ \"q\"");
+        assert_eq!(imported_paths(&calls.lock().unwrap()[0]), paths);
+        // bad input never reaches the runner (paths from the temp folder: absolute on every platform)
+        let missing = std::env::temp_dir().join("lc-photos-nonexistent").join("a.jpg").to_string_lossy().into_owned();
+        for (p, msg) in [
+            (json!({}), "missing `paths`"),
+            (json!({"paths": "a.jpg"}), "missing `paths`"),
+            (json!({"paths": [1]}), "array of file paths"),
+            (json!({"paths": []}), "no files"),
+            (json!({"paths": ["relative.jpg"]}), "absolute"),
+            (json!({"paths": [missing]}), "no such file"),
+            (json!({"paths": paths, "album": 3}), "`album` must be a string"),
+            (json!({"paths": paths, "wait": "yes"}), "`wait` must be true or false"),
+            (json!({"paths": paths, "albm": "x"}), "unknown parameter `albm`"),
+        ] {
+            let e = s.execute("export.addToPhotos", &p).unwrap_err().to_string();
+            assert!(e.contains(msg), "{p}: {e}");
+        }
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        // not journaled: replaying actions must not import again
+        assert!(!s.journal.iter().any(|(id, _)| id == "export.addToPhotos"));
+    }
+
+    /// The desktop app answers control requests on its UI thread: `export.addToPhotos` must not
+    /// wait there for Photos (minutes, or a permission prompt). It returns the running job; the
+    /// outcome comes from `export.photosImports`; a second import, or an export asking for Photos,
+    /// is refused until it ends, so a retry never adds the files twice.
+    #[test]
+    fn a_slow_photos_import_runs_in_the_background() {
+        let mut s = Session::with_demo();
+        let files = export_two(&mut s, "photos-slow");
+        let paths: Vec<String> = files.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        let wait = Mutex::new(wait);
+        let runner: Runner = Arc::new(move |args: &[String], _| {
+            // a regression (waiting on the caller's thread) fails after 20 s instead of hanging
+            let _ = wait.lock().unwrap().recv_timeout(std::time::Duration::from_secs(20));
+            let n = args.len() - args.iter().position(|a| a == MARKER).unwrap() - 2;
+            Ok(Output { status: Some(0), stdout: (0..n).map(|i| format!("ID-{i}\n")).collect(), stderr: String::new() })
+        });
+        s.apple_photos = Some(runner);
+        s.apple_photos_background = true; // as in the desktop app
+        let t0 = std::time::Instant::now();
+        let r = s.execute("export.addToPhotos", &json!({"paths": paths, "album": "Slow"})).unwrap();
+        assert!(t0.elapsed() < std::time::Duration::from_secs(5), "answered without waiting for Photos");
+        assert_eq!(r, json!({"job": 1, "running": true, "requested": 2, "album": "Slow"}));
+        let status = |s: &mut Session| s.execute("export.photosImports", &json!({"job": 1})).unwrap();
+        assert_eq!(status(&mut s)["running"], true);
+        // a retry is refused, and says why
+        let e = s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap_err().to_string();
+        assert!(e.contains("still adding 2 file(s) from an earlier request (import 1)"), "{e}");
+        if cfg!(target_os = "macos") {
+            let on = ExportOptions { add_to_photos: true, ..Default::default() };
+            assert!(s.after_export(&on).err().unwrap().contains("still adding"), "refused before writing anything");
+        }
+        go.send(()).unwrap();
+        while status(&mut s)["running"] == true {
+            assert!(t0.elapsed() < std::time::Duration::from_secs(20), "the import finishes");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let done = status(&mut s);
+        assert_eq!((done["imported"].as_u64(), done["album"].as_str()), (Some(2), Some("Slow")), "{done}");
+        let all = s.execute("export.photosImports", &json!({})).unwrap();
+        assert_eq!(all["imports"].as_array().map(Vec::len), Some(1));
+        assert!(s.execute("export.photosImports", &json!({"job": 7})).unwrap_err().to_string().contains("no import 7"));
+        // the window's thread never waits for Photos: `wait: true` is refused here, before any import
+        let e = s.execute("export.addToPhotos", &json!({"paths": paths, "wait": true})).unwrap_err().to_string();
+        assert!(e.contains("isn't available in the desktop app"), "{e}");
+        // finished: the next one may start
+        go.send(()).unwrap();
+        assert_eq!(s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap()["job"], 2);
+    }
+
+    /// Review of #236: an export adding to Photos reserves the import before it writes its files.
+    /// While it renders, `export.addToPhotos` is refused, naming the export's job, instead of
+    /// taking Photos and leaving the export to fail its Photos step after writing.
+    #[test]
+    fn an_export_holds_photos_from_before_it_writes() {
+        let mut s = Session::with_demo();
+        let (runner, calls) = fake(usize::MAX);
+        s.apple_photos = Some(runner.clone());
+        let elsewhere = export_two(&mut s, "photos-hold-other");
+        let other: Vec<String> = elsewhere.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+        // what Session::after_export does on macOS (it refuses other platforms first)
+        let after = AfterExport::apple_photos(runner, "Held", &s.apple_photos_imports).unwrap();
+        let job = s.execute("export.photosImports", &json!({"job": 1})).unwrap();
+        assert_eq!((job["running"].as_bool(), job["exporting"].as_bool()), (Some(true), Some(true)), "{job}");
+        let e = s.execute("export.addToPhotos", &json!({"paths": other})).unwrap_err().to_string();
+        assert!(e.contains("An export is about to add its files to Apple Photos (import 1)"), "{e}");
+        if cfg!(target_os = "macos") {
+            let on = ExportOptions { add_to_photos: true, ..Default::default() };
+            assert!(s.after_export(&on).err().unwrap().contains("(import 1)"), "a second export is refused before writing");
+        }
+        assert!(calls.lock().unwrap().is_empty());
+        // the export writes its files and hands them over: imported under its own job
+        let files = export_two(&mut s, "photos-hold");
+        let out = after.run(&files, false).unwrap();
+        assert_eq!((out["job"].as_u64(), out["imported"].as_u64(), out["album"].as_str()), (Some(1), Some(2), Some("Held")), "{out}");
+        // then the slot is free
+        assert_eq!(s.execute("export.addToPhotos", &json!({"paths": other})).unwrap()["job"], 2);
+        // an export that fails (its AfterExport dropped) frees it too
+        drop(AfterExport::apple_photos(fake(usize::MAX).0, "", &s.apple_photos_imports).unwrap());
+        assert!(s.apple_photos_imports.running().is_none());
+        assert_eq!(s.execute("export.addToPhotos", &json!({"paths": other})).unwrap()["job"], 4);
+    }
+
+    /// Review of #236: a runner that panics while the command or an export waits for it is that
+    /// import's error; the slot is freed, so the next import isn't refused as "still running"
+    /// and a process ending doesn't wait for it.
+    #[test]
+    fn a_panicking_runner_never_holds_photos() {
+        let mut s = Session::with_demo();
+        let files = export_two(&mut s, "photos-panic");
+        let paths: Vec<String> = files.iter().map(|f| f["path"].as_str().unwrap().to_string()).collect();
+        s.apple_photos = Some(Arc::new(|_: &[String], _| panic!("runner exploded")));
+        // the command (no window: it waits)
+        let e = s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap_err().to_string();
+        assert!(e.contains("stopped unexpectedly"), "{e}");
+        assert!(s.apple_photos_imports.running().is_none());
+        assert_eq!(s.execute("export.photosImports", &json!({"job": 1})).unwrap()["running"], false);
+        // an export's reservation
+        let runner = s.apple_photos.clone().unwrap();
+        let out = AfterExport::apple_photos(runner, "", &s.apple_photos_imports).unwrap().run(&files, false).unwrap();
+        assert!(out["error"].as_str().unwrap().contains("stopped unexpectedly"), "{out}");
+        assert!(s.apple_photos_imports.running().is_none());
+        assert!(!s.wait_for_photos_imports(), "nothing left to wait for");
+        // and the next import runs
+        let (good, _) = fake(usize::MAX);
+        s.apple_photos = Some(good);
+        assert_eq!(s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap()["imported"], 2);
+    }
+
+    /// The desktop app, lightcraft-cli and the MCP server get the real runner from `with_fs`, on
+    /// macOS only. (Installed, never run here.)
+    #[test]
+    fn with_fs_installs_the_runner_on_macos_only() {
+        let s = Session::new().with_fs();
+        assert_eq!(s.apple_photos.is_some(), cfg!(target_os = "macos"));
+        assert_eq!(s.commands().into_iter().find(|c| c.id == "export.addToPhotos").unwrap().enabled, cfg!(target_os = "macos"));
+    }
 }

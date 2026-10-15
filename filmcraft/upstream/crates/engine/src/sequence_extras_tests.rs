@@ -84,6 +84,47 @@ fn apply_default_transitions_to_selected_clips() {
 }
 
 #[test]
+fn apply_video_transition_goes_to_the_selection_not_the_playhead() {
+    // #1124: ⌘D with a clip selected adds the transition at its free edges wherever the playhead is
+    let mut s = demo();
+    let q = s.active_sequence().unwrap();
+    let c = q.video_tracks[0].items[2].clone();
+    let before_v = q.video_tracks[0].transitions.len();
+    let before_a = q.audio_tracks[0].transitions.len();
+    s.execute("playhead.set", json!({"time": (c.start + Tick(c.duration.0 / 2)).0})).unwrap();
+    assert!(s.execute("sequence.applyVideoTransition", json!({})).is_err(), "no selection, no edit point at the playhead");
+    s.execute("timeline.select", json!({"clips": [c.id.0]})).unwrap();
+    let n_undo = s.history.undo.len();
+    let r = s.execute("sequence.applyVideoTransition", json!({"effect": "wipe", "frames": 4})).unwrap();
+    assert_eq!(r["transitions"].as_array().map(Vec::len), Some(1), "{r}");
+    assert_eq!(s.history.undo.len(), n_undo + 1, "one undo step");
+    assert_eq!(s.history.undo.last().unwrap().0, "Apply Video Transition");
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].transitions.len(), before_v + 1, "the out edge keeps its dip to black");
+    let t = q.video_tracks[0].transitions.iter().find(|t| t.to == Some(c.id)).expect("transition at the in point");
+    assert_eq!(t.effect.effect, "wipe");
+    assert_eq!(t.duration, s.sequence_rate().tick_of(4));
+    assert_eq!(q.audio_tracks[0].transitions.len(), before_a, "video only, though the linked audio is selected");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().video_tracks[0].transitions.len(), before_v);
+
+    // a selected edit point gets the transition at that edge only
+    s.execute("trim.selectEditPoint", json!({"clip": c.id.0, "edge": "in"})).unwrap();
+    s.execute("sequence.applyVideoTransition", json!({})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].transitions.len(), before_v + 1);
+    assert!(q.video_tracks[0].transitions.iter().any(|t| t.to == Some(c.id) && t.effect.effect == "cross_dissolve"));
+
+    // ⇧⌘D with the clip selected: audio only
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("timeline.select", json!({"clips": [c.id.0]})).unwrap();
+    s.execute("sequence.applyAudioTransition", json!({})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks[0].transitions.len(), before_v);
+    assert!(q.audio_tracks[0].transitions.len() > before_a);
+}
+
+#[test]
 fn normalize_mix_track_hits_the_target_peak() {
     let mut s = demo();
     let before = crate::sequence_extras::mix_peak_db(&s).unwrap();

@@ -55,8 +55,6 @@ pub const TABLE: &[(&str, Class)] = &[
     ("vectorcraft", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
-    // The Android port shell (NativeActivity + JNI): host-only, exempt like the other apps.
-    ("android", Class::Exempt),
     ("xtask", Class::Exempt),
     // Crates added later (append-only).
     ("cad", Class::Layer(3)),
@@ -94,7 +92,7 @@ fn intra_layer_allowed(from: &str, to: &str) -> bool {
 
 /// External crates that constitute a UI toolkit / windowing dependency.
 /// Entries ending in `*` are prefixes.
-pub const UI_CRATES: &[&str] = &["egui", "eframe", "winit", "egui_kittest", "rfd", "bevy*"];
+pub const UI_CRATES: &[&str] = &["egui", "eframe", "winit", "egui_kittest", "craft-ui", "rfd", "bevy*"];
 
 /// First layer allowed to use UI crates.
 pub const UI_MIN_LAYER: u8 = 6;
@@ -307,11 +305,12 @@ mod tests {
 
     #[test]
     fn ui_crates_below_l6_flagged() {
-        for dep in ["egui", "eframe", "winit", "egui_kittest", "rfd", "bevy_ecs", "bevy"] {
+        for dep in ["egui", "eframe", "winit", "egui_kittest", "craft-ui", "rfd", "bevy_ecs", "bevy"] {
             let v = check(&[c("vectorcraft-engine", &[(dep, Normal, false)])]);
             assert!(matches!(v[..], [Violation::UiBelowL6 { layer: 5, .. }]), "{dep}");
         }
         assert!(check(&[c("vectorcraft-engine", &[("egui_extras_not", Normal, false)])]).is_empty());
+        assert!(check(&[c("vectorcraft-ui-egui", &[("craft-ui", Normal, false)])]).is_empty());
         assert!(check(&[c("vectorcraft-mcp", &[("winit", Normal, false)])]).is_empty());
     }
 

@@ -30,6 +30,9 @@ const BRUSH_STROKES: [(&str, &str); 8] = [
     ("brushStrokes.sumiE", "{}"),
 ];
 
+/// Effect › Artistic › Film Grain, at its defaults.
+const ARTISTIC: [(&str, &str); 1] = [("artistic.filmGrain", "{}")];
+
 /// Effect › Distort (Diffuse Glow with its highlights glowing from a low brightness up, as the
 /// striped art's reds are dark).
 const DISTORT: [(&str, &str); 3] =
@@ -90,6 +93,7 @@ fn listed_applied_edited_and_undone() {
         EFFECTS.iter().map(|(id, _)| list["catalog"].as_array().unwrap().iter().find(|e| e["id"] == *id).unwrap()["menu"].clone()).collect();
     assert_eq!(menus, [json!(["Effect", "Blur"]), json!(["Effect", "Blur"]), json!(["Effect", "Sharpen"])]);
     for (group, menu) in [
+        (ARTISTIC.as_slice(), "Artistic"),
         (BRUSH_STROKES.as_slice(), "Brush Strokes"),
         (DISTORT.as_slice(), "Distort"),
         (PIXELATE.as_slice(), "Pixelate"),
@@ -121,7 +125,7 @@ fn listed_applied_edited_and_undone() {
 
 #[test]
 fn each_effect_changes_the_canvas_and_draws_the_same_twice() {
-    for (id, params) in EFFECTS.into_iter().chain(BRUSH_STROKES).chain(DISTORT).chain(PIXELATE).chain(TEXTURE).chain(VIDEO) {
+    for (id, params) in EFFECTS.into_iter().chain(ARTISTIC).chain(BRUSH_STROKES).chain(DISTORT).chain(PIXELATE).chain(TEXTURE).chain(VIDEO) {
         let (mut s, g) = striped();
         let plain = render(&s);
         let params: Value = serde_json::from_str(params).unwrap();
@@ -150,7 +154,7 @@ fn spin_blur_reaches_past_the_corners() {
 
 #[test]
 fn pdf_and_svg_write_the_effected_object_as_an_image() {
-    for (id, params) in EFFECTS.into_iter().chain(BRUSH_STROKES).chain(DISTORT).chain(PIXELATE).chain(TEXTURE).chain(VIDEO) {
+    for (id, params) in EFFECTS.into_iter().chain(ARTISTIC).chain(BRUSH_STROKES).chain(DISTORT).chain(PIXELATE).chain(TEXTURE).chain(VIDEO) {
         let (mut s, g) = striped();
         let params: Value = serde_json::from_str(params).unwrap();
         s.execute("effect.apply", &json!({"effect": id, "ids": [g], "params": params})).unwrap();

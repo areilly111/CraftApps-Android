@@ -151,6 +151,7 @@ impl FileBrowser {
             Some(p) => match &p.request {
                 FileDialogRequest::Open { multiple, extensions, .. } => (false, extensions.clone(), *multiple),
                 FileDialogRequest::Save { .. } => (true, None, false),
+                FileDialogRequest::Folder { .. } => (false, None, false),
             },
             None => return,
         };

@@ -96,7 +96,7 @@ fn bitmap_document(cmd: &str, doc: &Document, set: &PrintSettings) -> Result<Doc
         out.images.insert(key.clone(), ImageBlob::new("image/png", img.to_png().map_err(EngineError::Other)?));
         let xf = Affine::translate(region.origin().to_vec2()) * Affine::scale(1.0 / scale);
         let image = ImageObject { key, width: img.width, height: img.height, xf, link: None, placement: Default::default() };
-        images.push(Arc::new(Node::new(out.alloc_id(), NodeKind::Image(image))));
+        images.push(Arc::new(Node::new(out.alloc_id(), NodeKind::Image(Box::new(image)))));
     }
     let mut layer = Node::layer(out.alloc_id(), "Bitmap", LayerColor::Preset(0));
     if let Some(children) = layer.children_mut() {

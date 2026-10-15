@@ -520,14 +520,18 @@ fn english_month(month: u64) -> Option<&'static str> {
     })
 }
 
+const MAX_FRACTION_DIGITS: usize = 3;
+
 /// `1/2` → "one half"; other small denominators read "N ordinal(s)", anything
 /// bigger reads "N over M".
 fn parse_fraction(rest: &str) -> Option<(Vec<Token>, usize)> {
-    let (n, n_end) = read_u64(rest, 0, 2)?;
+    // Operands of up to three digits: a longer run (a year, as in the `7/2026` left after an
+    // impossible date's `13/`) is not a fraction.
+    let (n, n_end) = read_u64(rest, 0, MAX_FRACTION_DIGITS)?;
     if peek(rest, n_end) != Some('/') || n == 0 {
         return None;
     }
-    let (d, d_end) = read_u64(rest, n_end + 1, 2)?;
+    let (d, d_end) = read_u64(rest, n_end + 1, MAX_FRACTION_DIGITS)?;
     if d == 0 || peek(rest, d_end).is_some_and(|c| c.is_ascii_alphanumeric() || c == '/') {
         return None;
     }
@@ -587,7 +591,7 @@ fn parse_number_core(rest: &str, lang: Lang) -> Option<(Vec<Token>, usize)> {
         return Some((words, used));
     }
     let value: u64 = digits.parse().ok()?;
-    if let Some((tokens, u)) = parse_continuation(rest, used, value) {
+    if let Some((tokens, u)) = parse_continuation(rest, used, value, &digits) {
         return Some((tokens, u));
     }
     if has_leading_zero_str(&digits) {
@@ -613,10 +617,16 @@ fn percent_suffix_len(rest: &str) -> Option<usize> {
     suffix.strip_prefix('%').map(|_| rest.len() - suffix.len() + 1)
 }
 
-fn parse_continuation(rest: &str, used: usize, value: u64) -> Option<(Vec<Token>, usize)> {
+/// Retain digit-by-digit reading of zero-prefixed integer portions, even when
+/// followed by a percent sign or decimal fraction.
+fn spoken_integer(value: u64, digits: &str) -> Vec<String> {
+    if has_leading_zero_str(digits) { digits.chars().map(|c| english_digit_word(c).into()).collect() } else { english_cardinal(value) }
+}
+
+fn parse_continuation(rest: &str, used: usize, value: u64, digits: &str) -> Option<(Vec<Token>, usize)> {
     let after = rest.get(used..)?;
     if let Some(suffix_len) = percent_suffix_len(after) {
-        let mut words = english_cardinal(value);
+        let mut words = spoken_integer(value, digits);
         words.push("percent".into());
         return Some((words.into_iter().map(Token::Word).collect(), used + suffix_len));
     }
@@ -629,7 +639,7 @@ fn parse_continuation(rest: &str, used: usize, value: u64) -> Option<(Vec<Token>
             None
         }
         Some('.') if peek(after, 1).is_some_and(|c| c.is_ascii_digit()) => {
-            let mut words = english_cardinal(value);
+            let mut words = spoken_integer(value, digits);
             words.push("point".into());
             let (frac, frac_used) = digit_run_as_words(after.get(1..)?);
             if frac.is_empty() {
@@ -674,7 +684,7 @@ fn parse_digit_groups(rest: &str, used: usize) -> Option<(Vec<Token>, usize)> {
     }
     if groups.len() == 1 {
         let group = groups.first()?;
-        let leading_zero = group.starts_with('0');
+        let leading_zero = has_leading_zero_str(rest.get(..used)?) || group.starts_with('0');
         // Total digits across the whole cluster: the integer before the dash plus this group.
         let total = rest.get(..used).map_or(0, |head| head.chars().filter(char::is_ascii_digit).count()) + group.len();
         if !leading_zero && total < 7 {
@@ -701,7 +711,7 @@ fn parse_digit_groups(rest: &str, used: usize) -> Option<(Vec<Token>, usize)> {
         return Some((words, end));
     }
     let total: usize = groups.iter().map(String::len).sum::<usize>() + rest.get(..used).map_or(0, |head| head.chars().filter(char::is_ascii_digit).count());
-    let leading_zero = groups.iter().any(|g| g.starts_with('0'));
+    let leading_zero = has_leading_zero_str(rest.get(..used)?) || groups.iter().any(|g| g.starts_with('0'));
     if total >= 7 || leading_zero {
         let mut words: Vec<Token> = Vec::new();
         if let Some(head) = rest.get(..used) {
@@ -875,8 +885,8 @@ fn english_ordinal(value: u64) -> String {
         "nine" => "ninth",
         "twelve" => "twelfth",
         t if t.ends_with('y') => {
-            let stem = t.get(..t.len() - 1).unwrap_or(t);
-            return format!("{prefix}{stem}ieth");
+            let root = t.get(..t.len() - 1).unwrap_or(t);
+            return attach(stem, &format!("{prefix}{root}ieth"));
         }
         t => return attach(stem, &format!("{prefix}{t}th")),
     };
@@ -1183,6 +1193,28 @@ mod tests {
     }
 
     #[test]
+    fn magnitude_is_kept_before_exact_tens_ordinals() {
+        for lang in [Lang::EnUs, Lang::EnGb] {
+            for (input, expected) in [
+                ("20th", "twentieth"),
+                ("100th", "one hundredth"),
+                ("101st", "one hundred first"),
+                ("119th", "one hundred nineteenth"),
+                ("120th", "one hundred twentieth"),
+                ("130th", "one hundred thirtieth"),
+                ("150th", "one hundred fiftieth"),
+                ("190th", "one hundred ninetieth"),
+                ("1,020th", "one thousand twentieth"),
+                ("1120th", "one thousand one hundred twentieth"),
+                ("121st", "one hundred twenty-first"),
+                ("200th", "two hundredth"),
+            ] {
+                assert_eq!(words(input, lang), expected, "{input:?} {lang:?}");
+            }
+        }
+    }
+
+    #[test]
     fn money() {
         assert_eq!(words("$3.50", Lang::EnUs), "three dollars and fifty cents");
         assert_eq!(words("$1", Lang::EnUs), "one dollar");
@@ -1202,6 +1234,29 @@ mod tests {
         assert_eq!(words("£2.50", Lang::EnUs), "two pounds and fifty pence");
         assert_eq!(words("£1", Lang::EnUs), "one pound");
         assert_eq!(words("$0.50", Lang::EnUs), "zero dollars and fifty cents");
+    }
+
+    #[test]
+    fn first_digit_group_keeps_leading_zeros() {
+        for lang in [Lang::EnUs, Lang::EnGb] {
+            for (input, expected) in [
+                ("01-2", "zero one two"),
+                ("01-2-3", "zero one two three"),
+                ("0800-55", "zero eight zero zero five five"),
+                ("0800-1-2", "zero eight zero zero one two"),
+                ("0-2", "zero to two"),
+                ("0-2-3", "zero to two to three"),
+                ("2-3", "two to three"),
+                ("5-01", "five zero one"),
+                ("555-0134", "five five five zero one three four"),
+                ("0800-100", "zero eight zero zero one zero zero"),
+                ("5-10-15", "five to ten to fifteen"),
+                ("zero one two", "zero one two"),
+                ("zero eight zero zero five five", "zero eight zero zero five five"),
+            ] {
+                assert_eq!(words(input, lang), expected, "{lang:?}: {input}");
+            }
+        }
     }
 
     #[test]
@@ -1336,6 +1391,47 @@ mod tests {
         assert_eq!(words("22/7", Lang::EnUs), "twenty-two sevenths");
         assert_eq!(words("5/8", Lang::EnUs), "five eighths");
         assert_eq!(words("7/32", Lang::EnUs), "seven over thirty-two");
+    }
+
+    #[test]
+    fn fraction_operands_may_have_three_digits() {
+        for lang in [Lang::EnUs, Lang::EnGb] {
+            for (input, expected) in [
+                ("7/100", "seven over one hundred"),
+                ("100/7", "one hundred sevenths"),
+                ("7/99", "seven over ninety-nine"),
+                ("99/7", "ninety-nine sevenths"),
+                ("7/0", "seven slash zero"),
+                ("1/2", "one half"),
+                ("3/4", "three quarters"),
+                ("22/7", "twenty-two sevenths"),
+            ] {
+                assert_eq!(words(input, lang), expected, "{input:?} {lang:?}");
+            }
+        }
+        assert_eq!(words("10/7/2026", Lang::EnUs), "October seventh twenty twenty-six");
+        assert_eq!(words("7/10/2026", Lang::EnGb), "the seventh of October twenty twenty-six");
+    }
+
+    #[test]
+    fn percent_and_decimal_suffixes_keep_leading_zeroes() {
+        for lang in [Lang::EnUs, Lang::EnGb] {
+            for (input, expected) in [
+                ("07", "zero seven"),
+                ("007", "zero zero seven"),
+                ("07%", "zero seven percent"),
+                ("007%", "zero zero seven percent"),
+                ("007 %", "zero zero seven percent"),
+                ("07.5", "zero seven point five"),
+                ("007.5", "zero zero seven point five"),
+                ("007.5%", "zero zero seven point five percent"),
+                ("20%", "twenty percent"),
+                ("0.5", "zero point five"),
+                ("0.5%", "zero point five percent"),
+            ] {
+                assert_eq!(words(input, lang), expected, "{input:?} {lang:?}");
+            }
+        }
     }
 
     #[test]

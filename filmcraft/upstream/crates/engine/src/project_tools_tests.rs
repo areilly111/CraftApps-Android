@@ -362,6 +362,18 @@ fn edit_original_update_metadata_and_clip_items() {
 }
 
 #[test]
+fn file_reveal_enabled_for_imported_clip() {
+    let dir = tmp_dir("reveal");
+    let path = dir.join("take.mp4");
+    make_movie(&path, DemoScene::Aurora, 64, 36, 8);
+    let (mut s, items, _) = session_with(&[&path]);
+    assert!(!s.is_enabled("file.reveal"), "disabled with no Project panel selection");
+    s.execute("project.select", json!({"items": [items[0].0]})).unwrap();
+    assert!(s.is_enabled("file.reveal"));
+    assert_eq!(s.execute("file.reveal", json!({})).unwrap()["paths"], json!([path.to_string_lossy()]));
+}
+
+#[test]
 fn edit_offline_sets_the_log_fields() {
     let mut s = demo();
     let r = s.execute("file.newOfflineFile", json!({"name": "Missing Take", "seconds": 4.0})).unwrap();
@@ -445,6 +457,32 @@ fn automate_to_sequence_places_clips_with_overlap_and_transitions() {
     assert!(!s.is_enabled("clip.automateToSequence"));
 }
 
+/// Issue #916: overlap is clamped to half of each clip for placement, but the Cross Dissolve
+/// used the unclamped `overlapFrames` and started before the first clip.
+#[test]
+fn automate_to_sequence_clamps_transition_to_overlap() {
+    let mut s = demo();
+    s.execute("file.newSequence", json!({"name": "Auto", "fps": 23.976})).unwrap();
+    let rate = s.sequence_rate();
+    let names = ["Misty_Forest.mp4", "Ocean_Sunset.mp4"];
+    let ids: Vec<ItemId> = names.iter().map(|n| item_named(&s, n)).collect();
+    for id in &ids {
+        s.execute("project.setMarks", json!({"item": id.0, "in": 0, "out": rate.tick_of(19).0})).unwrap();
+    }
+    s.execute("project.select", json!({"items": ids.iter().map(|i| i.0).collect::<Vec<_>>()})).unwrap();
+    s.execute("clip.automateToSequence", json!({"ordering": "selection", "method": "overwrite", "overlapFrames": 30})).unwrap();
+    let q = s.active_sequence().unwrap();
+    let v = &q.video_tracks[0];
+    assert_eq!(v.items.len(), 2);
+    assert_eq!(v.items[0].start, Tick::ZERO);
+    assert_eq!(v.items[1].start, rate.tick_of(10), "overlap clamped to half of a 20-frame clip");
+    assert_eq!(v.transitions.len(), 1);
+    let t = &v.transitions[0];
+    assert_eq!(t.duration, rate.tick_of(10), "dissolve matches clamped overlap, not 30");
+    assert!(t.start >= v.items[0].start, "dissolve must not start before the first clip: {t:?}");
+    assert!(t.end() <= v.items[1].end(), "dissolve must not end after the second clip: {t:?}");
+}
+
 #[test]
 fn system_report_lists_the_build() {
     let s = &mut Session::default();
@@ -469,13 +507,13 @@ fn clear_deletes_a_bin_with_everything_in_it() {
     select(&mut s);
     // an empty bin, by its id: gone, nothing else touched
     let r = s.execute("project.delete", json!({"items": [empty]})).unwrap();
-    assert_eq!(r, json!({"items": 0, "bins": 1}));
+    assert_eq!(r, json!({"items": 0, "bins": 1, "offline": 0}));
     assert!(s.project.root.find_bin(filmcraft_project::BinId(empty)).is_none());
     assert_eq!(s.project.items.len(), before);
     // a bin holding a sub-bin holding a clip: all three go
     select(&mut s);
     let r = s.execute("project.delete", json!({"items": [outer]})).unwrap();
-    assert_eq!(r, json!({"items": 1, "bins": 1}));
+    assert_eq!(r, json!({"items": 1, "bins": 1, "offline": 0}));
     assert!(s.project.root.find_bin(filmcraft_project::BinId(outer)).is_none());
     assert!(s.project.root.find_bin(filmcraft_project::BinId(inner)).is_none());
     assert!(s.project.item(ocean).is_none());
@@ -487,7 +525,7 @@ fn clear_deletes_a_bin_with_everything_in_it() {
     // the clip, its bin and the bin around it all named: each counted once
     select(&mut s);
     let r = s.execute("project.delete", json!({"items": [ocean.0, inner, outer]})).unwrap();
-    assert_eq!(r, json!({"items": 1, "bins": 1}));
+    assert_eq!(r, json!({"items": 1, "bins": 1, "offline": 0}));
     assert_eq!(s.project.items.len(), before - 1);
     s.execute("edit.undo", json!({})).unwrap();
     // the project's own top bin is never cleared
@@ -495,4 +533,32 @@ fn clear_deletes_a_bin_with_everything_in_it() {
     select(&mut s);
     s.execute("project.delete", json!({"items": [root]})).unwrap();
     assert_eq!(s.project.items.len(), before);
+}
+
+#[test]
+fn deleting_media_used_on_the_timeline_makes_it_offline() {
+    let mut s = Session::default();
+    s.execute("file.newProject", json!({"name": "Offline"})).unwrap();
+    s.execute("file.newSequence", json!({"name": "Seq", "fps": 25, "video": 1, "audio": 0, "width": 16, "height": 16})).unwrap();
+    let item = s
+        .execute("file.newOfflineFile", json!({"name": "Clip", "seconds": 2, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16}))
+        .unwrap()["item"]
+        .as_u64()
+        .unwrap();
+    s.execute("timeline.place", json!({"item": item, "track": "V1", "time": 0})).unwrap();
+    let clips_before = s.project.sequences().next().unwrap().as_sequence().unwrap().video_tracks[0].items.len();
+    let r = s.execute("project.delete", json!({"items": [item]})).unwrap();
+    assert_eq!(r["offline"], 1);
+    assert_eq!(r["items"], 0);
+    assert!(s.project.item(ItemId(item)).unwrap().as_media().unwrap().offline);
+    assert_eq!(s.project.sequences().next().unwrap().as_sequence().unwrap().video_tracks[0].items.len(), clips_before);
+    let unused = s
+        .execute("file.newOfflineFile", json!({"name": "Spare", "seconds": 1, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16}))
+        .unwrap()["item"]
+        .as_u64()
+        .unwrap();
+    let r = s.execute("project.delete", json!({"items": [unused]})).unwrap();
+    assert_eq!(r["items"], 1);
+    assert_eq!(r["offline"], 0);
+    assert!(s.project.item(ItemId(unused)).is_none());
 }

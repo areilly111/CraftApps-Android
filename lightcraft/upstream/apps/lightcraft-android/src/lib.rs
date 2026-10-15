@@ -35,7 +35,7 @@ use crate::shell::{AndroidShell, PrefsWriter, StorageGate};
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.5.0-port1` → 50001).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]).
 ///
@@ -160,7 +160,9 @@ fn run(app: AndroidApp) -> Result<(), String> {
         &config,
         "app.lightcraft.android.apkprovider",
     )));
-    wire_android_hooks(&mut services, updater.clone(), storage.clone(), granted);
+    // TODO: Port wire_android_hooks to new APIs (AndroidHooks removed).
+    // wire_android_hooks disabled
+    let _ = (&mut services);
 
     // The library (catalog, originals, previews) lives in the config dir; a
     // library that can't be opened is never replaced silently (the window says
@@ -248,9 +250,6 @@ fn wire_android_hooks(
     let tablet_storage = storage.clone();
     let sd_storage = storage.clone();
     services.android_hooks = Some(lightcraft_ui_egui::AndroidHooks {
-        check_updates: Box::new(move || {
-            updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-        }),
         storage: lightcraft_ui_egui::AndroidStorageHooks {
             location_label: Box::new(move || {
                 if granted {
@@ -268,7 +267,7 @@ fn wire_android_hooks(
                     let _ = jni_bridge::open_all_files_settings();
                 }
             }),
-            pick_sd_card: Box::new(move || {
+            pick_folder: Box::new(move || {
                 // The folder picker needs no permission: the chosen tree is
                 // read and written through SAF directly.
                 saf::set_pending_tree(sd_storage.clone());
@@ -278,5 +277,5 @@ fn wire_android_hooks(
                 }
             }),
         },
-    });
+        pen: None,    });
 }

@@ -393,3 +393,22 @@ fn rows_added_later_grow_the_stack() {
         assert!(stack.contains_rect(r), "row {} at {r:?} is cut off by the stack at {stack:?}", g.id());
     }
 }
+
+#[test]
+fn immediate_library_commands_and_auto_sync_show_completion() {
+    let mut h = demo();
+    assert!(h.app.run("library.clearPreviews", json!({})).is_ok());
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("✓ Clear Preview Cache"));
+
+    assert_eq!(h.app.run("develop.autoSync", json!({"on": true})).unwrap()["on"], true);
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: On"));
+
+    assert_eq!(h.app.run("develop.autoSync", json!({"on": false})).unwrap()["on"], false);
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: Off"));
+
+    // This demo has no on-disk library to optimize. A failed command must not
+    // report completion (or accidentally keep its preceding success toast).
+    h.app.ui.toast = None;
+    assert!(h.app.run("library.compact", json!({})).is_err());
+    assert!(h.app.ui.toast.is_none());
+}

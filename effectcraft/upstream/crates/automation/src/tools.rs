@@ -103,11 +103,18 @@ pub fn available(bridge: bool) -> impl Iterator<Item = &'static ToolDef> {
     TOOLS.iter().filter(move |t| bridge || !t.bridge_only)
 }
 
+/// Tools refused while file access is confined: they drive the live app like a person (menus,
+/// shortcuts, Open Recent…) or call control-channel methods directly, past the command checks.
+const UNCONFINED_ONLY: &[&str] = &["control", "ui_click", "ui_drag", "ui_key", "ui_type", "ui_set", "script_ui"];
+
 /// Run a tool by name.
 pub fn run(b: &mut Backend, name: &str, args: &Value) -> Result<Reply> {
     let t = find(name).ok_or_else(|| Error::BadArgs(format!("unknown tool `{name}`")))?;
     if t.bridge_only && !b.is_bridge() {
         return Err(Error::BadArgs(NEED_BRIDGE.into()));
+    }
+    if b.confinement().is_some() && UNCONFINED_ONLY.contains(&name) {
+        return Err(Error::BadArgs(format!("`{name}` is not available while file access is confined (--automation-read-root/--automation-write-root)")));
     }
     let empty = json!({});
     (t.run)(b, if args.is_null() { &empty } else { args })
@@ -203,7 +210,7 @@ fn list_effects(b: &mut Backend, a: &Value) -> Result<Reply> {
 }
 
 fn list_fonts(b: &mut Backend, a: &Value) -> Result<Reply> {
-    json_reply(b.exec("text.fonts", obj(&[("query", get(a, "query")), ("rescan", get(a, "rescan"))]))?)
+    json_reply(b.exec("text.fonts", obj(&[("query", get(a, "query")), ("variable", get(a, "variable")), ("rescan", get(a, "rescan"))]))?)
 }
 
 /// `effect.apply` on one layer, then set parameters on the new instance by param id: one batch,
@@ -389,6 +396,9 @@ fn render_frame(b: &mut Backend, a: &Value) -> Result<Reply> {
     let f = b.render_with(get(a, "comp"), get(a, "time").and_then(Value::as_f64), max_side, transparent)?;
     let mut info = json!({"comp": f.comp, "time": f.time, "width": f.width, "height": f.height});
     if let Some(p) = get(a, "path").and_then(Value::as_str) {
+        if let Some(c) = b.confinement() {
+            c.check(p, crate::confine::Access::Write)?;
+        }
         std::fs::write(p, &f.png).map_err(|e| Error::Other(format!("cannot write {p}: {e}")))?;
         info["path"] = json!(p);
     }
@@ -482,6 +492,9 @@ fn batch_tool(b: &mut Backend, a: &Value) -> Result<Reply> {
 fn screenshot(b: &mut Backend, a: &Value) -> Result<Reply> {
     let max_side = get(a, "max_side").and_then(Value::as_u64).unwrap_or(1600) as u32;
     let keep = get(a, "path").and_then(Value::as_str).map(str::to_string);
+    if let (Some(c), Some(p)) = (b.confinement(), &keep) {
+        c.check(p, crate::confine::Access::Write)?;
+    }
     let path =
         keep.clone().unwrap_or_else(|| std::env::temp_dir().join(format!("effectcraft-mcp-shot-{}.png", std::process::id())).to_string_lossy().into_owned());
     b.control("ui.screenshot", obj(&[("path", Some(&json!(path))), ("panel", get(a, "panel")), ("id", get(a, "id"))]))?;
@@ -690,12 +703,13 @@ static TOOLS: &[ToolDef] = &[
     },
     ToolDef {
         name: "list_fonts",
-        description: "The font families text layers can use, bundled and installed on this machine: family, styles, origin (bundled / system / user) and the name in the font's own language. Narrow with `query`; `rescan` picks up fonts installed since launch. Set one with execute_command `layer.setText {\"layer\", \"font\", \"style\"}`.",
+        description: "The font families text layers can use, bundled and installed on this machine: family, styles, origin (bundled / system / user), whether it is a variable font and the name in the font's own language. Narrow with `query` and `variable`; `rescan` picks up fonts installed since launch. Set one with execute_command `layer.setText {\"layer\", \"font\", \"style\"}`.",
         bridge_only: false,
         schema: || {
             schema(
                 json!({
                     "query": {"type": "string", "description": "Only families whose name (English or own-language) contains this text."},
+                    "variable": {"type": "boolean", "description": "Only variable fonts (families with variation axes)."},
                     "rescan": {"type": "boolean", "description": "Look for fonts installed since launch first."}
                 }),
                 &[],

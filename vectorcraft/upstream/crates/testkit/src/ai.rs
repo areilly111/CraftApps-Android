@@ -1,6 +1,6 @@
 //! Hand-written Illustrator editing data (the format `vectorcraft_eps`'s reader documents) and the
-//! EPS and `.ai` files that carry it, for import tests. Nothing here comes from files another app
-//! wrote.
+//! EPS, `.ai` and PDF files that carry it, for import tests. Nothing here comes from files another
+//! app wrote, except the key names that [`pdf`] uses.
 
 /// Editing data of a `width` × `height` page: header comments (the art's bounding box and the crop
 /// marks are the page), `body` (setup and layers), the trailer.
@@ -104,6 +104,19 @@ pub fn eps(data: &[u8], page: &str) -> Vec<u8> {
 /// `private` (the private data streams' contents, such as `%AI12_CompressedData` and zlib data) in
 /// two streams.
 pub fn ai(private: &[u8], page: &str) -> Vec<u8> {
+    with_private(private, page, "AIPrivateData")
+}
+
+/// A PDF saved with Illustrator's editing data: [`ai`]'s file with the two streams under
+/// `AIPDFPrivateData1` and `AIPDFPrivateData2`. These key names were seen in the PDF attached to
+/// #868, and nothing else of that file is used; ExifTool's PDF tag table lists them too
+/// (<https://exiftool.org/TagNames/PDF.html>).
+pub fn pdf(private: &[u8], page: &str) -> Vec<u8> {
+    with_private(private, page, "AIPDFPrivateData")
+}
+
+/// The file of [`ai`] and [`pdf`], with `private` in the streams `{key}1` and `{key}2`.
+fn with_private(private: &[u8], page: &str, key: &str) -> Vec<u8> {
     let (first, second) = private.split_at(private.len() / 2);
     let stream = |part: &[u8]| {
         let mut s = format!("<< /Length {} >>\nstream\n", part.len()).into_bytes();
@@ -117,7 +130,7 @@ pub fn ai(private: &[u8], page: &str) -> Vec<u8> {
         format!(
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R \
              /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> \
-             /PieceInfo << /{PIECE} << /Private << /AIPrivateData1 5 0 R /AIPrivateData2 6 0 R /NumBlock 2 >> >> >> >>"
+             /PieceInfo << /{PIECE} << /Private << /{key}1 5 0 R /{key}2 6 0 R /NumBlock 2 >> >> >> >>"
         )
         .into_bytes(),
         stream(page.as_bytes()),

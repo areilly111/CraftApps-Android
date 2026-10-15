@@ -32,7 +32,9 @@ impl Scratch {
         Scratch(dir)
     }
     fn path(&self, rel: &str) -> String {
-        self.0.join(rel).to_string_lossy().to_string()
+        // Fixtures use `/`; rebuild components so expected paths match the native separators
+        // returned by directory scans, including for files that have already been removed.
+        self.0.join(rel).components().collect::<PathBuf>().to_string_lossy().into_owned()
     }
 }
 
@@ -101,6 +103,68 @@ fn an_unchanged_folder_has_no_changes() {
     let mut s = library(&dir);
     let r = scan(&mut s, &dir.path("trip"));
     assert!(paths(&r, "new").is_empty() && paths(&r, "missing").is_empty() && paths(&r, "metadata").is_empty(), "{r}");
+}
+
+#[cfg(windows)]
+#[test]
+fn importing_and_synchronizing_with_different_windows_separators_keeps_photo_identity() {
+    for forward_import in [true, false] {
+        for import_folder in [true, false] {
+            let dir = Scratch::new(&format!("separators-{forward_import}-{import_folder}"));
+            let folder = dir.path("trip");
+            let a = dir.path("trip/a.png");
+            let b = dir.path("trip/day1/b.png");
+            write_png(&a, 1);
+            write_png(&b, 2);
+            let spelling = |path: &str, forward: bool| if forward { path.replace('\\', "/") } else { path.to_string() };
+            let import_path = spelling(&folder, forward_import);
+            let sync_path = spelling(&folder, !forward_import);
+            assert_ne!(import_path, sync_path, "exercise distinct Windows path spellings");
+            let inputs = if import_folder { vec![import_path.clone()] } else { vec![spelling(&a, forward_import), spelling(&b, forward_import)] };
+            let mut s = Session::new().with_fs();
+            let imported = s.execute("library.import", &json!({"paths": inputs})).unwrap();
+            assert_eq!(imported["imported"].as_array().unwrap().len(), 2, "{imported}");
+            let before = s.execute("catalog.query", &json!({})).unwrap();
+            let photos = before["photos"].as_array().unwrap();
+            let a_id = photos.iter().find(|p| p["fileName"] == "a.png").unwrap()["id"].clone();
+            let b_id = photos.iter().find(|p| p["fileName"] == "b.png").unwrap()["id"].clone();
+
+            let duplicate = s.execute("library.import", &json!({"paths": [sync_path]})).unwrap();
+            assert!(duplicate["imported"].as_array().unwrap().is_empty(), "{duplicate}");
+            assert_eq!(duplicate["duplicates"].as_array().unwrap().len(), 2, "{duplicate}");
+            assert_eq!(s.execute("catalog.query", &json!({})).unwrap(), before, "reimport preserves the photos and their ids");
+
+            std::fs::remove_file(&b).unwrap();
+            let c = dir.path("trip/day2/c.png");
+            write_png(&c, 3);
+            let changes = scan(&mut s, &sync_path);
+            assert_eq!(changes["new"].as_array().unwrap().len(), 1, "{changes}");
+            assert_eq!(Path::new(changes["new"][0]["path"].as_str().unwrap()), Path::new(&c));
+            assert_eq!(changes["missing"].as_array().unwrap().len(), 1, "{changes}");
+            assert_eq!(changes["missing"][0]["id"], b_id, "the missing photo keeps its id");
+            assert!(changes["moved"].as_array().unwrap().is_empty(), "{changes}");
+
+            // Switching spelling again must consume the confirmed scan of this same folder.
+            let synced = s.execute("folder.synchronize", &json!({"path": import_path, "scanned": true, "removeMissing": true})).unwrap();
+            assert_eq!(
+                (synced["imported"].as_u64(), synced["removed"].as_u64(), synced["relinked"].as_u64()),
+                (Some(1), Some(1), Some(0)),
+                "{synced}"
+            );
+            assert!(synced["failed"].as_array().unwrap().is_empty(), "{synced}");
+            let after = s.execute("catalog.query", &json!({})).unwrap();
+            let photos = after["photos"].as_array().unwrap();
+            assert_eq!(photos.len(), 2, "{after}");
+            assert!(photos.iter().any(|p| p["id"] == a_id && p["fileName"] == "a.png"), "{after}");
+            assert!(photos.iter().any(|p| p["fileName"] == "c.png" && p["id"] != a_id && p["id"] != b_id), "{after}");
+            for path in [&import_path, &sync_path] {
+                let changes = scan(&mut s, path);
+                for kind in ["new", "missing", "moved", "metadata"] {
+                    assert!(changes[kind].as_array().unwrap().is_empty(), "{path}: {changes}");
+                }
+            }
+        }
+    }
 }
 
 #[test]

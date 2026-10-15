@@ -143,6 +143,16 @@ fn mask_adjustments_hide_overlay_without_disabling_the_mask() {
     // Changing the shape needs the overlay; changing the image needs an unobscured preview.
     exec(&mut h, "mask.refine", json!({"value": 10.0}));
     assert!(h.app.ui.mask_overlay);
+    // The dock header pushes this adjustment below the initial viewport. Exercise the
+    // actual visible slider rather than sending a synthetic click outside its clipped body.
+    let panel = h.app.widgets.iter().find(|(id, _)| id == "panel:right_panel").unwrap().1;
+    let slider = h.app.widgets.iter().find(|(id, _)| id == "slider:exposure").unwrap().1;
+    assert!(!panel.contains_rect(slider), "exposure initially needs scrolling: {slider:?} in {panel:?}");
+    h.request("ui.move", json!({"x": panel.center().x, "y": panel.center().y}), T);
+    h.request("ui.scroll", json!({"dy": -160.0}), T);
+    h.settle(SETTLE);
+    let slider = h.app.widgets.iter().find(|(id, _)| id == "slider:exposure").unwrap().1;
+    assert!(panel.contains_rect(slider), "exposure is visible before clicking: {slider:?} in {panel:?}");
     let r = h.request("ui.clickWidget", json!({"id": "slider:exposure", "fx": 0.7}), T);
     assert_eq!(r["ok"], true, "{r}");
     assert!(!h.app.ui.mask_overlay, "the exposure slider hides the overlay after release");
@@ -298,6 +308,32 @@ fn mask_overlay_keys_and_pins() {
     h.settle(SETTLE);
 }
 
+/// #518: holding the brush still, however long, paints the same feathered spot as a quick press.
+#[test]
+fn holding_the_brush_still_does_not_harden_the_spot() {
+    let mut h = detail("panel.masking");
+    let r = h.request("ui.set", json!({"brushSize": 0.1, "brushFeather": 80.0, "brushFlow": 100.0}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    exec(&mut h, "tool.brush", json!({"new": true}));
+    // a quick press at the left, a long stationary hold (120 frames, ~2 s) at the right
+    brush_at(&mut h, 0.3, 0.5);
+    let mut hold = vec![json!({"kind": "down", "x": 0.7, "y": 0.5})];
+    hold.extend((0..120).map(|_| json!({"kind": "move", "x": 0.7, "y": 0.5})));
+    hold.push(json!({"kind": "up", "x": 0.7, "y": 0.5}));
+    pointer(&mut h, json!(hold));
+    let d = develop(&h);
+    let MaskShape::Brush { strokes } = &d.masks[0].components[0].shape else { panic!("brush") };
+    assert_eq!(strokes.len(), 2, "{strokes:?}");
+    assert_eq!(strokes[1].points.len(), 1, "a stationary hold records one sample: {:?}", strokes[1].points);
+    // the same edge profile around both spots
+    for dx in [0usize, 4, 6, 8] {
+        let (quick, held) = (mask_coverage(&h, 0, 30 + dx, 50), mask_coverage(&h, 0, 70 + dx, 50));
+        assert!((quick - held).abs() < 0.01, "{dx} px from the centre: quick {quick}, held {held}");
+    }
+    assert!(mask_coverage(&h, 0, 70 + 6, 50) < 0.9, "the edge stays feathered");
+    h.settle(SETTLE);
+}
+
 #[test]
 fn brush_strokes_carry_auto_mask() {
     let mut h = detail("panel.masking");
@@ -440,6 +476,54 @@ fn command_drag_straightens_in_crop() {
     assert_eq!(h.app.ui.tool, tool, "the crop tool stays active");
     assert!(h.app.gesture.is_none());
     h.settle(SETTLE);
+}
+
+#[test]
+fn crop_drag_activates_the_remembered_ratio_and_undo_restores_the_photo() {
+    let mut h = detail("panel.crop");
+    h.app.ui.crop_default_aspect = Some(json!([1, 1]));
+    h.settle(SETTLE);
+    let before = develop(&h);
+    let undo = h.app.session.undo.len();
+    assert!(before.crop.aspect.is_none());
+    let r = h.request(
+        "ui.pointer",
+        json!({"events": [
+            {"kind": "down", "x": 0.995, "y": 0.995},
+            {"kind": "drag", "x": 0.85, "y": 0.85},
+            {"kind": "drag", "x": 0.75, "y": 0.75},
+            {"kind": "up", "x": 0.75, "y": 0.75}
+        ]}),
+        T,
+    );
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(develop(&h).crop.aspect, Some((100, 100)));
+    assert_eq!(h.app.session.undo.len(), undo + 1);
+    exec(&mut h, "edit.undo", json!({}));
+    assert_eq!(develop(&h), before);
+}
+
+/// A remembered ratio the crop command refuses (a hand-edited settings file) is forgotten, and the
+/// drag still crops: it must not block every crop of an untouched photo.
+#[test]
+fn a_bad_remembered_ratio_is_dropped_and_the_drag_still_crops() {
+    let mut h = detail("panel.crop");
+    h.app.ui.crop_default_aspect = Some(json!([0, -3]));
+    h.settle(SETTLE);
+    let before = develop(&h);
+    // a rotating drag outside the box (any crop drag starts cropping); the release on its own
+    for events in [
+        json!([{"kind": "down", "x": -0.05, "y": 0.2}, {"kind": "drag", "x": -0.05, "y": 0.25}, {"kind": "drag", "x": -0.05, "y": 0.3}]),
+        json!([{"kind": "up", "x": -0.05, "y": 0.3}]),
+    ] {
+        let r = h.request("ui.pointer", json!({ "events": events }), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+    }
+    assert_eq!(h.app.ui.crop_default_aspect, None, "the bad value is forgotten");
+    assert_ne!(develop(&h).crop, before.crop, "the drag cropped");
+    assert_eq!(develop(&h).crop.aspect, None);
 }
 
 #[test]
@@ -886,6 +970,60 @@ fn edit_in_external_editor_opens_the_copy() {
     h.settle(SETTLE);
 }
 
+/// Edit in PhotoCraft: a PSD copy (what PhotoCraft saves back to), handed to "PhotoCraft" for
+/// the host to find; when the host can't find it, no copy is made.
+#[test]
+fn edit_in_photocraft_opens_a_psd_copy() {
+    let dir = std::env::temp_dir().join(format!("lc-ui-pcraft-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let opened: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> = Default::default();
+    let installed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (o, i) = (opened.clone(), installed.clone());
+    let services = Services {
+        png: None,
+        open_with: Some(Box::new(move |path: &str, app: &str| {
+            o.lock().unwrap().push((path.to_string(), app.to_string()));
+            Ok(())
+        })),
+        check_editor: Some(Box::new(move |app: &str| {
+            if app == crate::state::PHOTOCRAFT && !i.load(std::sync::atomic::Ordering::SeqCst) {
+                Err("PhotoCraft isn't installed".into())
+            } else {
+                Ok(())
+            }
+        })),
+        ..Default::default()
+    };
+    let app = LightcraftApp::new(lightcraft_engine::Session::with_demo().with_fs(), services);
+    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let n = h.app.session.catalog.len();
+    let params = json!({"command": "photo.editInPhotoCraft", "params": {"dir": dir.to_string_lossy()}});
+    let r = h.request("engine.execute", params.clone(), T);
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!((h.app.session.catalog.len(), opened.lock().unwrap().len()), (n, 0), "no copy without PhotoCraft");
+    installed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let r = h.request("engine.execute", params, T);
+    assert_eq!(r["ok"], true, "{r}");
+    let calls = opened.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].0.ends_with("-Edit.psd") && std::path::Path::new(&calls[0].0).exists(), "{calls:?}");
+    assert_eq!(calls[0].1, "PhotoCraft");
+    let d = lightcraft_codecs::decode(&std::fs::read(&calls[0].0).unwrap(), Default::default()).unwrap();
+    assert_eq!(d.bit_depth, 16, "16-bit by default");
+    // a portable copy: its path is what the host is given; the file follows the settings
+    h.app.ui.settings.photocraft_path = "/opt/pc/photocraft".into();
+    h.app.ui.settings.photocraft_file.format = crate::state::EditFormat::Tiff;
+    h.app.ui.settings.photocraft_file.bit_depth = 8;
+    let r = h.request("engine.execute", json!({"command": "photo.editInPhotoCraft", "params": {"dir": dir.to_string_lossy()}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let last = opened.lock().unwrap().last().cloned().unwrap();
+    assert!(last.0.ends_with(".tif") && last.1 == "/opt/pc/photocraft", "{last:?}");
+    assert!(crate::menus::ui_enabled(&h.app, "photo.editInPhotoCraft"));
+    let _ = std::fs::remove_dir_all(&dir);
+    h.settle(SETTLE);
+}
+
 #[test]
 fn second_window_shows_the_active_photo() {
     let mut h = detail("panel.edit");
@@ -1026,11 +1164,30 @@ fn soft_proofing_flags_out_of_gamut_colours_and_makes_proof_copies() {
     assert_eq!(r["ok"], true, "{r}");
     assert!(h.app.ui.soft_proof);
     let st = exec(&mut h, "view.softProof", json!({"space": "srgb", "destWarning": true}));
-    assert_eq!(st, json!({"on": true, "space": "srgb", "destWarning": true, "displayWarning": false}));
+    assert_eq!(
+        st,
+        json!({"on": true, "space": "srgb", "profile": null, "intent": "perceptual", "paperInk": false, "destWarning": true, "displayWarning": false})
+    );
     h.settle(SETTLE);
     assert!(red(&h) > before, "out-of-gamut colours are painted red");
     let r = h.request("engine.execute", json!({"command": "view.softProof", "params": {"space": "cmyk"}}), T);
     assert_ne!(r["ok"], true);
+    // a device (printer) profile, its intent and Simulate Paper & Ink
+    let dir = std::env::temp_dir().join(format!("proof-profile-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let icc = dir.join("printer.icc");
+    std::fs::write(&icc, lightcraft_codecs::icc::write_named(lightcraft_codecs::NamedSpace::Srgb)).unwrap();
+    let st = exec(&mut h, "view.softProof", json!({"profile": icc.to_string_lossy(), "intent": "relative", "paperInk": true}));
+    assert_eq!((st["intent"].as_str(), st["paperInk"].as_bool()), (Some("relative"), Some(true)), "{st}");
+    assert!(st["profile"]["name"].as_str().is_some_and(|n| !n.is_empty()), "{st}");
+    assert_ne!(h.app.ui.proof.profile, 0);
+    h.settle(SETTLE);
+    assert!(red(&h) > before, "the device gamut is flagged too");
+    let r = h.request("engine.execute", json!({"command": "view.softProof", "params": {"profile": "/nonexistent.icc"}}), T);
+    assert_ne!(r["ok"], true);
+    let st = exec(&mut h, "view.softProof", json!({"profile": null}));
+    assert_eq!((st["profile"].clone(), h.app.ui.proof.profile), (json!(null), 0));
+    let _ = std::fs::remove_dir_all(&dir);
     // Create Proof Copy: a virtual copy named after the proof
     let n = h.app.session.catalog.photos().count();
     let r = h.request("ui.clickWidget", json!({"id": "button:createProofCopy"}), T);
@@ -1115,4 +1272,147 @@ fn ai_masks_without_the_model_offer_the_download() {
     assert!(e.starts_with(lightcraft_engine::segment::NOT_INSTALLED), "{e}");
     assert!(develop(&h).masks.is_empty());
     assert!(t.elapsed() < SETTLE, "{:?}", t.elapsed());
+}
+
+fn color_samples(h: &Headless) -> serde_json::Value {
+    let d = develop(h);
+    let m = d.masks.last().expect("a mask");
+    let Some(MaskShape::ColorRange { samples, .. }) = m.components.iter().map(|c| &c.shape).find(|s| matches!(s, MaskShape::ColorRange { .. }))
+    else {
+        panic!("colour range")
+    };
+    serde_json::to_value(samples).expect("samples")
+}
+
+/// Same samples, up to sub-pixel rounding and the preview level sampled.
+#[track_caller]
+fn assert_close(a: &serde_json::Value, b: &serde_json::Value) {
+    let flat = |v: &serde_json::Value| -> Vec<f64> {
+        v.as_array().unwrap().iter().flat_map(|s| s.as_array().unwrap().iter().map(|x| x.as_f64().unwrap())).collect()
+    };
+    let (a, b) = (flat(a), flat(b));
+    assert_eq!(a.len(), b.len());
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 0.05), "{a:?} vs {b:?}");
+}
+
+/// Regression: the Colour Range "Pick" button armed the eyedropper, but with the Masking panel
+/// open the loupe's clicks went to the mask overlay, so no sample was ever taken.
+#[test]
+fn color_range_pick_button_samples_the_photo() {
+    let mut h = detail("panel.masking");
+    exec(&mut h, "mask.add", json!({"kind": "colorRange"}));
+    h.app.ui.tool.clear();
+    h.settle(SETTLE);
+    click(&mut h, "button:colorPick0");
+    assert_eq!(h.app.ui.tool, "colorRange", "Pick arms the eyedropper");
+    brush_at(&mut h, 0.25, 0.5);
+    let ui_sample = color_samples(&h);
+    assert_eq!(ui_sample.as_array().map(Vec::len), Some(1), "a click samples a colour");
+    // the sample is the colour at that normalized point
+    exec(&mut h, "mask.sampleColor", json!({"x": 0.25, "y": 0.5}));
+    assert_close(&color_samples(&h), &ui_sample);
+    // ⇧-click adds
+    let r = h.request("ui.pointer", json!({"shift": true, "events": [{"kind": "down", "x": 0.7, "y": 0.2}, {"kind": "up", "x": 0.7, "y": 0.2}]}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(color_samples(&h).as_array().map(Vec::len), Some(2), "⇧-click adds a sample");
+
+    // cropped and zoomed: the click samples the photo point under it
+    exec(&mut h, "crop.set", json!({"rect": [0.2, 0.1, 0.9, 0.8]}));
+    h.app.ui.zoom = crate::state::Zoom::Percent(200.0);
+    h.app.ui.pan = (0.5, 0.5);
+    h.settle(SETTLE);
+    brush_at(&mut h, 0.5, 0.5);
+    let ui_sample = color_samples(&h);
+    assert_eq!(ui_sample.as_array().map(Vec::len), Some(1));
+    // (the centre of the crop box, in normalized source coordinates)
+    let c = develop(&h).crop.geometry.rect;
+    exec(&mut h, "mask.sampleColor", json!({"x": (c.x0 + c.x1) / 2.0, "y": (c.y0 + c.y1) / 2.0}));
+    assert_close(&color_samples(&h), &ui_sample); // a cropped, zoomed pick maps to the same frame point
+    // Pick again ends picking
+    click(&mut h, "button:colorPick0");
+    assert!(h.app.ui.tool.is_empty());
+    h.settle(SETTLE);
+}
+
+#[test]
+fn a_selected_develop_slider_accepts_wheel_nudges() {
+    let mut h = detail("panel.edit");
+    // the demo may open on the Edit panel already, which `panel.edit` then toggles shut
+    let r = h.request("ui.set", json!({"right": "edit"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let name = "slider:light.exposure";
+    let panel = h.app.widgets.iter().find(|(id, _)| id == "panel:right_panel").unwrap().1;
+    let track = h.app.widgets.iter().find(|(id, _)| id == name).unwrap().1;
+    assert!(panel.contains(track.center()), "slider must be visible before interaction");
+
+    let result = h.request("ui.clickWidget", json!({"id": name, "fx": 0.5}), T);
+    assert_eq!(result["ok"], true, "{result}");
+    let before = lightcraft_develop::controls::get(&develop(&h), "light.exposure").expect("exposure");
+
+    // A wheel event over the selected control adjusts exposure instead of
+    // scrolling the right sidebar (an unselected slider leaves scrolling alone).
+    let result = h.request("ui.scroll", json!({"dy": 120.0}), T);
+    assert_eq!(result["ok"], true, "{result}");
+    h.step();
+    let after = lightcraft_develop::controls::get(&develop(&h), "light.exposure").expect("exposure");
+    assert!(after > before, "selected exposure did not increase: {before} -> {after}");
+}
+
+/// Issue #517: a fast brush stroke (pointer samples several brush widths apart) shows on the photo
+/// while the button is held as the continuous, feathered band it will be once committed, not as
+/// separate dabs at the samples with gaps between them.
+#[test]
+fn a_fast_brush_stroke_shows_without_gaps_before_the_button_is_released() {
+    let mut h = detail("panel.masking");
+    h.settle(SETTLE);
+    exec(&mut h, "tool.brush", json!({"new": true}));
+    let r = h.request("ui.set", json!({"brushSize": 0.03, "brushFeather": 50.0, "brushFlow": 100.0}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    // the photo before painting, and where a normalized image point is on screen
+    pointer(&mut h, json!([{"kind": "move", "x": 0.02, "y": 0.02}]));
+    h.settle(SETTLE);
+    let photo = h.paint();
+    let img = h.app.image_rect.expect("the photo is on screen");
+    let ppp = h.pixels_per_point;
+    let px = |im: &egui::ColorImage, x: f32, y: f32| {
+        let (sx, sy) = (((img.left() + x * img.width()) * ppp) as usize, ((img.top() + y * img.height()) * ppp) as usize);
+        let c = im.pixels[sy * im.size[0] + sx];
+        [c.r() as f32, c.g() as f32, c.b() as f32]
+    };
+    // a drag that starts (past egui's drag threshold, at `a`) and then moves fast: samples far
+    // apart, button held
+    let (a, b, c) = ((0.17_f32, 0.4_f32), (0.5_f32, 0.4_f32), (0.85_f32, 0.4_f32));
+    pointer(
+        &mut h,
+        json!([{"kind": "down", "x": 0.15, "y": a.1}, {"kind": "drag", "x": a.0, "y": a.1}, {"kind": "drag", "x": b.0, "y": b.1}, {"kind": "drag", "x": c.0, "y": c.1}]),
+    );
+    assert!(matches!(h.app.gesture, Some(crate::panels::detail::Gesture::Brush { .. })), "still painting");
+    let held = h.paint();
+    let [r0, g0, b0] = h.app.ui.mask_overlay_color.map(|v| v as f32);
+    let op = h.app.ui.mask_overlay_opacity / 100.0;
+    // along the centreline between the samples (away from the cursor ring at the last one), the
+    // overlay colour at full coverage over the photo
+    let mut gaps = vec![];
+    for i in 1..=74 {
+        let x = a.0 + (c.0 - a.0) * i as f32 / 80.0;
+        let p = px(&photo, x, a.1);
+        let want = [p[0] + (r0 - p[0]) * op, p[1] + (g0 - p[1]) * op, p[2] + (b0 - p[2]) * op];
+        let got = px(&held, x, a.1);
+        if (0..3).any(|k| (got[k] - want[k]).abs() > 12.0) {
+            gaps.push((x, got, want));
+        }
+    }
+    assert!(gaps.is_empty(), "the live stroke has gaps: {} of 74 points, first {:?}", gaps.len(), gaps.first());
+    pointer(&mut h, json!([{"kind": "up", "x": c.0, "y": c.1}]));
+    let d = develop(&h);
+    let MaskShape::Brush { strokes } = &d.masks[0].components[0].shape else { panic!("brush") };
+    assert!(strokes[0].points.len() >= 3, "{strokes:?}");
+    // committed: the rendered overlay covers what the live stroke did, feather included
+    h.settle(SETTLE);
+    let done = h.paint();
+    for (x, y) in [(0.3, a.1), (0.6, a.1), (0.3, a.1 + 0.02), (0.6, a.1 - 0.025), (0.45, a.1 + 0.06)] {
+        let (l, k) = (px(&held, x, y), px(&done, x, y));
+        assert!((0..3).all(|i| (l[i] - k[i]).abs() < 24.0), "live {l:?} vs committed {k:?} at ({x}, {y})");
+    }
 }

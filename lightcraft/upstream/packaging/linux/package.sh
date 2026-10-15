@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and package LightCraft for Linux (<arch> is x86_64 or aarch64):
+# Build and package LightCraft for Linux (<arch> is x86_64 or aarch64, or riscv64 when cross-compiling):
 #
 #   $DIST/lightcraft-<version>-linux-<arch>.AppImage  any distro with glibc >= the build host's
 #   $DIST/lightcraft-<version>-linux-<arch>.AppImage.zsync  delta updates (needs zsyncmake)
@@ -13,6 +13,8 @@
 # (downloaded into $CARGO_TARGET_DIR if missing). Build on an old distro (CI: Ubuntu 22.04,
 # glibc 2.35) so the binaries run on newer ones. Optional: desktop-file-validate, appstreamcli,
 # zsyncmake (the zsync package) for the AppImage's .zsync.
+# Cross-compiling (CI: riscv64, tar only): set CROSS_ARCH, CROSS_TARGET (the Rust target),
+# CROSS_COMPILE (binutils prefix, for strip) and optionally EMULATOR (runs the CLI smoke test).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -25,13 +27,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1; shift ;;
     --formats) FORMATS="$2"; shift 2 ;;
-    -h | --help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-ARCH="$(uname -m)"
+ARCH="${CROSS_ARCH:-$(uname -m)}"
 case "$ARCH" in
+  riscv64) DEB_ARCH=riscv64 ;;
   x86_64) DEB_ARCH=amd64 ;;
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
@@ -42,9 +45,10 @@ BASENAME="lightcraft-$VERSION-linux-$ARCH"
 echo "==> LightCraft $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli --features lightcraft/heif,lightcraft-cli/heif)
+  (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli --features lightcraft/heif,lightcraft-cli/heif \
+    ${CROSS_TARGET:+--target "$CROSS_TARGET"})
 fi
-BIN="$CARGO_TARGET_DIR/release"
+BIN="$CARGO_TARGET_DIR/${CROSS_TARGET:+$CROSS_TARGET/}release"
 WORK="$CARGO_TARGET_DIR/linux-package"
 STAGE="$WORK/root"
 rm -rf "$WORK"
@@ -52,7 +56,7 @@ rm -rf "$WORK"
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
 install -Dm755 "$BIN/lightcraft" "$STAGE/usr/bin/lightcraft"
 install -Dm755 "$BIN/lightcraft-cli" "$STAGE/usr/bin/lightcraft-cli"
-strip "$STAGE/usr/bin/lightcraft" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
+"${CROSS_COMPILE:-}strip" "$STAGE/usr/bin/lightcraft" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$HERE/$APP_ID.mime.xml" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
 mkdir -p "$STAGE/usr/share/metainfo"
@@ -135,6 +139,10 @@ if has appimage; then
   fi
 fi
 
-"$STAGE/usr/bin/lightcraft-cli" --version
+if [ -z "${CROSS_TARGET:-}" ]; then
+  "$STAGE/usr/bin/lightcraft-cli" --version
+elif [ -n "${EMULATOR:-}" ]; then
+  "$EMULATOR" "$STAGE/usr/bin/lightcraft-cli" --version
+fi
 echo "==> done"
 ls -lh "$DIST"

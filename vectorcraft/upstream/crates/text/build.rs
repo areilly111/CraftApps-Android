@@ -51,6 +51,12 @@ fn main() {
     }
     let src = format!("pub static CRAFT_FONTS: &[CraftFont] = &[\n{fonts}];\npub static WEB_FONTS: &[WebFont] = &[\n{web}];\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("craft_fonts.rs");
+    // Unchanged output keeps its mtime. Rewritten just before this crate compiles, it can read as
+    // newer than that compile where cargo's recorded times lose their sub-second part (ecryptfs
+    // home directories), and the next build would compile this crate and everything above it again.
+    if std::fs::read_to_string(&out).is_ok_and(|old| old == src) {
+        return;
+    }
     if let Err(e) = std::fs::write(&out, src) {
         println!("cargo::error=writing {}: {e}", out.display());
     }

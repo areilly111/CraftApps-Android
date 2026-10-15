@@ -566,7 +566,7 @@ impl Tool for CurvatureTool {
             o.push(Overlay::Path { path: bp, color: FEEDBACK, width: 1.0, dashed: false });
         }
         for (i, (p, _)) in self.pts.iter().enumerate() {
-            o.push(Overlay::Anchor { p: *p, color: FEEDBACK, filled: Some(i) == self.current, size: 6.0 });
+            o.push(Overlay::CurvePoint { p: *p, color: FEEDBACK, filled: Some(i) == self.current, size: 6.0 });
         }
         o
     }

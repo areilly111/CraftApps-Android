@@ -3,7 +3,8 @@
 //! Ink density `v` (the channel value, 1 = solid) of an ink with display colour `c` and solidity
 //! `s` turns the colour underneath `p` into `(1 − s·v)·p·(1 − v + v·c) + s·v·c`: transparent inks
 //! (solidity 0) multiply like overprinted process inks, opaque ones cover what is below, which is
-//! how Photoshop previews spot channels.
+//! how Photoshop previews spot channels. An alpha-type channel of a Multichannel document
+//! (selected / masked areas) still prints, as a transparent black ink, like Photoshop shows it.
 
 use photocraft_doc::Document;
 use photocraft_geom::Rect;
@@ -15,7 +16,7 @@ pub fn inks(doc: &Document, rect: Rect) -> Buffer {
     let mut buf = Buffer::filled(rect, [1.0, 1.0, 1.0, 1.0]);
     let mut vals = Vec::new();
     for ch in &doc.channels {
-        let Some((ink, solidity)) = ch.spot else { continue };
+        let (ink, solidity) = ch.spot.unwrap_or((photocraft_color::Color::BLACK, 0.0));
         if ch.surface.content_bounds().intersect(&rect).is_empty() {
             continue;
         }
@@ -65,7 +66,15 @@ mod tests {
         assert_eq!(r.px[1], [0.0, 1.0, 1.0, 1.0]);
         assert_eq!(r.px[2], [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(r.px[3], [1.0, 0.0, 1.0, 1.0]);
-        // Alpha channels and other modes are not inks.
+        // An alpha-type channel prints as a black ink.
+        let mut k = Surface::new(fmt);
+        k.write_region(Rect::new(0, 0, 4, 1), &[0.5, 0.0, 0.0, 0.0]);
+        doc.channels.push(AlphaChannel::new("Alpha", k));
+        let r = crate::flatten(&doc);
+        // 0.5 is stored as 128/255 in an 8-bit channel: within one 8-bit step.
+        assert!((r.px[0][0] - 0.5).abs() <= 1.0 / 255.0 && (r.px[0][1] - 0.5).abs() <= 1.0 / 255.0, "{:?}", r.px[0]);
+        assert_eq!(r.px[1], [0.0, 1.0, 1.0, 1.0]);
+        // Other modes have no inks.
         doc.mode = ColorMode::Rgb;
         assert_eq!(crate::flatten(&doc).px[1][3], 0.0);
     }

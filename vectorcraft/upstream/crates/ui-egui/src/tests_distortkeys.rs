@@ -27,6 +27,28 @@ fn press(app: &mut VectorcraftApp, key: Key) {
     out.textures_delta.clear();
 }
 
+#[test]
+fn escape_leaves_artboard_editing_after_cancelling_an_active_drag() {
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width": 400, "height": 400})).unwrap();
+    app.select_tool("artboard");
+    press(&mut app, Key::Escape);
+    assert_eq!(app.session.tool_id(), "selection", "idle Escape leaves artboard editing");
+
+    app.select_tool("artboard");
+    let before = app.session.doc().unwrap().doc.clone();
+    let view = app.view_info();
+    for (kind, x, y) in [(PointerKind::Down, 200.0, 200.0), (PointerKind::Drag, 250.0, 240.0)] {
+        app.session.pointer(&PointerEvent::new(kind, x, y), view).unwrap();
+    }
+    assert_ne!(*app.session.doc().unwrap().doc, *before, "drag changes the preview");
+    press(&mut app, Key::Escape);
+    assert_eq!(*app.session.doc().unwrap().doc, *before, "Escape cancels the drag");
+    assert_eq!(app.session.tool_id(), "artboard", "first Escape only cancels the gesture");
+    press(&mut app, Key::Escape);
+    assert_eq!(app.session.tool_id(), "selection", "next Escape leaves artboard editing");
+}
+
 fn click(app: &mut VectorcraftApp, x: f64, y: f64) {
     let v = app.view_info();
     for kind in [PointerKind::Down, PointerKind::Up] {

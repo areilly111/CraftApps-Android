@@ -55,12 +55,16 @@ fn list_views(s: &mut Session, _: &Value) -> Result<Value> {
 
 fn new_view(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "view.saved.new";
-    let center = p.get("center").and_then(Value::as_array).and_then(|a| Some(Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?)));
-    let center = center.ok_or_else(|| bad(C, "missing center [x, y]"))?;
+    let [x, y] = p.get("center").and_then(finite_numbers::<2>).ok_or_else(|| bad(C, "center must be [x, y]"))?;
     let zoom = f64_req(p, "zoom", C)?;
     if !(zoom.is_finite() && zoom > 0.0) {
         return Err(bad(C, "zoom must be positive"));
     }
+    // Given, the rotation is a number: nothing malformed falls back to 0°.
+    let rotation = match p.get("rotation") {
+        Some(r) => r.as_f64().filter(|r| r.is_finite()).ok_or_else(|| bad(C, "rotation must be a number of degrees"))?,
+        None => 0.0,
+    };
     let st = s.doc()?;
     if st.doc.views.len() >= MAX_VIEWS {
         return Err(bad(C, format!("a document keeps at most {MAX_VIEWS} views")));
@@ -72,7 +76,7 @@ fn new_view(s: &mut Session, p: &Value) -> Result<Value> {
     if st.doc.views.iter().any(|v| v.name == name) {
         return Err(bad(C, format!("a view named `{name}` exists")));
     }
-    let view = SavedView { name: name.clone(), center, zoom, rotation: f64_or(p, "rotation", 0.0) };
+    let view = SavedView { name: name.clone(), center: Point::new(x, y), zoom, rotation };
     let index = s.edit("New View", |d, _| {
         d.views.push(view);
         Ok(d.views.len() - 1)
@@ -107,6 +111,29 @@ mod tests {
     use serde_json::json;
 
     use crate::Session;
+
+    /// Malformed dimensions are rejected rather than saving an arbitrary or partial viewport.
+    #[test]
+    fn saved_views_require_exact_finite_coordinates_and_rotation() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let before = s.doc().unwrap().history.undo.len();
+        for params in [
+            json!({"center": [10], "zoom": 2}),
+            json!({"center": [10, 20, 30], "zoom": 2}),
+            json!({"center": [10, "bad"], "zoom": 2}),
+            json!({"center": [10, 20], "zoom": 2, "rotation": "bad"}),
+            json!({"center": [10, 20], "zoom": 2, "rotation": null}),
+        ] {
+            assert!(s.execute("view.saved.new", &params).is_err(), "accepted {params}");
+            assert!(s.doc().unwrap().doc.views.is_empty());
+            assert_eq!(s.doc().unwrap().history.undo.len(), before);
+        }
+        s.execute("view.saved.new", &json!({"center": [10, 20], "zoom": 2, "rotation": -15})).unwrap();
+        let views = &s.doc().unwrap().doc.views;
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].rotation, -15.0);
+    }
 
     #[test]
     fn save_rename_delete_views() {

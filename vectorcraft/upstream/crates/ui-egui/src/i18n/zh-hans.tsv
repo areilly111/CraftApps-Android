@@ -1071,6 +1071,23 @@
 	Graph	图表
 	Graph Data	图表数据
 	Graph Type	图表类型
+	Graph Design	图表设计
+	Graph Marker	图表标记
+	New Design	新建设计
+	Delete Design	删除设计
+	Paste Design	粘贴设计
+	Select Unused	选择未使用项
+	Import Data…	导入数据…
+	Transpose	转置
+	Switch x/y	切换 x/y
+	Number of Decimals:	小数位数：
+	Column Width:	列宽：
+	No Legend	无图例
+	Standard Legend	标准图例
+	Legends in Wedges	楔形中的图例
+	Ratio	比例
+	Even	平均
+	Stacked	堆积
 	Graphic Style	图形样式
 	Graphic Style Libraries	图形样式库
 	Graphic Style Libraries Menu	图形样式库菜单
@@ -1494,6 +1511,7 @@
 	Move Plane to Match Object	移动平面以符合对象
 	Move Slices	移动切片
 	Move Spine Point	移动脊线点
+	Reshape Spine Segment	整形脊线线段
 	Move Swatch	移动色板
 	Move Up	上移
 	Move…	移动…
@@ -1976,6 +1994,11 @@
 	Proof Colors	校样颜色
 	Proof Setup	校样设置
 	Properties	属性
+	Proportional Metrics	比例度量
+	Digits	数字
+	Arabic	阿拉伯数字
+	Hindi	印地数字
+	Farsi	波斯数字
 	Proportional Oldstyle	比例旧式数字
 	Pucker & Bloat…	缩拢与膨胀…
 	Pucker Tool	收缩工具
@@ -2066,6 +2089,9 @@
 	Rectangle: Sunshine	矩形：阳光
 	Rectangle…	矩形…
 	Rectangular Grid	矩形网格
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	水平分隔线：
+	Vertical Dividers:	垂直分隔线：
 	Rectangular Grid Tool	矩形网格工具
 	Red	红
 	Redefine Character Style	重新定义字符样式
@@ -2075,6 +2101,9 @@
 	Redefine Symbol	重新定义符号
 	Redefine {kind} Style	重新定义{kind}样式
 	Redo	重做
+	List Folder	列出文件夹
+	Begin Undo Group	开始还原组
+	End Undo Group	结束还原组
 	Redo {name}	重做 {name}
 	Redo {}	重做 {}
 	Reduce Colors	减少颜色
@@ -2125,6 +2154,13 @@
 	Relinked {n} image(s); not in that folder: {}	已重新链接 {n} 张图像；不在该文件夹中：{}
 	Relinked {} image(s)	已重新链接 {} 张图像
 	Relink…	重新链接…
+	Find Linked Files	查找链接文件
+	Find Linked Files in Folder…	在文件夹中查找链接文件…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	请为每个链接文件选择要重新链接到的文件。大小和内容与链接中保存的相同的文件排在最前面。
+	Same file	相同文件
+	Same size	相同大小
+	Don't Relink	不重新链接
+	Copy into the document's folder	复制到文档所在的文件夹
 	Reload Plug-ins	重新载入增效工具
 	Remove	移除
 	Remove Anchor Points	移除锚点
@@ -2363,6 +2399,7 @@
 	Select an image to see its Link Info.	选择图像以查看其链接信息。
 	Select an image to trace	选择要描摹的图像
 	Select Anchors	选择锚点
+	Select Segments	选择路径段
 	Select Appearance Item	选择外观项目
 	Select art and choose Object › Pattern › Make.	选择图稿并选择“对象 › 图案 › 创建”。
 	Select art and click New Symbol to make one.	选择图稿并单击“新建符号”以创建。
@@ -2405,7 +2442,6 @@
 	Set base color to the current color	将基色设为当前颜色
 	Set Bounds	设置边界
 	Set Current Layer	设为当前图层
-	Set Key Object	设为关键对象
 	Set Keyboard Shortcut	设置键盘快捷键
 	Set Mesh Point Color	设置网格点颜色
 	Set Preference	设置首选项
@@ -2521,6 +2557,7 @@
 	Size Tile to Art	使拼贴适合图稿
 	Size/Leading	字号/行距
 	Size:	尺寸：
+	Ridges per segment:	每段起伏数：
 	Size: {size}  Tracking: {tracking}	大小：{size}  字距：{tracking}
 	Skew	倾斜
 	Skin Tone Ramps	肤色渐变
@@ -2789,6 +2826,9 @@
 	Tool Options…	工具选项…
 	Toolbar: Advanced / Basic	工具栏：高级 / 基本
 	Toolbar: Single/Double Column	工具列：单列/双列
+	Toolbar: Add Tool	工具栏：添加工具
+	Toolbar: Remove Tool	工具栏：移除工具
+	Toolbar: Reset	工具栏：重置
 	Toolbars	工具栏
 	Tools	工具
 	Top	上
@@ -2996,6 +3036,7 @@
 	Vertical %	垂直 %
 	Vertical Align Bottom	垂直底对齐
 	Vertical Align Center	垂直居中对齐
+	Horizontal & Vertical Align Center	水平和垂直居中对齐
 	Vertical Align Top	垂直顶对齐
 	Vertical Area Type Tool	直排区域文字工具
 	Vertical Distribute Bottom	垂直分布下缘
@@ -3408,6 +3449,7 @@
 	Graphics: {adapter}	显卡：{adapter}
 	Japanese	日文
 	Latin	拉丁文
+	Thai	泰文
 	Layer Options	图层选项
 	Layers Panel Options	图层面板选项
 	Monospaced	等宽
@@ -3517,6 +3559,7 @@ axis	Horizontal	水平
 axis	Vertical	垂直
 axis	Both	两者
 	Drag to move	拖动以移动
+	Drag to move out of the set	拖动以移出该组合
 	Drag to float as a toolbar	拖动使其浮动为工具栏
 	Put back in the toolbar	放回工具栏
 	Float Panel	浮动面板
@@ -3538,6 +3581,8 @@ axis	Both	两者
 	Images: link to the file instead of only embedding it.	图像：链接到文件，而不只是嵌入。
 	VectorCraft documents: one locked object, updated when the file changes.	VectorCraft 文档：一个锁定对象，文件更改时随之更新。
 	A file dialog is open: choose there first	文件对话框已打开：请先在其中选择
+	The document was closed while its file dialog was open	文件对话框打开期间，文档已关闭
+	The dialog was closed before its file dialog answered	文件对话框给出结果之前，对话框已关闭
 	Expand Shaper Group	扩展 Shaper 组
 	Release Shaper Group	释放 Shaper 组
 	Select Shaper Face	选择 Shaper 区域
@@ -3668,6 +3713,14 @@ effect	Vertical	垂直
 	Define a variable first	请先定义一个变量
 	Text	文本
 	Visibility	可见性
+# Shared panel docking
+	Activate Panel	激活面板
+	Change Panel Layout	更改面板布局
+	Close Panel	关闭面板
+	Move Panel	移动面板
+	Group with	组合到
+	Resize panels	调整面板大小
+	Resize panel window	调整面板窗口大小
 
 # Revolve profile guidance.
 
@@ -3723,3 +3776,15 @@ lighting	Light	光源
 	Stroke Pressure	描边压力
 	Right Diagonal	右对角线
 	Left Diagonal	左对角线
+	Vertical Guide	垂直参考线
+	Horizontal Guide	水平参考线
+	Move Guide to Layer	将参考线移至图层
+	Linux Display Server	Linux 显示服务器
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	标尺原点
+	Reset Ruler Origin	重置标尺原点
+	Artistic	艺术效果
+	Film Grain…	胶片颗粒…
+	Highlight Area	高光区域
+	Concentric Dividers:	同心分隔线：
+	Radial Dividers:	径向分隔线：

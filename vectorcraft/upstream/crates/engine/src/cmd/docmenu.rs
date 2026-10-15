@@ -10,6 +10,7 @@ use vectorcraft_doc::{CharStyle, Guide, Node, NodeId, NodeKind, SavedSelection, 
 use vectorcraft_geom::Vec2;
 
 use super::edit::selected_roots;
+use super::select::{selectable_ids, walk_selectable};
 use super::*;
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -57,7 +58,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Direction Handles",
             ["Select", "Object"],
             None,
-            "{} direct-select every anchor (showing all handles) of the selected paths → {anchors}",
+            "{} direct-select every anchor (showing all handles) of the selected paths and the paths inside the selected objects, leaving out paths that are hidden or locked, inside a hidden or locked object or layer, on a template layer, or outside the isolated group or layer → {anchors}",
             has_selection,
             direction_handles
         ),
@@ -103,7 +104,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Recall Selection",
             ["Select"],
             None,
-            "{name} select the objects of a saved selection (those since deleted are left out) → {count}",
+            "{name} select the objects of a saved selection, leaving out those deleted since and those that are hidden or locked, inside a hidden or locked object or layer, on a template layer, or outside the isolated group or layer → {count}",
             has_saved_selection,
             recall_selection
         ),
@@ -160,7 +161,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add Guide",
             [],
             None,
-            "{vertical: bool, pos: pt (x for vertical, y for horizontal), artboard?: index (an artboard guide: it runs across that artboard only and moves, is copied and is deleted with it; default a canvas guide, across the whole canvas)} → {index}",
+            "{vertical: bool, pos: pt (x for vertical, y for horizontal), artboard?: index (an artboard guide: it runs across that artboard only and moves, is copied and is deleted with it; default a canvas guide, across the whole canvas), layer?: id (the layer it is on, shown, hidden, locked and deleted with it; default the current layer)} → {index}",
             has_doc,
             guide_add
         ),
@@ -169,7 +170,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Guides",
             [],
             None,
-            "{} → [{index, vertical, pos, selected, artboard?: index (an artboard guide's)}…] the ruler guides",
+            "{} → [{index, vertical, pos, selected, artboard?: index (an artboard guide's), layer?: id (the layer it is on), shown, editable (its layer shown and unlocked)}…] the ruler guides",
             has_doc,
             guide_list
         ),
@@ -199,6 +200,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{index, pos: pt} put ruler guide `index` at `pos` | {dx?, dy?: pt, copy?: bool} move the selected guides (vertical ones by dx, horizontal ones by dy); copy leaves them and selects the moved copies",
             guides_unlocked,
             guide_move
+        ),
+        cmd!(
+            "guide.setLayer",
+            "Move Guide to Layer",
+            [],
+            None,
+            "{index?, indexes?: [index…], layer: id} put ruler guide `index` (or guides `indexes`), else the selected guides, on layer `layer` (a layer or sublayer), as dragging their rows onto that layer's row in the Layers panel does → {count}",
+            guides_unlocked,
+            guide_set_layer
         ),
         cmd!("file.closeAll", "Close All", ["File"], Some("Cmd+Alt+W"), "{} → {closed}", has_doc, close_all),
         cmd!(
@@ -234,13 +244,12 @@ impl Session {
 fn candidates(s: &Session, f: impl Fn(&Node) -> bool) -> Result<Vec<NodeId>> {
     let st = s.doc()?;
     let mut ids = vec![];
-    for l in st.doc.layers.iter().filter(|l| l.visible && !l.locked) {
-        l.walk(&mut |n| {
-            if !n.is_container() && n.visible && !n.locked && f(n) {
-                ids.push(n.id);
-            }
-        });
-    }
+    walk_selectable(&st.doc, st.isolation, |n| {
+        if !n.is_container() && f(n) {
+            ids.push(n.id);
+        }
+        true
+    });
     Ok(ids)
 }
 
@@ -295,12 +304,17 @@ fn by_kind(s: &mut Session, f: fn(&Node) -> bool) -> Result<Value> {
 
 fn direction_handles(s: &mut Session, _: &Value) -> Result<Value> {
     let roots = selected_roots(s)?;
-    let d = &s.doc()?.doc;
+    let st = s.doc()?;
+    let d = &st.doc;
+    // Only paths that `walk_selectable` visits.
+    let can = selectable_ids(d, st.isolation);
     let mut items: Vec<(NodeId, BTreeSet<(usize, usize)>)> = vec![];
     for r in &roots {
         if let Some(n) = d.node(*r) {
             n.walk(&mut |c| {
-                if let Some(p) = c.path_data() {
+                if can.contains(&c.id)
+                    && let Some(p) = c.path_data()
+                {
                     items.push((c.id, p.anchors().map(|(si, ai, _)| (si, ai)).collect()));
                 }
             });
@@ -343,7 +357,9 @@ fn recall_selection(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_param(p, "name").ok_or_else(|| bad(C, "missing name"))?;
     let ids = s.doc()?.doc.saved_selections.iter().find(|x| x.name == name).map(|x| x.objects.clone());
     let ids = ids.ok_or_else(|| bad(C, format!("no saved selection `{name}`")))?;
-    s.select(|d, sel| sel.set(ids.into_iter().filter(|id| d.node(*id).is_some())))?;
+    let st = s.doc()?;
+    let can = selectable_ids(&st.doc, st.isolation);
+    s.select(|_, sel| sel.set(ids.into_iter().filter(|id| can.contains(id))))?;
     Ok(json!({ "count": s.doc()?.selection.len() }))
 }
 
@@ -386,9 +402,9 @@ fn edit_saved(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad(C, format!("two saved selections would be named `{}`", x.name)));
         }
     }
-    if after != before {
+    if *before != after {
         s.edit("Edit Selection", |d, _| {
-            d.saved_selections = after;
+            d.saved_selections = after.into();
             Ok(())
         })?;
     }
@@ -507,8 +523,15 @@ fn guide_add(s: &mut Session, p: &Value) -> Result<Value> {
         }
         None => None,
     };
+    let st = s.doc()?;
+    let layer = match id_param(p, "layer") {
+        Some(l) if st.doc.node(l).is_some_and(Node::is_layer) => Some(l),
+        Some(_) => return Err(bad("guide.add", "layer must name a layer or sublayer")),
+        // Where new art goes (refused when no layer is shown and unlocked), or that group's layer.
+        None => st.target_parent()?.and_then(|p| if st.doc.node(p).is_some_and(Node::is_layer) { Some(p) } else { st.doc.layer_containing(p) }),
+    };
     let i = s.edit("New Guide", |d, _| {
-        d.guides.push(Guide { artboard, ..Guide::new(vertical, pos) });
+        d.guides.push(Guide { artboard, layer, ..Guide::new(vertical, pos) });
         Ok(d.guides.len() - 1)
     })?;
     Ok(json!({ "index": i }))
@@ -521,6 +544,11 @@ fn guide_list(s: &mut Session, _: &Value) -> Result<Value> {
         if let Some(ab) = st.doc.artboards.iter().position(|a| Some(a.id) == g.artboard) {
             r["artboard"] = json!(ab);
         }
+        if let Some(l) = g.layer {
+            r["layer"] = json!(l.0);
+        }
+        r["shown"] = json!(st.doc.guide_shown(g));
+        r["editable"] = json!(st.doc.guide_editable(g));
         r
     };
     Ok(Value::Array(st.doc.guides.iter().enumerate().map(row).collect()))
@@ -531,6 +559,16 @@ fn guide_index(s: &Session, v: Option<&Value>, cmd: &str) -> Result<usize> {
     let i = v.and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()).ok_or_else(|| bad(cmd, "an index must be a whole number"))?;
     if i >= s.doc()?.doc.guides.len() {
         return Err(bad(cmd, format!("no guide {i}")));
+    }
+    Ok(i)
+}
+
+/// [`guide_index`] of a guide that can be moved or deleted: not on a hidden or locked layer.
+fn editable_guide_index(s: &Session, v: Option<&Value>, cmd: &str) -> Result<usize> {
+    let i = guide_index(s, v, cmd)?;
+    let d = &s.doc()?.doc;
+    if !d.guides.get(i).is_some_and(|g| d.guide_editable(g)) {
+        return Err(EngineError::Other("the guide is on a hidden or locked layer".into()));
     }
     Ok(i)
 }
@@ -554,7 +592,7 @@ fn guide_select(s: &mut Session, p: &Value) -> Result<Value> {
 /// Delete ruler guide `index`, else the selected guides, in one undo step → {count}.
 pub(crate) fn guide_remove(s: &mut Session, p: &Value) -> Result<Value> {
     let gone: Vec<usize> = match p.get("index") {
-        Some(v) => vec![guide_index(s, Some(v), "guide.remove")?],
+        Some(v) => vec![editable_guide_index(s, Some(v), "guide.remove")?],
         None => s.doc()?.selection.guides.clone(),
     };
     if gone.is_empty() {
@@ -568,10 +606,39 @@ pub(crate) fn guide_remove(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({ "count": gone.len() }))
 }
 
+/// Put ruler guide `index`, else the selected guides, on layer `layer`, in one undo step.
+fn guide_set_layer(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "guide.setLayer";
+    let d = &s.doc()?.doc;
+    let layer =
+        id_param(p, "layer").filter(|l| d.node(*l).is_some_and(Node::is_layer)).ok_or_else(|| bad(C, "layer must name a layer or sublayer"))?;
+    // As objects dragged in the Layers panel: never onto a locked layer.
+    if super::layer::locked_within(d, layer) {
+        return Err(EngineError::Other("the layer or group is locked".into()));
+    }
+    let moving: Vec<usize> = match (p.get("index"), p.get("indexes").and_then(Value::as_array)) {
+        (Some(v), _) => vec![editable_guide_index(s, Some(v), C)?],
+        (None, Some(list)) => list.iter().take(10_000).map(|v| editable_guide_index(s, Some(v), C)).collect::<Result<Vec<_>>>()?,
+        (None, None) => s.doc()?.selection.guides.clone(),
+    };
+    if moving.is_empty() {
+        return Err(bad(C, "no guide selected (or give an index)"));
+    }
+    s.edit("Move Guide to Layer", |d, _| {
+        for i in &moving {
+            if let Some(g) = d.guides.get_mut(*i) {
+                g.layer = Some(layer);
+            }
+        }
+        Ok(())
+    })?;
+    Ok(json!({ "count": moving.len() }))
+}
+
 /// Put ruler guide `index` at `pos`, else move (or copy) the selected guides, in one undo step.
 pub(crate) fn guide_move(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(v) = p.get("index") {
-        let i = guide_index(s, Some(v), "guide.move")?;
+        let i = editable_guide_index(s, Some(v), "guide.move")?;
         let pos = f64_req(p, "pos", "guide.move")?;
         s.edit("Move Guide", |d, _| {
             if let Some(g) = d.guides.get_mut(i) {

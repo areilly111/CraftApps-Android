@@ -62,6 +62,38 @@ fn a_picked_font_size_preset_applies_in_one_undo_step() {
 }
 
 #[test]
+fn scaled_font_size_fields_and_preset_use_document_points() {
+    let ctx = egui::Context::default();
+    crate::theme::install_fonts(&ctx);
+    let (mut app, id) = app_with_text();
+    run(&mut app, "object.scale", json!({"sx": 200}));
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], character::show), "24 pt"));
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], crate::chrome::control_bar), "24 pt"));
+    let at = Cell::new(egui::Pos2::ZERO);
+    frame_events(&ctx, &mut app, vec![], size_combo(&at));
+    click(&ctx, &mut app, at.get() + egui::vec2(110.0, 13.0), size_combo(&at));
+    let t = frame_events(&ctx, &mut app, vec![], size_combo(&at));
+    let undo = undo_len(&app);
+    click(&ctx, &mut app, text_rect(&t, "10 pt").center(), size_combo(&at));
+    assert_eq!(style(&app, id).size * 2.0, 10.0);
+    assert_eq!(undo_len(&app), undo + 1);
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], size_combo(&at)), "10 pt"));
+}
+
+#[test]
+fn scaled_group_shows_character_and_control_bar_size_fields() {
+    let ctx = egui::Context::default();
+    crate::theme::install_fonts(&ctx);
+    let (mut app, _) = app_with_text();
+    run(&mut app, "object.group", json!({}));
+    run(&mut app, "object.scale", json!({"sx": 200}));
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], character::show), "24 pt"));
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], crate::chrome::control_bar), "24 pt"));
+    run(&mut app, "text.setStyle", json!({"size": 10}));
+    assert!(shows(&frame_events(&ctx, &mut app, vec![], character::show), "10 pt"));
+}
+
+#[test]
 fn font_size_presets_show_in_the_type_unit() {
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);

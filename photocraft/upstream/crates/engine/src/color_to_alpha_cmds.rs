@@ -92,7 +92,7 @@ fn enabled(s: &Session) -> std::result::Result<(), String> {
     if locks.pixels || locks.all {
         return Err(format!("the layer \"{}\" is locked", l.name));
     }
-    if locks.transparency && !crate::extra_cmds::is_background(l) {
+    if locks.transparency && !d.doc.is_background(l.id) {
         return Err(format!("the transparency of layer \"{}\" is locked", l.name));
     }
     Ok(())
@@ -217,7 +217,7 @@ mod tests {
         s.execute("edit.undo", json!({})).unwrap();
         assert_eq!(name(&s), "Background");
         let d = s.active().unwrap();
-        assert!(crate::extra_cmds::is_background(d.doc.layer(d.active_layer.unwrap()).unwrap()));
+        assert!(d.doc.is_background(d.active_layer.unwrap()));
     }
 
     #[test]

@@ -48,8 +48,24 @@ fn default_reader(path: &str) -> Option<Vec<u8>> {
 
 /// Import with a custom reader for linked files (`path` → bytes).
 pub fn import_idml_with(bytes: &[u8], read_link: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Document> {
+    import_idml_report(bytes, read_link).map(|r| r.document)
+}
+
+/// An imported IDML document and what the import could not bring in.
+#[derive(Debug)]
+pub struct Imported {
+    pub document: Document,
+    /// One line per problem that did not stop the import (a part listed in `designmap.xml` but
+    /// absent from the package, …).
+    pub warnings: Vec<String>,
+}
+
+/// Import with a custom reader for linked files, reporting the problems that did not stop it.
+pub fn import_idml_report(bytes: &[u8], read_link: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Imported> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| IdmlError::NotIdml(e.to_string()))?;
     let mut files: HashMap<String, Vec<u8>> = HashMap::new();
+    // Normalised part name → entry name, first entry wins (zip order, so the choice is stable).
+    let mut lenient: HashMap<String, String> = HashMap::new();
     for i in 0..zip.len() {
         let mut f = zip.by_index(i).map_err(|e| IdmlError::NotIdml(e.to_string()))?;
         if f.is_dir() {
@@ -59,35 +75,81 @@ pub fn import_idml_with(bytes: &[u8], read_link: &dyn Fn(&str) -> Option<Vec<u8>
         // The size is what the archive claims: don't reserve more than a sane part up front.
         let mut buf = Vec::with_capacity((f.size() as usize).min(1 << 24));
         f.read_to_end(&mut buf).map_err(|e| IdmlError::Part { part: name.clone(), msg: e.to_string() })?;
+        lenient.entry(normalize_part_name(&name)).or_insert_with(|| name.clone());
         files.insert(name, buf);
     }
-    if let Some(m) = files.get("mimetype")
+    let part = |name: &str| files.get(name).or_else(|| lenient.get(&normalize_part_name(name)).and_then(|n| files.get(n)));
+    if let Some(m) = part("mimetype")
         && String::from_utf8_lossy(m).trim() != MIMETYPE
     {
         return Err(IdmlError::NotIdml(format!("unexpected mimetype `{}`", String::from_utf8_lossy(m).trim())));
     }
-    let dm = files.get("designmap.xml").ok_or_else(|| IdmlError::NotIdml("missing designmap.xml".into()))?;
+    let dm = part("designmap.xml").ok_or_else(|| IdmlError::NotIdml("missing designmap.xml".into()))?;
     let root = parse(dm).map_err(|msg| IdmlError::Part { part: "designmap.xml".into(), msg })?;
     if root.local() != "Document" {
         return Err(IdmlError::NotIdml(format!("designmap root is <{}>", root.name)));
     }
     // Flatten includes: every `idPkg:*` child is replaced by the children of its part's root.
     let mut top: Vec<El> = Vec::new();
+    let mut warnings = Vec::new();
     for c in root.elements() {
         if c.name.starts_with("idPkg:") {
             let Some(src) = c.get("src") else { continue };
-            let Some(data) = files.get(src) else { continue };
-            let part = parse(data).map_err(|msg| IdmlError::Part { part: src.into(), msg })?;
-            top.extend(part.elements().cloned());
+            let Some(data) = part(src) else {
+                warnings.push(format!("{src}: listed in designmap.xml but missing from the package; its contents were not imported"));
+                continue;
+            };
+            let el = parse(data).map_err(|msg| IdmlError::Part { part: src.into(), msg })?;
+            top.extend(el.elements().cloned());
         } else {
             top.push(c.clone());
         }
     }
     let mut im = Importer::new(read_link);
     im.run(&root, &top)?;
-    let d = im.finish(&root)?;
-    d.check().map_err(|e| IdmlError::Invalid(e.to_string()))?;
-    Ok(d)
+    let document = im.finish(&root).map_err(|e| match e {
+        // Without its spread parts there is nothing to open: say which parts were missing.
+        IdmlError::Invalid(msg) if !warnings.is_empty() => IdmlError::Invalid(format!("{msg} ({})", warnings.join("; "))),
+        e => e,
+    })?;
+    document.check().map_err(|e| IdmlError::Invalid(e.to_string()))?;
+    Ok(Imported { document, warnings })
+}
+
+/// A package part name in the form the lookup compares: InDesign and other IDML writers differ
+/// in percent-encoding, case, path separators and a leading `./` or `/`.
+fn normalize_part_name(name: &str) -> String {
+    let decoded = percent_decode(&name.replace('\\', "/"));
+    let mut rest = decoded.as_str();
+    loop {
+        if let Some(r) = rest.strip_prefix("./") {
+            rest = r;
+        } else if let Some(r) = rest.strip_prefix('/') {
+            rest = r;
+        } else {
+            break;
+        }
+    }
+    rest.to_lowercase()
+}
+
+/// Decode `%XX` escapes; anything else (including a malformed escape) is kept as written.
+pub(crate) fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while let Some(&c) = b.get(i) {
+        if c == b'%'
+            && let (Some(h), Some(l)) = (b.get(i + 1).and_then(|h| (*h as char).to_digit(16)), b.get(i + 2).and_then(|l| (*l as char).to_digit(16)))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 struct ItemCtx {
@@ -132,6 +194,8 @@ struct Importer<'r> {
     page_index: HashMap<String, usize>,
     item_ids: HashMap<String, ItemId>,
     assets: BTreeMap<AssetId, Arc<Asset>>,
+    /// Assets read from a link path, so later placements of that path reuse them unread.
+    linked_assets: HashMap<String, AssetId>,
     ctx: ItemCtx,
     sections: Vec<Section>,
     footnote_options: designcraft_doc::FootnoteOptions,
@@ -217,6 +281,7 @@ impl<'r> Importer<'r> {
             page_index: HashMap::new(),
             item_ids: HashMap::new(),
             assets: BTreeMap::new(),
+            linked_assets: HashMap::new(),
             ctx: ItemCtx { threads: Vec::new() },
             sections: Vec::new(),
             footnote_options: Default::default(),
@@ -2205,12 +2270,29 @@ impl<'r> Importer<'r> {
         let size = ((r - l).abs(), (b - t).abs());
         let link = g.find("Link");
         let uri = link.and_then(|k| k.get("LinkResourceURI")).map(uri_to_path);
+        let graphic = |asset| {
+            Content::Graphic(designcraft_doc::Graphic {
+                asset,
+                size,
+                xf: gxf * Affine::translate((l, t)),
+                auto_fit: Default::default(),
+                fit_align: 4,
+                crop: [0.0; 4],
+            })
+        };
         let mut data = g.prop_el("Contents").map(|c| base64_decode(&c.text_content())).unwrap_or_default();
+        let mut read_from = None;
         if data.is_empty()
             && let Some(p) = &uri
-            && let Some(d) = (self.read_link)(p)
         {
-            data = d;
+            // Every placement of a linked file shares one asset; read the file once.
+            if let Some(id) = self.linked_assets.get(p) {
+                return graphic(*id);
+            }
+            if let Some(d) = (self.read_link)(p) {
+                data = d;
+                read_from = Some(p.clone());
+            }
         }
         let (mime, px) = sniff_image(&data);
         let mime = mime.map(str::to_string).unwrap_or_else(|| match link.and_then(|k| k.get("LinkResourceFormat")).unwrap_or("") {
@@ -2226,17 +2308,14 @@ impl<'r> Importer<'r> {
         });
         let name =
             uri.as_deref().and_then(|p| p.rsplit(['/', '\\']).next()).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| "image".into());
-        let id = AssetId(self.alloc());
+        let fresh = AssetId(self.alloc());
         let link_path = uri.filter(|p| p.contains('/') || p.contains('\\'));
-        self.assets.insert(id, Arc::new(Asset { page: 0, id, name, mime, link: link_path, data: Arc::new(data), pixels }));
-        Content::Graphic(designcraft_doc::Graphic {
-            asset: id,
-            size,
-            xf: gxf * Affine::translate((l, t)),
-            auto_fit: Default::default(),
-            fit_align: 4,
-            crop: [0.0; 4],
-        })
+        let id =
+            designcraft_doc::insert_asset(&mut self.assets, Asset { page: 0, id: fresh, name, mime, link: link_path, data: Arc::new(data), pixels });
+        if let Some(p) = read_from {
+            self.linked_assets.insert(p, id);
+        }
+        graphic(id)
     }
 
     fn link_threads(&mut self) {
@@ -2543,21 +2622,9 @@ fn path_of(pg: &El) -> PathData {
 pub(crate) fn uri_to_path(uri: &str) -> String {
     let rest = uri.strip_prefix("file://").or_else(|| uri.strip_prefix("file:")).unwrap_or(uri);
     // `file:///C:/…` → `/C:/…` → `C:/…`
-    let rest = if rest.len() > 3 && rest.starts_with('/') && rest.as_bytes()[2] == b':' { &rest[1..] } else { rest };
-    let mut out = Vec::with_capacity(rest.len());
-    let b = rest.as_bytes();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%'
-            && i + 2 < b.len()
-            && let Ok(v) = u8::from_str_radix(&rest[i + 1..i + 3], 16)
-        {
-            out.push(v);
-            i += 3;
-            continue;
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).to_string()
+    let rest = match rest.as_bytes() {
+        [b'/', _, b':', _, ..] => rest.get(1..).unwrap_or(rest),
+        _ => rest,
+    };
+    percent_decode(rest)
 }

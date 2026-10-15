@@ -100,7 +100,7 @@ fn text_keeps_its_parent_group_clip_and_mask() {
     assert!(matches!(children[1].kind, NodeKind::Text(_)) && children[1].name.as_deref() == Some("own"));
     // The text's own mask.
     assert!(matches!(inner[3].kind, NodeKind::Text(_)));
-    assert!(inner[3].mask.is_some());
+    assert!(inner[3].extras().mask.is_some());
     assert_eq!(inner[3].name.as_deref(), Some("masked"));
 }
 

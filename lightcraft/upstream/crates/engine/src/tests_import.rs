@@ -395,11 +395,17 @@ fn auto_import_watched_folder() {
     s.execute("library.autoImport", &json!({"folder": dir.to_string_lossy(), "album": "Tethered"})).unwrap();
     assert_eq!(s.execute("library.autoImportScan", &json!({})).unwrap()["imported"], json!([]));
     write_png(&dir.join("one.png"), 1);
+    std::fs::write(
+        dir.join("one.xmp"),
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:CameraProfile="Color" crs:Exposure2012="0.5"/></rdf:RDF></x:xmpmeta>"#,
+    )
+    .unwrap();
     std::fs::write(dir.join("notes.txt"), "not a photo").unwrap();
     // first sight: wait (it may still be copying)
     assert_eq!(s.execute("library.autoImportScan", &json!({})).unwrap()["imported"], json!([]));
     let r = s.execute("library.autoImportScan", &json!({})).unwrap();
     assert_eq!(r["imported"].as_array().unwrap().len(), 1, "{r}");
+    assert!(r["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "cameraProfile" && w["profile"] == "Color"), "{r}");
     let album = s.catalog.albums().find(|a| a.name == "Tethered").expect("album").id;
     assert_eq!(s.catalog.album_count(album), 1);
     assert!(s.selection.ids.is_empty(), "arrivals don't take the selection");
@@ -462,14 +468,14 @@ fn damaged_smart_previews_are_rebuilt_and_failed_writes_leave_none() {
     s.execute("library.import", &json!({"paths": [src.join("a.png").to_string_lossy()]})).unwrap();
     let id = s.active().unwrap();
     let dir = s.media.smart_dir.clone().unwrap();
-    let file = dir.join(crate::smart::file_name(s.catalog.photo(id).unwrap()));
+    let file = crate::smart::sharded_file_path(&dir, s.catalog.photo(id).unwrap());
     {
         let _fault = lightcraft_catalog::safe_file::fail_writes_after(64);
         let r = s.execute("library.smartPreviews", &json!({})).unwrap();
         assert_eq!((r["built"].as_u64(), r["failed"].as_array().map(Vec::len)), (Some(0), Some(1)), "{r}");
     }
     assert!(!file.exists(), "no partial proxy");
-    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0, "no temp file left");
+    assert_eq!(std::fs::read_dir(file.parent().unwrap()).unwrap().count(), 0, "no temp file left in shard");
     assert_eq!(s.execute("photo.smartPreview", &json!({})).unwrap()["smartPreview"], false);
 
     let r = s.execute("library.smartPreviews", &json!({})).unwrap();
@@ -795,6 +801,13 @@ fn smart_previews_folder_is_chosen_per_library() {
     assert_eq!(loc["path"], lib.join("Smart Previews").to_string_lossy().as_ref());
     s.execute("library.smartPreviews", &json!({})).unwrap();
     assert_eq!(crate::smart::stats(&lib.join("Smart Previews")).0, 1);
+    // A flat proxy from older builds remains discoverable and migrates to the new sharded layout.
+    let dir = lib.join("Smart Previews");
+    let photo = s.catalog.photo(id).unwrap();
+    let shard = crate::smart::sharded_file_path(&dir, photo);
+    let flat = dir.join(crate::smart::file_name(photo));
+    std::fs::rename(&shard, &flat).unwrap();
+    assert_eq!(s.execute("photo.smartPreview", &json!({})).unwrap()["smartPreview"], true);
 
     // relative paths and missing drives are refused, and nothing is created on this drive
     assert!(s.execute("library.smartPreviewsLocation", &json!({"path": "rel/dir"})).is_err());
@@ -870,8 +883,8 @@ fn missing_photos_skip_local_browse_records() {
     assert_eq!(s.visible_cloned().len(), 4, "the view lists what the count counts");
 }
 
-/// Import a file that is in Recently Deleted (issue #298): by default it is skipped but the
-/// report says it is in the trash; `onDeleted: restore` brings it back with its edits;
+/// Import a file that is in Recently Deleted (issues #298, #706): by default the photo comes
+/// back with its edits; `onDeleted: skip` leaves it there but the report says it is in the trash;
 /// `onDeleted: fresh` replaces the trashed record with a new one.
 fn trashed_photo(tag: &str) -> (Session, std::path::PathBuf, u64) {
     let src = temp_dir(tag);
@@ -884,14 +897,115 @@ fn trashed_photo(tag: &str) -> (Session, std::path::PathBuf, u64) {
     (s, src, id)
 }
 
+/// Issue #706: import a photo, delete it, import the same file again. Before, the import skipped
+/// it as "already in the library" (a duplicate by path) while the grid showed it deleted, and the
+/// user was stuck. Now the photo is restored: it is back in All Photos, with its edits.
+#[test]
+fn importing_a_deleted_photo_again_brings_it_back() {
+    let (mut s, src, id) = trashed_photo("trash-reimport");
+    assert_eq!(s.visible_cloned().len(), 0, "deleted: not in All Photos");
+    let r = s.execute("library.import", &json!({"paths": [src.join("a.png").to_string_lossy()]})).unwrap();
+    assert_eq!(r["restored"], json!([id]), "{r}");
+    assert_eq!(ids(&r, "duplicates"), 0, "not reported as a duplicate: {r}");
+    let p = s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap();
+    assert!(!p.deleted && p.rating == 4, "back with its edits");
+    assert_eq!(s.catalog.len(), 1, "no second record");
+    assert_eq!(s.visible_cloned(), vec![lightcraft_catalog::PhotoId(id)], "shown again in All Photos");
+    // undo puts it back in Recently Deleted
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().deleted);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// The same sequence with the library on disk and a restart between the delete and the import:
+/// the trashed record is read back from the catalog and restored, not refused.
+#[test]
+fn importing_a_deleted_photo_again_after_reopening_the_library_brings_it_back() {
+    let src = temp_dir("trash-reimport-reopen");
+    write_png(&src.join("a.png"), 1);
+    let lib = src.join("library");
+    let id = {
+        let mut s = Session::new().with_fs();
+        s.open_library(&lib, false).unwrap();
+        let r = s.execute("library.import", &json!({"paths": [src.join("a.png").to_string_lossy()], "albumName": "Trip"})).unwrap();
+        let id = r["imported"][0].as_u64().unwrap();
+        s.execute("photo.rate", &json!({"ids": [id], "rating": 2})).unwrap();
+        s.execute("photo.delete", &json!({"ids": [id]})).unwrap();
+        s.close_library().unwrap();
+        id
+    };
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, false).unwrap();
+    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().deleted, "deleted state persisted");
+    let r = s.execute("library.import", &json!({"paths": [src.join("a.png").to_string_lossy()]})).unwrap();
+    assert_eq!(r["restored"], json!([id]), "{r}");
+    assert_eq!(ids(&r, "duplicates"), 0, "{r}");
+    let p = s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap();
+    assert!(!p.deleted && p.rating == 2, "restored with its edits");
+    let album = s.catalog.albums().find(|a| a.name == "Trip").unwrap();
+    assert_eq!(album.photos, vec![lightcraft_catalog::PhotoId(id)], "still in its album");
+    assert_eq!(s.visible_cloned().len(), 1);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// A deleted photo whose file was moved meanwhile: importing the file from its new place restores
+/// the photo and points it at the file (matched by content), instead of bringing back a record
+/// whose file is missing.
+#[test]
+fn importing_a_deleted_photo_from_its_new_place_restores_and_relinks_it() {
+    let (mut s, src, id) = trashed_photo("trash-reimport-moved");
+    std::fs::create_dir_all(src.join("moved")).unwrap();
+    std::fs::rename(src.join("a.png"), src.join("moved/b.png")).unwrap();
+    let r = s.execute("library.import", &json!({"paths": [src.join("moved/b.png").to_string_lossy()]})).unwrap();
+    assert_eq!(r["restored"], json!([id]), "{r}");
+    let p = s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap();
+    assert!(!p.deleted && p.rating == 4);
+    assert_eq!(p.source, lightcraft_catalog::Source::File { path: src.join("moved/b.png").to_string_lossy().to_string() });
+    assert_eq!(p.file_name, "b.png");
+    assert_eq!(s.catalog.len(), 1);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Only an import brings a deleted photo back. Looking at its folder in Local, and Auto Import
+/// seeing its file again in the watched folder (a copy: the source is not a path the library
+/// knows), leave it in Recently Deleted.
+#[test]
+fn browsing_and_auto_import_never_restore_a_deleted_photo() {
+    let (mut s, src, id) = trashed_photo("trash-no-silent-restore");
+    let r = s.execute("library.browse", &json!({"path": src.to_string_lossy()})).unwrap();
+    assert_eq!(r["new"], 0, "{r}");
+    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().deleted, "browsing only looks");
+    assert_eq!(s.catalog.len(), 1);
+    // auto import in copy mode: the trashed photo's copy is in the library's folder, so the watched
+    // folder's file is new by path and a duplicate by content
+    let lib = src.join("library");
+    let watched = src.join("watched");
+    write_png(&watched.join("w.png"), 7);
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, false).unwrap();
+    let r = s.execute("library.import", &json!({"paths": [watched.join("w.png").to_string_lossy()], "mode": "copy"})).unwrap();
+    let copied = r["imported"][0].as_u64().unwrap();
+    s.execute("photo.delete", &json!({"ids": [copied]})).unwrap();
+    s.execute("library.autoImport", &json!({"folder": watched.to_string_lossy(), "copy": true})).unwrap();
+    for _ in 0..3 {
+        let r = s.execute("library.autoImportScan", &json!({})).unwrap();
+        assert_eq!(r["imported"], json!([]), "{r}");
+    }
+    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(copied)).unwrap().deleted, "still deleted");
+    assert_eq!(s.catalog.len(), 1, "no second copy");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// `onDeleted: skip` keeps the old behaviour for callers that want it: nothing imported, the
+/// duplicate reported with `existingDeleted`.
 #[test]
 fn duplicate_in_recently_deleted_is_reported_as_such() {
     let (mut s, src, id) = trashed_photo("trash-report");
-    let r = s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let r = s.execute("library.import", &json!({"paths": [src.to_string_lossy()], "onDeleted": "skip"})).unwrap();
     assert_eq!(ids(&r, "imported"), 0, "{r}");
     assert_eq!(r["duplicates"][0]["existing"], id, "{r}");
     assert_eq!(r["duplicates"][0]["existingDeleted"], true, "{r}");
-    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().deleted, "default: left in the trash");
+    assert!(s.catalog.photo(lightcraft_catalog::PhotoId(id)).unwrap().deleted, "skip: left in the trash");
     let _ = std::fs::remove_dir_all(&src);
 }
 
@@ -1199,8 +1313,8 @@ fn smart_previews_from_an_older_look_fit_are_refreshed() {
     assert!(s.catalog.photo(id).unwrap().relative_wb() && !s.catalog.photo(png).unwrap().relative_wb());
     s.execute("library.select", &json!({"ids": [id.0, png.0], "active": id.0})).unwrap();
     let dir = s.media.smart_dir.clone().unwrap();
-    let file = dir.join(crate::smart::file_name(s.catalog.photo(id).unwrap()));
-    let png_file = dir.join(crate::smart::file_name(s.catalog.photo(png).unwrap()));
+    let file = crate::smart::sharded_file_path(&dir, s.catalog.photo(id).unwrap());
+    let png_file = crate::smart::sharded_file_path(&dir, s.catalog.photo(png).unwrap());
     let (old, new) = (test_tone(1.5), test_tone(3.5));
     let calls = std::sync::Arc::new(AtomicUsize::new(0));
     let plain = s.media.file_loader.clone().unwrap();
@@ -1385,5 +1499,76 @@ fn heic_imports_as_a_normal_photo_or_says_why_not() {
         d.image.data.iter().map(|p| p[1]).sum::<f32>() / d.image.data.len() as f32
     };
     assert!(mean(&brighter.bytes) > mean(&plain.bytes) * 1.3, "exposure +1 brightens the HEIC");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Issue #705: Nikon (and most cameras) write `.JPG` and `.NEF`, and a user may rename to `.Jpg`.
+/// The folder scan, `library.browse` and the sidecar lookup match extensions in any letter
+/// case. (The file dialog's filters, the one place that was case-sensitive on Linux before
+/// #342, are checked in `apps/lightcraft/src/dialog_filter.rs`.)
+#[test]
+fn upper_and_mixed_case_extensions_are_found_by_import_browse_and_sidecar_lookup() {
+    use lightcraft_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, Samples, encode_jpeg};
+    let src = temp_dir("upper-exts");
+    let jpeg = |seed: u8| {
+        let px: Vec<u8> = (0..40 * 30).flat_map(|i| [(i % 251) as u8, seed, 200]).collect();
+        encode_jpeg(&EncodeImage::new(40, 30, 3, Samples::U8(&px)), 90, ChromaSubsampling::S444, &EncodeMeta::default()).unwrap()
+    };
+    std::fs::write(src.join("a.JPG"), jpeg(1)).unwrap();
+    std::fs::write(src.join("b.Jpg"), jpeg(2)).unwrap();
+    std::fs::write(src.join("c.JPEG"), jpeg(3)).unwrap();
+    write_png(&src.join("d.PNG"), 4);
+    // a raw container LightCraft shows by its embedded JPEG (a TIFF whose IFD0 points at one)
+    let nef = {
+        let j = jpeg(5);
+        let off = 8 + 2 + 24 + 4;
+        let mut f = b"II*\0\x08\0\0\0\x02\0".to_vec();
+        for (tag, v) in [(513u16, off as u32), (514, j.len() as u32)] {
+            f.extend_from_slice(&tag.to_le_bytes());
+            f.extend_from_slice(&[4, 0, 1, 0, 0, 0]);
+            f.extend_from_slice(&v.to_le_bytes());
+        }
+        f.extend_from_slice(&[0, 0, 0, 0]);
+        f.extend_from_slice(&j);
+        f
+    };
+    std::fs::write(src.join("e.NEF"), nef).unwrap();
+    std::fs::write(src.join("notes.TXT"), "not a photo").unwrap();
+    // sidecars: stem-named with an upper-case extension, and full-named beside a mixed-case photo
+    let sidecar = |rating: u8| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="{rating}"/></rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    std::fs::write(src.join("a.XMP"), sidecar(4)).unwrap();
+    std::fs::write(src.join("b.Jpg.xmp"), sidecar(2)).unwrap();
+
+    let mut s = Session::new().with_fs();
+    let r = s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    assert_eq!(r["scanned"], 5, "{r}"); // the five photos; notes.TXT is not one
+    assert_eq!(ids(&r, "imported"), 5, "{r}");
+    assert_eq!(ids(&r, "failed"), 0, "{r}");
+    assert_eq!(r["sidecars"], 2, "{r}");
+    let names: Vec<(String, String, u8)> = s.catalog.photos().map(|p| (p.file_name.clone(), p.format.clone(), p.rating)).collect();
+    let by_name = |n: &str| names.iter().find(|(f, _, _)| f == n).cloned().unwrap_or_else(|| panic!("{n} missing from {names:?}"));
+    assert_eq!(by_name("a.JPG").2, 4, "a.XMP read");
+    assert_eq!(by_name("b.Jpg").2, 2, "b.Jpg.xmp read");
+    assert_eq!(by_name("c.JPEG").1, "JPEG");
+    assert_eq!(by_name("d.PNG").1, "PNG");
+    let nef = s.catalog.photos().find(|p| p.file_name == "e.NEF").unwrap();
+    assert!(nef.kind == lightcraft_catalog::MediaKind::Raw && nef.preview_only.is_some(), "{nef:?}");
+
+    // Browse Folder (the Local section) lists the same five, without adding them to the library
+    let mut b = Session::new().with_fs();
+    let r = b.execute("library.browse", &json!({"path": src.to_string_lossy()})).unwrap();
+    assert_eq!(r["photos"], 5, "{r}");
+    assert_eq!(r["new"], 5, "{r}");
+    assert_eq!(r["failed"], 0, "{r}");
+    let visible = b.visible_cloned();
+    let shown: Vec<String> = visible.iter().filter_map(|id| b.catalog.photo(*id).map(|p| p.file_name.clone())).collect();
+    for n in ["a.JPG", "b.Jpg", "c.JPEG", "d.PNG", "e.NEF"] {
+        assert!(shown.iter().any(|f| f == n), "{n} not shown: {shown:?}");
+    }
     let _ = std::fs::remove_dir_all(&src);
 }

@@ -12,8 +12,8 @@
 //!   the geometry.
 //! - **Stroke geometry** ([`stroke`]): arrowheads, dash patterns and width profiles, shared by the
 //!   renderer, the exporters and Outline Stroke.
-//! - [`effect_catalog`] lists every effect with its menu path, parameter documentation and the
-//!   defaults of Illustrator's dialogs. Missing parameters always fall back to those defaults.
+//! - [`effect_catalog`] lists every effect with its menu path, parameter documentation and
+//!   default values. Missing parameters always fall back to those defaults.
 //! - [`reshape`] applies geometry effects to type, images, symbol instances and live objects
 //!   through their outlines.
 //! - [`evaluate_container`] turns a group's or layer's own fills, strokes and geometry effects into
@@ -154,6 +154,7 @@ const SHAPE: &[&str] = &["Effect", "Convert to Shape"];
 const STYLIZE: &[&str] = &["Effect", "Stylize"];
 const WARP: &[&str] = &["Effect", "Warp"];
 const BLUR: &[&str] = &["Effect", "Blur"];
+const ARTISTIC: &[&str] = &["Effect", "Artistic"];
 const BRUSH_STROKES: &[&str] = &["Effect", "Brush Strokes"];
 const DISTORT: &[&str] = &["Effect", "Distort"];
 const SHARPEN: &[&str] = &["Effect", "Sharpen"];
@@ -298,6 +299,13 @@ pub fn effect_catalog() -> Vec<EffectInfo> {
         ),
         r("stylize.feather", "Feather…", STYLIZE, "{radius: pt (5)}", json!({"radius": 5.0})),
         r("blur.gaussian", "Gaussian Blur…", BLUR, "{radius: pt (5)}", json!({"radius": 5.0})),
+        r(
+            "artistic.filmGrain",
+            "Film Grain…",
+            ARTISTIC,
+            "{grain: 0..20 (4; monochrome noise in shadows and midtones), highlightArea: 0..20 (0; widens the bright highlight area), intensity: 0..10 (10; highlight strength and quieter highlight grain)}. Smooth document-space grain follows translations; minification uses approximate footprint filtering. Coverage and pure white are preserved; black takes light speckles, and saturated colour channels may clip. Grain 0 with either highlightArea 0 or intensity 0 leaves the art unchanged. Original visual approximation; chosen VectorCraft defaults.",
+            json!({"grain": 4.0, "highlightArea": 0.0, "intensity": 10.0}),
+        ),
         r(
             "blur.radial",
             "Radial Blur…",

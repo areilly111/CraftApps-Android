@@ -97,9 +97,45 @@ pub fn flatten_fill_sign(doc: &mut Document, pages: &[usize]) -> Result<usize, E
     flatten_which(doc, pages, Which::FillSign)
 }
 
+/// The first annotation flattening would turn into page content with `?` in it, before anything
+/// changes: one whose appearance PdfCraft drew with `?` for characters its fonts can't draw
+/// (`pdfcraft_fonts::UNDRAWN_MARK`: a form field's value, a comment's text), or a comment without
+/// an appearance whose text the standard fonts can't draw. Its page (0-based), whether it is a
+/// form field, and the character.
+fn undrawn_on(doc: &Document, all: &[pdfcraft_model::Page], pages: &[usize], which: Which) -> Option<(usize, bool, char)> {
+    for &i in pages {
+        let list = all.get(i)?.dict.get(b"Annots").map(|a| doc.resolve(a)).and_then(|a| a.as_array().cloned()).unwrap_or_default();
+        for entry in &list {
+            let Some(d) = doc.resolve(entry).as_dict().cloned() else { continue };
+            let flags = d.get(b"F").and_then(|f| doc.resolve(f).as_int()).unwrap_or(0);
+            if !selected(doc, &d, which) || flags & (HIDDEN | NO_VIEW) != 0 {
+                continue;
+            }
+            let widget = d.name(b"Subtype") == Some(b"Widget");
+            let drawn = pdfcraft_fonts::undrawn_mark(&d);
+            let would_draw = || (!widget && appearance(doc, &d).is_none()).then(|| pdfcraft_annot::appearance::undrawable_text(&d)).flatten();
+            if let Some(c) = drawn.or_else(|| would_draw().map(|(_, c)| c)) {
+                return Some((i, widget, c));
+            }
+        }
+    }
+    None
+}
+
 fn flatten_which(doc: &mut Document, pages: &[usize], which: Which) -> Result<usize, EditError> {
     let all = page_list(doc);
     check(pages, all.len())?;
+    // `?` in an appearance can still be fixed (a field's value, a comment's text are stored as
+    // typed, and other viewers redraw form fields); flattened, it would be the page for good.
+    if let Some((i, widget, c)) = undrawn_on(doc, &all, pages, which) {
+        return Err(EditError::Invalid(format!(
+            "can't flatten {} on page {}: it shows ? in place of \"{}\" (U+{:04X}), which its font can't draw, and flattening would make that permanent (nothing was flattened); change or remove that text first",
+            if widget { "a form field" } else { "a comment" },
+            i + 1,
+            c.escape_debug(),
+            u32::from(c)
+        )));
+    }
     let mut drawn = 0;
     let mut removed_widgets: HashSet<ObjRef> = HashSet::new();
     for &i in pages {
@@ -132,7 +168,8 @@ fn flatten_which(doc: &mut Document, pages: &[usize], which: Which) -> Result<us
             if flags & (HIDDEN | NO_VIEW) != 0 || appearance(doc, &d).is_some() {
                 continue;
             }
-            // A subtype this build cannot draw only fails here; it is still removed below.
+            // A subtype this build cannot draw only fails here; it is still removed below. (Text
+            // the standard fonts can't draw was refused before anything changed: `undrawn_on`.)
             let _ = pdfcraft_annot::set_appearance(doc, r);
         }
         for (k, entry) in list.iter().enumerate() {

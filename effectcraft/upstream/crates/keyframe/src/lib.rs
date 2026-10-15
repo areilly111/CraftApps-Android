@@ -224,6 +224,20 @@ pub fn ease_progress(out_speed_n: f64, out_inf: f64, in_speed_n: f64, in_inf: f6
     bez(0.0, out_speed_n * i0, 1.0 - in_speed_n * i1, 1.0, u)
 }
 
+/// Whether control point `c` lies on the segment `a`–`b` (within rounding), so a cubic with
+/// such handles traces the straight chord.
+fn on_chord(a: [f64; 3], c: [f64; 3], b: [f64; 3]) -> bool {
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    if dd <= 1e-24 {
+        return false;
+    }
+    let t = (v[0] * d[0] + v[1] * d[1] + v[2] * d[2]) / dd;
+    let off = [v[0] - d[0] * t, v[1] - d[1] * t, v[2] - d[2] * t];
+    (0.0..=1.0).contains(&t) && off[0] * off[0] + off[1] * off[1] + off[2] * off[2] <= dd * 1e-18
+}
+
 /// Spatial cubic segment with an arc-length table.
 struct SpatialSeg {
     p: [[f64; 3]; 4],
@@ -233,36 +247,68 @@ struct SpatialSeg {
 
 const ARC_N: usize = 96;
 
+/// 5-point Gauss-Legendre nodes and weights on -1..1.
+const GAUSS: [(f64, f64); 5] = [
+    (0.0, 0.568_888_888_888_888_9),
+    (-0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
+    (0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
+    (-0.906_179_845_938_664, 0.236_926_885_056_189_1),
+    (0.906_179_845_938_664, 0.236_926_885_056_189_1),
+];
+
 impl SpatialSeg {
     fn new(p: [[f64; 3]; 4]) -> SpatialSeg {
         let mut table = Vec::with_capacity(ARC_N + 1);
         table.push(0.0);
-        let mut prev = Self::point(&p, 0.0);
         let mut acc = 0.0;
         for i in 1..=ARC_N {
-            let q = Self::point(&p, i as f64 / ARC_N as f64);
-            acc += ((q[0] - prev[0]).powi(2) + (q[1] - prev[1]).powi(2) + (q[2] - prev[2]).powi(2)).sqrt();
+            acc += Self::arc(&p, (i - 1) as f64 / ARC_N as f64, i as f64 / ARC_N as f64);
             table.push(acc);
-            prev = q;
         }
         SpatialSeg { p, table }
     }
     fn point(p: &[[f64; 3]; 4], u: f64) -> [f64; 3] {
         [bez(p[0][0], p[1][0], p[2][0], p[3][0], u), bez(p[0][1], p[1][1], p[2][1], p[3][1], u), bez(p[0][2], p[1][2], p[2][2], p[3][2], u)]
     }
+    /// |dB/du|.
+    fn tangent_len(p: &[[f64; 3]; 4], u: f64) -> f64 {
+        (0..3).map(|k| bez_d(p[0][k], p[1][k], p[2][k], p[3][k], u).powi(2)).sum::<f64>().sqrt()
+    }
+    /// Arc length between `a` and `b` (Gauss-Legendre; exact enough on one table cell).
+    fn arc(p: &[[f64; 3]; 4], a: f64, b: f64) -> f64 {
+        let (m, h) = ((a + b) * 0.5, (b - a) * 0.5);
+        GAUSS.iter().map(|(x, w)| w * Self::tangent_len(p, m + h * x)).sum::<f64>() * h
+    }
     fn length(&self) -> f64 {
         *self.table.last().unwrap_or(&0.0)
     }
+    /// The point at arc length `s`. The table cell's linear guess is refined with Newton steps
+    /// on the true arc length, so the position (and the speed graph, its derivative) is smooth
+    /// along curved paths instead of piecewise linear per cell (#456).
     fn at_length(&self, s: f64) -> [f64; 3] {
         let len = self.length();
-        if len <= 0.0 {
+        // A path whose length overflowed (huge coordinates) or is NaN has no arc-length table to
+        // walk: `clamp` would panic on a NaN bound.
+        if !(len > 0.0 && len.is_finite()) {
             return self.p[0];
         }
         let s = s.clamp(0.0, len);
         let i = self.table.partition_point(|&v| v < s).clamp(1, ARC_N);
-        let (a, b) = (self.table[i - 1], self.table[i]);
-        let f = if b > a { (s - a) / (b - a) } else { 0.0 };
-        Self::point(&self.p, (i as f64 - 1.0 + f) / ARC_N as f64)
+        let (Some(&a), Some(&b)) = (self.table.get(i - 1), self.table.get(i)) else { return self.p[0] };
+        let (u0, u1) = ((i - 1) as f64 / ARC_N as f64, i as f64 / ARC_N as f64);
+        let mut u = u0 + if b > a { (s - a) / (b - a) } else { 0.0 } * (u1 - u0);
+        for _ in 0..4 {
+            let d = Self::tangent_len(&self.p, u);
+            if d <= 1e-12 {
+                break;
+            }
+            let e = a + Self::arc(&self.p, u0, u) - s;
+            u = (u - e / d).clamp(u0, u1);
+            if e.abs() <= 1e-12 * len.max(1.0) {
+                break;
+            }
+        }
+        Self::point(&self.p, u)
     }
 }
 
@@ -270,25 +316,18 @@ fn v3(v: &Value) -> [f64; 3] {
     v.as_vec3()
 }
 
-/// Auto-Bezier spatial tangents (Catmull-Rom style) for key `i`.
+/// Auto-Bezier spatial tangents for key `i`, as After Effects computes them (Catmull-Rom): the out
+/// tangent is a sixth of the way from the previous key to the next, the in tangent its mirror, and
+/// key times play no part. An end key uses its one neighbour, so the path leaves the first key
+/// and enters the last one toward the neighbouring key instead of with no tangent.
 fn auto_spatial(keys: &[Keyframe], i: usize) -> ([f64; 3], [f64; 3]) {
-    if i == 0 || i + 1 >= keys.len() {
+    if i >= keys.len() || keys.len() < 2 {
         return ([0.0; 3], [0.0; 3]);
     }
-    let a = v3(&keys[i - 1].value);
-    let b = v3(&keys[i].value);
-    let c = v3(&keys[i + 1].value);
-    let d = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    let dl = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    if dl < 1e-12 {
-        return ([0.0; 3], [0.0; 3]);
-    }
-    let lin = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) + (b[2] - a[2]).powi(2)).sqrt();
-    let lout = ((c[0] - b[0]).powi(2) + (c[1] - b[1]).powi(2) + (c[2] - b[2]).powi(2)).sqrt();
-    let n = [d[0] / dl, d[1] / dl, d[2] / dl];
-    let tin = [-n[0] * lin / 3.0, -n[1] * lin / 3.0, -n[2] * lin / 3.0];
-    let tout = [n[0] * lout / 3.0, n[1] * lout / 3.0, n[2] * lout / 3.0];
-    (tin, tout)
+    let a = v3(&keys[i.saturating_sub(1)].value);
+    let c = v3(&keys[(i + 1).min(keys.len() - 1)].value);
+    let tout = [(c[0] - a[0]) / 6.0, (c[1] - a[1]) / 6.0, (c[2] - a[2]) / 6.0];
+    ([-tout[0], -tout[1], -tout[2]], tout)
 }
 
 /// Effective spatial tangents of key `i` (auto or stored).
@@ -298,7 +337,7 @@ pub fn spatial_tangents(keys: &[Keyframe], i: usize) -> ([f64; 3], [f64; 3]) {
 }
 
 /// Spatial tangents of key `i` as motion-path handles: [`spatial_tangents`], with a side that
-/// has none but a neighbour (the ends of an auto-Bezier path, a straight two-key path) pointing
+/// has none but a neighbour (a key whose stored tangents are zero, as on a straight path) pointing
 /// where the path leaves the key, toward the segment's next control point, a third of the way to
 /// the neighbouring key. After Effects shows Bezier handles there to drag the path into a curve.
 pub fn spatial_handles(keys: &[Keyframe], i: usize) -> ([f64; 3], [f64; 3]) {
@@ -506,7 +545,13 @@ pub fn segment_value(keys: &[Keyframe], i: usize, t: Tick, spatial: bool) -> Val
             let ei = if lin_in { Ease { speed: len / dur, influence: 1.0 / 3.0 } } else { effective_ease(keys, i + 1, 0, true, false) };
             ease_progress(eo.speed * dur / len, eo.influence, ei.speed * dur / len, ei.influence, x)
         };
-        let p = seg.at_length(f * len);
+        // A straight path (both handles on the chord, as auto-Bezier keys on a line have) is the
+        // chord itself: interpolate it exactly instead of through the arc-length table.
+        let p = if on_chord(p0, seg.p[1], p3) && on_chord(p0, seg.p[2], p3) {
+            [p0[0] + (p3[0] - p0[0]) * f, p0[1] + (p3[1] - p0[1]) * f, p0[2] + (p3[2] - p0[2]) * f]
+        } else {
+            seg.at_length(f * len)
+        };
         return a.value.with_components(&p);
     }
     if lin_out && lin_in {
@@ -708,6 +753,38 @@ mod tests {
         assert_eq!(g.coerce_json(&serde_json::json!(5)), None);
     }
 
+    /// #612: the gradient editor samples a new stop from its own track only. `sample` multiplies
+    /// in the opacity stops, so feeding its alpha into a colour stop would apply 50% twice (25%).
+    #[test]
+    fn gradient_tracks_sample_separately() {
+        let g = Gradient { colors: vec![(0.0, [1.0, 0.0, 0.0, 0.8]), (1.0, [0.0, 0.0, 1.0, 0.4])], opacities: vec![(0.0, 0.5), (1.0, 0.5)] };
+        let c = g.color_at(0.5);
+        assert!((c[0] - 0.5).abs() < 1e-6 && (c[2] - 0.5).abs() < 1e-6, "{c:?}");
+        assert!((c[3] - 0.6).abs() < 1e-6, "the colour track's own alpha, without opacity: {c:?}");
+        assert!((g.opacity_at(0.5) - 0.5).abs() < 1e-6);
+        assert!((g.sample(0.5)[3] - 0.3).abs() < 1e-6, "sample still applies opacity once");
+        // A stop added at 50% from the opacity track keeps 50%: sampled again, it is still 50%.
+        let mut with_stop = g.clone();
+        with_stop.opacities.insert(1, (0.5, g.opacity_at(0.5)));
+        assert!((with_stop.opacity_at(0.5) - 0.5).abs() < 1e-6);
+        assert!((with_stop.sample(0.5)[3] - 0.3).abs() < 1e-6, "adding a stop doesn't change the look");
+        // Outside the stops, and with none: the ends hold, and an empty track is opaque white.
+        assert_eq!(g.color_at(-1.0), [1.0, 0.0, 0.0, 0.8]);
+        assert_eq!(g.color_at(2.0), [0.0, 0.0, 1.0, 0.4]);
+        let empty = Gradient { colors: vec![], opacities: vec![] };
+        assert_eq!((empty.color_at(0.3), empty.opacity_at(0.3)), ([1.0; 4], 1.0));
+    }
+
+    /// #612: the editor saves the typed form, so one colour stop (which the plain JSON parser
+    /// rejects) and each stop's RGBA come back exactly.
+    #[test]
+    fn typed_gradient_round_trips_one_stop_and_rgba() {
+        let one = Value::Gradient(Gradient { colors: vec![(0.25, [0.1, 0.2, 0.3, 0.7])], opacities: vec![(0.0, 1.0), (0.6, 0.35)] });
+        let cur = Value::Gradient(Gradient::default());
+        assert_eq!(cur.coerce_json(&one.to_json()), Some(one.clone()));
+        assert_eq!(cur.coerce_json(&serde_json::json!({"colors": [[0.25, [0.1, 0.2, 0.3, 0.7]]]})), None, "plain JSON needs two colours");
+    }
+
     #[test]
     fn linear_and_hold() {
         let keys = vec![Keyframe::new(s(0.0), Value::Scalar(0.0)), Keyframe::new(s(2.0), Value::Scalar(100.0))];
@@ -764,6 +841,24 @@ mod tests {
         assert!((p[0] - 150.0).abs() < 0.5 && (p[1] - 200.0).abs() < 0.5, "{p:?}");
     }
 
+    /// #456: along a curved spatial path with linear (constant-speed) keys the speed graph is
+    /// flat, not a sawtooth from a piecewise-linear arc-length table.
+    #[test]
+    fn spatial_curved_path_has_smooth_constant_speed() {
+        let mut a = Keyframe::new(s(0.0), Value::Vec2([0.0, 0.0]));
+        let mut b = Keyframe::new(s(2.0), Value::Vec2([400.0, 0.0]));
+        a.spatial_auto = false;
+        b.spatial_auto = false;
+        a.spatial_out = [50.0, -300.0, 0.0];
+        b.spatial_in = [80.0, 250.0, 0.0];
+        let keys = vec![a, b];
+        let len = spatial_segment_length(&keys, 0);
+        let speeds: Vec<f64> = (1..400).map(|i| speed(&keys, s(i as f64 * 0.005), true)).collect();
+        for v in &speeds {
+            assert!((v - len / 2.0).abs() < 1e-3 * len, "speed {v} vs {}", len / 2.0);
+        }
+    }
+
     #[test]
     fn spatial_auto_bezier_passes_through_keys() {
         let keys = vec![
@@ -776,6 +871,61 @@ mod tests {
         // Curved: the midpoint of the first segment lies off the straight line.
         let m = evaluate(&keys, s(0.5), true).unwrap().as_vec2();
         assert!((m[0] - m[1]).abs() > 1.0, "{m:?}");
+    }
+
+    #[test]
+    fn straight_auto_bezier_path_is_exact() {
+        // Auto-Bezier ends now have handles along the line; the chord is still hit exactly.
+        let keys = vec![Keyframe::new(s(0.0), Value::Vec2([40.0, 50.0])), Keyframe::new(s(2.0), Value::Vec2([120.0, 50.0]))];
+        assert_eq!(segment_value(&keys, 0, s(1.0), true), Value::Vec2([80.0, 50.0]));
+    }
+
+    /// #880: a motion path whose arc length overflows (huge coordinates, as the Position field
+    /// accepts) or is NaN evaluates without panicking: scrubbing over it crashed the app.
+    #[test]
+    fn overflowing_or_nan_motion_paths_evaluate() {
+        let paths = [
+            [[-1.7e308, 0.0], [1.7e308, 0.0], [-1.7e308, 5.0]],
+            [[0.0, 0.0], [f64::NAN, 10.0], [20.0, 0.0]],
+            [[f64::INFINITY, 0.0], [0.0, f64::NEG_INFINITY], [20.0, 0.0]],
+        ];
+        for path in paths {
+            let mut keys: Vec<Keyframe> = path.iter().enumerate().map(|(i, &v)| Keyframe::new(s(i as f64 * 2.0), Value::Vec2(v))).collect();
+            for eased in [false, true] {
+                if eased {
+                    keys = keys.into_iter().map(Keyframe::eased).collect();
+                }
+                for f in 0..=40 {
+                    let t = s(f as f64 * 0.1);
+                    assert!(evaluate(&keys, t, true).is_some());
+                    let _ = speed(&keys, t, true);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn spatial_auto_bezier_tangents_follow_after_effects() {
+        // Measured on After Effects 26.3 with original paths (docs/fidelity/README.md): each
+        // auto-Bezier key's out tangent is (next - previous) / 6 and its in tangent the mirror,
+        // whatever the key times. End keys use their one neighbour: (neighbour - key) / 6.
+        let p = [[40.0, 300.0, 0.0], [260.0, 80.0, 20.0], [700.0, 420.0, -40.0], [1100.0, 150.0, 0.0]];
+        let mut keys: Vec<Keyframe> = [0.0, 0.2, 1.5, 1.8].iter().zip(p).map(|(&t, v)| Keyframe::new(s(t), Value::Vec3(v))).collect();
+        let sixth = |a: [f64; 3], b: [f64; 3]| [(b[0] - a[0]) / 6.0, (b[1] - a[1]) / 6.0, (b[2] - a[2]) / 6.0];
+        let neg = |v: [f64; 3]| [-v[0], -v[1], -v[2]];
+        let close = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        let want = [sixth(p[0], p[1]), sixth(p[0], p[2]), sixth(p[1], p[3]), sixth(p[2], p[3])];
+        for (i, out) in want.into_iter().enumerate() {
+            let (tin, tout) = spatial_tangents(&keys, i);
+            assert!(close(tout, out) && close(tin, neg(out)), "key {i}: {tin:?} {tout:?}");
+        }
+        // Moving a key in time leaves every tangent as it was.
+        keys[1].time = s(1.2);
+        assert!(close(spatial_tangents(&keys, 1).1, sixth(p[0], p[2])));
+        // A key between two coincident neighbours, and a lone key, have none.
+        let still = [[5.0, 5.0], [9.0, 1.0], [5.0, 5.0]].iter().enumerate().map(|(i, &v)| Keyframe::new(s(i as f64), Value::Vec2(v))).collect::<Vec<_>>();
+        assert_eq!(spatial_tangents(&still, 1), ([0.0; 3], [0.0; 3]));
+        assert_eq!(spatial_tangents(&still[..1], 0), ([0.0; 3], [0.0; 3]));
     }
 
     #[test]

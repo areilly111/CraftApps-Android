@@ -94,6 +94,49 @@ fn hide_all_artwork_above() {
     assert!(node(&s, over).visible);
 }
 
+fn key(s: &Session) -> Option<NodeId> {
+    s.doc().unwrap().selection.key
+}
+
+/// Lock › All Artwork Above deselects the selected objects it locks: here the key object, in a
+/// group above the other selected object. Undo selects it again as the key object.
+#[test]
+fn lock_all_artwork_above_deselects_the_objects_it_locks() {
+    let mut s = session();
+    let a = rect(&mut s, 0.0, 0.0, 100.0, 100.0);
+    let b = rect(&mut s, 50.0, 50.0, 100.0, 100.0);
+    sel(&mut s, &[b]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    sel(&mut s, &[a, b]);
+    s.execute("select.key", &json!({"id": b.0})).unwrap();
+    s.execute("object.lock.above", &json!({})).unwrap();
+    assert!(node(&s, g).locked);
+    assert_eq!((selected(&s), key(&s)), (vec![a], None));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(!node(&s, g).locked);
+    assert_eq!((selected(&s), key(&s)), (vec![a, b], Some(b)));
+}
+
+/// Hide › All Artwork Above deselects the selected objects it hides (here one in a sublayer above)
+/// and selected objects that were hidden before. The one object left can't be the key object, so
+/// the key goes too; undo brings both back.
+#[test]
+fn hide_all_artwork_above_deselects_the_objects_it_hides() {
+    let mut s = session();
+    let hidden = rect(&mut s, 400.0, 400.0, 20.0, 20.0);
+    s.execute("layer.setProps", &json!({"id": hidden.0, "visible": false})).unwrap();
+    let a = rect(&mut s, 0.0, 0.0, 100.0, 100.0);
+    let sub = id_of(&s.execute("layer.newSublayer", &json!({})).unwrap());
+    let b = rect(&mut s, 50.0, 50.0, 100.0, 100.0);
+    sel(&mut s, &[hidden, a, b]);
+    s.execute("select.key", &json!({"id": a.0})).unwrap();
+    s.execute("object.hide.above", &json!({})).unwrap();
+    assert!(!node(&s, sub).visible);
+    assert_eq!((selected(&s), key(&s)), (vec![a], None));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!((selected(&s), key(&s)), (vec![hidden, a, b], Some(a)));
+}
+
 #[test]
 fn lock_and_hide_other_layers() {
     let mut s = session();
@@ -108,6 +151,73 @@ fn lock_and_hide_other_layers() {
     assert!(!d.node(l1).unwrap().locked);
     s.execute("object.hide.otherLayers", &json!({})).unwrap();
     assert!(!s.doc().unwrap().doc.node(l2).unwrap().visible);
+}
+
+/// How many steps there are to undo and to redo, and whether the document has unsaved changes.
+fn history(s: &Session) -> (usize, usize, bool) {
+    let st = s.doc().unwrap();
+    (st.history.undo.len(), st.history.redo.len(), st.is_dirty())
+}
+
+/// Select `ids` with a move of them left to redo, and mark the document saved.
+fn select_with_a_step_to_redo(s: &mut Session, ids: &[NodeId]) {
+    sel(s, ids);
+    s.execute("object.move", &json!({"dx": 5, "dy": 0})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.doc_mut().unwrap().mark_saved();
+}
+
+/// Lock › All Artwork Above and Hide › All Artwork Above with no object above the selection, or with
+/// every one locked (Lock) or hidden (Hide) already, and Lock › Other Layers and Hide › Other Layers
+/// with no other layer, or with every one locked or hidden already, record no undo step: the step to
+/// redo stays and the document stays unmodified. All Artwork Above still deselects a selected object
+/// that is hidden.
+#[test]
+fn lock_and_hide_with_nothing_to_lock_or_hide_record_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 0.0, 0.0, 100.0, 100.0);
+    let over = rect(&mut s, 50.0, 50.0, 100.0, 100.0);
+    // Nothing is above `over`, and the document has one layer.
+    select_with_a_step_to_redo(&mut s, &[over]);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    for c in ["object.lock.above", "object.hide.above", "object.lock.otherLayers", "object.hide.otherLayers"] {
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"count": 0}), "{c}");
+        assert_eq!(history(&s), before, "{c}");
+        assert_eq!(selected(&s), [over], "{c}");
+    }
+    // Lock › All Artwork Above locks `over` above `a` in one undo step, and then it has nothing left
+    // to lock. Hide › All Artwork Above then hides `over`, and then it has nothing left to hide.
+    for c in ["object.lock.above", "object.hide.above"] {
+        select_with_a_step_to_redo(&mut s, &[a]);
+        let undo = history(&s).0;
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"count": 1}), "{c}");
+        assert_eq!(history(&s), (undo + 1, 0, true), "{c}");
+        select_with_a_step_to_redo(&mut s, &[a]);
+        let before = history(&s);
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"count": 1}), "{c} again");
+        assert_eq!(history(&s), before, "{c} again");
+    }
+    // A hidden object selected beside `a` is deselected, still without an undo step.
+    let hidden = rect(&mut s, 400.0, 400.0, 20.0, 20.0);
+    s.execute("layer.setProps", &json!({"id": hidden.0, "visible": false})).unwrap();
+    select_with_a_step_to_redo(&mut s, &[hidden, a]);
+    let before = history(&s);
+    assert_eq!(s.execute("object.hide.above", &json!({})).unwrap(), json!({"count": 1}));
+    assert_eq!((history(&s), selected(&s)), (before, vec![a]));
+    // Other Layers locks, then hides, a second layer in one undo step each, and then it has nothing
+    // left to lock or hide.
+    s.execute("layer.new", &json!({})).unwrap();
+    for c in ["object.lock.otherLayers", "object.hide.otherLayers"] {
+        select_with_a_step_to_redo(&mut s, &[a]);
+        let undo = history(&s).0;
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"count": 1}), "{c}");
+        assert_eq!(history(&s), (undo + 1, 0, true), "{c}");
+        select_with_a_step_to_redo(&mut s, &[a]);
+        let before = history(&s);
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"count": 1}), "{c} again");
+        assert_eq!(history(&s), before, "{c} again");
+    }
 }
 
 // ---------- Transform Each ----------
@@ -150,6 +260,37 @@ fn transform_each_random_is_deterministic_with_seed() {
     let (x, y) = (run(), run());
     assert_eq!(x, y);
     assert!(x.x0.abs() <= 50.0 && x.width() == 100.0);
+}
+
+/// Transform Each with its default values, or with any values that move nothing (both scales 100%,
+/// no move, rotation or reflection, Random or not), records no undo step and replies with the
+/// objects. With only a layer selected there is no object to transform: with Copy or without, it
+/// records no undo step and keeps the selection. With Copy and objects selected, the default values
+/// copy them in one undo step.
+#[test]
+fn transform_each_that_changes_nothing_records_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 0.0, 0.0, 100.0, 100.0);
+    let b = rect(&mut s, 200.0, 0.0, 100.0, 100.0);
+    select_with_a_step_to_redo(&mut s, &[a, b]);
+    let before = history(&s);
+    let still = json!({"scaleH": 100, "scaleV": 100, "moveH": 0, "moveV": 0, "rotate": 0, "reflectX": false, "reflectY": false, "random": true});
+    for p in [json!({}), still, json!({"reference": 0, "strokes": true, "corners": true, "patterns": true})] {
+        assert_eq!(s.execute("object.transformEach", &p).unwrap(), json!({"ids": [a.0, b.0]}), "{p}");
+        assert_eq!(history(&s), before, "{p}");
+        assert_eq!(s.journal.last().unwrap().0, "object.transformEach");
+    }
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    sel(&mut s, &[layer]);
+    for p in [json!({"moveH": 10}), json!({"moveH": 10, "copy": true})] {
+        assert_eq!(s.execute("object.transformEach", &p).unwrap(), json!({"ids": []}), "{p}");
+        assert_eq!(history(&s), before, "{p}");
+        assert_eq!(selected(&s), [layer], "{p}");
+    }
+    sel(&mut s, &[a, b]);
+    let r = s.execute("object.transformEach", &json!({"copy": true})).unwrap();
+    assert_eq!(r["ids"].as_array().unwrap().len(), 2);
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
 }
 
 #[test]
@@ -285,7 +426,8 @@ fn convert_rectangle_path_to_live_shape() {
     );
     sel(&mut s, &[p]);
     assert_eq!(s.execute("object.shape.convertToShape", &json!({})).unwrap()["converted"], 1);
-    let NodeKind::Path { live: Some(LiveShape::Rectangle { w, h, .. }), path, .. } = &node(&s, p).kind else { panic!() };
+    let n = node(&s, p);
+    let (Some(LiveShape::Rectangle { w, h, .. }), NodeKind::Path { path, .. }) = (n.live_shape(), &n.kind) else { panic!() };
     assert!(close(*w, 40.0) && close(*h, 20.0));
     assert_eq!(path.bounds(), Some(Rect::new(0.0, 0.0, 40.0, 20.0)));
 }
@@ -307,7 +449,7 @@ fn convert_rotated_rectangle_and_ellipse() {
     assert_eq!(s.execute("object.shape.convertToShape", &json!({})).unwrap()["converted"], 2);
     let b = bounds(&s, p);
     assert!(close(b.x0, 0.0) && close(b.x1, 100.0) && close(b.y1, 100.0), "{b:?}");
-    assert!(matches!(node(&s, e).kind, NodeKind::Path { live: Some(LiveShape::Ellipse { .. }), .. }));
+    assert!(matches!(node(&s, e).live_shape(), Some(LiveShape::Ellipse { .. })));
 }
 
 #[test]
@@ -479,6 +621,22 @@ fn find_and_replace_options() {
     assert!(s.execute("edit.findReplace", &json!({"find": ""})).is_err());
 }
 
+/// Find and Replace that replaces each match with the text it is (`CAT` found in `cat`, ignoring
+/// case, and replaced by `cat`) records no undo step: the step to redo stays and the document stays
+/// unmodified. It still replies with the count. A replacement that changes the text is one undo step.
+#[test]
+fn find_and_replace_that_changes_nothing_records_no_undo_step() {
+    let mut s = session();
+    let a = text(&mut s, "cat cat");
+    select_with_a_step_to_redo(&mut s, &[a]);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    assert_eq!(s.execute("edit.findReplace", &json!({"find": "CAT", "replace": "cat"})).unwrap(), json!({"count": 2}));
+    assert_eq!((history(&s), plain(&s, a)), (before, "cat cat".to_string()));
+    assert_eq!(s.execute("edit.findReplace", &json!({"find": "cat", "replace": "dog"})).unwrap(), json!({"count": 2}));
+    assert_eq!((history(&s), plain(&s, a)), ((before.0 + 1, 0, true), "dog dog".to_string()));
+}
+
 #[test]
 fn find_next_cycles_through_text_objects() {
     let mut s = session();
@@ -523,6 +681,21 @@ fn select_direction_handles_selects_all_anchors() {
 }
 
 #[test]
+fn direction_handles_leave_out_hidden_and_locked_paths() {
+    let mut s = session();
+    let a = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let hidden = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    let locked = rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[a, hidden, locked]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    s.execute("object.setProps", &json!({"ids": [hidden.0], "visible": false})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [locked.0], "locked": true})).unwrap();
+    sel(&mut s, &[g]);
+    assert_eq!(s.execute("select.object.directionHandles", &json!({})).unwrap()["anchors"], 4);
+    assert_eq!(selected(&s), vec![a]);
+}
+
+#[test]
 fn select_point_and_area_text() {
     let mut s = session();
     let p = text(&mut s, "point");
@@ -533,6 +706,214 @@ fn select_point_and_area_text() {
     s.execute("select.object.areaText", &json!({})).unwrap();
     assert_eq!(selected(&s), vec![a]);
     assert_eq!(s.execute("select.object.brushStrokes", &json!({})).unwrap()["count"], 0);
+}
+
+/// Select › Object and Select › Same leave out hidden and locked objects, and the objects in hidden
+/// or locked groups and sublayers, as Select All does.
+#[test]
+fn select_menu_commands_leave_out_hidden_and_locked_art() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let shown = text(&mut s, "shown");
+    let hidden = text(&mut s, "hidden");
+    let locked = text(&mut s, "locked");
+    let in_hidden_group = text(&mut s, "in a hidden group");
+    let in_locked_group = text(&mut s, "in a locked group");
+    let open = id_of(&s.execute("shape.line", &json!({"x1": 0, "y1": 0, "x2": 10, "y2": 10})).unwrap());
+    let hidden_open = id_of(&s.execute("shape.line", &json!({"x1": 0, "y1": 20, "x2": 10, "y2": 30})).unwrap());
+    sel(&mut s, &[in_hidden_group]);
+    let hidden_group = id_of(&s.execute("object.group", &json!({})).unwrap());
+    sel(&mut s, &[in_locked_group]);
+    let locked_group = id_of(&s.execute("object.group", &json!({})).unwrap());
+    let hidden_sub = id_of(&s.execute("layer.newSublayer", &json!({"parent": layer.0})).unwrap());
+    let in_hidden_sub = text(&mut s, "in a hidden sublayer");
+    let locked_sub = id_of(&s.execute("layer.newSublayer", &json!({"parent": layer.0})).unwrap());
+    let in_locked_sub = text(&mut s, "in a locked sublayer");
+    assert_eq!(s.doc().unwrap().doc.parent_of(in_hidden_sub), Some(hidden_sub));
+    assert_eq!(s.doc().unwrap().doc.parent_of(in_locked_sub), Some(locked_sub));
+    s.execute("object.setProps", &json!({"ids": [hidden.0, hidden_open.0, hidden_group.0], "visible": false})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [locked.0, locked_group.0], "locked": true})).unwrap();
+    s.execute("layer.setProps", &json!({"ids": [hidden_sub.0], "visible": false})).unwrap();
+    s.execute("layer.setProps", &json!({"ids": [locked_sub.0], "locked": true})).unwrap();
+    assert_eq!(s.execute("select.object.textObjects", &json!({})).unwrap()["count"], 1);
+    assert_eq!(selected(&s), vec![shown]);
+    assert_eq!(s.execute("select.object.pointText", &json!({})).unwrap()["count"], 1);
+    assert_eq!(selected(&s), vec![shown]);
+    assert_eq!(s.execute("select.same.fontSize", &json!({})).unwrap()["count"], 1);
+    assert_eq!(selected(&s), vec![shown]);
+    s.execute("select.object.openPaths", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![open]);
+}
+
+/// Next Object Above and Below pass over the hidden and locked objects and the sublayers beside the
+/// selected object.
+#[test]
+fn next_object_above_and_below_pass_over_what_cant_be_selected() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let a = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let hidden = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    let locked = rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    let sub = id_of(&s.execute("layer.newSublayer", &json!({"parent": layer.0})).unwrap());
+    s.execute("layer.setCurrent", &json!({"id": layer.0})).unwrap();
+    let b = rect(&mut s, 60.0, 0.0, 10.0, 10.0);
+    let order: Vec<NodeId> = s.doc().unwrap().doc.layers[0].children().unwrap().iter().map(|n| n.id).collect();
+    assert_eq!(order, vec![a, hidden, locked, sub, b]);
+    s.execute("object.setProps", &json!({"ids": [hidden.0], "visible": false})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [locked.0], "locked": true})).unwrap();
+    sel(&mut s, &[a]);
+    s.execute("select.nextAbove", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![b]);
+    s.execute("select.nextBelow", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![a]);
+    // Nothing that can be selected below it: the selection stays.
+    s.execute("select.nextBelow", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![a]);
+}
+
+/// In isolation mode Select › Same and Select › Object select only objects in the isolated group.
+#[test]
+fn select_menu_commands_stay_inside_the_isolated_group() {
+    let mut s = session();
+    let outside = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let _text_outside = text(&mut s, "outside");
+    let a = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    let b = rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    let text_inside = text(&mut s, "inside");
+    for id in [outside, a, b] {
+        fill(&mut s, id, "#ff0000");
+    }
+    sel(&mut s, &[a, b, text_inside]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    s.execute("object.isolate", &json!({"id": g.0})).unwrap();
+    sel(&mut s, &[a]);
+    s.execute("select.same.fillColor", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![a, b]);
+    s.execute("select.object.textObjects", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![text_inside]);
+    s.execute("select.object.pointText", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![text_inside]);
+    s.execute("select.same.fontSize", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![text_inside]);
+    // All on Same Layers takes the objects of the isolated group.
+    sel(&mut s, &[a]);
+    s.execute("select.object.allOnSameLayers", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![a, b, text_inside]);
+}
+
+/// In isolation mode a recalled selection leaves out the objects outside the isolated group, and
+/// Next Object Above selects nothing outside it.
+#[test]
+fn recalled_selections_and_next_object_stay_inside_the_isolated_group() {
+    let mut s = session();
+    let outside = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let _above_outside = rect(&mut s, 0.0, 20.0, 10.0, 10.0);
+    let a = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    let b = rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[outside, a]);
+    s.execute("select.save", &json!({"name": "Both"})).unwrap();
+    sel(&mut s, &[a, b]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    s.execute("object.isolate", &json!({"id": g.0})).unwrap();
+    s.execute("select.recall", &json!({"name": "Both"})).unwrap();
+    assert_eq!(selected(&s), vec![a]);
+    // An object outside the group (selected by id) has no neighbor in it: the selection stays.
+    sel(&mut s, &[outside]);
+    s.execute("select.nextAbove", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![outside]);
+}
+
+/// In isolation mode Open Paths and All on Same Layers select nothing when the isolated group, or
+/// the layer it is on, is hidden or locked.
+#[test]
+fn select_menu_commands_leave_out_an_isolated_group_hidden_or_locked_since() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let a = id_of(&s.execute("shape.line", &json!({"x1": 0, "y1": 0, "x2": 10, "y2": 10})).unwrap());
+    let b = id_of(&s.execute("shape.line", &json!({"x1": 0, "y1": 20, "x2": 10, "y2": 30})).unwrap());
+    sel(&mut s, &[a, b]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    s.execute("object.isolate", &json!({"id": g.0})).unwrap();
+    s.execute("select.object.openPaths", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![a, b]);
+    s.execute("layer.setProps", &json!({"ids": [layer.0], "visible": false})).unwrap();
+    s.execute("select.object.openPaths", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![]);
+    sel(&mut s, &[a]);
+    s.execute("select.object.allOnSameLayers", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![]);
+    s.execute("layer.setProps", &json!({"ids": [layer.0], "visible": true})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [g.0], "locked": true})).unwrap();
+    s.execute("select.object.openPaths", &json!({})).unwrap();
+    assert_eq!(selected(&s), vec![]);
+}
+
+/// The selection after command `c` runs with nothing selected.
+fn select_from_none(s: &mut Session, c: &str) -> Vec<NodeId> {
+    s.execute("select.none", &json!({})).unwrap();
+    s.execute(c, &json!({})).unwrap();
+    selected(s)
+}
+
+/// In isolation mode Select All, All on Active Artboard and Inverse select nothing while the
+/// isolated group is hidden or locked, or the layer it is on is hidden or a template.
+#[test]
+fn select_all_leaves_out_an_isolated_group_hidden_or_locked_since() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let a = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let b = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[a, b]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    s.execute("object.isolate", &json!({"id": g.0})).unwrap();
+    let commands = ["select.all", "select.allOnArtboard", "select.inverse"];
+    for c in commands {
+        assert_eq!(select_from_none(&mut s, c), vec![a, b], "{c}");
+    }
+    let changes = [
+        ("object.setProps", json!({"ids": [g.0], "visible": false}), json!({"ids": [g.0], "visible": true})),
+        ("object.setProps", json!({"ids": [g.0], "locked": true}), json!({"ids": [g.0], "locked": false})),
+        ("layer.setProps", json!({"ids": [layer.0], "visible": false}), json!({"ids": [layer.0], "visible": true})),
+        // A template layer that has been unlocked again.
+        ("layer.setProps", json!({"ids": [layer.0], "template": true, "locked": false}), json!({"ids": [layer.0], "template": false})),
+    ];
+    for (cmd, on, off) in changes {
+        s.execute(cmd, &on).unwrap();
+        for c in commands {
+            assert_eq!(select_from_none(&mut s, c), vec![], "{c} after {cmd} {on}");
+        }
+        s.execute(cmd, &off).unwrap();
+        for c in commands {
+            assert_eq!(select_from_none(&mut s, c), vec![a, b], "{c} after {cmd} {off}");
+        }
+    }
+}
+
+/// Pattern editing and opacity mask editing isolate a new layer: Select All, All on Active
+/// Artboard and Inverse select the art on it.
+#[test]
+fn select_all_in_pattern_and_mask_editing_selects_the_art_being_edited() {
+    let mut s = session();
+    let commands = ["select.all", "select.allOnArtboard", "select.inverse"];
+    let r = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[r]);
+    s.execute("object.pattern.make", &json!({"name": "P"})).unwrap();
+    let tile = selected(&s);
+    assert_eq!(tile.len(), 1);
+    for c in commands {
+        assert_eq!(select_from_none(&mut s, c), tile, "{c} in pattern editing");
+    }
+    s.execute("object.pattern.done", &json!({})).unwrap();
+    let obj = rect(&mut s, 0.0, 0.0, 200.0, 200.0);
+    let m = rect(&mut s, 0.0, 0.0, 100.0, 200.0);
+    sel(&mut s, &[obj, m]);
+    s.execute("transparency.makeOpacityMask", &json!({})).unwrap();
+    s.execute("transparency.editOpacityMask", &json!({})).unwrap();
+    let mask = selected(&s);
+    assert_eq!(mask.len(), 1);
+    for c in commands {
+        assert_eq!(select_from_none(&mut s, c), mask, "{c} in opacity mask editing");
+    }
 }
 
 #[test]
@@ -599,6 +980,30 @@ fn saved_selections_live_in_the_document() {
     assert_eq!(s.execute("select.recall", &json!({"name": "Pair"})).unwrap()["count"], 1);
 }
 
+/// A recall leaves out the objects hidden or locked since the save, themselves or through their
+/// group or sublayer.
+#[test]
+fn recalled_selections_leave_out_objects_hidden_or_locked_since() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let a = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let hidden = rect(&mut s, 20.0, 0.0, 10.0, 10.0);
+    let locked = rect(&mut s, 40.0, 0.0, 10.0, 10.0);
+    let in_group = rect(&mut s, 60.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[in_group]);
+    let g = id_of(&s.execute("object.group", &json!({})).unwrap());
+    let sub = id_of(&s.execute("layer.newSublayer", &json!({"parent": layer.0})).unwrap());
+    let in_sub = rect(&mut s, 80.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[a, hidden, locked, in_group, in_sub]);
+    s.execute("select.save", &json!({"name": "All"})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [hidden.0, g.0], "visible": false})).unwrap();
+    s.execute("object.setProps", &json!({"ids": [locked.0], "locked": true})).unwrap();
+    s.execute("layer.setProps", &json!({"ids": [sub.0], "locked": true})).unwrap();
+    s.execute("select.none", &json!({})).unwrap();
+    assert_eq!(s.execute("select.recall", &json!({"name": "All"})).unwrap()["count"], 1);
+    assert_eq!(selected(&s), vec![a]);
+}
+
 #[test]
 fn edit_selection_applies_several_edits_as_one_step() {
     let mut s = session();
@@ -654,12 +1059,49 @@ fn change_case_variants() {
     assert!(s.execute("type.changeCase", &json!({"case": "weird"})).is_err());
 }
 
+/// Change Case is one undo step, and Change Case to the case the text has already records no undo
+/// step: the step to redo stays and the document stays unmodified. It still replies with the
+/// objects.
+#[test]
+fn change_case_to_the_case_the_text_has_records_no_undo_step() {
+    let mut s = session();
+    let t = text(&mut s, "hello wORLD. again here");
+    for case in ["upper", "lower", "title", "sentence"] {
+        sel(&mut s, &[t]);
+        let undo = history(&s).0;
+        s.execute("type.changeCase", &json!({"case": case})).unwrap();
+        assert_eq!(history(&s), (undo + 1, 0, true), "{case}");
+        select_with_a_step_to_redo(&mut s, &[t]);
+        let before = (history(&s), plain(&s, t));
+        assert_eq!(s.execute("type.changeCase", &json!({"case": case})).unwrap(), json!({"ids": [t.0]}), "{case} again");
+        assert_eq!((history(&s), plain(&s, t)), before, "{case} again");
+    }
+}
+
 #[test]
 fn smart_punctuation_quotes_dashes_ellipsis() {
     let mut s = session();
     let t = text(&mut s, "\"Hi\" it's 1--2 and 3---4...");
     sel(&mut s, &[t]);
     assert_eq!(s.execute("type.smartPunctuation", &json!({})).unwrap()["changed"], 1);
+    assert_eq!(plain(&s, t), "“Hi” it’s 1–2 and 3—4…");
+}
+
+/// Smart Punctuation on type with nothing left to change, or on a selection with no type in it,
+/// records no undo step and replies `changed: 0`.
+#[test]
+fn smart_punctuation_with_nothing_to_change_records_no_undo_step() {
+    let mut s = session();
+    let t = text(&mut s, "\"Hi\" it's 1--2 and 3---4...");
+    let r = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    sel(&mut s, &[t]);
+    assert_eq!(s.execute("type.smartPunctuation", &json!({})).unwrap()["changed"], 1);
+    for id in [t, r] {
+        select_with_a_step_to_redo(&mut s, &[id]);
+        let before = history(&s);
+        assert_eq!(s.execute("type.smartPunctuation", &json!({})).unwrap(), json!({"changed": 0}), "{id:?}");
+        assert_eq!(history(&s), before, "{id:?}");
+    }
     assert_eq!(plain(&s, t), "“Hi” it’s 1–2 and 3—4…");
 }
 
@@ -676,6 +1118,29 @@ fn convert_point_area_roundtrip() {
     let NodeKind::Text(tt) = &node(&s, t).kind else { panic!() };
     assert!(matches!(tt.kind, TextKind::Point));
     assert_eq!(tt.plain_text(), "Some words");
+}
+
+/// Convert To Area Type with no point type selected, and Convert To Point Type with no area type
+/// selected, record no undo step and reply with the objects. With point type and area type
+/// selected, Convert To Area Type converts the point type in one undo step, and Convert To Point
+/// Type then converts both in another.
+#[test]
+fn converting_type_to_the_kind_it_is_records_no_undo_step() {
+    let mut s = session();
+    let p = text(&mut s, "Point");
+    let a = id_of(&s.execute("text.create", &json!({"x": 0, "y": 100, "text": "Area", "area": {"width": 100, "height": 50}})).unwrap());
+    for (c, id) in [("type.convertToAreaType", a), ("type.convertToPointType", p)] {
+        select_with_a_step_to_redo(&mut s, &[id]);
+        let before = history(&s);
+        assert_eq!(s.execute(c, &json!({})).unwrap(), json!({"ids": [id.0]}), "{c}");
+        assert_eq!(history(&s), before, "{c}");
+    }
+    for c in ["type.convertToAreaType", "type.convertToPointType"] {
+        select_with_a_step_to_redo(&mut s, &[p, a]);
+        let undo = history(&s).0;
+        s.execute(c, &json!({})).unwrap();
+        assert_eq!(history(&s), (undo + 1, 0, true), "{c}");
+    }
 }
 
 #[test]
@@ -713,6 +1178,26 @@ fn area_placeholder_fills_frame() {
     sel(&mut s, &[a]);
     s.execute("type.fillPlaceholder", &json!({})).unwrap();
     assert!(plain(&s, a).len() > 400);
+}
+
+/// Fill with Placeholder Text on type that holds its placeholder text already (point type, and area
+/// type filled to its frame), and `type.insert` with an empty `text`, record no undo step and reply
+/// with the objects. Inserting text is one undo step.
+#[test]
+fn placeholder_and_insert_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    let t = text(&mut s, "x");
+    let a = id_of(&s.execute("text.create", &json!({"x": 0, "y": 100, "text": "", "area": {"width": 300, "height": 300}})).unwrap());
+    sel(&mut s, &[t, a]);
+    s.execute("type.fillPlaceholder", &json!({})).unwrap();
+    select_with_a_step_to_redo(&mut s, &[t, a]);
+    let before = (history(&s), plain(&s, t), plain(&s, a));
+    for (c, p) in [("type.fillPlaceholder", json!({})), ("type.insert", json!({"text": ""}))] {
+        assert_eq!(s.execute(c, &p).unwrap(), json!({"ids": [t.0, a.0]}), "{c}");
+        assert_eq!((history(&s), plain(&s, t), plain(&s, a)), before, "{c}");
+    }
+    s.execute("type.insert", &json!({"text": "z"})).unwrap();
+    assert_eq!(history(&s), (before.0.0 + 1, 0, true));
 }
 
 #[test]
@@ -785,7 +1270,11 @@ fn ruler_guides_select_move_and_delete() {
     assert_eq!(s.execute("guide.select", &json!({"indexes": [0]})).unwrap()["selected"], json!([0]));
     assert!(selected(&s).is_empty());
     assert_eq!(s.execute("guide.select", &json!({"indexes": [1], "toggle": true})).unwrap()["selected"], json!([0, 1]));
-    assert_eq!(s.execute("guide.list", &json!({})).unwrap()[1], json!({"index": 1, "vertical": false, "pos": 50.0, "selected": true}));
+    let layer = s.doc().unwrap().current_layer().unwrap().0;
+    assert_eq!(
+        s.execute("guide.list", &json!({})).unwrap()[1],
+        json!({"index": 1, "vertical": false, "pos": 50.0, "selected": true, "layer": layer, "shown": true, "editable": true})
+    );
     assert!(s.execute("guide.select", &json!({"indexes": [7]})).is_err());
     // A move takes each selected guide along its own axis, in one undo step.
     let n = undo_len(&s);
@@ -866,11 +1355,12 @@ fn artboard_guides_go_with_their_artboard() {
     s.execute("guide.add", &json!({"vertical": true, "pos": 1000, "artboard": 1})).unwrap();
     s.execute("guide.add", &json!({"vertical": false, "pos": 100})).unwrap();
     let list = |s: &mut Session| s.execute("guide.list", &json!({})).unwrap();
+    let layer = s.doc().unwrap().current_layer().unwrap().0;
     assert_eq!(
         list(&mut s),
         json!([
-            {"index": 0, "vertical": true, "pos": 1000.0, "selected": false, "artboard": 1},
-            {"index": 1, "vertical": false, "pos": 100.0, "selected": false},
+            {"index": 0, "vertical": true, "pos": 1000.0, "selected": false, "artboard": 1, "layer": layer, "shown": true, "editable": true},
+            {"index": 1, "vertical": false, "pos": 100.0, "selected": false, "layer": layer, "shown": true, "editable": true},
         ])
     );
     let spans = |s: &Session| {
@@ -909,7 +1399,10 @@ fn artboard_guides_go_with_their_artboard() {
     let n = undo_len(&s);
     s.execute("artboard.delete", &json!({"index": 0})).unwrap();
     assert_eq!((guides(&s).len(), selected_guides(&s)), (3, vec![0, 1]));
-    assert_eq!(list(&mut s)[0], json!({"index": 0, "vertical": false, "pos": 100.0, "selected": true}));
+    assert_eq!(
+        list(&mut s)[0],
+        json!({"index": 0, "vertical": false, "pos": 100.0, "selected": true, "layer": layer, "shown": true, "editable": true})
+    );
     assert_eq!(undo_len(&s), n + 1);
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!((guides(&s).len(), selected_guides(&s)), (4, vec![1, 2]));
@@ -951,10 +1444,118 @@ fn guides_dragged_out_of_a_ruler_snap_and_take_the_artboard_tool_s_artboard() {
     s.set_tool_option("active", &json!(1));
     s.ruler_guide(false, &ev(PointerKind::Drag, 1000.0, 50.0), true, v).unwrap();
     s.ruler_guide(false, &ev(PointerKind::Up, 1000.0, 50.0), true, v).unwrap();
+    let layer = s.doc().unwrap().current_layer().unwrap().0;
     assert_eq!(
         s.execute("guide.list", &json!({})).unwrap()[1],
-        json!({"index": 1, "vertical": false, "pos": 50.0, "selected": false, "artboard": 1})
+        json!({"index": 1, "vertical": false, "pos": 50.0, "selected": false, "artboard": 1, "layer": layer, "shown": true, "editable": true})
     );
+}
+
+/// Guides saved before guides had layers are put on a layer when the document opens.
+#[test]
+fn guides_from_older_files_are_put_on_a_layer() {
+    let mut s = Session::new();
+    let mut d = vectorcraft_doc::Document::new(400.0, 300.0);
+    d.guides.push(vectorcraft_doc::Guide::new(true, 50.0));
+    d.guides.push(vectorcraft_doc::Guide::new(false, 80.0));
+    s.add_document(d, None);
+    let st = s.doc().unwrap();
+    let top = st.doc.default_layer();
+    assert!(top.is_some() && st.doc.guides.iter().all(|g| g.layer == top), "{:?}", st.doc.guides);
+}
+
+/// Ruler guides are layer objects: made on the current layer, hidden, locked and deleted with it,
+/// and moved to another layer.
+#[test]
+fn ruler_guides_live_on_layers() {
+    let mut s = session();
+    let first = s.doc().unwrap().current_layer().unwrap();
+    s.execute("guide.add", &json!({"vertical": true, "pos": 200})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.guides[0].layer, Some(first), "on the current layer");
+    let second = id_of(&s.execute("layer.new", &json!({"name": "Guides"})).unwrap());
+    s.execute("guide.add", &json!({"vertical": false, "pos": 300})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.guides[1].layer, Some(second), "the new layer is current");
+    assert!(s.execute("guide.add", &json!({"vertical": true, "pos": 1, "layer": 99999})).is_err());
+    // Hidden or locked with its layer.
+    s.execute("layer.setProps", &json!({"ids": [second.0], "visible": false})).unwrap();
+    assert_eq!(s.execute("guide.list", &json!({})).unwrap()[1]["shown"], false);
+    s.execute("layer.setProps", &json!({"ids": [second.0], "visible": true, "locked": true})).unwrap();
+    let row = s.execute("guide.list", &json!({})).unwrap()[1].clone();
+    assert_eq!((row["shown"].clone(), row["editable"].clone()), (json!(true), json!(false)));
+    s.execute("layer.setProps", &json!({"ids": [second.0], "locked": false})).unwrap();
+    // Moved to the first layer, then back.
+    s.execute("guide.setLayer", &json!({"index": 1, "layer": first.0})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.guides[1].layer, Some(first));
+    s.execute("guide.setLayer", &json!({"index": 1, "layer": second.0})).unwrap();
+    assert!(s.execute("guide.setLayer", &json!({"index": 1, "layer": 99999})).is_err());
+    // Several at once, as dragging their rows onto a layer's row does.
+    s.execute("guide.setLayer", &json!({"indexes": [0, 1], "layer": first.0})).unwrap();
+    assert!(s.doc().unwrap().doc.guides.iter().all(|g| g.layer == Some(first)));
+    s.execute("guide.setLayer", &json!({"indexes": [1], "layer": second.0})).unwrap();
+    assert!(s.execute("guide.setLayer", &json!({"indexes": [7], "layer": first.0})).is_err());
+    // Deleting a layer deletes its guides; undo brings them back.
+    s.execute("layer.delete", &json!({"ids": [second.0]})).unwrap();
+    assert_eq!(guides(&s), [(true, 200.0)]);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(guides(&s).len(), 2);
+}
+
+/// Guides on a hidden or locked layer leave the selection and can't be moved, deleted or moved to
+/// another layer; new guides skip a locked current layer as new art does; no guide goes onto a
+/// locked layer.
+#[test]
+fn guides_on_hidden_or_locked_layers_are_left_alone() {
+    let mut s = session();
+    let first = s.doc().unwrap().current_layer().unwrap();
+    s.execute("guide.add", &json!({"vertical": true, "pos": 200})).unwrap();
+    let second = id_of(&s.execute("layer.new", &json!({})).unwrap());
+    s.execute("guide.add", &json!({"vertical": false, "pos": 300})).unwrap();
+    s.execute("guide.select", &json!({"indexes": [0, 1]})).unwrap();
+    s.execute("layer.setProps", &json!({"ids": [first.0], "locked": true})).unwrap();
+    assert_eq!(selected_guides(&s), [1], "the locked layer's guide is deselected");
+    assert_eq!(s.execute("guide.select", &json!({"indexes": [0]})).unwrap()["selected"], json!([]), "and can't be selected");
+    assert!(s.execute("guide.move", &json!({"index": 0, "pos": 50})).is_err());
+    assert!(s.execute("guide.remove", &json!({"index": 0})).is_err());
+    assert!(s.execute("guide.setLayer", &json!({"index": 0, "layer": second.0})).is_err());
+    assert!(s.execute("guide.setLayer", &json!({"index": 1, "layer": first.0})).is_err(), "not onto a locked layer");
+    s.execute("layer.setProps", &json!({"ids": [second.0], "visible": false})).unwrap();
+    assert!(selected_guides(&s).is_empty(), "the hidden layer's guide is deselected");
+    // Both layers hidden or locked: a new guide is refused, as new art is.
+    assert!(s.execute("guide.add", &json!({"vertical": true, "pos": 10})).is_err());
+    s.execute("layer.setProps", &json!({"ids": [second.0], "visible": true, "locked": true})).unwrap();
+    s.execute("layer.setProps", &json!({"ids": [first.0], "locked": false})).unwrap();
+    // The current layer locked: the new guide goes on the top shown, unlocked layer.
+    s.execute("guide.add", &json!({"vertical": true, "pos": 20})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.guides[2].layer, Some(first));
+    assert_eq!(guides(&s).len(), 3);
+}
+
+/// Guides follow their layers through Duplicate, Merge Selected and Flatten Artwork, in one undo
+/// step each.
+#[test]
+fn guides_go_with_their_layers_when_duplicated_merged_and_flattened() {
+    let mut s = session();
+    let first = s.doc().unwrap().current_layer().unwrap();
+    s.execute("guide.add", &json!({"vertical": true, "pos": 200})).unwrap();
+    let second = id_of(&s.execute("layer.new", &json!({})).unwrap());
+    s.execute("guide.add", &json!({"vertical": false, "pos": 300})).unwrap();
+    let on = |s: &Session, l: NodeId| s.doc().unwrap().doc.guides_on(l).map(|(_, g)| (g.vertical, g.pos)).collect::<Vec<_>>();
+    // Duplicate Layer copies its guides onto the copy.
+    let copy = s.execute("layer.duplicate", &json!({"ids": [second.0]})).unwrap()["ids"][0].as_u64().map(NodeId).unwrap();
+    assert_eq!((on(&s, second), on(&s, copy)), (vec![(false, 300.0)], vec![(false, 300.0)]));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(guides(&s).len(), 2);
+    // Merged into the first layer, the second layer's guide goes with its art.
+    s.execute("layer.merge", &json!({"ids": [second.0, first.0]})).unwrap();
+    assert_eq!(on(&s, first), [(true, 200.0), (false, 300.0)]);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!((on(&s, first), on(&s, second)), (vec![(true, 200.0)], vec![(false, 300.0)]));
+    // Flattened into the first layer, a hidden layer is discarded with its guides.
+    s.execute("layer.setProps", &json!({"ids": [second.0], "visible": false})).unwrap();
+    s.execute("layer.flatten", &json!({"id": first.0})).unwrap();
+    assert_eq!(guides(&s), [(true, 200.0)]);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(guides(&s).len(), 2);
 }
 
 /// #451: art moved with the Selection tool lands flush on the artboard's edges and centre (Smart

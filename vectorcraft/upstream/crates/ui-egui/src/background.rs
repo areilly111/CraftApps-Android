@@ -16,6 +16,11 @@ use crate::VectorcraftApp;
 /// Writes a file; callable from any thread.
 pub type SharedWriteFn = std::sync::Arc<dyn Fn(&str, &[u8]) -> Result<(), String> + Send + Sync>;
 
+/// Writes the file at a path with what the filler it is given writes into it (atomically, as
+/// `vectorcraft_format::write_atomic_with`); callable from any thread.
+pub type SharedStreamFn =
+    std::sync::Arc<dyn Fn(&str, &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>) -> Result<(), String> + Send + Sync>;
+
 /// A writer for the work: the host's file writer (or browser download) on the UI thread, the
 /// shared one on the worker.
 pub type Writer<'a> = &'a mut dyn FnMut(&str, &[u8]) -> Result<(), String>;

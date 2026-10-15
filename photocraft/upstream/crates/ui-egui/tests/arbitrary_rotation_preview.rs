@@ -87,6 +87,7 @@ fn blue(h: &mut Harness, name: &str) -> (usize, u32, u32) {
 
 #[test]
 fn size_changing_rotation_preview_is_visible_and_preserves_the_panned_center() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     h.run_steps(4);
     for (width, height, zoom, center, degrees, factor) in [
@@ -121,6 +122,7 @@ fn size_changing_rotation_preview_is_visible_and_preserves_the_panned_center() {
 
 #[test]
 fn preview_toggle_and_cancel_keep_the_document_while_ok_applies_rotation() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     h.run_steps(4);
     setup(&mut h, 400, 240, 1.0, [200.0, 120.0]);

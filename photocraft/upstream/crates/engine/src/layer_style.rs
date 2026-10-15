@@ -68,13 +68,17 @@ fn gradient(p: &Value) -> Gradient {
 pub fn effect_defaults(kind: &str) -> Value {
     match kind {
         "dropShadow" => {
-            json!({"blend": "Multiply", "color": "#000000", "opacity": 75, "angle": 120, "useGlobalLight": true, "distance": 5, "spread": 0, "size": 5, "contour": "Linear", "noise": 0, "knocksOut": true})
+            json!({"blend": "Multiply", "color": "#000000", "opacity": 75, "angle": 120, "useGlobalLight": true, "distance": 5, "spread": 0, "size": 5, "contour": "Linear", "antiAlias": false, "noise": 0, "knocksOut": true})
         }
         "innerShadow" => {
-            json!({"blend": "Multiply", "color": "#000000", "opacity": 75, "angle": 120, "useGlobalLight": true, "distance": 5, "choke": 0, "size": 5, "contour": "Linear", "noise": 0})
+            json!({"blend": "Multiply", "color": "#000000", "opacity": 75, "angle": 120, "useGlobalLight": true, "distance": 5, "choke": 0, "size": 5, "contour": "Linear", "antiAlias": false, "noise": 0})
         }
-        "outerGlow" => json!({"blend": "Screen", "opacity": 75, "color": "#ffffbe", "spread": 0, "size": 5, "range": 50, "contour": "Linear", "noise": 0}),
-        "innerGlow" => json!({"blend": "Screen", "opacity": 75, "color": "#ffffbe", "source": "edge", "choke": 0, "size": 5, "contour": "Linear", "noise": 0}),
+        "outerGlow" => {
+            json!({"blend": "Screen", "opacity": 75, "color": "#ffffbe", "spread": 0, "size": 5, "range": 50, "contour": "Linear", "antiAlias": false, "noise": 0})
+        }
+        "innerGlow" => {
+            json!({"blend": "Screen", "opacity": 75, "color": "#ffffbe", "source": "edge", "choke": 0, "size": 5, "contour": "Linear", "antiAlias": false, "noise": 0})
+        }
         "stroke" => json!({"size": 3, "position": "outside", "blend": "Normal", "opacity": 100, "color": "#000000"}),
         "colorOverlay" => json!({"blend": "Normal", "color": "#ff0000", "opacity": 100}),
         "gradientOverlay" => {
@@ -82,23 +86,283 @@ pub fn effect_defaults(kind: &str) -> Value {
         }
         "patternOverlay" => json!({"blend": "Normal", "opacity": 100, "pattern": "", "angle": 0, "scale": 100, "link": true}),
         "bevelEmboss" => {
-            json!({"style": "inner", "depth": 100, "direction": "up", "size": 5, "soften": 0, "angle": 120, "useGlobalLight": true, "altitude": 30})
+            json!({"style": "inner", "depth": 100, "direction": "up", "size": 5, "soften": 0, "angle": 120, "useGlobalLight": true, "altitude": 30, "glossContour": "Linear", "contour": false, "contourName": "Linear", "contourRange": 50, "contourAntiAlias": false})
         }
-        "satin" => json!({"blend": "Multiply", "color": "#000000", "opacity": 50, "angle": 19, "distance": 11, "size": 14, "invert": true}),
+        "satin" => {
+            json!({"blend": "Multiply", "color": "#000000", "opacity": 50, "angle": 19, "distance": 11, "size": 14, "contour": "Linear", "antiAlias": true, "invert": true})
+        }
         _ => json!({}),
     }
 }
 
-/// Built-in contour presets (our own transfer curves; imported PSD contours keep
-/// their own points). Points are (input, output) in 0..=1, sorted by input.
-pub const CONTOURS: &[(&str, &[(f32, f32)])] = &[
-    ("Linear", &[(0.0, 0.0), (1.0, 1.0)]),
-    ("Cone", &[(0.0, 0.0), (0.5, 1.0), (1.0, 1.0)]),
-    ("Cone (Inverted)", &[(0.0, 1.0), (0.5, 0.0), (1.0, 0.0)]),
-    ("Domed", &[(0.0, 0.0), (0.25, 1.0), (0.75, 1.0), (1.0, 0.0)]),
-    ("Domed (Inverted)", &[(0.0, 1.0), (0.25, 0.0), (0.75, 0.0), (1.0, 1.0)]),
-    ("Diagonal (Descending)", &[(0.0, 1.0), (1.0, 0.0)]),
+/// A contour preset point: input, output (both `0..=1`) and whether it is a corner.
+pub type ContourPoint = (f32, f32, bool);
+
+/// Built-in contour presets, in the order of Photoshop's default contour picker. Each is Photoshop's
+/// own curve as measured in Photoshop 27.11 (a Satin of each preset against a Linear one, 38
+/// levels per curve, read back through Satin's mirrored lookup — see
+/// `photocraft_compose::effects::satin_lut` — and thinned to within 1 %), joined by straight
+/// segments (every inner point a corner). Imported PSD contours keep their own points.
+pub const CONTOURS: &[(&str, &[ContourPoint])] = &[
+    ("Linear", &[(0.0, 0.0, false), (1.0, 1.0, false)]),
+    (
+        "Cone",
+        &[
+            (0.0, 0.0, false),
+            (0.172, 0.477, true),
+            (0.195, 0.555, true),
+            (0.266, 0.711, true),
+            (0.383, 0.922, true),
+            (0.43, 0.969, true),
+            (0.477, 0.992, true),
+            (0.523, 0.992, true),
+            (0.57, 0.969, true),
+            (0.664, 0.859, true),
+            (0.703, 0.789, true),
+            (0.742, 0.711, true),
+            (0.836, 0.477, true),
+            (0.859, 0.398, true),
+            (0.914, 0.266, true),
+            (0.945, 0.156, true),
+            (0.977, 0.078, true),
+            (1.0, 0.0, false),
+        ],
+    ),
+    (
+        "Cone - Inverted",
+        &[
+            (0.0, 1.0, false),
+            (0.031, 0.922, true),
+            (0.07, 0.789, true),
+            (0.172, 0.523, true),
+            (0.195, 0.445, true),
+            (0.266, 0.289, true),
+            (0.383, 0.078, true),
+            (0.43, 0.031, true),
+            (0.477, 0.008, true),
+            (0.523, 0.008, true),
+            (0.57, 0.031, true),
+            (0.664, 0.141, true),
+            (0.703, 0.211, true),
+            (0.742, 0.289, true),
+            (0.836, 0.523, true),
+            (0.859, 0.602, true),
+            (0.914, 0.734, true),
+            (0.945, 0.844, true),
+            (0.977, 0.922, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Cove - Deep",
+        &[
+            (0.0, 0.258, false),
+            (0.344, 0.289, true),
+            (0.383, 0.297, true),
+            (0.477, 0.352, true),
+            (0.57, 0.43, true),
+            (0.617, 0.484, true),
+            (0.664, 0.57, true),
+            (0.703, 0.711, true),
+            (0.742, 0.906, true),
+            (0.773, 1.0, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Cove - Shallow",
+        &[
+            (0.0, 0.0, false),
+            (0.008, 0.164, true),
+            (0.016, 0.477, true),
+            (0.039, 0.508, true),
+            (0.172, 0.57, true),
+            (0.305, 0.688, true),
+            (0.344, 0.734, true),
+            (0.477, 0.945, true),
+            (0.523, 1.0, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Gaussian",
+        &[
+            (0.0, 0.0, false),
+            (0.117, 0.023, true),
+            (0.172, 0.055, true),
+            (0.234, 0.117, true),
+            (0.305, 0.234, true),
+            (0.383, 0.414, true),
+            (0.523, 0.688, true),
+            (0.617, 0.812, true),
+            (0.703, 0.891, true),
+            (0.805, 0.953, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Half Round",
+        &[
+            (0.0, 0.0, false),
+            (0.07, 0.18, true),
+            (0.195, 0.445, true),
+            (0.266, 0.555, true),
+            (0.383, 0.703, true),
+            (0.523, 0.828, true),
+            (0.617, 0.883, true),
+            (0.773, 0.945, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Ring",
+        &[
+            (0.0, 0.0, false),
+            (0.031, 0.078, true),
+            (0.039, 0.117, true),
+            (0.117, 0.383, true),
+            (0.172, 0.609, true),
+            (0.195, 0.734, true),
+            (0.266, 0.953, true),
+            (0.305, 1.0, true),
+            (0.344, 0.992, true),
+            (0.383, 0.922, true),
+            (0.43, 0.805, true),
+            (0.477, 0.641, true),
+            (0.57, 0.281, true),
+            (0.617, 0.141, true),
+            (0.664, 0.055, true),
+            (0.703, 0.016, true),
+            (0.742, 0.016, true),
+            (0.773, 0.062, true),
+            (0.836, 0.234, true),
+            (0.859, 0.344, true),
+            (0.891, 0.445, true),
+            (0.914, 0.547, true),
+            (0.945, 0.734, true),
+            (0.977, 0.875, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Ring - Double",
+        &[
+            (0.0, 0.0, false),
+            (0.055, 0.086, true),
+            (0.094, 0.172, true),
+            (0.117, 0.242, true),
+            (0.172, 0.477, true),
+            (0.195, 0.625, true),
+            (0.266, 0.891, true),
+            (0.305, 0.945, true),
+            (0.344, 0.891, true),
+            (0.383, 0.695, true),
+            (0.43, 0.367, true),
+            (0.477, 0.07, true),
+            (0.523, 0.047, true),
+            (0.57, 0.32, true),
+            (0.617, 0.648, true),
+            (0.664, 0.867, true),
+            (0.703, 0.93, true),
+            (0.742, 0.852, true),
+            (0.773, 0.641, true),
+            (0.805, 0.375, true),
+            (0.836, 0.156, true),
+            (0.859, 0.031, true),
+            (0.891, 0.023, true),
+            (0.914, 0.109, true),
+            (0.977, 0.703, true),
+            (0.984, 0.82, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Rolling Slope - Descending",
+        &[
+            (0.0, 1.0, false),
+            (0.008, 1.0, true),
+            (0.031, 0.93, true),
+            (0.039, 0.883, true),
+            (0.07, 0.758, true),
+            (0.141, 0.539, true),
+            (0.195, 0.406, true),
+            (0.266, 0.352, true),
+            (0.305, 0.352, true),
+            (0.523, 0.57, true),
+            (0.57, 0.602, true),
+            (0.617, 0.617, true),
+            (0.703, 0.602, true),
+            (0.742, 0.562, true),
+            (0.836, 0.391, true),
+            (0.914, 0.211, true),
+            (0.945, 0.109, true),
+            (0.977, 0.039, true),
+            (0.984, 0.008, true),
+            (1.0, 0.0, false),
+        ],
+    ),
+    (
+        "Rounded Steps",
+        &[
+            (0.0, 0.234, false),
+            (0.031, 0.305, true),
+            (0.039, 0.336, true),
+            (0.094, 0.43, true),
+            (0.141, 0.477, true),
+            (0.234, 0.492, true),
+            (0.266, 0.516, true),
+            (0.305, 0.602, true),
+            (0.344, 0.664, true),
+            (0.383, 0.711, true),
+            (0.477, 0.734, true),
+            (0.523, 0.797, true),
+            (0.57, 0.898, true),
+            (0.617, 0.953, true),
+            (0.664, 0.984, true),
+            (0.773, 0.984, true),
+            (0.836, 0.906, true),
+            (0.891, 0.891, true),
+            (0.914, 0.898, true),
+            (1.0, 1.0, false),
+        ],
+    ),
+    (
+        "Sawtooth 1",
+        &[
+            (0.0, 0.0, false),
+            (0.031, 0.047, true),
+            (0.195, 0.375, true),
+            (0.266, 0.492, true),
+            (0.477, 0.047, true),
+            (0.523, 0.055, true),
+            (0.742, 0.469, true),
+            (0.773, 0.445, true),
+            (0.914, 0.18, true),
+            (0.945, 0.102, true),
+            (1.0, 0.0, false),
+        ],
+    ),
 ];
+
+/// Names earlier versions offered, still accepted by `contour` params (scripts, saved defaults).
+const LEGACY_CONTOURS: &[(&str, &[ContourPoint])] = &[
+    ("Cone (Inverted)", &[(0.0, 1.0, false), (0.5, 0.0, false), (1.0, 0.0, false)]),
+    ("Domed", &[(0.0, 0.0, false), (0.25, 1.0, false), (0.75, 1.0, false), (1.0, 0.0, false)]),
+    ("Domed (Inverted)", &[(0.0, 1.0, false), (0.25, 0.0, false), (0.75, 0.0, false), (1.0, 1.0, false)]),
+    ("Diagonal (Descending)", &[(0.0, 1.0, false), (1.0, 0.0, false)]),
+];
+
+/// Most points a contour param may carry.
+pub const MAX_CONTOUR_POINTS: usize = 64;
+
+fn preset_contour(name: &str, pts: &[ContourPoint]) -> Contour {
+    let corners: Vec<bool> = pts.iter().map(|p| p.2).collect();
+    Contour::Custom {
+        name: name.to_string(),
+        points: pts.iter().map(|(input, output, _)| CurvePoint { input: *input, output: *output }).collect(),
+        corners: if corners.contains(&true) { corners } else { Vec::new() },
+    }
+}
 
 /// The built-in contour called `name` (`Linear` is the identity); `None` for
 /// names we don't ship, so imported contours are carried rather than clobbered.
@@ -106,18 +370,94 @@ pub fn builtin_contour(name: &str) -> Option<Contour> {
     if name.eq_ignore_ascii_case("Linear") {
         return Some(Contour::Linear);
     }
-    CONTOURS.iter().skip(1).find(|(n, _)| *n == name).map(|(n, pts)| Contour::Custom {
-        name: (*n).to_string(),
-        points: pts.iter().map(|(input, output)| CurvePoint { input: *input, output: *output }).collect(),
-    })
+    CONTOURS.iter().skip(1).chain(LEGACY_CONTOURS).find(|(n, _)| *n == name).map(|(n, pts)| preset_contour(n, pts))
 }
 
-/// The param naming a contour (`"Linear"` or a preset/custom contour's name).
+/// The param naming a contour: `"Linear"` or a built-in preset's name when the contour is that
+/// preset, else the curve itself as `{"name", "points": [[input, output], …], "corners": [bool, …]}`
+/// (inputs and outputs `0..=1`), so a round trip through the param keeps an imported or edited
+/// curve exactly.
 pub fn contour_param(c: &Contour) -> Value {
     match c {
         Contour::Linear => json!("Linear"),
-        Contour::Custom { name, .. } => json!(name),
+        Contour::Custom { name, .. } if builtin_contour(name).as_ref() == Some(c) => json!(name),
+        Contour::Custom { name, points, corners } => {
+            let pts: Vec<Value> = points.iter().map(|p| json!([short(p.input), short(p.output)])).collect();
+            let corners: Vec<bool> = (0..points.len()).map(|i| corners.get(i).copied().unwrap_or(false)).collect();
+            json!({"name": name, "points": pts, "corners": corners})
+        }
     }
+}
+
+/// `x` as the shortest decimal that reads back as the same `f32` (`0.2`, not `0.20000000298…`).
+fn short(x: f32) -> Value {
+    x.to_string().parse::<f64>().map_or(Value::Null, |v| json!(v))
+}
+
+/// The contour a `contour` param names: a built-in preset's name, or a curve object (see
+/// [`contour_param`]). `None` for an unknown name or a malformed curve (fewer than two points,
+/// more than [`MAX_CONTOUR_POINTS`], non-finite values), so the effect keeps its contour.
+/// Points are clamped to `0..=1` and sorted by input; points at the same input collapse.
+pub fn contour_from_param(v: &Value) -> Option<Contour> {
+    match v {
+        Value::String(name) => builtin_contour(name),
+        Value::Object(o) => {
+            let raw = o.get("points")?.as_array()?;
+            if raw.len() < 2 || raw.len() > MAX_CONTOUR_POINTS {
+                return None;
+            }
+            let flags = o.get("corners").and_then(Value::as_array);
+            let mut pts: Vec<ContourPoint> = Vec::with_capacity(raw.len());
+            for (i, q) in raw.iter().enumerate() {
+                let q = q.as_array()?;
+                let (x, y) = (q.first()?.as_f64()? as f32, q.get(1)?.as_f64()? as f32);
+                if !x.is_finite() || !y.is_finite() {
+                    return None;
+                }
+                let corner = flags.and_then(|f| f.get(i)).and_then(Value::as_bool).unwrap_or(false);
+                pts.push((x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), corner));
+            }
+            pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+            pts.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-6);
+            if pts.len() < 2 {
+                return None;
+            }
+            let name = o.get("name").and_then(Value::as_str).unwrap_or("Custom");
+            Some(preset_contour(name, &pts))
+        }
+        _ => None,
+    }
+}
+
+/// The contours of an `.shc` contour preset file (Contour Editor › Load…), as `contour` params.
+/// Points are rescaled from the file's `0..=255` levels; unusable curves are skipped.
+pub fn contours_from_shc(bytes: &[u8]) -> Result<Vec<Value>> {
+    let file = photocraft_psd::shc::parse(bytes).map_err(|e| EngineError::Other(format!("not a contour file: {e}")))?;
+    Ok(file
+        .into_iter()
+        .filter_map(|c| {
+            let v = json!({
+                "name": c.name,
+                "points": c.points.iter().map(|p| json!([p.input / 255.0, p.output / 255.0])).collect::<Vec<_>>(),
+                "corners": c.points.iter().map(|p| !p.continuous).collect::<Vec<_>>(),
+            });
+            contour_from_param(&v).map(|c| contour_param(&c))
+        })
+        .collect())
+}
+
+/// An `.shc` file holding `contour` (Contour Editor › Save…).
+pub fn contour_to_shc(contour: &Contour) -> Result<Vec<u8>> {
+    let (name, points) = match contour {
+        Contour::Linear => ("Linear".to_string(), vec![CurvePoint { input: 0.0, output: 0.0 }, CurvePoint { input: 1.0, output: 1.0 }]),
+        Contour::Custom { name, points, .. } => (name.clone(), points.clone()),
+    };
+    let points = points
+        .iter()
+        .enumerate()
+        .map(|(i, p)| photocraft_psd::shc::ShcPoint { input: p.input * 255.0, output: p.output * 255.0, continuous: !contour.is_corner(i) })
+        .collect();
+    photocraft_psd::shc::write(&[photocraft_psd::shc::ShcContour { name, points }]).map_err(|e| EngineError::Other(format!("can't write the contour: {e}")))
 }
 
 /// An effect of `kind` with its factory settings (before params are applied).
@@ -240,11 +580,14 @@ pub fn overlay_effect(fx: &mut Effect, p: &Value) {
             *c = x;
         }
     }
-    fn set_contour(p: &Value, c: &mut Contour) {
-        if let Some(name) = p.get("contour").and_then(Value::as_str)
-            && let Some(x) = builtin_contour(name)
-        {
+    fn set_contour(p: &Value, key: &str, c: &mut Contour) {
+        if let Some(x) = p.get(key).and_then(contour_from_param) {
             *c = x;
+        }
+    }
+    fn set_bool(p: &Value, key: &str, b: &mut bool) {
+        if let Some(x) = b_of(p, key) {
+            *b = x;
         }
     }
     fn common(c: &mut FxCommon, p: &Value) {
@@ -280,7 +623,8 @@ pub fn overlay_effect(fx: &mut Effect, p: &Value) {
             if let Some(x) = f_of(p, "size") {
                 s.size = x;
             }
-            set_contour(p, &mut s.contour);
+            set_contour(p, "contour", &mut s.contour);
+            set_bool(p, "antiAlias", &mut s.anti_alias);
             if let Some(x) = f_of(p, "noise") {
                 s.noise = (x / 100.0).clamp(0.0, 1.0);
             }
@@ -303,7 +647,8 @@ pub fn overlay_effect(fx: &mut Effect, p: &Value) {
             if let Some(x) = f_of(p, "size") {
                 g.size = x;
             }
-            set_contour(p, &mut g.contour);
+            set_contour(p, "contour", &mut g.contour);
+            set_bool(p, "antiAlias", &mut g.anti_alias);
             if let Some(x) = f_of(p, "range") {
                 g.range = (x / 100.0).clamp(0.01, 1.0);
             }
@@ -380,6 +725,8 @@ pub fn overlay_effect(fx: &mut Effect, p: &Value) {
             if let Some(x) = b_of(p, "invert") {
                 s.invert = x;
             }
+            set_contour(p, "contour", &mut s.contour);
+            set_bool(p, "antiAlias", &mut s.anti_alias);
         }
         Effect::BevelEmboss(bv) => {
             if let Some(x) = b_of(p, "enabled") {
@@ -422,21 +769,20 @@ pub fn overlay_effect(fx: &mut Effect, p: &Value) {
             if let Some(x) = b_of(p, "useGlobalLight") {
                 bv.use_global_light = x;
             }
-            if let Some(x) = p.get("glossContour").and_then(Value::as_str)
-                && let Some(c) = builtin_contour(x)
-            {
-                bv.gloss_contour = c;
+            set_contour(p, "glossContour", &mut bv.gloss_contour);
+            // The Contour element: `contour` turns it on/off; its curve, Range and
+            // Anti-aliased edit the element in place, so an imported curve survives.
+            match b_of(p, "contour") {
+                Some(false) => bv.contour = None,
+                Some(true) if bv.contour.is_none() => bv.contour = Some(photocraft_doc::BevelContour::default()),
+                _ => {}
             }
-            if let Some(x) = b_of(p, "contour") {
-                bv.contour = x.then(|| photocraft_doc::BevelContour {
-                    contour: builtin_contour(p.get("contourName").and_then(Value::as_str).unwrap_or("Linear")).unwrap_or(Contour::Linear),
-                    range: (f(p, "contourRange", 50.0) / 100.0).clamp(0.01, 1.0),
-                    anti_alias: false,
-                });
-            } else if let Some(c) = &mut bv.contour
-                && let Some(x) = builtin_contour(p.get("contourName").and_then(Value::as_str).unwrap_or(""))
-            {
-                c.contour = x;
+            if let Some(c) = &mut bv.contour {
+                set_contour(p, "contourName", &mut c.contour);
+                if let Some(x) = f_of(p, "contourRange") {
+                    c.range = (x / 100.0).clamp(0.01, 1.0);
+                }
+                set_bool(p, "contourAntiAlias", &mut c.anti_alias);
             }
             if let Some(t) = p.get("texture").and_then(Value::as_str).filter(|t| !t.is_empty()) {
                 bv.texture = Some(photocraft_doc::BevelTexture {
@@ -623,22 +969,22 @@ pub fn specs() -> Vec<CommandSpec> {
         style_cmd!(
             "dropShadow",
             "Drop Shadow…",
-            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="multiply","angle":deg=120,"useGlobalLight":bool,"distance":px=5,"spread":0..100,"size":px=5,"contour":"Linear|Cone|Cone (Inverted)|Domed|Domed (Inverted)|Diagonal (Descending)"="Linear","noise":0..100,"knocksOut":bool,"add":bool,"layer":id}"##
+            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="multiply","angle":deg=120,"useGlobalLight":bool,"distance":px=5,"spread":0..100,"size":px=5,"contour":"Linear|Cone|Cone - Inverted|Cove - Deep|Cove - Shallow|Gaussian|Half Round|Ring|Ring - Double|Rolling Slope - Descending|Rounded Steps|Sawtooth 1"|{"name":str,"points":[[in 0..1,out 0..1],…],"corners":[bool,…]}="Linear","antiAlias":bool,"noise":0..100,"knocksOut":bool,"add":bool,"layer":id}"##
         ),
         style_cmd!(
             "innerShadow",
             "Inner Shadow…",
-            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str,"angle":deg,"distance":px,"choke":0..100,"size":px,"contour":name,"noise":0..100,"add":bool}"##
+            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str,"angle":deg,"distance":px,"choke":0..100,"size":px,"contour":name|curve,"antiAlias":bool,"noise":0..100,"add":bool}"##
         ),
         style_cmd!(
             "outerGlow",
             "Outer Glow…",
-            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="screen","technique":"softer|precise","spread":0..100,"size":px,"range":0..100,"contour":name,"noise":0..100,"add":bool}"##
+            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="screen","technique":"softer|precise","spread":0..100,"size":px,"range":0..100,"contour":name|curve,"antiAlias":bool,"noise":0..100,"add":bool}"##
         ),
         style_cmd!(
             "innerGlow",
             "Inner Glow…",
-            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="screen","technique":"softer|precise","source":"edge|center","choke":0..100,"size":px,"contour":name,"noise":0..100,"add":bool}"##
+            r##"{"color":"#rrggbb","opacity":0..100=75,"blend":str="screen","technique":"softer|precise","source":"edge|center","choke":0..100,"size":px,"contour":name|curve,"antiAlias":bool,"noise":0..100,"add":bool}"##
         ),
         style_cmd!(
             "stroke",
@@ -659,9 +1005,13 @@ pub fn specs() -> Vec<CommandSpec> {
         style_cmd!(
             "bevelEmboss",
             "Bevel & Emboss…",
-            r##"{"style":"inner|outer|emboss|pillow|stroke","technique":"smooth|chiselHard|chiselSoft","contour":bool,"contourRange":1..100=50,"texture":pattern id|name?,"textureScale":1..1000=100,"textureDepth":-1000..1000=100,"textureInvert":bool,"textureLink":bool=true,"depth":1..1000=100,"direction":"up|down","size":px=5,"soften":px,"angle":deg,"altitude":deg,"add":bool}"##
+            r##"{"style":"inner|outer|emboss|pillow|stroke","technique":"smooth|chiselHard|chiselSoft","contour":bool,"contourName":name|curve,"contourRange":1..100=50,"contourAntiAlias":bool,"glossContour":name|curve,"texture":pattern id|name?,"textureScale":1..1000=100,"textureDepth":-1000..1000=100,"textureInvert":bool,"textureLink":bool=true,"depth":1..1000=100,"direction":"up|down","size":px=5,"soften":px,"angle":deg,"altitude":deg,"add":bool}"##
         ),
-        style_cmd!("satin", "Satin…", r##"{"color":"#rrggbb","opacity":0..100=50,"blend":str,"angle":deg,"distance":px,"size":px,"invert":bool,"add":bool}"##),
+        style_cmd!(
+            "satin",
+            "Satin…",
+            r##"{"color":"#rrggbb","opacity":0..100=50,"blend":str,"angle":deg,"distance":px,"size":px,"contour":name|curve,"antiAlias":bool=true,"invert":bool,"add":bool}"##
+        ),
         CommandSpec {
             id: "layer.layerStyle.replace",
             label: "Edit Layer Style",
@@ -697,16 +1047,18 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Clear Layer Style",
             menu: &["Layer", "Layer Style"],
             shortcut: None,
-            params: r##"{"layer":id}"##,
+            params: r##"{"layer":id? (no layer: every selected layer that has a style),"effect":index? (only that effect of "layer", as an effect row dropped on the Layers panel's Delete button)}"##,
             enabled: has_layer,
             run: |s, p| {
-                let id = match p.get("layer").and_then(Value::as_u64) {
-                    Some(id) => photocraft_doc::LayerId(id),
-                    None => s.active().and_then(|d| d.active_layer).ok_or(EngineError::Other("no active layer".into()))?,
-                };
+                if let Some(effect) = p.get("effect").filter(|v| !v.is_null()) {
+                    return delete_effect(s, p, effect);
+                }
+                let ids = crate::extra_cmds::style_targets(s, p, |l| !l.effects.items.is_empty())?;
                 s.edit("Clear Layer Style", |doc, _| {
-                    let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
-                    l.effects = photocraft_doc::Effects { enabled: true, ..Default::default() };
+                    for id in ids {
+                        let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
+                        l.effects = photocraft_doc::Effects { enabled: true, ..Default::default() };
+                    }
                     Ok(())
                 })?;
                 Ok(Value::Null)
@@ -714,6 +1066,30 @@ pub fn specs() -> Vec<CommandSpec> {
             journal: true,
         },
     ]
+}
+
+/// `layer.layerStyle.clear` with an `effect` index: deletes that one effect of `layer` (the active
+/// layer without one), as Photoshop does for an effect row dropped on the Delete button.
+fn delete_effect(s: &mut Session, p: &Value, effect: &Value) -> Result<Value> {
+    const CMD: &str = "layer.layerStyle.clear";
+    let index = effect.as_u64().and_then(|i| usize::try_from(i).ok()).ok_or_else(|| bad(CMD, "`effect` must be an effect index"))?;
+    let d = s.active().ok_or(EngineError::NoDocument)?;
+    let id = match p.get("layer").filter(|v| !v.is_null()) {
+        Some(v) => photocraft_doc::LayerId(v.as_u64().ok_or_else(|| bad(CMD, "`layer` must be a layer id"))?),
+        None => d.active_layer.ok_or_else(|| bad(CMD, "no active layer"))?,
+    };
+    let count = d.doc.layer(id).ok_or(EngineError::NoLayer(id))?.effects.items.len();
+    if index >= count {
+        return Err(bad(CMD, format!("the layer has {count} effect(s), no effect {index}")));
+    }
+    s.edit("Delete Effect", |doc, _| {
+        let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
+        if index < l.effects.items.len() {
+            l.effects.items.remove(index);
+        }
+        Ok(())
+    })?;
+    Ok(Value::Null)
 }
 
 #[cfg(test)]
@@ -806,6 +1182,23 @@ mod tests {
         assert!(effects(&s).is_empty());
         s.execute("edit.undo", json!({})).unwrap();
         assert_eq!(effects(&s).len(), 1);
+    }
+
+    /// #3102: an effect row dropped on the Delete button deletes only that effect, in one step.
+    #[test]
+    fn clear_one_effect_by_index() {
+        let mut s = session();
+        s.execute("layer.layerStyle.dropShadow", json!({})).unwrap();
+        s.execute("layer.layerStyle.colorOverlay", json!({"color": "#ff0000"})).unwrap();
+        let layer = s.active().unwrap().active_layer.unwrap().0;
+        s.execute("layer.layerStyle.clear", json!({"layer": layer, "effect": 0})).unwrap();
+        assert!(matches!(effects(&s)[..], [Effect::ColorOverlay { .. }]));
+        for bad in [json!({"effect": 5}), json!({"effect": -1}), json!({"effect": "x"}), json!({"effect": 0, "layer": 999_999})] {
+            assert!(s.execute("layer.layerStyle.clear", bad).is_err());
+        }
+        assert_eq!(effects(&s).len(), 1, "bad params change nothing");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(effects(&s).len(), 2);
     }
 
     #[test]
@@ -920,6 +1313,7 @@ mod tests {
         let imported = Contour::Custom {
             name: "Photoshop contour".into(),
             points: vec![photocraft_doc::adjust::CurvePoint { input: 0.0, output: 1.0 }, photocraft_doc::adjust::CurvePoint { input: 1.0, output: 0.0 }],
+            corners: vec![],
         };
         let mut carried = before[0].clone();
         if let Effect::DropShadow(c) = &mut carried {
@@ -933,6 +1327,82 @@ mod tests {
         overlay_effect(&mut back, &json!({"contour": "Linear"}));
         let Effect::DropShadow(lin) = &back else { panic!() };
         assert_eq!(lin.contour, Contour::Linear);
+    }
+
+    #[test]
+    fn contour_presets_match_photoshop() {
+        // Photoshop 27.11, measured through Satin: Cone and Cone − Inverted Satins are identical,
+        // and Gaussian reads 0.36 at 0.5 through Satin but 0.64 as the preset curve (glows, gloss).
+        let lut = |name: &str| {
+            let Some(Contour::Custom { points, corners, .. }) = builtin_contour(name) else { panic!("{name}") };
+            photocraft_compose::adjust::contour_curve_lut(&points, &corners)
+        };
+        let satin = |name: &str| photocraft_compose::effects::satin_lut(&builtin_contour(name).unwrap()).unwrap();
+        let at = |l: &[f32], x: f32| l[(x * (l.len() - 1) as f32).round() as usize];
+        let (cone, inverted) = (satin("Cone"), satin("Cone - Inverted"));
+        for x in [0.1, 0.25, 0.5, 0.8] {
+            assert!((at(&cone, x) - at(&inverted, x)).abs() < 0.03, "{x}: {} vs {}", at(&cone, x), at(&inverted, x));
+        }
+        assert!((at(&satin("Gaussian"), 0.5) - 0.36).abs() < 0.04, "{}", at(&satin("Gaussian"), 0.5));
+        assert!((at(&lut("Gaussian"), 0.5) - 0.64).abs() < 0.03, "{}", at(&lut("Gaussian"), 0.5));
+        assert!((at(&lut("Cove - Deep"), 0.0) - 0.26).abs() < 0.02, "Cove - Deep starts above zero");
+    }
+
+    #[test]
+    fn contour_presets_and_custom_curves_apply_in_one_undo_step() {
+        let mut s = session();
+        // Picking Cone: the preset's own curve, its points corners, in one undo step.
+        s.execute("layer.layerStyle.dropShadow", json!({"contour": "Cone", "antiAlias": true})).unwrap();
+        let Effect::DropShadow(sh) = &effects(&s)[0] else { panic!() };
+        assert_eq!(sh.contour, builtin_contour("Cone").unwrap());
+        assert!(sh.contour.is_corner(1) && sh.anti_alias);
+        let Contour::Custom { points, corners, .. } = &sh.contour else { panic!() };
+        let lut = photocraft_compose::adjust::contour_curve_lut(points, corners);
+        let at = |x: f32| lut[(x * (lut.len() - 1) as f32).round() as usize];
+        // Photoshop's measured Cone: 0 at both ends, a 0.99 peak at 0.5, symmetric.
+        assert!(at(0.0).abs() < 1e-3 && at(1.0).abs() < 1e-3 && at(0.5) > 0.98, "a Λ: {} {} {}", at(0.0), at(0.5), at(1.0));
+        assert!((at(0.25) - at(0.75)).abs() < 0.03, "symmetric: {} vs {}", at(0.25), at(0.75));
+        assert_eq!(contour_param(&sh.contour), json!("Cone"));
+        s.execute("edit.undo", json!({})).unwrap();
+        assert!(effects(&s).is_empty(), "one undo removes it");
+
+        // An edited curve (the Contour Editor's param) round trips exactly, in every effect.
+        let curve = json!({"name": "Mine", "points": [[0.0, 0.2], [0.4, 0.9], [1.0, 0.1]], "corners": [false, true, false]});
+        for kind in ["dropShadow", "innerShadow", "outerGlow", "innerGlow", "satin"] {
+            let mut fx = fresh_effect(kind).unwrap();
+            overlay_effect(&mut fx, &json!({"contour": curve}));
+            let v = values(&fx, "contour");
+            assert_eq!(v, curve, "{kind}");
+        }
+        let mut bevel = fresh_effect("bevelEmboss").unwrap();
+        overlay_effect(&mut bevel, &json!({"contour": true, "contourName": curve, "glossContour": "Ring"}));
+        let Effect::BevelEmboss(b) = &bevel else { panic!() };
+        assert_eq!(contour_param(&b.contour.as_ref().unwrap().contour), curve);
+        assert_eq!(b.gloss_contour, builtin_contour("Ring").unwrap());
+        // Malformed curves leave the contour alone.
+        for bad in [json!({"points": [[0.5, 0.5]]}), json!({"points": [[0.0, "x"], [1.0, 1.0]]}), json!({"points": "no"}), json!(7)] {
+            let mut fx = fresh_effect("dropShadow").unwrap();
+            overlay_effect(&mut fx, &json!({"contour": bad}));
+            assert_eq!(values(&fx, "contour"), json!("Linear"));
+        }
+
+        // `.shc` round trip of a curve with a corner.
+        let mine = contour_from_param(&curve).unwrap();
+        let back = contours_from_shc(&contour_to_shc(&mine).unwrap()).unwrap();
+        let back = contour_from_param(&back[0]).unwrap();
+        let Contour::Custom { points, corners, .. } = &back else { panic!() };
+        assert_eq!(corners, &vec![false, true, false]);
+        assert!((points[1].input - 0.4).abs() < 0.003 && (points[1].output - 0.9).abs() < 0.003, "{points:?}");
+    }
+
+    fn values(fx: &Effect, key: &str) -> Value {
+        let c = match fx {
+            Effect::DropShadow(s) | Effect::InnerShadow(s) => &s.contour,
+            Effect::OuterGlow(g) | Effect::InnerGlow(g) => &g.contour,
+            Effect::Satin(s) => &s.contour,
+            _ => panic!("{key}: no contour"),
+        };
+        contour_param(c)
     }
 
     #[test]

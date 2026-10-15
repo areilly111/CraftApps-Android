@@ -37,7 +37,8 @@ enum State {
         /// selection.
         deselect: Option<NodeId>,
         /// Pressed (no modifier) on this object of a selection of several: released without a
-        /// drag, it becomes the key object that Align aligns to (the key again: no key).
+        /// drag, it becomes the key object that Align aligns to if `can_be_key` allows it (the key
+        /// again: no key).
         key: Option<NodeId>,
     },
     Scaling {
@@ -78,40 +79,59 @@ pub struct SelectionTool {
 /// Snapping for the selection moved as a whole, its targets gathered when the move begins: View →
 /// Snap to Grid lands its bounds on the grid (#740), taking over from the rest; otherwise Smart
 /// Guides line its bounds up with the other art, and with them off, View → Snap to Point lands the
-/// point it was grabbed by on an anchor or a ruler guide. Snap to Pixel puts its top-left on whole
-/// pixels.
+/// point it was grabbed by (an anchor pressed near, else the pressed point) on an anchor or a ruler
+/// guide. Snap to Pixel puts its top-left on whole pixels. A copy (Alt, which can go down or up at
+/// any time during the drag) leaves the original behind, so it snaps to the original too.
 pub(crate) struct MoveSnap {
     bounds: Option<Rect>,
     targets: Option<Targets>,
     points: Option<Targets>,
+    /// The targets and points for a copy, gathered with the others before the previews move the
+    /// original.
+    copy_targets: Option<Targets>,
+    copy_points: Option<Targets>,
 }
 
 impl MoveSnap {
     pub(crate) fn new(cx: &ToolContext) -> Self {
+        let guides = cx.smart_guides && !cx.snap_to_grid;
+        let points = |exclude: &[NodeId]| if cx.snap_to_grid { None } else { Targets::snap_to_point(cx, exclude) };
         Self {
             bounds: selection_bounds(cx),
-            targets: (cx.smart_guides && !cx.snap_to_grid).then(|| Targets::for_move(cx)),
-            points: if cx.snap_to_grid { None } else { Targets::snap_to_point(cx, &cx.selection.objects) },
+            targets: guides.then(|| Targets::for_move(cx, &cx.selection.objects)),
+            points: points(&cx.selection.objects),
+            copy_targets: guides.then(|| Targets::for_move(cx, &[])),
+            copy_points: points(&[]),
         }
     }
 
-    /// The move by `d` of the selection grabbed at `start`, snapped, and its guides.
-    pub(crate) fn snap(&self, cx: &ToolContext, start: Point, mut d: Vec2) -> (Vec2, Vec<Overlay>) {
+    /// The move (`copy`: the copy) by `d` of the selection grabbed at `start`, snapped, and its
+    /// guides.
+    pub(crate) fn snap(&self, cx: &ToolContext, start: Point, mut d: Vec2, copy: bool) -> (Vec2, Vec<Overlay>) {
+        let (targets, points) = if copy { (&self.copy_targets, &self.copy_points) } else { (&self.targets, &self.points) };
         let mut guides = vec![];
         if cx.snap_to_grid
             && let Some(b) = self.bounds
         {
             d += grid_pull(b + d, cx.grid_step());
         }
-        if let Some(t) = &self.points {
+        if let Some(t) = points {
             let (q, ov) = t.snap_point(start + d, cx.tol(cx.snap_tolerance));
             d = q - start;
             guides = ov;
         }
-        if let (Some(t), Some(b)) = (&self.targets, self.bounds) {
-            let (adj, ov) = t.snap_rect(b + d, cx.snap_tol());
-            d += adj;
-            guides = ov;
+        if let (Some(t), Some(b)) = (targets, self.bounds) {
+            // The point the selection was grabbed by, near another object's anchor or centre,
+            // lands on it, rather than the bounds lining up a little beside it (#955).
+            if t.has_point_near(start + d, cx.snap_tol()) {
+                let (q, ov) = t.snap_point(start + d, cx.snap_tol());
+                d = q - start;
+                guides = ov;
+            } else {
+                let (adj, ov) = t.snap_rect(b + d, cx.snap_tol());
+                d += adj;
+                guides = ov;
+            }
         }
         if cx.snap_to_pixel
             && let Some(b) = self.bounds
@@ -174,11 +194,13 @@ impl SelectionTool {
         cx.tol(3.0)
     }
 
-    /// With Smart Guides on, the anchor or the centre of an object near `p` (the one under the
-    /// pointer, else a selected one) and its label, "anchor" or "center", as Illustrator shows
-    /// them while hovering (#812). A press there grabs the object by that point.
+    /// The anchor of an object near `p` (the one under the pointer, else a selected one when a
+    /// press would keep the selection), or with Smart Guides on its centre, and its label,
+    /// "anchor" or "center", as Illustrator shows them while hovering with Smart Guides (#812). A
+    /// press there grabs the object by that point, so with Smart Guides or View → Snap to Point
+    /// that point is the one that snaps (#1274).
     fn hover_point(cx: &ToolContext, p: Point) -> Option<(Point, &'static str)> {
-        if !cx.smart_guides {
+        if !cx.smart_guides && !cx.snap_to_point {
             return None;
         }
         let reach = cx.tol(HOVER_REACH);
@@ -186,10 +208,15 @@ impl SelectionTool {
         let nearest = |points: &mut dyn Iterator<Item = Point>| {
             points.filter(|q| q.distance(p) <= reach).min_by(|a, b| a.distance(p).total_cmp(&b.distance(p)))
         };
-        under.into_iter().chain(cx.selection.objects.iter().copied()).find_map(|id| {
+        // A press on an unselected object selects it alone: the selected ones stay behind.
+        let selected = if under.is_none_or(|u| cx.selection.contains(u)) { &cx.selection.objects[..] } else { &[] };
+        under.into_iter().chain(selected.iter().copied()).find_map(|id| {
             let n = cx.doc.node(id)?;
             let anchor = n.path_data().and_then(|pd| nearest(&mut pd.subpaths.iter().flat_map(|sp| sp.anchors.iter().map(|a| a.p))));
             anchor.map(|q| (q, "anchor")).or_else(|| {
+                if !cx.smart_guides {
+                    return None;
+                }
                 let c = cx.doc.bounds_of(&[id], cx.preview_bounds)?.center();
                 (c.distance(p) <= reach).then_some((c, "center"))
             })
@@ -216,8 +243,9 @@ impl Tool for SelectionTool {
         }
         let p = ev.pos;
         let m = ev.mods;
-        // A press near the hovered centre or anchor grabs the object by it.
-        let grab = self.hover.take().map(|(q, _)| q).filter(|q| q.distance(p) <= cx.tol(HOVER_REACH)).unwrap_or(p);
+        // A press near a centre or an anchor grabs the object by it.
+        self.hover = None;
+        let grab = if matches!(ev.kind, PointerKind::Down) { Self::hover_point(cx, p).map_or(p, |(q, _)| q) } else { p };
         if matches!(ev.kind, PointerKind::Move) && matches!(self.state, State::Idle) {
             self.hover = Self::hover_point(cx, p);
         }
@@ -331,7 +359,7 @@ impl Tool for SelectionTool {
                 }
                 let mut d = move_delta(start, p, m.shift);
                 if let Some(snap) = &self.moving {
-                    (d, self.guides) = snap.snap(cx, start, d);
+                    (d, self.guides) = snap.snap(cx, start, d, m.alt);
                 }
                 self.state = State::Moving { start, began: true, deselect: None, key: None };
                 self.measure = cx.measurement_labels.then(|| (p, cx.offset_label(d.x, d.y)));
@@ -390,8 +418,8 @@ impl Tool for SelectionTool {
                     (false, Some(id), _) => vec![Action::Exec("select.toggle".into(), json!({ "id": id.0 }))],
                     // A click on the key object again: no key.
                     (false, None, Some(id)) if cx.selection.key == Some(id) => vec![Action::Exec("select.key".into(), json!({}))],
-                    (false, None, Some(id)) => vec![Action::Exec("select.key".into(), json!({ "id": id.0 }))],
-                    (false, None, None) => vec![],
+                    (false, None, Some(id)) if can_be_key(cx, id) => vec![Action::Exec("select.key".into(), json!({ "id": id.0 }))],
+                    (false, None, _) => vec![],
                 }
             }
             (PointerKind::Up, State::Scaling { .. } | State::Rotating { .. }) => {
@@ -430,7 +458,7 @@ impl Tool for SelectionTool {
         }
         o.extend(self.guides.iter().cloned());
         o.extend(self.guide.overlays(cx));
-        if let (Some((q, label)), State::Idle) = (self.hover, &self.state) {
+        if let (Some((q, label)), State::Idle, true) = (self.hover, &self.state, cx.smart_guides) {
             let style = crate::guides::GuideStyle::of(cx);
             if style.labels {
                 o.push(Overlay::Label { p: q, text: label.into(), color: style.color });
@@ -444,7 +472,7 @@ impl Tool for SelectionTool {
 
     fn cursor(&self, cx: &ToolContext, p: Point, m: Mods) -> Cursor {
         match self.state {
-            State::Rotating { .. } => return Cursor::Rotate,
+            State::Rotating { center, .. } => return Cursor::rotate_about(center, p),
             State::Scaling { handle, bx, .. } => return handle_cursor(handle, bx.angle),
             State::Moving { began: true, .. } => return Cursor::Arrow,
             State::Corner(_) => return Cursor::CornerRadius,
@@ -468,12 +496,17 @@ impl Tool for SelectionTool {
         {
             match box_hit(cx, &bx, p) {
                 Some(BoxHit::Handle(h)) => return handle_cursor(h, bx.angle),
-                Some(BoxHit::Rotate) => return Cursor::Rotate,
+                Some(BoxHit::Rotate) => return Cursor::rotate_about(bx.center(), p),
                 None => {}
             }
         }
         if let Some(c) = self.guide.cursor(cx, p) {
             return c;
+        }
+        // View → Snap to Point: over an anchor a press would grab the object by, the arrow turns
+        // hollow.
+        if cx.snap_to_point && matches!(Self::hover_point(cx, p), Some((_, "anchor"))) {
+            return Cursor::ArrowHollow;
         }
         if let Some(h) = hit_test(cx.doc, p, cx.hit_options()) {
             if cx.selection.contains(h.top_object(cx.isolation)) || m.alt {
@@ -493,10 +526,22 @@ fn object_behind(cx: &ToolContext, p: Point) -> Option<NodeId> {
     stack.get(next).or(stack.first()).copied()
 }
 
+/// Can a click make `id` the key object? `select.key` takes only a selected top-level object. In
+/// isolation mode a click can pick a sublayer (inside an isolated layer), a compound-path member
+/// (inside an isolated compound path) or an object inside another selected object (inside an
+/// isolated group that is also selected), and `select.key` returns an error for all three.
+fn can_be_key(cx: &ToolContext, id: NodeId) -> bool {
+    let inside_selected = cx.doc.ancestry(id).unwrap_or_default().iter().any(|a| *a != id && cx.selection.contains(*a));
+    // `paint_owner` returns a compound-path member's compound path.
+    let member = crate::xform::paint_owner(cx.doc, id) != id;
+    cx.doc.node(id).is_some_and(|n| !n.is_layer()) && !inside_selected && !member
+}
+
 /// Is `n` area type (text in a frame) whose frame the tools reshape? Type in perspective isn't:
 /// it transforms whole.
 pub(crate) fn is_area_type(n: &vectorcraft_doc::Node) -> bool {
-    n.perspective.is_none() && matches!(&n.kind, vectorcraft_doc::NodeKind::Text(t) if matches!(t.kind, vectorcraft_doc::TextKind::Area { .. }))
+    n.extras().perspective.is_none()
+        && matches!(&n.kind, vectorcraft_doc::NodeKind::Text(t) if matches!(t.kind, vectorcraft_doc::TextKind::Area { .. }))
 }
 
 /// The resize cursor for handle `h` of a box turned by `angle` (counter-clockwise degrees): the
@@ -520,6 +565,31 @@ mod tests {
 
     fn ev(kind: PointerKind, x: f64, y: f64) -> PointerEvent {
         PointerEvent::new(kind, x, y)
+    }
+
+    /// #955: grabbed by an anchor and dropped near another object's anchor, the anchor lands
+    /// exactly on it with Smart Guides, even where lining the bounds up would leave it beside it.
+    #[test]
+    fn a_move_grabbed_by_an_anchor_lands_it_on_another_anchor() {
+        let (mut d, id) = doc_with_rect();
+        let l = d.layers[0].id;
+        let tri = d.alloc_id();
+        let pts = [Point::new(350.3, 250.0), Point::new(300.0, 320.0), Point::new(420.0, 330.0)];
+        let path = vectorcraft_geom::PathData::single(vectorcraft_geom::SubPath::polyline(&pts, true));
+        d.insert(Some(l), 1, vectorcraft_doc::Node::path(tri, path, vectorcraft_doc::Appearance::default_art())).unwrap();
+        let (none, mut picked) = (Selection::default(), Selection::default());
+        picked.add(id);
+        let p = paint();
+        let mut t = SelectionTool::default();
+        // Grab the rectangle (not selected yet: no bounding box) by its bottom-right corner
+        // (200, 200); the press selects it, then drop it beside the tip.
+        let before = cx(&d, &none, &p);
+        t.pointer(&before, &ev(PointerKind::Move, 201.0, 201.0));
+        t.pointer(&before, &ev(PointerKind::Down, 201.0, 201.0));
+        let a = t.pointer(&cx(&d, &picked, &p), &ev(PointerKind::Drag, 350.0, 249.8));
+        let Some(Action::Preview(_, v)) = a.get(1) else { panic!("{a:?}") };
+        let (x, y) = (v["matrix"][4].as_f64().unwrap(), v["matrix"][5].as_f64().unwrap());
+        assert!((200.0 + x - 350.3).abs() < 1e-9 && (200.0 + y - 250.0).abs() < 1e-9, "the corner lands at ({}, {})", 200.0 + x, 200.0 + y);
     }
 
     /// #812: with Smart Guides on, hovering near an object's centre or an anchor labels it, and a
@@ -588,6 +658,24 @@ mod tests {
         assert!(t.pointer(&cx, &ev(PointerKind::DoubleClick, 160.0, 150.0)).is_empty());
     }
 
+    /// Just outside each corner of the box the rotate cursor bows toward that corner, its arc
+    /// opening toward the box: at the top right it opens to the bottom left.
+    #[test]
+    fn the_rotate_cursor_wraps_the_corner_it_is_at() {
+        let (d, id) = doc_with_rect();
+        let mut s = Selection::default();
+        s.add(id);
+        let p = paint();
+        let cx = cx(&d, &s, &p);
+        let t = SelectionTool::default();
+        // The box runs from (100, 100) to (200, 200); 10 pt out from each corner, diagonally.
+        for ((x, y), octant) in [((93.0, 93.0), 7), ((207.0, 93.0), 1), ((207.0, 207.0), 3), ((93.0, 207.0), 5)] {
+            assert_eq!(t.cursor(&cx, Point::new(x, y), Mods::default()), Cursor::RotateToward(octant), "at ({x}, {y})");
+        }
+        assert_eq!(Cursor::rotate_about(Point::new(1.0, 1.0), Point::new(1.0, 1.0)), Cursor::Rotate, "on the centre");
+        assert_eq!(Cursor::rotate_about(Point::ORIGIN, Point::new(0.0, -5.0)), Cursor::RotateToward(0), "straight up");
+    }
+
     #[test]
     fn drag_moves_with_single_undo() {
         let (d, id) = doc_with_rect();
@@ -602,6 +690,38 @@ mod tests {
         assert!(matches!(&a[1], Action::Preview(c, v) if c == "object.transform" && v["matrix"][4] == 10.0));
         let a = t.pointer(&cx, &ev(PointerKind::Up, 160.0, 150.0));
         assert_eq!(a, vec![Action::Commit]);
+    }
+
+    /// Alt pressed during a move makes a copy, which snaps to the original it leaves behind (as
+    /// gathered before the previews moved it); released, the move doesn't.
+    #[test]
+    fn an_alt_copy_snaps_to_the_original_left_behind() {
+        use vectorcraft_doc::{Appearance, Node};
+        let (mut d, id) = doc_with_rect();
+        // An artboard whose edges and centre are out of reach.
+        d.artboards[0].rect = Rect::new(0.0, 0.0, 1000.0, 1000.0);
+        let mut s = Selection::default();
+        s.add(id);
+        let p = paint();
+        let mut t = SelectionTool::default();
+        let dx = |a: &[Action]| {
+            let Some(Action::Preview(_, v)) = a.last() else { panic!("{a:?}") };
+            v["matrix"][4].as_f64().unwrap()
+        };
+        t.pointer(&cx(&d, &s, &p), &ev(PointerKind::Down, 150.0, 150.0));
+        assert_eq!(dx(&t.pointer(&cx(&d, &s, &p), &ev(PointerKind::Drag, 200.0, 150.0))), 50.0);
+        // The previews moved the rectangle: the tool sees it 50 pt along.
+        let mut moved = d.clone();
+        let l = moved.layers[0].id;
+        moved.remove(id).unwrap();
+        let r = vectorcraft_geom::shapes::rectangle(Rect::new(150.0, 100.0, 250.0, 200.0));
+        moved.insert(Some(l), 0, Node::path(id, r, Appearance::default_art())).unwrap();
+        let c = cx(&moved, &s, &p);
+        let alt = Mods { alt: true, ..Mods::default() };
+        // The copy's left edge, 3 pt past the original's right edge (x = 200), lands on it.
+        assert_eq!(dx(&t.pointer(&c, &ev(PointerKind::Drag, 253.0, 150.0).with_mods(alt))), 100.0);
+        // Without Alt nothing stays behind there.
+        assert_eq!(dx(&t.pointer(&c, &ev(PointerKind::Drag, 253.0, 150.0))), 103.0);
     }
 
     /// #740: with Snap to Grid on, a moved object lands on the grid (every 9 pt by default) by
@@ -701,6 +821,68 @@ mod tests {
         let mut one = Selection::default();
         one.add(rect);
         assert!(click(&one, 150.0, 150.0).is_empty());
+    }
+
+    /// In isolation mode a click makes only a selected top-level object the key, as `select.key`
+    /// takes no other: a click on a sublayer's art inside an isolated layer picks the sublayer,
+    /// a click inside an isolated group that is also selected picks an object inside it, and a
+    /// click inside an isolated compound path picks a member.
+    #[test]
+    fn a_click_makes_only_a_selected_top_level_object_the_key() {
+        use vectorcraft_doc::{Appearance, Document, LayerColor, Node, NodeKind};
+        use vectorcraft_geom::shapes;
+        let p = paint();
+        let click = |d: &Document, s: &Selection, isolation: NodeId| {
+            let c = ToolContext { isolation: Some(isolation), ..cx(d, s, &p) };
+            let mut t = SelectionTool::default();
+            assert!(t.pointer(&c, &ev(PointerKind::Down, 150.0, 150.0)).is_empty());
+            t.pointer(&c, &ev(PointerKind::Up, 150.0, 150.0))
+        };
+        let path = |id: NodeId, r: Rect| Node::path(id, shapes::rectangle(r), Appearance::default_art());
+        let (under, beside) = (Rect::new(100.0, 100.0, 200.0, 200.0), Rect::new(300.0, 300.0, 340.0, 340.0));
+        // An isolated layer whose art under the click is in a sublayer.
+        let mut d = Document::new(500.0, 500.0);
+        let l = d.layers[0].id;
+        let (sub, a, b) = (d.alloc_id(), d.alloc_id(), d.alloc_id());
+        d.insert(Some(l), 0, Node::layer(sub, "Sub", LayerColor::Preset(1))).unwrap();
+        d.insert(Some(sub), 0, path(a, under)).unwrap();
+        d.insert(Some(l), 1, path(b, beside)).unwrap();
+        let mut s = Selection::default();
+        s.add(sub);
+        s.add(b);
+        assert!(click(&d, &s, l).is_empty(), "a sublayer is not a key object");
+        // An isolated group that is also selected.
+        let mut d = Document::new(500.0, 500.0);
+        let l = d.layers[0].id;
+        let (g, a, b) = (d.alloc_id(), d.alloc_id(), d.alloc_id());
+        d.insert(Some(l), 0, Node::group(g, vec![])).unwrap();
+        d.insert(Some(g), 0, path(a, under)).unwrap();
+        d.insert(Some(g), 1, path(b, beside)).unwrap();
+        let mut s = Selection::default();
+        s.add(a);
+        s.add(g);
+        assert!(click(&d, &s, g).is_empty(), "an object inside the selected group is not a key object");
+        s.key = Some(a);
+        assert_eq!(click(&d, &s, g), vec![Action::Exec("select.key".into(), json!({}))], "the key again: no key");
+        // With the group not selected, the object becomes the key.
+        let mut s = Selection::default();
+        s.add(a);
+        s.add(b);
+        assert_eq!(click(&d, &s, g), vec![Action::Exec("select.key".into(), json!({"id": a.0}))]);
+        // An isolated compound path. Make Compound Path clears its members' appearance, so these
+        // members have none, and the click is on a's outline.
+        let mut d = Document::new(500.0, 500.0);
+        let l = d.layers[0].id;
+        let (c, a, b) = (d.alloc_id(), d.alloc_id(), d.alloc_id());
+        let member = |id: NodeId, r: Rect| std::sync::Arc::new(Node::path(id, shapes::rectangle(r), Appearance::default()));
+        let children = vec![member(a, Rect::new(150.0, 100.0, 250.0, 200.0)), member(b, beside)];
+        let mut compound = Node::new(c, NodeKind::Compound { children, rule: Default::default() });
+        compound.appearance = Appearance::default_art().into();
+        d.insert(Some(l), 0, compound).unwrap();
+        let mut s = Selection::default();
+        s.add(a);
+        s.add(b);
+        assert!(click(&d, &s, c).is_empty(), "a compound-path member is not a key object");
     }
 
     #[test]

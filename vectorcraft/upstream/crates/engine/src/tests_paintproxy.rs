@@ -118,6 +118,57 @@ fn swap_and_default_work_on_type() {
     assert_eq!(st.stroke, Paint::None);
 }
 
+/// How many steps there are to undo and to redo, and whether the document has unsaved changes.
+fn history(s: &Session) -> (usize, usize, bool) {
+    let st = s.doc().unwrap();
+    (st.history.undo.len(), st.history.redo.len(), st.is_dirty())
+}
+
+/// Select `ids` with a move of them left to redo, and mark the document saved.
+fn select_with_a_step_to_redo(s: &mut Session, ids: &[NodeId]) {
+    s.execute("select.set", &json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>()})).unwrap();
+    s.execute("object.move", &json!({"dx": 5, "dy": 0})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.doc_mut().unwrap().mark_saved();
+}
+
+/// Default Fill and Stroke on the default fill and stroke, None on a stroke of None, Invert and
+/// Complement on that stroke's Appearance row, Swap Fill and Stroke with the same fill and stroke,
+/// and Apply Last Color and Apply Last Gradient on paint that is the last color or gradient already
+/// record no undo step: the step to redo stays and the document stays unmodified.
+#[test]
+fn proxy_commands_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    let id = rect(&mut s);
+    let no_step = |s: &mut Session, calls: &[(&str, serde_json::Value)]| {
+        select_with_a_step_to_redo(s, &[id]);
+        let before = history(s);
+        for (cmd, p) in calls {
+            s.execute(cmd, p).unwrap();
+            assert_eq!(history(s), before, "{cmd} {p}");
+        }
+    };
+    no_step(&mut s, &[("paint.default", json!({}))]);
+    s.execute("paint.setStroke", &json!({"none": true})).unwrap();
+    no_step(&mut s, &[("paint.none", json!({}))]);
+    // The stroke's Appearance row (item 1) has no color to invert or complement.
+    let row = json!({"item": 1, "stroke": true});
+    no_step(&mut s, &[("paint.invert", row.clone()), ("paint.complement", row)]);
+    s.execute("paint.setFill", &json!({"color": "#ff0000"})).unwrap();
+    s.execute("paint.setStroke", &json!({"color": "#ff0000"})).unwrap();
+    no_step(&mut s, &[("paint.swap", json!({})), ("paint.lastColor", json!({})), ("paint.lastColor", json!({"stroke": false}))]);
+    s.execute(
+        "paint.setFill",
+        &json!({"gradient": {"kind": "radial", "stops": [{"offset": 0, "color": "#ff0000"}, {"offset": 1, "color": "#0000ff"}]}}),
+    )
+    .unwrap();
+    no_step(&mut s, &[("paint.lastGradient", json!({"stroke": false}))]);
+    // Swapping a gradient fill and a red stroke is one step.
+    let before = history(&s);
+    s.execute("paint.swap", &json!({})).unwrap();
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
+}
+
 #[test]
 fn recent_colors_are_fed_by_every_paint_command() {
     let mut s = session();

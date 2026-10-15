@@ -78,15 +78,11 @@ impl Backend for Remote {
         let id = self.next_id;
         self.next_id += 1;
         let line = json!({"id": id, "method": method, "params": params}).to_string();
-        // One retry with a fresh connection (the app may have restarted).
         let reply = match self.roundtrip(&line) {
             Ok(r) => r,
-            Err(_) => {
+            Err(e) => {
                 self.conn = None;
-                self.roundtrip(&line).map_err(|e| {
-                    self.conn = None;
-                    format!("DesignCraft app at {} is not reachable: {e}", self.addr)
-                })?
+                return Err(format!("DesignCraft app at {}: {e}; operation may have completed; inspect state before retrying", self.addr));
             }
         };
         let v: Value = serde_json::from_str(reply.trim()).map_err(|e| format!("bad reply from app: {e}"))?;
@@ -103,5 +99,57 @@ impl Backend for Remote {
 
     fn describe(&self) -> String {
         format!("connected to the DesignCraft app at {}", self.addr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[test]
+    fn remote_does_not_replay_when_reply_is_lost() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let server = std::thread::spawn(move || {
+            let first = {
+                let (stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                let request: Value = serde_json::from_str(&line).unwrap();
+                assert_eq!(request["method"], "engine.execute");
+                assert_eq!(request["params"]["command"], "frame.create");
+                request
+            };
+            let mut applied = 1;
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            stream.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                let request: Value = serde_json::from_str(&line).unwrap();
+                if request == first {
+                    applied += 1;
+                    writeln!(stream, "{}", json!({"id": request["id"], "ok": true, "result": {"applied": applied}})).unwrap();
+                } else {
+                    assert_eq!(request, json!({"id": 2, "method": "document.inspect", "params": {}}));
+                    writeln!(stream, "{}", json!({"id": request["id"], "ok": true, "result": {"applied": applied}})).unwrap();
+                    return applied;
+                }
+            }
+        });
+        let mut remote = Remote::connect(&addr).unwrap();
+
+        let result = remote.call("engine.execute", json!({"command": "frame.create", "params": {"rect": [0, 0, 100, 100]}}));
+        let next = remote.call("document.inspect", json!({}));
+        let applied = server.join().unwrap();
+
+        assert_eq!(applied, 1, "lost reply must not replay the applied edit; client returned {result:?}");
+        assert!(result.is_err(), "lost reply must report an uncertain outcome: {result:?}");
+        assert_eq!(next, Ok(json!({"applied": 1})), "the next explicit request must reconnect successfully");
     }
 }

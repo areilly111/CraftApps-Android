@@ -89,7 +89,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Collect in New Layer",
             ["Window", "Layers"],
             None,
-            "{ids?} move rows (default: the highlighted rows, else the selected objects) into a new layer where the topmost of them was (a sublayer when they are in a layer) → {id}",
+            "{ids?} move rows (default: the highlighted rows, else the selected objects) into a new layer where the topmost of them was (a sublayer when they are in a layer), deselecting every selected object left hidden or locked (the key object too) → {id}",
             has_doc,
             collect
         ),
@@ -107,7 +107,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Move Rows",
             [],
             None,
-            "{ids, target, place?: \"above\"|\"below\"|\"inside\" (default inside), copy?: bool} drag rows in the Layers panel: above or below the target row (beside it, in its layer or group), or inside a layer or group (on top of its contents). Layers go only in layers or at the top level, objects in layers and groups; an object placed beside a top-level layer goes inside it. A row never goes into itself; a locked layer or group takes nothing. `copy` (Alt-drag) moves copies. One undo step → {ids}",
+            "{ids, target, place?: \"above\"|\"below\"|\"inside\" (default inside), copy?: bool} drag rows in the Layers panel: above or below the target row (beside it, in its layer or group), or inside a layer or group (on top of its contents). Layers go only in layers or at the top level, objects in layers and groups; an object placed beside a top-level layer goes inside it. A row never goes into itself; a locked layer or group takes nothing. `copy` (Alt-drag) moves copies. Every selected object left hidden or locked, such as one moved into a hidden layer or group, is deselected (the key object too). One undo step → {ids}",
             has_doc,
             move_rows
         ),
@@ -116,7 +116,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Reorder",
             [],
             None,
-            "{id, parent?: id (null = top level), index} put a row at `index` (0 = bottom) of `parent` (layers only at the top level or in layers)",
+            "{id, parent?: id (null = top level), index} put a row at `index` (0 = bottom) of `parent` (layers only at the top level or in layers), deselecting every selected object left hidden or locked (the key object too)",
             has_doc,
             move_node
         ),
@@ -129,7 +129,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             artboard_new
         ),
-        cmd!("artboard.delete", "Delete Artboard", ["Window", "Artboards"], None, "{index}", has_doc, artboard_delete),
+        cmd!(
+            "artboard.delete",
+            "Delete Artboard",
+            ["Window", "Artboards"],
+            None,
+            "{index | indices: [index…]} delete artboards (with their guides) in one step; one is always left",
+            has_doc,
+            artboard_delete
+        ),
         cmd!(
             "artboard.setProps",
             "Artboard Options…",
@@ -181,15 +189,16 @@ pub fn specs() -> Vec<CommandSpec> {
 
 /// The rows a panel command acts on: `ids` or `id`, else the highlighted rows, else the current
 /// layer (capped at [`MAX_ROWS`]).
-pub(crate) fn rows_param(s: &Session, p: &Value) -> Result<Vec<NodeId>> {
-    let mut ids = match (ids_param(p, "ids"), id_param(p, "id")) {
-        (Some(ids), _) => ids,
-        (None, Some(id)) => vec![id],
-        (None, None) => {
-            let st = s.doc()?;
-            let rows = st.highlighted_rows();
-            if rows.is_empty() { st.current_layer().into_iter().collect() } else { rows }
-        }
+pub(crate) fn rows_param(s: &Session, p: &Value, command: &str) -> Result<Vec<NodeId>> {
+    // Presence is explicit intent: validate every target before fallback, truncation or edits.
+    let mut ids = if p.get("ids").is_some() {
+        checked_ids_param(s, p, "ids", command)?
+    } else if let Some(id) = p.get("id") {
+        vec![checked_id(s, id, command)?]
+    } else {
+        let st = s.doc()?;
+        let rows = st.highlighted_rows();
+        if rows.is_empty() { st.current_layer().into_iter().collect() } else { rows }
     };
     ids.truncate(MAX_ROWS);
     Ok(ids)
@@ -221,7 +230,7 @@ pub(crate) fn accepts(d: &Document, parent: Option<NodeId>, n: &Node) -> bool {
 }
 
 /// Whether `id` or a container around it is locked.
-fn locked_within(d: &Document, id: NodeId) -> bool {
+pub(crate) fn locked_within(d: &Document, id: NodeId) -> bool {
     d.ancestry(id).unwrap_or_default().iter().any(|a| d.node(*a).is_some_and(|n| n.locked))
 }
 
@@ -449,7 +458,7 @@ fn new_sublayer(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn delete_rows(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = rows_param(s, p)?;
+    let ids = rows_param(s, p, "layer.delete")?;
     let st = s.doc()?;
     let ids = row_roots(&st.doc, &ids);
     if ids.is_empty() {
@@ -462,6 +471,8 @@ fn delete_rows(s: &mut Session, p: &Value) -> Result<Value> {
         for id in &ids {
             d.remove(*id)?;
         }
+        // The guides on the deleted layers go with them.
+        d.drop_guides_of_deleted_layers(sel);
         sel.prune(d);
         Ok(())
     })?;
@@ -474,7 +485,7 @@ fn delete_rows(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn duplicate_rows(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = rows_param(s, p)?;
+    let ids = rows_param(s, p, "layer.duplicate")?;
     let ids = row_roots(&s.doc()?.doc, &ids);
     if ids.is_empty() {
         return Err(bad("layer.duplicate", "no such rows"));
@@ -487,6 +498,7 @@ fn duplicate_rows(s: &mut Session, p: &Value) -> Result<Value> {
             let mut c = d.reid(&n);
             if n.is_layer() {
                 c.name = Some(format!("{} copy", n.display_name()));
+                d.copy_layer_guides(&n, &c);
             }
             out.push(d.insert(par, idx + 1, c)?);
         }
@@ -540,7 +552,7 @@ fn highlight(s: &mut Session, p: &Value) -> Result<Value> {
 fn set_props(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "layer.setProps";
     check_options(C, p)?;
-    let ids = rows_param(s, p)?;
+    let ids = rows_param(s, p, C)?;
     if ids.is_empty() {
         return Err(bad(C, "no rows"));
     }
@@ -548,11 +560,7 @@ fn set_props(s: &mut Session, p: &Value) -> Result<Value> {
         for id in &ids {
             apply_options(d.node_mut(*id).ok_or(EngineError::NoNode(*id))?, p);
         }
-        // Hidden or locked content can't stay selected.
-        let hidden: Vec<NodeId> = sel.objects.iter().copied().filter(|o| !d.is_editable(*o)).collect();
-        for h in hidden {
-            sel.remove(h);
-        }
+        sel.deselect_uneditable(d);
         Ok(())
     })?;
     ok()
@@ -560,12 +568,11 @@ fn set_props(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn collect(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "layer.collectInNew";
-    let ids = match ids_param(p, "ids") {
-        Some(ids) => ids,
-        None => {
-            let rows = s.doc()?.highlighted_rows();
-            if rows.is_empty() { super::edit::selected_roots(s)? } else { rows }
-        }
+    let ids = if p.get("ids").is_some() {
+        checked_ids_param(s, p, "ids", C)?
+    } else {
+        let rows = s.doc()?.highlighted_rows();
+        if rows.is_empty() { super::edit::selected_roots(s)? } else { rows }
     };
     let ids = row_roots(&s.doc()?.doc, &ids);
     let Some(top) = ids.last().copied() else { return Err(bad(C, "select rows or objects to collect")) };
@@ -582,6 +589,7 @@ fn collect(s: &mut Session, p: &Value) -> Result<Value> {
             d.move_node(*id, Some(lid), usize::MAX)?;
         }
         sel.prune(d);
+        sel.deselect_uneditable(d);
         Ok(lid)
     })?;
     let st = s.doc_mut()?;
@@ -679,7 +687,11 @@ fn move_rows(s: &mut Session, p: &Value) -> Result<Value> {
         for id in &ids {
             nodes.push(if copy {
                 let n = d.node(*id).cloned().ok_or(EngineError::NoNode(*id))?;
-                d.reid(&n)
+                let c = d.reid(&n);
+                if n.is_layer() {
+                    d.copy_layer_guides(&n, &c);
+                }
+                c
             } else {
                 Arc::unwrap_or_clone(d.remove(*id)?)
             });
@@ -702,6 +714,7 @@ fn move_rows(s: &mut Session, p: &Value) -> Result<Value> {
             index += 1;
         }
         sel.prune(d);
+        sel.deselect_uneditable(d);
         Ok(out)
     })?;
     let st = s.doc_mut()?;
@@ -719,7 +732,11 @@ fn move_node(s: &mut Session, p: &Value) -> Result<Value> {
     if !accepts(d, parent, n) {
         return Err(bad(C, "layers go only at the top level or in layers, objects in layers and groups"));
     }
-    s.edit("Reorder", |d, _| Ok(d.move_node(id, parent, index)?))?;
+    s.edit("Reorder", |d, sel| {
+        d.move_node(id, parent, index)?;
+        sel.deselect_uneditable(d);
+        Ok(())
+    })?;
     ok()
 }
 
@@ -746,17 +763,16 @@ fn artboard_new(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn artboard_delete(s: &mut Session, p: &Value) -> Result<Value> {
-    let i = p.get("index").and_then(Value::as_u64).ok_or_else(|| bad("artboard.delete", "missing index"))? as usize;
+    let indices = super::panelcmds::artboard_indices(&s.doc()?.doc, p, "artboard.delete")?;
     s.edit("Delete Artboard", |d, sel| {
-        if d.artboards.len() <= 1 {
+        if indices.len() >= d.artboards.len() {
             return Err(EngineError::Other("a document needs at least one artboard".into()));
         }
-        if i >= d.artboards.len() {
-            return Err(EngineError::Other("no such artboard".into()));
+        // The last first, so the others keep their places; their guides go with them.
+        for &i in indices.iter().rev() {
+            let id = d.artboards.remove(i).id;
+            d.retain_guides(sel, |_, g| g.artboard != Some(id));
         }
-        // Its guides go with it.
-        let id = d.artboards.remove(i).id;
-        d.retain_guides(sel, |_, g| g.artboard != Some(id));
         Ok(())
     })?;
     ok()

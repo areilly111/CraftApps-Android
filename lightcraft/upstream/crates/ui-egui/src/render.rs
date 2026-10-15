@@ -39,6 +39,9 @@ pub enum Slot {
     Preview,
     Before,
     Compare(u8),
+    /// Compare or Reference zoomed past what `Compare(i)` holds: the window of pane `i`'s frame
+    /// that is on screen, drawn over it (see [`crate::region`] and `panels::compare`).
+    CompareRegion(u8),
     /// Background preparation of a neighbouring photo (no texture: its decoded source and view
     /// render are cached by the engine). 0 = next, 1 = previous.
     Prefetch(u8),
@@ -111,7 +114,7 @@ const HARD_FACTOR: usize = 4;
 pub(crate) fn stage_trim_order(sizes: &[(Slot, usize)], budget: usize) -> Vec<Slot> {
     let idle_rank = |s: Slot| match s {
         Slot::Hover => 0,
-        Slot::Compare(_) => 2,
+        Slot::Compare(_) | Slot::CompareRegion(_) => 2,
         Slot::Second => 3,
         _ => 5,
     };
@@ -174,6 +177,8 @@ pub struct Renderer {
     /// Last thumbnail inputs; weak identities do not retain photo histories or force deep clones.
     /// (photo, size bucket, job key, whether the request went through an embedded stand-in)
     thumb_inputs: HashMap<PhotoId, (std::sync::Weak<lightcraft_catalog::Photo>, usize, u64, bool)>,
+    /// Photos whose grid thumbnail is the camera's embedded preview itself (no render behind it).
+    embedded_thumbs: HashMap<PhotoId, (std::sync::Weak<lightcraft_catalog::Photo>, usize, u64)>,
     pool: JobPool<Slot, RenderResult>,
     /// Jobs run elsewhere (see [`RenderOffload`]); `queue` holds the ones not started yet.
     offload: Option<Box<dyn RenderOffload>>,
@@ -251,6 +256,7 @@ impl Renderer {
             preview_generation: None,
             pool: JobPool::new(threads),
             thumb_inputs: HashMap::new(),
+            embedded_thumbs: HashMap::new(),
             offload: None,
             queue: Vec::new(),
             seq: 0,
@@ -295,6 +301,30 @@ impl Renderer {
     }
 
     /// Remember the inputs of the thumbnail just requested (`quick`: through a stand-in).
+    /// Whether the camera's embedded preview *is* this photo's thumbnail: its quick render arrived
+    /// (so `Slot::ThumbQuick` holds the picture) and no edit has moved the photo on to a settings
+    /// hash of its own. The grid stops here instead of decoding the raw behind a thumbnail the
+    /// embedded JPEG already covers — see `grid::skips_the_real_render`.
+    pub fn thumb_quick_is_final(&self, photo: &Arc<lightcraft_catalog::Photo>, bucket: usize, priority: u32) -> bool {
+        let Some((old, size, key)) = self.embedded_thumbs.get(&photo.id) else { return false };
+        old.as_ptr() == Arc::as_ptr(photo) && *size == bucket && !self.request_needed(Slot::ThumbQuick(photo.id), *key, priority)
+    }
+
+    /// Whether this photo's embedded-preview thumbnail is being fetched right now: the grid has
+    /// asked, and neither the picture nor a render behind it is owed.
+    pub fn thumb_quick_pending(&self, photo: &Arc<lightcraft_catalog::Photo>, bucket: usize) -> bool {
+        let Some((old, size, _, quick)) = self.thumb_inputs.get(&photo.id) else { return false };
+        old.as_ptr() == Arc::as_ptr(photo) && *size == bucket && *quick && self.pending.contains_key(&Slot::ThumbQuick(photo.id))
+    }
+
+    /// Remember that the camera's embedded preview is this photo's final thumbnail, so the grid's
+    /// per-frame requests stop at it (the quick render's key, which [`Self::thumb_quick_is_final`]
+    /// compares against).
+    pub fn remember_embedded_thumb(&mut self, photo: &Arc<lightcraft_catalog::Photo>, bucket: usize, key: u64) {
+        self.remember_thumb(photo, bucket, key, true);
+        self.embedded_thumbs.insert(photo.id, (Arc::downgrade(photo), bucket, key));
+    }
+
     pub fn remember_thumb(&mut self, photo: &Arc<lightcraft_catalog::Photo>, bucket: usize, key: u64, quick: bool) {
         if self.thumb_inputs.len() >= 1024 && !self.thumb_inputs.contains_key(&photo.id) {
             self.thumb_inputs.retain(|_, (p, _, _, _)| p.strong_count() > 0);
@@ -310,7 +340,10 @@ impl Renderer {
     /// Views that render straight into the display profile's primaries (wide gamut); everything
     /// else is rendered for sRGB and converted ([`lightcraft_engine::display::present`]).
     fn renders_for_display(slot: Slot) -> bool {
-        matches!(slot, Slot::Main | Slot::Region | Slot::Before | Slot::RegionBefore | Slot::Hover | Slot::Compare(_) | Slot::Second)
+        matches!(
+            slot,
+            Slot::Main | Slot::Region | Slot::Before | Slot::RegionBefore | Slot::Hover | Slot::Compare(_) | Slot::CompareRegion(_) | Slot::Second
+        )
     }
 
     /// `job` as [`Self::request`] would run it for `slot` (its key included): views render for
@@ -1026,8 +1059,9 @@ mod thumbnail_tests {
 
     #[test]
     fn raw_quick_path_frames_build_no_jobs() {
-        // an unedited raw: the grid shows its embedded preview first (held here until released),
-        // then queues the real thumbnail behind everything on screen
+        // an unedited raw: the grid shows its embedded preview (held here until released) and stops
+        // there — the camera JPEG at 4 416 × 2 944 already covers a 512 px thumbnail, so decoding the
+        // whole raw behind it only costs the file read (45 s a photo on a 1.2 MB/s share)
         let gate = Arc::new(std::sync::Mutex::new(()));
         let held = gate.lock().unwrap();
         let mut s = Session::new();
@@ -1055,14 +1089,30 @@ mod thumbnail_tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
             app.renderer.poll(&ctx, &mut app.session);
         }
-        // the stand-in is shown: one more job queues the real thumbnail at background priority,
-        // and the grid asking at its own (higher) priority every frame does not rebuild it
+        // the embedded preview is the thumbnail: no real render is queued behind it, and the grid
+        // asking every frame neither rebuilds the job nor re-requests the preview
         for _ in 0..180 {
             request(&mut app);
         }
-        assert_eq!(app.renderer.thumb_jobs_built, 2);
-        assert_eq!(app.renderer.queue.len(), 1);
-        assert_eq!(app.renderer.pending.get(&Slot::Thumb(PhotoId(1))).map(|p| p.1), Some(crate::panels::grid::BACKGROUND_THUMB_PRIORITY));
+        assert_eq!(app.renderer.thumb_jobs_built, 1, "an unedited raw's embedded preview is the thumbnail");
+        assert!(app.renderer.queue.is_empty(), "nothing is decoded behind it");
+        assert!(!app.renderer.is_pending(Slot::Thumb(PhotoId(1))));
+
+        // an edit takes the embedded preview out of the picture: the real thumbnail is rendered then
+        let mut edited = (*photo()).clone();
+        edited.kind = lightcraft_catalog::MediaKind::Raw;
+        edited.develop = Arc::new({
+            let mut d = edited.camera_defaults();
+            d.light.exposure = 0.5;
+            d
+        });
+        let (mut app, _, _ctx) = fixture_with(Session::new(), edited);
+        app.renderer.set_offload(Box::new(Blocked));
+        for _ in 0..180 {
+            request(&mut app);
+        }
+        assert_eq!(app.renderer.thumb_jobs_built, 1);
+        assert!(app.renderer.is_pending(Slot::Thumb(PhotoId(1))) || !app.renderer.queue.is_empty(), "an edited raw renders its thumbnail");
     }
 
     #[test]

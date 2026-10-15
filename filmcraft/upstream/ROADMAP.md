@@ -1,8 +1,11 @@
 # FilmCraft Roadmap
 
+- UI.6: Compact Source and Program monitors separate timecodes from view settings and retain Source drag choices. Transport controls use the shared toolbar sizing helper, with overflow actions in an operable More menu and a scrolling fallback at tiny widths.
+- UI.3: Panel tabs, edge splits, tab reordering and floating groups use the shared docking model and drop resolver. Floating geometry is saved with named workspaces while legacy layout JSON remains readable. Dock dividers use bounded shared geometry and keyboard-accessible resize handles. Tools and dock tabs expose actual widget focus, paint focus outlines, and support keyboard traversal/activation. Control input reaches focused widgets in background windows; optional input isolation supports unattended validation. Existing workspace trees and saved layout formats are retained.
+
 **Stage: alpha** · next: beta, ~19 points of ready-for-real-work and ~400–700 h away, plus opening Premiere's `.prproj` ([why](docs/target-app-parity.md#stage); passes the [core-workflow gate](docs/roadmap.md#alpha-gate))
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against Premiere Pro 2026 26.5.2; scorecard, gaps, milestones and localization moved into docs/ per the craftrules progress-docs standard) · **Target:** Adobe Premiere Pro 2026 (26.5.2)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (language table: German ships the menus, #630) · **Target:** Adobe Premiere Pro 2026 (26.5.2)
 
 Progress toward parity with Adobe Premiere Pro. This page is the summary; the detail is in
 [docs/target-app-parity.md](docs/target-app-parity.md) (assessment, methodology, calibration),
@@ -78,11 +81,11 @@ Premiere ships 10 interface languages. Measured from our catalogs (3,498 strings
 | Spanish | partial (whole interface) | 99.9% |
 | Hindi | none (no Devanagari shaping in the interface) | 0% |
 | Arabic | none (no RTL interface) | 0% |
-| French | none | 0% |
-| Portuguese (Brazil) | menus only | 9.9% |
-| Indonesian | none | 0% |
+| French | partial (whole interface; native review welcome) | ~100% |
+| Portuguese (Brazil) | partial (whole interface; native review welcome) | ~100% |
+| Indonesian | partial (whole interface; native review welcome) | ~100% |
 | Japanese | partial (whole interface) | 99.7% |
-| German | none | 0% |
+| German | menus only (native-reviewed) | 10.6% |
 | Korean | none | 0% |
 | Vietnamese | none | 0% |
 
@@ -161,6 +164,7 @@ Ranked; detail and "done when" in [docs/roadmap.md](docs/roadmap.md) and [docs/g
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Language table: German ships the menus (#630, 10.6%) |
 | 2026-10-10 | minor | Readiness-by-audience table with hours to ~95% per audience |
 | 2026-10-10 | minor | Headline adds mainstream practitioner (~55%) and essentials user (~60%); ready for real work ~55% -> ~56% (formula written out, same inputs); beta distance ~19 points |
 | 2026-10-10 | minor | Stage banner links the core-workflow gate (all six workflows pass on macOS; stays alpha) |

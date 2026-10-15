@@ -50,7 +50,9 @@ impl Document {
 
     /// `ids` that are in the document, back to front.
     pub fn paint_order(&self, ids: impl IntoIterator<Item = NodeId>) -> Vec<NodeId> {
-        let mut v: Vec<(Vec<usize>, NodeId)> = ids.into_iter().filter_map(|id| self.index_path(id).map(|p| (p, id))).collect();
+        let ids: Vec<NodeId> = ids.into_iter().collect();
+        let paths = self.index_paths(ids.iter().copied());
+        let mut v: Vec<(Vec<usize>, NodeId)> = ids.into_iter().filter_map(|id| paths.get(&id).map(|p| (p.clone(), id))).collect();
         v.sort();
         v.into_iter().map(|(_, id)| id).collect()
     }

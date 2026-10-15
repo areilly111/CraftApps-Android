@@ -1,7 +1,8 @@
 //! The Color Picker (double-click a Fill/Stroke proxy, or `ui.colorPicker`): a colour field with a
 //! channel slider for H, S, B, R, G or B; HSB, RGB, Lab and CMYK fields and hex; Only Web Colors;
 //! the out-of-gamut and out-of-web warnings (click to correct); New/Original chips; and a Color
-//! Swatches list. OK applies the colour to its proxy through `paint.setFill` / `paint.setStroke`.
+//! Swatches list. With art selected the colour shows on it live as it is picked; OK keeps it as one
+//! undo step through `paint.setFill` / `paint.setStroke`, Cancel puts the art back.
 //!
 //! Fields agents set with `ui.dialog.set`: `hex` (`"00FF00"`) or `color` (any colour the paint
 //! commands take), `channel` (`hue`, `saturation`, `brightness`, `red`, `green`, `blue`), `webOnly`
@@ -15,6 +16,7 @@ use vectorcraft_doc::ColorMode;
 use vectorcraft_engine::cmd::color_value;
 
 use super::DialogSpec;
+use super::form::PREVIEWED;
 use crate::panels::color::{GAMUT_WARNING, WEB_WARNING, gamut_fix, hex_digits, is_web_safe, parse_hex, warning_chip, web_safe};
 use crate::panels::{c32, color_json};
 use crate::state::Dialog;
@@ -23,8 +25,15 @@ use crate::{VectorcraftApp, widgets};
 
 pub(super) const KIND: &str = "colorPicker";
 
-pub(super) const SPEC: DialogSpec =
-    DialogSpec { heading: |_| tl!("Color Picker").into(), body, confirm, min_width: 600.0, max_width: Some(640.0), ..DialogSpec::FORM };
+pub(super) const SPEC: DialogSpec = DialogSpec {
+    heading: |_| tl!("Color Picker").into(),
+    body,
+    confirm,
+    preview: true,
+    min_width: 600.0,
+    max_width: Some(640.0),
+    ..DialogSpec::FORM
+};
 
 /// Side of the colour field (and height of the channel slider).
 const FIELD: f32 = 240.0;
@@ -242,7 +251,37 @@ fn body(app: &mut VectorcraftApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         d.fields.insert("swatches".into(), json!(!swatches));
     }
     store(d, &pick.unwrap_or(p).snapped(d.bool("webOnly")));
+    preview(app, d);
     false
+}
+
+/// Show the picked colour on the selected art while the picker is open: each new colour replaces
+/// the last preview. Nothing previews until the colour first changes, nor without a selection
+/// (the colour then only becomes the default paint, on OK).
+fn preview(app: &mut VectorcraftApp, d: &mut Dialog) {
+    let (cmd, params) = paint_command(app, d);
+    let first = !app.session.in_interaction();
+    let unchanged = d.fields.get(PREVIEWED) == Some(&params) || first && d.fields.get("original").and_then(color_value) == Some(picked(d).color);
+    let selected = app.session.active().is_some_and(|st| !st.selection.objects.is_empty());
+    if unchanged || !selected {
+        return;
+    }
+    let _ = app.session.begin_interaction(if d.bool("stroke") { "Stroke Color" } else { "Fill Color" });
+    if let Err(e) = app.session.preview(cmd, &params) {
+        app.status(e.to_string());
+    }
+    d.fields.insert(PREVIEWED.into(), params);
+}
+
+/// The command that applies the picked colour to the proxy, and its params (as CMYK in a CMYK
+/// document).
+fn paint_command(app: &VectorcraftApp, d: &Dialog) -> (&'static str, Value) {
+    let mut c = picked(d).color;
+    if matches!(c, Color::Rgb { .. }) && app.session.active().is_some_and(|s| s.doc.color_mode == ColorMode::Cmyk) {
+        let [cy, m, y, k] = c.to_cmyk_managed(cms::active().settings().intent);
+        c = Color::cmyk(cy, m, y, k);
+    }
+    (if d.bool("stroke") { "paint.setStroke" } else { "paint.setFill" }, json!({ "color": color_json(&c) }))
 }
 
 /// The New (top) and Original (bottom) chips. Returns true when Original is clicked.
@@ -363,15 +402,10 @@ fn swatch_list(app: &VectorcraftApp, ui: &mut Ui, current: &Color) -> Option<Col
     chosen
 }
 
-/// OK: apply the colour to the proxy (as CMYK in a CMYK document).
+/// OK: apply the colour to the proxy, keeping the live preview as one undo step.
 fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
-    let mut c = picked(d).color;
-    if matches!(c, Color::Rgb { .. }) && app.session.active().is_some_and(|s| s.doc.color_mode == ColorMode::Cmyk) {
-        let [cy, m, y, k] = c.to_cmyk_managed(cms::active().settings().intent);
-        c = Color::cmyk(cy, m, y, k);
-    }
-    let cmd = if d.bool("stroke") { "paint.setStroke" } else { "paint.setFill" };
-    super::run_and_close(app, cmd, json!({ "color": color_json(&c) }))
+    let (cmd, params) = paint_command(app, d);
+    super::form::commit_preview(app, cmd, params)
 }
 
 #[cfg(test)]
@@ -451,6 +485,34 @@ mod tests {
         assert_eq!(gamut_fix(&mut app, &ctx, "picker-gamut", &blue), Some(fix));
         assert_eq!(gamut_fix(&mut app, &ctx, "picker-gamut", &blue), Some(fix));
         assert_eq!(gamut_fix(&mut app, &ctx, "picker-gamut", &Color::rgb8(128, 128, 128)), None);
+    }
+
+    /// The selected art takes each colour as it is picked; OK keeps the last as one undo step and
+    /// Cancel puts the art back.
+    #[test]
+    fn the_selection_shows_the_colour_live() {
+        let mut app = app();
+        let undo = |app: &VectorcraftApp| app.session.doc().unwrap().history.undo.len();
+        let before = undo(&app);
+        app.run("ui.colorPicker", json!({})).unwrap();
+        frame(&mut app);
+        assert!(!app.session.in_interaction(), "nothing previews before the colour changes");
+        for hex in ["ff0000", "00ff00"] {
+            app.ui.dialog.as_mut().unwrap().fields.insert("hex".into(), json!(hex));
+            frame(&mut app);
+            assert_eq!(fill_hex(&app), format!("#{hex}"), "live, before OK");
+        }
+        super::super::confirm(&mut app).unwrap();
+        assert_eq!(fill_hex(&app), "#00ff00");
+        assert_eq!(undo(&app), before + 1, "one step");
+        // Cancel: back to the colour it had.
+        app.run("ui.colorPicker", json!({})).unwrap();
+        app.ui.dialog.as_mut().unwrap().fields.insert("hex".into(), json!("0000ff"));
+        frame(&mut app);
+        assert_eq!(fill_hex(&app), "#0000ff");
+        super::super::cancel(&mut app);
+        assert_eq!(fill_hex(&app), "#00ff00");
+        assert_eq!(undo(&app), before + 1);
     }
 
     #[test]

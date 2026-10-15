@@ -35,25 +35,47 @@ integrate() {
   src_desktop="$APPDIR/usr/share/applications/$DESK_ID.desktop"
   [ -f "$src_desktop" ] || return 0
 
-  # Rewrite Exec to this AppImage (the binary is not on the host PATH) and drop
-  # TryExec, which would hide the entry; everything else is shipped as packaged.
+  # If an external AppImage integrator (AppImageLauncher, appimaged, Gear Lever) is
+  # already managing this AppImage, do not write a second launcher (#3623); remove our
+  # own if left over from an earlier run, and still install the hicolor icons below.
   apps="$data/applications"
   mkdir -p "$apps" 2>/dev/null || return 0
-  tmp="$apps/.$DESK_ID.tmp.$$"
-  esc="$(printf '%s' "$appimage" | sed 's/[\\&|]/\\&/g')"
-  if sed -e "s|^Exec=.*|Exec=\"$esc\" %F|" -e '/^TryExec=/d' "$src_desktop" 2>/dev/null >"$tmp"; then
-    if cmp -s "$tmp" "$apps/$DESK_ID.desktop"; then
-      rm -f "$tmp"
-    else
-      if mv -f "$tmp" "$apps/$DESK_ID.desktop" 2>/dev/null; then
-        command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
-      else
-        rm -f "$tmp"
+  external=0
+  if [ -n "${DESKTOPINTEGRATION:-}" ]; then
+    external=1
+  else
+    for f in "$apps"/*.desktop; do
+      [ -f "$f" ] && [ "$f" != "$apps/$DESK_ID.desktop" ] || continue
+      if grep '^Exec=' "$f" 2>/dev/null | grep -Fq "$appimage"; then
+        external=1
+        break
       fi
+    done
+  fi
+  if [ "$external" = 1 ]; then
+    if [ -f "$apps/$DESK_ID.desktop" ]; then
+      rm -f "$apps/$DESK_ID.desktop" 2>/dev/null || true
+      command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
     fi
   else
-    rm -f "$tmp"
-    return 0
+    # Rewrite Exec to this AppImage (the binary is not on the host PATH) and drop
+    # TryExec, which would hide the entry; everything else is shipped as packaged.
+    tmp="$apps/.$DESK_ID.tmp.$$"
+    esc="$(printf '%s' "$appimage" | sed 's/[\\&|]/\\&/g')"
+    if sed -e "s|^Exec=.*|Exec=\"$esc\" %F|" -e '/^TryExec=/d' "$src_desktop" 2>/dev/null >"$tmp"; then
+      if cmp -s "$tmp" "$apps/$DESK_ID.desktop"; then
+        rm -f "$tmp"
+      else
+        if mv -f "$tmp" "$apps/$DESK_ID.desktop" 2>/dev/null; then
+          command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
+        else
+          rm -f "$tmp"
+        fi
+      fi
+    else
+      rm -f "$tmp"
+      return 0
+    fi
   fi
 
   # Icons: per-file compare so an unchanged install costs a handful of cmp calls.

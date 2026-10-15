@@ -44,7 +44,7 @@ use crate::shell::{attach_audio, AndroidShell, StorageGate};
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.5.0-port1` → 50001).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]).
 /// FilmCraft composites through [`FilmcraftApp::set_wgpu`] (which already
@@ -206,7 +206,8 @@ fn run(app: AndroidApp) -> Result<(), String> {
     inner.session.prefs.memory.frame_cache_mb =
         inner.session.prefs.memory.frame_cache_mb.min(MOBILE_CACHE_MB);
     inner.frames.set_cache_budget(MOBILE_CACHE_MB as usize * (1 << 20));
-    inner.frames.set_plan_budget(MOBILE_CACHE_MB as usize * (1 << 20));
+    // TODO: set_plan_budget removed in 0.7.2 - check new cache API
+    // inner.frames.set_plan_budget(MOBILE_CACHE_MB as usize * (1 << 20));
     // Hardware video decoders (MediaCodec) are not wired on Android yet:
     // `filmcraft_platform::register()` reports Unavailable there and the
     // pure-Rust decoders run. Voice-over input stays off (no mic capture).
@@ -221,7 +222,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
         &data_dir,
         "app.filmcraft.android.apkprovider",
     )));
-    wire_android_hooks(&mut inner.hooks, updater.clone(), storage, granted);
+    wire_android_hooks(&mut inner.hooks, storage, granted);
 
     // GPU backend cascade (Vulkan → GLES → CPU canvas). The shared cascade
     // reads the PhotoCraft-style `performance.gpuBackend` pref; until a
@@ -257,7 +258,6 @@ fn run(app: AndroidApp) -> Result<(), String> {
 /// closures only ever run on Android. Sibling ports reuse this verbatim.
 fn wire_android_hooks(
     hooks: &mut filmcraft_ui_egui::HostHooks,
-    updater: Arc<Mutex<Updater>>,
     storage: Arc<StorageManager>,
     granted: bool,
 ) {
@@ -265,9 +265,6 @@ fn wire_android_hooks(
     let tablet_storage = storage.clone();
     let sd_storage = storage.clone();
     hooks.android_hooks = Some(filmcraft_ui_egui::AndroidHooks {
-        check_updates: Box::new(move || {
-            updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-        }),
         storage: filmcraft_ui_egui::AndroidStorageHooks {
             location_label: Box::new(move || {
                 if granted {
@@ -285,7 +282,7 @@ fn wire_android_hooks(
                     let _ = jni_bridge::open_all_files_settings();
                 }
             }),
-            pick_sd_card: Box::new(move || {
+            pick_folder: Box::new(move || {
                 // The folder picker needs no permission: the chosen tree is
                 // read and written through SAF directly.
                 saf::set_pending_tree(sd_storage.clone());
@@ -295,6 +292,7 @@ fn wire_android_hooks(
                 }
             }),
         },
+        pen: None,
     });
 }
 

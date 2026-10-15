@@ -319,6 +319,27 @@ pub(crate) trait MoveFs {
     /// Another photo file beside the stem-named sidecar `sidecar` that shares its stem (e.g.
     /// `IMG_1.JPG` for `IMG_1.xmp`), which still uses that sidecar.
     fn stem_sibling(&self, sidecar: &Path) -> Option<String>;
+    /// Content observed in a packet, independent of its pathname or inode. Model volumes
+    /// override this; disk implementations stream a bounded buffer without retaining the XML.
+    fn packet_version(&self, path: &Path) -> std::io::Result<PacketVersion> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path)?;
+        let mut hash = lightcraft_preview::Hasher128::new();
+        let mut len = 0u64;
+        let mut buffer = [0u8; 16 * 1024];
+        loop {
+            let n = match file.read(&mut buffer) {
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                result => result?,
+            };
+            if n == 0 {
+                return Ok(PacketVersion { len, hash: hash.finish() });
+            }
+            let bytes = buffer.get(..n).ok_or_else(|| std::io::Error::other("invalid sidecar read length"))?;
+            len = len.checked_add(n as u64).ok_or_else(|| std::io::Error::other("sidecar is too large"))?;
+            hash.update(bytes);
+        }
+    }
 }
 
 /// The real file system.
@@ -370,7 +391,8 @@ impl MoveFs for RealFs {
                 let _ = std::fs::remove_file(b);
             }),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(e),
-            Err(_) => std::fs::rename(a, b),
+            Err(_) => std::fs::rename(a, b)
+                .or_else(|e| if e.kind() == std::io::ErrorKind::CrossesDevices { move_across_volumes(self, a, b) } else { Err(e) }),
         }
     }
 
@@ -390,6 +412,56 @@ impl MoveFs for RealFs {
     fn stem_sibling(&self, sidecar: &Path) -> Option<String> {
         crate::import_move::sibling_photo(sidecar)
     }
+}
+
+/// Move `a` to `b` on another volume: copy (never replacing), compare the copy with the original
+/// byte for byte, and only then remove the original. A copy that doesn't match is removed.
+fn move_across_volumes(fs: &RealFs, a: &Path, b: &Path) -> std::io::Result<()> {
+    fs.copy_no_replace(a, b)?;
+    if !same_contents(a, b).unwrap_or(false) {
+        let _ = std::fs::remove_file(b);
+        return Err(std::io::Error::other(format!("the copy at {} did not match the original; the original was kept", b.display())));
+    }
+    std::fs::remove_file(a).inspect_err(|_| {
+        // the original stays: drop the copy so the file isn't in two places
+        let _ = std::fs::remove_file(b);
+    })
+}
+
+/// Whether files `a` and `b` hold the same bytes: lengths first, then 1 MiB chunks at a time, so
+/// a large raw or video is never read into memory whole.
+fn same_contents(a: &Path, b: &Path) -> std::io::Result<bool> {
+    const CHUNK: usize = 1 << 20;
+    let (mut fa, mut fb) = (std::fs::File::open(a)?, std::fs::File::open(b)?);
+    if fa.metadata()?.len() != fb.metadata()?.len() {
+        return Ok(false);
+    }
+    let (mut ba, mut bb) = (vec![0u8; CHUNK], vec![0u8; CHUNK]);
+    loop {
+        let n = read_full(&mut fa, &mut ba)?;
+        let m = read_full(&mut fb, &mut bb)?;
+        if n != m || ba.get(..n) != bb.get(..m) {
+            return Ok(false);
+        }
+        if n == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+/// Fill `buf` from `r` as far as the file goes; the number of bytes read (less than the buffer
+/// only at the end of the file).
+fn read_full(r: &mut impl std::io::Read, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0;
+    while let Some(rest) = buf.get_mut(filled..).filter(|r| !r.is_empty()) {
+        match r.read(rest) {
+            Ok(0) => break,
+            Ok(k) => filled = filled.saturating_add(k),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
 }
 
 /// `from` → `to` differs only in letter case and `to` is that very file (a case-insensitive
@@ -420,6 +492,178 @@ fn move_one(fs: &dyn MoveFs, a: &Path, b: &Path) -> std::io::Result<()> {
     })
 }
 
+/// An unfinished sidecar operation. Keep its exact paths and any recorded copy requirement: the photo may
+/// already have followed its new path, so a retry cannot infer this work from the catalog.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SidecarMove {
+    pub from: PathBuf,
+    pub to: PathBuf,
+    copied: bool,
+    /// Observed packets in the partial move, including the separated source. Absent planned
+    /// destinations are never owned; a completed repair advances these observations.
+    companions: Vec<RetainedPacket>,
+}
+
+/// A content version, not an assertion that a pathname still names the same packet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PacketVersion {
+    len: u64,
+    hash: lightcraft_preview::Hash128,
+}
+
+impl PacketVersion {
+    fn of(bytes: &[u8]) -> Self {
+        Self { len: bytes.len() as u64, hash: lightcraft_preview::hash_bytes(bytes) }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RetainedPacket {
+    path: PathBuf,
+    // An unreadable observation remains untrusted even if a later read succeeds.
+    version: Option<PacketVersion>,
+}
+
+impl RetainedPacket {
+    fn validate(&self, fs: &dyn MoveFs) -> std::result::Result<(), String> {
+        if self.version.is_none() {
+            return Err(format!("can't verify retained XMP {}: its content was unreadable when the partial move was recorded", self.path.display()));
+        }
+        let current = fs.packet_version(&self.path).map_err(|e| format!("can't verify retained XMP {}: {e}", self.path.display()))?;
+        if self.version != Some(current) {
+            return Err(format!(
+                "retained XMP {} changed since the partial move; packet ownership must be resolved before retrying",
+                self.path.display()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Advance only packets whose operation actually succeeded. A copy retains its original;
+/// a move retires vanished source aliases and adds the observed destination.
+fn advance_packets(packets: &mut Vec<RetainedPacket>, aliases: &[PathBuf], to: &Path, copied: bool, fs: &dyn MoveFs) {
+    let Some(mut packet) = packets.iter().find(|p| aliases.contains(&p.path)).cloned() else { return };
+    if !copied {
+        packets.retain(|p| !aliases.contains(&p.path) || fs.is_file(&p.path));
+    }
+    packet.path = to.to_path_buf();
+    if !packets.iter().any(|p| p.path == packet.path) {
+        packets.push(packet);
+    }
+}
+
+fn packet_aliases(packets: &[RetainedPacket], fs: &dyn MoveFs, from: &Path) -> Vec<PathBuf> {
+    packets.iter().filter(|p| p.path == from || fs.same_file(&p.path, from)).map(|p| p.path.clone()).collect()
+}
+
+impl SidecarMove {
+    fn validate_packets(&self, fs: &dyn MoveFs) -> std::result::Result<(), String> {
+        for packet in &self.companions {
+            packet.validate(fs)?;
+        }
+        Ok(())
+    }
+
+    /// Validate a queued retry and return the copy decision for this physical operation.
+    fn validate_repair(&self, fs: &dyn MoveFs) -> std::result::Result<bool, String> {
+        self.validate_packets(fs)?;
+        let respelling = is_respelling(fs, &self.from, &self.to);
+        // Batch rollback may have restored another photo using this source packet.
+        let copied = self.copied || (!respelling && fs.stem_sibling(&self.from).is_some());
+        if fs.exists(&self.to) && (copied || !respelling) {
+            return Err(format!("{} already exists while repairing {} → {}", self.to.display(), self.from.display(), self.to.display()));
+        }
+        Ok(copied)
+    }
+
+    fn needed(&self, fs: &dyn MoveFs) -> bool {
+        fs.is_file(&self.from) && !(fs.exists(&self.to) && (self.copied || !is_respelling(fs, &self.from, &self.to)))
+    }
+
+    fn touches(&self, fs: &dyn MoveFs, path: &Path) -> bool {
+        let same_path = |endpoint: &Path| {
+            endpoint == path
+                || fs.same_file(endpoint, path)
+                || (endpoint.file_name() == path.file_name()
+                    && endpoint.parent().zip(path.parent()).is_some_and(|(a, b)| a == b || fs.same_file(a, b)))
+        };
+        same_path(&self.from) || same_path(&self.to)
+    }
+
+    fn apply(&self, fs: &dyn MoveFs) -> std::io::Result<()> {
+        if self.copied { fs.copy_no_replace(&self.from, &self.to) } else { move_one(fs, &self.from, &self.to) }
+    }
+}
+
+/// Complete known unfinished sidecars before moving any more photos. Completed operations
+/// leave the queue; a failure retains that operation and the rest, without replacing a file.
+pub(crate) fn retry_sidecars(fs: &dyn MoveFs, pending: &mut Vec<SidecarMove>) -> std::result::Result<(), String> {
+    validate_sidecars(fs, pending)?;
+    while !pending.is_empty() {
+        apply_repair(fs, pending, 0)?;
+    }
+    Ok(())
+}
+
+/// Preflight a detached history entry before global queues are allowed to retire. The
+/// caller can validate without mutating it; retry revalidates before each physical operation.
+pub(crate) fn validate_sidecars(fs: &dyn MoveFs, pending: &[SidecarMove]) -> std::result::Result<(), String> {
+    for repair in pending {
+        repair.validate_repair(fs)?;
+    }
+    Ok(())
+}
+
+/// Finish one operation and transfer its observed content to the remaining repairs. Do not
+/// infer ownership by reading an occupied destination or by retaining a planned pathname.
+fn apply_repair(fs: &dyn MoveFs, pending: &mut Vec<SidecarMove>, i: usize) -> std::result::Result<(), String> {
+    let Some(mut repair) = pending.get(i).cloned() else { return Ok(()) };
+    repair.copied = repair.validate_repair(fs)?;
+    let aliases = packet_aliases(&repair.companions, fs, &repair.from);
+    repair.apply(fs).map_err(|e| format!("rename {} → {}: {e}", repair.from.display(), repair.to.display()))?;
+    for remaining in pending.iter_mut() {
+        advance_packets(&mut remaining.companions, &aliases, &repair.to, repair.copied, fs);
+    }
+    pending.remove(i);
+    Ok(())
+}
+
+/// Repair only operations that affect a sidecar being saved. Unrelated unavailable originals
+/// must not block healthy metadata saves. Completed repairs retire; failures stay queued.
+pub(crate) fn retry_sidecars_for_paths(fs: &dyn MoveFs, pending: &mut Vec<SidecarMove>, paths: &[PathBuf]) -> std::result::Result<(), String> {
+    for repair in pending.iter().filter(|m| paths.iter().any(|path| m.touches(fs, path))) {
+        repair.validate_repair(fs)?;
+    }
+    let mut i = 0;
+    while let Some(m) = pending.get(i) {
+        if paths.iter().any(|path| m.touches(fs, path)) {
+            // Path/alias equality only locates an observation; validation above proves its
+            // content. A newly occupied, previously absent peer destination is a collision.
+            if let Some(path) = paths.iter().find(|path| {
+                fs.exists(path)
+                    && !fs.same_file(path, &m.from)
+                    && !fs.same_file(path, &m.to)
+                    && !m.companions.iter().any(|known| fs.same_file(path, &known.path))
+            }) {
+                return Err(format!("{} already exists while repairing {} → {}", path.display(), m.from.display(), m.to.display()));
+            }
+            apply_repair(fs, pending, i)?;
+        } else {
+            i += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Every record came from an actual packet observed before this move. Successful physical
+/// operations have already advanced its path; missing planned destinations are not recorded.
+fn note_companions(pending: &mut [SidecarMove], packets: Vec<RetainedPacket>) {
+    for repair in pending {
+        repair.companions.clone_from(&packets);
+    }
+}
+
 /// Why [`move_file`] failed, and what it left behind.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MoveError {
@@ -428,6 +672,7 @@ pub struct MoveError {
     /// The file itself ended up at the new path: it moved, a sidecar didn't, and moving the file
     /// back failed too. Its sidecars that did move stay with it.
     pub moved: bool,
+    pub(crate) pending_sidecars: Vec<SidecarMove>,
 }
 
 impl std::fmt::Display for MoveError {
@@ -447,53 +692,82 @@ pub(crate) fn move_file_with(fs: &dyn MoveFs, from: &str, to: &str) -> std::resu
     if Path::new(from) == Path::new(to) {
         return Ok(());
     }
-    let fail = |message: String| MoveError { message, moved: false };
+    let fail = |message: String| MoveError { message, moved: false, pending_sidecars: Vec::new() };
     let (f, t) = (Path::new(from), Path::new(to));
     // `to` may be this very file spelled differently (case-insensitive volume); any other file
     // there — e.g. `img.jpg` next to `IMG.JPG` on a case-sensitive volume — is never replaced
     if fs.exists(t) && !is_respelling(fs, f, t) {
         return Err(fail(format!("{to} already exists")));
     }
+    let mut packets: Vec<RetainedPacket> = sidecars(from)
+        .into_iter()
+        .map(|(p, _, _)| p)
+        .filter(|p| fs.is_file(p))
+        .map(|path| RetainedPacket { version: fs.packet_version(&path).ok(), path })
+        .collect();
     move_one(fs, f, t).map_err(|e| fail(format!("rename {from}: {e}")))?;
-    // sidecars moved (or copied: `true`)
-    let mut done: Vec<(PathBuf, PathBuf, bool)> = Vec::new();
-    for (sc, naming, upper) in sidecars(from) {
-        if !fs.is_file(&sc) {
-            continue;
-        }
+    let mut done: Vec<SidecarMove> = Vec::new();
+    let mut remaining = sidecars(from).into_iter().filter(|(sc, _, _)| fs.is_file(sc)).map(|(sc, naming, upper)| {
         let mut dst = crate::sidecar::sidecar_path(to, naming);
         if upper {
             dst = dst.with_extension("XMP");
         }
-        // a stem sidecar another file still uses (`IMG_1.xmp` of `IMG_1.CR3` and `IMG_1.JPG`)
-        // is copied, not taken away from it (issue #92)
-        let shared = naming == SidecarNaming::Stem && fs.stem_sibling(&sc).is_some();
-        if fs.exists(&dst) && (shared || !is_respelling(fs, &sc, &dst)) {
+        // A stem sidecar another photo still uses is copied, not taken away (issue #92).
+        let copied = naming == SidecarNaming::Stem && fs.stem_sibling(&sc).is_some();
+        SidecarMove { from: sc, to: dst, copied, companions: Vec::new() }
+    });
+    while let Some(m) = remaining.next() {
+        if !m.needed(fs) {
             continue; // never overwrite: the old sidecar stays where it was
         }
-        let r = if shared { fs.copy_no_replace(&sc, &dst) } else { move_one(fs, &sc, &dst) };
-        if let Err(e) = r {
-            let mut message = format!("rename {}: {e}", sc.display());
-            // the file first: if it can't go back, the sidecars that moved stay with it
+        let aliases = packet_aliases(&packets, fs, &m.from);
+        if let Err(e) = m.apply(fs) {
+            let mut message = format!("rename {}: {e}", m.from.display());
+            // The file first: if it can't go back, sidecars that moved stay with it.
             if let Err(e) = move_one(fs, t, f) {
                 message.push_str(&format!("; {from} could not be moved back ({e}): it is now {to}"));
                 if !done.is_empty() {
-                    let names: Vec<String> = done.iter().map(|(_, b, _)| b.display().to_string()).collect();
+                    let names: Vec<String> = done.iter().map(|m| m.to.display().to_string()).collect();
                     message.push_str(&format!(" with its sidecar {}", names.join(", ")));
                 }
-                return Err(MoveError { message, moved: true });
+                let mut pending_sidecars = vec![m];
+                for m in remaining.filter(|m| m.needed(fs)) {
+                    // The two case spellings can name one file. Keep one operation for
+                    // those aliases, while retaining distinct sidecars on sensitive volumes.
+                    let alias = pending_sidecars.iter().any(|p| {
+                        folded_path(&p.from.to_string_lossy()) == folded_path(&m.from.to_string_lossy())
+                            && folded_path(&p.to.to_string_lossy()) == folded_path(&m.to.to_string_lossy())
+                            && fs.same_file(&p.from, &m.from)
+                    });
+                    if !alias {
+                        pending_sidecars.push(m);
+                    }
+                }
+                note_companions(&mut pending_sidecars, packets);
+                return Err(MoveError { message, moved: true, pending_sidecars });
             }
-            for (a, b, copied) in done.iter().rev() {
-                if *copied {
-                    // the original is still there: the copy just goes (a leftover copy loses nothing)
-                    let _ = fs.remove_file(b);
-                } else if let Err(e) = move_one(fs, b, a) {
-                    message.push_str(&format!("; sidecar {} could not be moved back ({e}): it is now {}", a.display(), b.display()));
+            let mut pending_sidecars = Vec::new();
+            for m in done.iter().rev() {
+                if m.copied {
+                    // The original is still there: a leftover copy loses nothing.
+                    if fs.remove_file(&m.to).is_ok() {
+                        packets.retain(|p| p.path != m.to);
+                    }
+                } else {
+                    let aliases = packet_aliases(&packets, fs, &m.to);
+                    if let Err(e) = move_one(fs, &m.to, &m.from) {
+                        message.push_str(&format!("; sidecar {} could not be moved back ({e}): it is now {}", m.from.display(), m.to.display()));
+                        pending_sidecars.push(SidecarMove { from: m.to.clone(), to: m.from.clone(), copied: false, companions: Vec::new() });
+                    } else {
+                        advance_packets(&mut packets, &aliases, &m.from, false, fs);
+                    }
                 }
             }
-            return Err(fail(message));
+            note_companions(&mut pending_sidecars, packets);
+            return Err(MoveError { message, moved: false, pending_sidecars });
         }
-        done.push((sc, dst, shared));
+        advance_packets(&mut packets, &aliases, &m.to, m.copied, fs);
+        done.push(m);
     }
     Ok(())
 }
@@ -505,6 +779,8 @@ pub(crate) struct BatchMoveError {
     pub message: String,
     /// Moves that stayed done, (from, to): those files are at `to` now.
     pub stuck: Vec<(String, String)>,
+    /// Sidecars still separated from the path where their photo ended up, in either direction.
+    pub pending_sidecars: Vec<SidecarMove>,
 }
 
 /// Move the files `moves` names, all or nothing: after a failure the earlier moves are undone.
@@ -517,30 +793,41 @@ pub(crate) fn move_all(fs: &dyn MoveFs, moves: &[(String, String)]) -> std::resu
             continue;
         };
         let mut message = e.message;
+        let mut pending_sidecars = e.pending_sidecars;
         let mut stuck = Vec::new();
         if e.moved {
             stuck.push(m.clone());
         }
         for d in done.iter().rev() {
-            if let Err(e) = move_file_with(fs, &d.1, &d.0) {
+            if let Err(mut e) = move_file_with(fs, &d.1, &d.0) {
                 message.push_str(&format!("; {} could not be moved back to {}: {}", d.1, d.0, e.message));
                 if !e.moved {
                     stuck.push((*d).clone());
                 }
+                pending_sidecars.append(&mut e.pending_sidecars);
             }
         }
-        return Err(BatchMoveError { message, stuck });
+        return Err(BatchMoveError { message, stuck, pending_sidecars });
     }
     Ok(())
 }
 
-/// The `SetFile` ops in `op` (nested batches included) that point a photo at one of `to`.
+/// Final `SetFile` per photo (nested batches included), filtered by destination only afterward.
 fn set_file_ops_to(op: &Op, to: &HashSet<&str>, out: &mut Vec<Op>) {
-    match op {
-        Op::Batch { ops } => ops.iter().for_each(|o| set_file_ops_to(o, to, out)),
-        Op::SetFile { source: Source::File { path }, .. } if to.contains(path.as_str()) => out.push(op.clone()),
-        _ => {}
+    let mut pending = vec![op];
+    let mut order = Vec::new();
+    let mut final_ops = HashMap::new();
+    while let Some(op) = pending.pop() {
+        match op {
+            Op::Batch { ops } => pending.extend(ops.iter().rev()),
+            Op::SetFile { id, .. } if final_ops.insert(*id, op).is_none() => order.push(*id),
+            _ => {}
+        }
     }
+    out.extend(order.into_iter().filter_map(|id| {
+        let op = final_ops.get(&id).copied()?;
+        matches!(op, Op::SetFile { source: Source::File { path }, .. } if to.contains(path.as_str())).then(|| op.clone())
+    }));
 }
 
 /// The photos among `ids` a rename handles, in order: photos sharing one file (virtual copies)
@@ -650,8 +937,69 @@ impl Session {
         self.apply_rename_with(&RealFs, plans)
     }
 
+    /// Complete retained repairs before a file or folder change can stale their exact paths.
+    pub(crate) fn repair_sidecars_with(&mut self, fs: &dyn MoveFs) -> Result<()> {
+        for repair in self.pending_sidecar_repairs.iter().chain(self.undo.iter().chain(&self.redo).flat_map(|e| &e.retry_sidecars)) {
+            repair.validate_repair(fs).map_err(EngineError::Other)?;
+        }
+        retry_sidecars(fs, &mut self.pending_sidecar_repairs).map_err(EngineError::Other)?;
+        for entry in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            retry_sidecars(fs, &mut entry.retry_sidecars).map_err(EngineError::Other)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn repair_sidecars_for_paths(&mut self, paths: &[PathBuf], fs: &dyn MoveFs) -> Result<()> {
+        self.validate_sidecar_packets_for_paths(paths, fs)?;
+        retry_sidecars_for_paths(fs, &mut self.pending_sidecar_repairs, paths).map_err(EngineError::Other)?;
+        for entry in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            retry_sidecars_for_paths(fs, &mut entry.retry_sidecars, paths).map_err(EngineError::Other)?;
+        }
+        Ok(())
+    }
+
+    /// A healthy shared packet may be saved while another photo's repair is unavailable.
+    /// Check its retained content too, without forcing that unrelated physical operation.
+    pub(crate) fn validate_sidecar_packets_for_paths(&self, paths: &[PathBuf], fs: &dyn MoveFs) -> Result<()> {
+        for repair in self.pending_sidecar_repairs.iter().chain(self.undo.iter().chain(&self.redo).flat_map(|e| &e.retry_sidecars)) {
+            if paths.iter().any(|path| repair.touches(fs, path)) {
+                repair.validate_repair(fs).map_err(EngineError::Other)?;
+            } else {
+                for packet in &repair.companions {
+                    if paths.iter().any(|path| fs.same_file(path, &packet.path)) {
+                        packet.validate(fs).map_err(EngineError::Other)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Only a successful application write updates a retained content version. Atomic writes
+    /// replace inodes; aliases that now resolve to the written path observe the new content.
+    pub(crate) fn note_sidecar_write(&mut self, path: &Path, bytes: &[u8]) {
+        let version = PacketVersion::of(bytes);
+        for repair in self.pending_sidecar_repairs.iter_mut().chain(self.undo.iter_mut().chain(&mut self.redo).flat_map(|e| &mut e.retry_sidecars)) {
+            for packet in &mut repair.companions {
+                if RealFs.same_file(path, &packet.path) {
+                    packet.version = Some(version);
+                }
+            }
+        }
+    }
+
     /// [`Session::apply_rename`] on the file system `fs`.
     pub(crate) fn apply_rename_with(&mut self, fs: &dyn MoveFs, plans: &[RenamePlan]) -> Result<usize> {
+        self.apply_file_plans(fs, plans, &|n| format!("Rename {n} Photo{}", if n == 1 { "" } else { "s" }))
+    }
+
+    /// Carry out `plans` (renames or moves to another folder): move the files with their sidecars
+    /// (all or nothing), then commit one undoable op, labelled `label(count)`, that points the
+    /// photos (and their virtual copies) at the new paths. Undo moves the files back.
+    pub(crate) fn apply_file_plans(&mut self, fs: &dyn MoveFs, plans: &[RenamePlan], label: &dyn Fn(usize) -> String) -> Result<usize> {
+        // A partly completed rename can already have the requested photo name. Repair
+        // its sidecars before treating that empty move list as a successful retry.
+        self.repair_sidecars_with(fs)?;
         let mut ops = Vec::new();
         let by_path: HashMap<&str, &RenamePlan> = plans.iter().filter_map(|p| p.from_path.as_deref().map(|f| (f, p))).collect();
         for p in self.catalog.photos() {
@@ -679,10 +1027,10 @@ impl Session {
             })
             .collect();
         if let Err(e) = move_all(fs, &moves) {
-            return Err(EngineError::Other(self.follow_stuck(&op, e, true)));
+            return Err(EngineError::Other(self.follow_stuck(&op, e, true).0));
         }
         if n > 0
-            && let Err(err) = self.commit(&format!("Rename {n} Photo{}", if n == 1 { "" } else { "s" }), op)
+            && let Err(err) = self.commit(&label(n), op)
         {
             let back: Vec<(String, String)> = moves.iter().rev().map(|(a, b)| (b.clone(), a.clone())).collect();
             if let Err(e) = move_all(fs, &back) {
@@ -695,11 +1043,13 @@ impl Session {
 
     /// After a failed batch of moves for `op`: point the photos whose files stayed moved at
     /// their new paths (an undoable "partly" rename when `undoable`, otherwise a plain logged
-    /// change), so the library matches the disk. Returns the message for the user.
-    pub(crate) fn follow_stuck(&mut self, op: &Op, e: BatchMoveError, undoable: bool) -> String {
+    /// change), so the library matches the disk. Returns the message and, for a history retry,
+    /// the correction's inverse file ops (so a retry doesn't lose the original paths).
+    pub(crate) fn follow_stuck(&mut self, op: &Op, e: BatchMoveError, undoable: bool) -> (String, Vec<Op>) {
         let mut msg = e.message;
-        if e.stuck.is_empty() {
-            return msg;
+        let pending_sidecars = e.pending_sidecars;
+        if e.stuck.is_empty() && (!undoable || pending_sidecars.is_empty()) {
+            return (msg, Vec::new());
         }
         let to: HashSet<&str> = e.stuck.iter().map(|m| m.1.as_str()).collect();
         let mut keep = Vec::new();
@@ -708,55 +1058,96 @@ impl Session {
         let n = e.stuck.len();
         let s = if n == 1 { "" } else { "s" };
         let fix = Op::Batch { ops: keep };
+        let mut inverses = Vec::new();
         let applied = if undoable {
-            self.commit(&format!("Rename {n} Photo{s} (partly)"), fix)
+            let label = if n == 0 { "Repair Rename Sidecars".to_string() } else { format!("Rename {n} Photo{s} (partly)") };
+            self.commit(&label, fix).map(|()| {
+                if let Some(entry) = self.undo.last_mut() {
+                    entry.retry_sidecars.extend(pending_sidecars);
+                }
+            })
         } else {
-            match self.catalog.apply(fix.clone()) {
-                Ok(_) => {
+            match self.apply_catalog(fix.clone()) {
+                Ok(inv) => {
+                    inverses = match inv {
+                        Op::Batch { ops } => ops,
+                        op => vec![op],
+                    };
                     self.pending_log.push(fix);
                     Ok(())
                 }
-                Err(e) => Err(e.into()),
+                Err(e) => Err(e),
             }
         };
         match applied {
-            Ok(()) => msg
+            Ok(()) if n > 0 => msg
                 .push_str(&format!(". {n} file{s} could not be moved back and kept the new name; the library now points there: {}", list.join(", "))),
+            Ok(()) => {}
             Err(err) => msg.push_str(&format!(
                 ". {n} file{s} could not be moved back and the library could not follow ({err}); relink with Find Missing Photos: {}",
                 list.join(", ")
             )),
         }
-        msg
+        (msg, inverses)
     }
 
-    /// File moves an undo/redo op implies: `SetFile` ops whose source path differs from the photo's
-    /// current one.
+    /// Physical moves to the final `SetFile` destination of each photo. A merged history
+    /// batch can rename the same photo repeatedly; intermediate catalog paths need no file.
     pub(crate) fn file_moves(&self, op: &Op) -> Vec<(String, String)> {
-        fn rec(s: &Session, op: &Op, v: &mut Vec<(String, String)>) {
+        let mut pending = vec![op];
+        let mut order = Vec::new();
+        let mut targets = HashMap::new();
+        while let Some(op) = pending.pop() {
             match op {
-                Op::Batch { ops } => ops.iter().for_each(|o| rec(s, o, v)),
-                Op::SetFile { id, source: Source::File { path: to }, .. } => {
-                    if let Some(Source::File { path: from }) = s.catalog.photo(*id).map(|p| &p.source)
-                        && Path::new(from) != Path::new(to)
-                        && !v.iter().any(|(f, _)| f == from)
-                    {
-                        v.push((from.clone(), to.clone()));
-                    }
+                Op::Batch { ops } => pending.extend(ops.iter().rev()),
+                Op::SetFile { id, source, .. } if targets.insert(*id, source).is_none() => {
+                    order.push(*id);
                 }
                 _ => {}
             }
         }
-        let mut v = Vec::new();
-        rec(self, op, &mut v);
-        v
+        // Virtual copies share one physical move, keeping the original batch order.
+        let mut seen = HashSet::new();
+        order
+            .into_iter()
+            .filter_map(|id| {
+                let Source::File { path: to } = targets.get(&id).copied()? else { return None };
+                let Source::File { path: from } = &self.catalog.photo(id)?.source else { return None };
+                (Path::new(from) != Path::new(to) && seen.insert(from)).then(|| (from.clone(), to.clone()))
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    /// The cross-volume move's check compares files chunk by chunk: equal files across several
+    /// chunks, a difference in the last chunk, different lengths, a missing file.
+    #[test]
+    fn same_contents_compares_in_chunks() {
+        let dir = std::env::temp_dir().join(format!("lc-same-contents-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let big: Vec<u8> = (0..(2usize << 20) + 123).map(|i| (i % 251) as u8).collect();
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        std::fs::write(&a, &big).unwrap();
+        std::fs::write(&b, &big).unwrap();
+        assert!(same_contents(&a, &b).unwrap());
+        let mut other = big.clone();
+        *other.last_mut().unwrap() ^= 1;
+        std::fs::write(&b, &other).unwrap();
+        assert!(!same_contents(&a, &b).unwrap());
+        std::fs::write(&b, &big[..big.len() - 1]).unwrap();
+        assert!(!same_contents(&a, &b).unwrap());
+        std::fs::write(&a, b"").unwrap();
+        std::fs::write(&b, b"").unwrap();
+        assert!(same_contents(&a, &b).unwrap());
+        assert!(same_contents(&a, &dir.join("missing")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// A model volume: files by path with contents; case-insensitive (default APFS/NTFS) or
     /// case-sensitive (Linux, case-sensitive APFS). `fail` makes renames from a matching source fail.
@@ -791,6 +1182,10 @@ mod tests {
     }
 
     impl MoveFs for FakeFs {
+        fn packet_version(&self, path: &Path) -> std::io::Result<PacketVersion> {
+            let i = self.idx(path).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no such packet"))?;
+            self.files.borrow().get(i).map(|(_, bytes)| PacketVersion::of(bytes)).ok_or_else(|| std::io::Error::other("packet disappeared"))
+        }
         fn exists(&self, p: &Path) -> bool {
             self.idx(p).is_some()
         }
@@ -812,6 +1207,9 @@ mod tests {
             Ok(())
         }
         fn copy_no_replace(&self, a: &Path, b: &Path) -> std::io::Result<()> {
+            if self.fail.borrow().iter().any(|f| Self::norm(a).contains(f.as_str())) {
+                return Err(std::io::Error::other("injected failure"));
+            }
             if self.exists(b) {
                 return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "exists"));
             }
@@ -839,6 +1237,101 @@ mod tests {
         // the host's separator, so `dir.join(name)` in the planner spells the same path the same way
         let path = path.replace('/', std::path::MAIN_SEPARATOR_STR);
         Photo::new(PhotoId(id), Source::File { path }, &name, "JPG", 1, 1, "2026-01-01T00:00:00")
+    }
+
+    /// Compare the unfinished operation and every observed packet after partial progress.
+    /// Companion order is incidental; paths and recorded content versions are exact.
+    pub(crate) fn assert_repair_packets(actual: &SidecarMove, unfinished: &SidecarMove, packets: &[(PathBuf, &[u8])]) {
+        let mut expected = unfinished.clone();
+        expected.companions =
+            packets.iter().map(|(path, bytes)| RetainedPacket { path: path.clone(), version: Some(PacketVersion::of(bytes)) }).collect();
+        let mut actual = actual.clone();
+        actual.companions.sort_by(|a, b| a.path.cmp(&b.path));
+        expected.companions.sort_by(|a, b| a.path.cmp(&b.path));
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn folder_moves_repair_retained_sidecars_before_changing_paths() {
+        for command in ["folder.rename", "folder.move"] {
+            for queue in ["pending", "undo", "redo"] {
+                for (naming, copied) in [(SidecarNaming::Stem, false), (SidecarNaming::Full, false), (SidecarNaming::Stem, true)] {
+                    let root = crate::tests_xmp::temp_dir("folder-sidecar-repair");
+                    let from = root.join("Trip");
+                    std::fs::create_dir_all(&from).unwrap();
+                    let photo = from.join("b.jpg");
+                    std::fs::write(&photo, b"Photo bytes").unwrap();
+                    let old_sidecar = crate::sidecar::sidecar_path(&from.join("a.jpg").to_string_lossy(), naming);
+                    let sidecar = crate::sidecar::sidecar_path(&photo.to_string_lossy(), naming);
+                    std::fs::write(&old_sidecar, b"Retained edits").unwrap();
+                    // An ordinary occupied destination must block repair without replacing its bytes.
+                    std::fs::write(&sidecar, b"Other edits").unwrap();
+                    let mut s = Session::new();
+                    s.catalog.apply(Op::AddPhoto { photo: Box::new(file_photo(1, &photo.to_string_lossy())) }).unwrap();
+                    if copied {
+                        let sibling = from.join("a.raw");
+                        std::fs::write(&sibling, b"Shared original").unwrap();
+                        s.catalog.apply(Op::AddPhoto { photo: Box::new(file_photo(2, &sibling.to_string_lossy())) }).unwrap();
+                    }
+                    s.commit("Rating", Op::SetRating { id: PhotoId(1), rating: 3 }).unwrap();
+                    if queue == "redo" {
+                        s.undo_step().unwrap();
+                    }
+                    let repair = SidecarMove {
+                        from: old_sidecar.clone(),
+                        to: sidecar.clone(),
+                        copied,
+                        companions: vec![RetainedPacket { path: old_sidecar.clone(), version: Some(RealFs.packet_version(&old_sidecar).unwrap()) }],
+                    };
+                    match queue {
+                        "undo" => s.undo.last_mut().unwrap().retry_sidecars.push(repair),
+                        "redo" => s.redo.last_mut().unwrap().retry_sidecars.push(repair),
+                        _ => s.pending_sidecar_repairs.push(repair),
+                    }
+                    let params = if command == "folder.rename" {
+                        serde_json::json!({"path": from, "name": "Holiday"})
+                    } else {
+                        serde_json::json!({"path": from, "into": root.join("Archive")})
+                    };
+                    let to = if command == "folder.rename" { root.join("Holiday") } else { root.join("Archive/Trip") };
+                    let before = s.catalog.to_snapshot();
+                    let history = (s.undo.len(), s.redo.len());
+                    assert!(s.execute(command, &params).is_err());
+                    assert!(from.is_dir() && !to.exists());
+                    assert_eq!(s.catalog.to_snapshot(), before);
+                    assert_eq!((s.undo.len(), s.redo.len()), history);
+                    assert_eq!(std::fs::read(&old_sidecar).unwrap(), b"Retained edits");
+                    assert_eq!(std::fs::read(&sidecar).unwrap(), b"Other edits");
+                    std::fs::remove_file(&sidecar).unwrap();
+                    s.execute(command, &params).unwrap();
+                    assert!(s.pending_sidecar_repairs.is_empty());
+                    assert!(s.undo.iter().chain(&s.redo).all(|e| e.retry_sidecars.is_empty()));
+                    let moved_sidecar = to.join(sidecar.file_name().unwrap());
+                    assert_eq!(std::fs::read(&moved_sidecar).unwrap(), b"Retained edits");
+                    assert_eq!(to.join(old_sidecar.file_name().unwrap()).exists(), copied);
+                    for (step, current) in [("edit.undo", &from), ("edit.redo", &to)] {
+                        s.execute(step, &serde_json::json!({})).unwrap();
+                        assert_eq!(
+                            s.catalog.photo(PhotoId(1)).unwrap().source,
+                            Source::File { path: current.join("b.jpg").to_string_lossy().into_owned() }
+                        );
+                        assert_eq!(std::fs::read(current.join(sidecar.file_name().unwrap())).unwrap(), b"Retained edits");
+                        assert_eq!(current.join(old_sidecar.file_name().unwrap()).exists(), copied);
+                    }
+                    // Explicit IDs choose targets after the command's selection gate.
+                    s.execute("library.select", &serde_json::json!({"ids": [1], "active": 1})).unwrap();
+                    s.execute("photo.rename", &serde_json::json!({"ids": [1], "template": "Latest"})).unwrap();
+                    s.execute("edit.undo", &serde_json::json!({})).unwrap();
+                    assert!(to.join("b.jpg").is_file());
+                    assert_eq!(std::fs::read(&moved_sidecar).unwrap(), b"Retained edits");
+                    s.execute("edit.redo", &serde_json::json!({})).unwrap();
+                    assert!(to.join("Latest.jpg").is_file());
+                    let final_sidecar = crate::sidecar::sidecar_path(&to.join("Latest.jpg").to_string_lossy(), naming);
+                    assert_eq!(std::fs::read(final_sidecar).unwrap(), b"Retained edits");
+                    std::fs::remove_dir_all(root).unwrap();
+                }
+            }
+        }
     }
 
     #[cfg(windows)]
@@ -979,6 +1472,33 @@ mod tests {
         assert!(!e.moved);
         assert_eq!(fs.listing().len(), 3);
         assert!(fs.listing().iter().all(|(p, _)| p.starts_with("/p/d.")));
+    }
+
+    #[test]
+    fn pending_sidecars_preserve_shared_copies_and_do_not_repeat_case_aliases() {
+        // These are synthetic volume semantics; no host driver or OS runtime is involved.
+        for ci in [false, true] {
+            let fs = FakeFs::new(ci, &[("/p/a.CR3", "Raw"), ("/p/a.JPG", "Jpeg"), ("/p/a.XMP", "Shared edits"), ("/p/a.CR3.XMP", "Raw edits")]);
+            fs.fail.borrow_mut().extend(["/p/a.XMP".into(), "/p/b.CR3".into()]);
+            let mut error = move_file_with(&fs, "/p/a.CR3", "/p/b.CR3").unwrap_err();
+            assert!(error.moved);
+            assert_eq!(error.pending_sidecars.len(), 2);
+            assert!(error.pending_sidecars[0].copied);
+            assert!(!error.pending_sidecars[1].copied);
+            fs.fail.borrow_mut().clear();
+            retry_sidecars(&fs, &mut error.pending_sidecars).unwrap();
+            assert!(error.pending_sidecars.is_empty());
+            assert_eq!(
+                fs.listing(),
+                vec![
+                    ("/p/a.JPG".into(), "Jpeg".into()),
+                    ("/p/a.XMP".into(), "Shared edits".into()),
+                    ("/p/b.CR3".into(), "Raw".into()),
+                    ("/p/b.CR3.XMP".into(), "Raw edits".into()),
+                    ("/p/b.XMP".into(), "Shared edits".into()),
+                ]
+            );
+        }
     }
 
     /// Issue #92 (comment): renaming one of `IMG_1.CR3` + `IMG_1.JPG` copies their shared

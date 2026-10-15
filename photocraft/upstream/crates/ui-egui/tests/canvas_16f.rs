@@ -17,13 +17,7 @@ use photocraft_ui_egui::PhotocraftApp;
 use photocraft_ui_egui::gpu_canvas::{self, GpuCanvas};
 use serde_json::json;
 
-/// Concurrent wgpu devices in one process crash on some drivers (Mesa llvmpipe over GL, RADV;
-/// see #194), so every test here holds this lock for its whole run, devices included.
-static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn gpu_lock() -> std::sync::MutexGuard<'static, ()> {
-    GPU_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
+use photocraft_testkit::gpu_lock;
 
 /// A headless GPU canvas on a device created like the app's, if the adapter has a float canvas.
 fn canvas() -> Option<(GpuCanvas, RenderState)> {

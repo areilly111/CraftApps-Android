@@ -31,18 +31,7 @@ pub const SIBLINGS: &[(&str, &str, &str)] = &[
 pub const ABOUT_TABS: [&str; 3] = ["About", "Contributors", "Models"];
 
 /// Paint the ArtCraft mark into `rect` (square), rasterised once per size and cached.
-///
-/// On Android this draws a neutral rounded square instead: the ArtCraft mark
-/// is trademarked and must not ship in unofficial ports (see LICENSE-brand.txt).
 pub fn paint_mark(ui: &egui::Ui, rect: Rect, color: Color32) {
-    #[cfg(target_os = "android")]
-    {
-        // Trademark-safe placeholder: brand-colored rounded square.
-        ui.painter().rect_filled(rect, rect.width() * 0.22, color);
-        return;
-    }
-    #[cfg(not(target_os = "android"))]
-    {
     use designcraft_render::vello_cpu::{self, kurbo, peniko};
     let ctx = ui.ctx();
     let ppp = ctx.pixels_per_point();
@@ -70,7 +59,6 @@ pub fn paint_mark(ui: &egui::Ui, rect: Rect, color: Color32) {
     let side = rect.width().min(rect.height());
     let r = Rect::from_center_size(rect.center(), vec2(side, side));
     ui.painter().image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-    } // cfg(not(target_os = "android"))
 }
 
 /// A speech-bubble glyph (drawn in code) for Discord buttons.
@@ -169,14 +157,6 @@ pub fn show(app: &mut DesignApp, ctx: &egui::Context) {
                     .size(13.0)
                     .color(t.text),
             ));
-            #[cfg(target_os = "android")]
-            ui.label(crate::rtl::widget(
-                ui,
-                egui::RichText::new("Unofficial Android port — based on DesignCraft by the ArtCraft team.")
-                    .size(12.0)
-                    .color(t.text_dim),
-            ));
-            #[cfg(not(target_os = "android"))]
             ui.label(crate::rtl::widget(
                 ui,
                 egui::RichText::new(crate::i18n::tr(&app.ui.language, "Part of the ArtCraft suite of open creative tools."))

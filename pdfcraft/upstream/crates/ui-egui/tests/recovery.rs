@@ -232,13 +232,108 @@ fn a_cancelled_recovery_password_does_not_attach_to_the_next_unlocked_document()
 }
 
 #[test]
-fn incomplete_entries_are_ignored_and_cleaned_up() {
+fn incomplete_entries_are_preserved_until_explicitly_discarded() {
     let s = store("partial");
     std::fs::create_dir_all(s.dir()).unwrap();
-    std::fs::write(s.dir().join("orphan.pdf"), b"%PDF-1.7").unwrap();
+    let bytes = fixture(1);
+    std::fs::write(s.dir().join("orphan.pdf"), &bytes).unwrap();
     std::fs::write(s.dir().join("broken.json"), b"{ not json").unwrap();
-    assert!(s.list().is_empty());
-    assert_eq!(files_in(&s), 0);
+    for _ in 0..2 {
+        let entries = s.list();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, "orphan");
+        assert_eq!(entries[0].path, None);
+        assert_eq!(s.read("orphan").unwrap(), bytes);
+        assert_eq!(files_in(&s), 2, "listing must not remove any recovery files");
+    }
+    s.clear();
+    assert!(!s.dir().join("orphan.pdf").exists());
+    assert_eq!(files_in(&s), 0, "metadata without a snapshot holds no work and is cleared too");
+}
+
+#[test]
+fn a_failed_metadata_write_keeps_the_completed_snapshot_recoverable() {
+    let s = store("metadata-write-failure");
+    let meta = pdfcraft_ui_egui::RecoveryMeta {
+        key: "snapshot".into(),
+        name: "work.pdf".into(),
+        path: Some("original.pdf".into()),
+        saved_at: 1,
+        encrypted: false,
+    };
+    // A directory at the sidecar path makes its atomic rename fail after the PDF was written.
+    std::fs::create_dir_all(s.dir().join("snapshot.json")).unwrap();
+    let bytes = fixture(2);
+    assert!(s.write(&meta, &bytes).is_err());
+    assert_eq!(s.read("snapshot").unwrap(), bytes);
+    let entries = s.list();
+    assert_eq!(s.read("snapshot").unwrap(), bytes, "a failed sidecar write must not lose the PDF");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].key, "snapshot");
+    assert_eq!(entries[0].path, None, "an unknown original path must require Save As");
+}
+
+#[test]
+fn missing_corrupt_or_mismatched_metadata_recovers_the_snapshot_without_an_original_path() {
+    for case in ["missing", "corrupt", "mismatched"] {
+        let s = store(case);
+        crashed_session(&s, fixture(3), None, Some("original.pdf"));
+        let mut meta = s.list().remove(0);
+        let saved = s.read(&meta.key).unwrap();
+        let sidecar = s.dir().join(format!("{}.json", meta.key));
+        match case {
+            "missing" => std::fs::remove_file(&sidecar).unwrap(),
+            "corrupt" => std::fs::write(&sidecar, b"{ not json").unwrap(),
+            _ => {
+                meta.key = "other-snapshot".into();
+                std::fs::write(&sidecar, serde_json::to_vec(&meta).unwrap()).unwrap();
+            }
+        }
+        let mut h = harness(s.clone());
+        h.get_by_label("Recover").click();
+        h.run_steps(4);
+        let app = h.state();
+        assert_eq!(app.views.len(), 1, "{case}");
+        let doc = app.session.get(app.views[0].id).unwrap();
+        assert!(doc.dirty);
+        assert_eq!(doc.path, None);
+        assert_eq!(doc.info.pages.len(), 2, "the edit survived missing metadata: {case}");
+        let recovered = s.list();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(s.read(&recovered[0].key).unwrap(), saved);
+        // The damaged sidecar was replaced with metadata for the recovered snapshot.
+        let sidecar: pdfcraft_ui_egui::RecoveryMeta = serde_json::from_slice(&std::fs::read(&sidecar).unwrap()).unwrap();
+        assert_eq!((sidecar.key.as_str(), sidecar.path.as_deref()), (recovered[0].key.as_str(), None), "{case}");
+    }
+}
+
+#[test]
+fn an_encrypted_snapshot_without_metadata_still_requires_its_password() {
+    let s = store("encrypted-orphan");
+    crashed_session(&s, encrypted(fixture(2), "pw"), Some("pw"), Some("original.pdf"));
+    let meta = s.list().remove(0);
+    let saved = s.read(&meta.key).unwrap();
+    std::fs::remove_file(s.dir().join(format!("{}.json", meta.key))).unwrap();
+    let mut h = harness(s.clone());
+    h.get_by_label("Recover").click();
+    h.run_steps(3);
+    assert!(h.state().views.is_empty());
+    let field = h.get_by_role(Role::PasswordInput);
+    field.focus();
+    field.type_text("pw");
+    h.run_steps(2);
+    h.key_press(Key::Enter);
+    h.run_steps(4);
+    let app = h.state();
+    assert_eq!(app.views.len(), 1);
+    let doc = app.session.get(app.views[0].id).unwrap();
+    assert!(doc.dirty);
+    assert_eq!(doc.path, None);
+    assert_eq!(doc.info.pages.len(), 1);
+    assert_eq!(s.read(&meta.key).unwrap(), saved, "recovery must not rewrite encrypted bytes");
+    let sidecar: pdfcraft_ui_egui::RecoveryMeta =
+        serde_json::from_slice(&std::fs::read(s.dir().join(format!("{}.json", meta.key))).unwrap()).unwrap();
+    assert!(sidecar.encrypted, "the replacement metadata records that the snapshot is encrypted");
 }
 
 /// Through the control channel, the reply to a click comes after the click's effects: state read

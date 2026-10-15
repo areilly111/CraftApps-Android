@@ -236,7 +236,7 @@ impl<'a> Scene<'a> {
         if n.blend != BlendMode::Normal {
             self.warn(BLENDING);
         }
-        if n.mask.as_ref().is_some_and(|m| !m.disabled) {
+        if n.extras().mask.as_ref().is_some_and(|m| !m.disabled) {
             self.warn(MASKS);
         }
         let raster = |fx: &[vectorcraft_doc::Effect]| fx.iter().any(|e| e.visible && vectorcraft_effects::is_raster(&e.id));

@@ -151,6 +151,7 @@ impl Builder {
             bg.prune();
             let mut l = Layer::new("Background", LayerContent::Raster(bg));
             l.locks.transparency = true;
+            l.locks.position = true;
             layers.insert(0, l);
         }
         self.doc.layers = layers;

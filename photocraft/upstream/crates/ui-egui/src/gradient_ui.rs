@@ -26,6 +26,10 @@ use crate::state::Tool;
 use crate::theme::Tokens;
 use crate::widgets;
 
+#[cfg(test)]
+mod editor_tests;
+mod properties_panel;
+
 /// Id of the temporary layer previewing a new gradient while it is drawn.
 pub const PREVIEW_LAYER: LayerId = LayerId(u64::MAX - 78);
 /// Tag of this module's canvas preview keys.
@@ -76,7 +80,7 @@ pub struct LiveGradient {
 /// Painting into a layer mask, an alpha channel or the Quick Mask stays classic (pixels), except
 /// that a selected gradient fill layer is always edited live (selecting it targets its mask).
 pub fn live_mode(app: &PhotocraftApp) -> bool {
-    if app.ui.tool != Tool::Gradient || app.ui.tool_options.gradient_classic {
+    if app.active_tool() != Tool::Gradient || app.ui.tool_options.gradient_classic {
         return false;
     }
     match crate::canvas::paint_target(app).as_str() {
@@ -545,8 +549,8 @@ pub fn thumbnail_image(f: &Fill) -> Option<egui::ColorImage> {
     Some(egui::ColorImage::new([THUMB_PX as usize; 2], rgba))
 }
 
-/// Paints a gradient fill layer's thumbnail into `rect` over a checkerboard (opacity stops show
-/// through), cached per layer until its fill changes. Returns `false` for other fills.
+/// Paints a gradient fill layer's inset thumbnail and fill marker into `rect`, over a
+/// checkerboard (opacity stops show through). Cached until its fill changes; `false` for other fills.
 pub fn paint_thumbnail(ui: &egui::Ui, layer: LayerId, f: &Fill, rect: Rect) -> bool {
     if !matches!(f, Fill::Gradient { .. }) {
         return false;
@@ -565,8 +569,10 @@ pub fn paint_thumbnail(ui: &egui::Ui, layer: LayerId, f: &Fill, rect: Rect) -> b
     };
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
-        widgets::checker(p, rect, 5.0);
-        p.image(tex.id(), rect, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
+        crate::solid_fill_ui::thumbnail_frame(ui, rect, |swatch| {
+            widgets::checker(p, swatch, 3.0);
+            p.image(tex.id(), swatch, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
+        });
     }
     true
 }
@@ -595,10 +601,9 @@ fn selected_gradient(app: &PhotocraftApp) -> Option<Layer> {
 }
 
 /// The Gradient Editor window the options-bar swatch opens, standing in for Photoshop's Gradient
-/// Editor. A selected gradient fill layer gets the full editor — the same "Gradient" (stops) and
-/// "Gradient Options" sections the Properties panel shows. With no gradient fill layer selected
-/// there is nothing to edit yet (a live gradient is created by dragging on the canvas, and a
-/// classic one is a preset), so the window says so and offers the Gradients panel.
+/// Editor. A selected gradient fill layer gets a combined ramp, with opacity above and colour
+/// below, selected-stop fields and Gradient Options. Without a gradient fill layer, the same
+/// stop controls edit the tool's current gradient and offer saving it as a preset.
 pub fn editor_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if !app.ui.panels.gradient_editor {
         return;
@@ -614,7 +619,7 @@ pub fn editor_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .resizable(true)
         .default_width(330.0)
         .show(ctx, |ui| match &layer {
-            Some(l) => properties(app, ui, l),
+            Some(l) => properties_panel::editor(app, ui, l),
             None => {
                 // Photoshop's editor edits the gradient the tool paints with, so with no gradient
                 // fill layer around the strip edits the current gradient in place.
@@ -671,96 +676,9 @@ pub fn options_changed(app: &mut PhotocraftApp, before: &crate::state::ToolOptio
 
 // ---------------------------------------------------------------- Properties panel
 
-/// Width of the Properties label column ("Style", "Angle", "Scale").
-const PROP_LABEL_W: f32 = 38.0;
-
-/// Commits a numeric field once (drag released, Enter, focus lost); `None` while editing.
-fn field(ui: &mut egui::Ui, id: &str, current: f32, range: std::ops::RangeInclusive<f32>, suffix: &str, width: f32) -> Option<f32> {
-    let key = egui::Id::new(("gradient-fill-field", id));
-    let mut v = ui.data(|d| d.get_temp::<f32>(key)).unwrap_or(current);
-    let resp = widgets::value_field(ui, &mut v, range, suffix, width);
-    if resp.dragged() || resp.has_focus() {
-        ui.data_mut(|d| d.insert_temp(key, v));
-        return None;
-    }
-    ui.data_mut(|d| d.remove::<f32>(key));
-    (resp.drag_stopped() || resp.lost_focus() || resp.changed()).then_some(v).filter(|v| (*v - current).abs() > 1e-3)
-}
-
-fn label(ui: &mut egui::Ui, text: &str) {
-    let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(PROP_LABEL_W, 22.0), Sense::hover());
-    ui.painter().text(pos2(r.left(), r.center().y), egui::Align2::LEFT_CENTER, tl!(text), egui::FontId::proportional(12.0), t.text_dim);
-}
-
-/// Properties panel sections for a gradient fill layer (`props_layout::section` headers):
-/// "Gradient" (the stops editor) and "Gradient Options" (style, angle, scale, reverse, dither,
-/// "Align with layer", Reset Alignment). Every change is one `gradient.fill.*` command.
+/// Properties panel for a live gradient. Every change uses the existing gradient commands.
 pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
-    use crate::props_layout::{COL_GAP, LABEL_GAP, field_width, section};
-    let Some(Fill::Gradient { angle, scale, style, reverse, dither, align, .. }) = fill_of(layer).cloned() else { return };
-    let id = layer.id.0;
-    let mut runs: Vec<Value> = Vec::new();
-    if section(ui, "gradient-fill", "Gradient") {
-        stops_editor(app, ui, layer);
-        ui.add_space(crate::theme::ROW_GAP);
-    }
-    if section(ui, "gradient-fill-options", "Gradient Options") {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = LABEL_GAP;
-            label(ui, "Style");
-            let mut s = cmds::style_name(style).to_string();
-            let opts: Vec<(String, &str)> =
-                [("linear", "Linear"), ("radial", "Radial"), ("angle", "Angle"), ("reflected", "Reflected"), ("diamond", "Diamond")]
-                    .iter()
-                    .map(|(k, l)| (k.to_string(), *l))
-                    .collect();
-            // Full width, lined up with the fields and Reset Alignment below.
-            let w = ui.available_width().max(60.0);
-            if widgets::dropdown(ui, "gradient-fill-style", &mut s, &opts, w) {
-                runs.push(json!({"style": s}));
-            }
-        });
-        ui.add_space(crate::theme::ROW_GAP);
-        // Two label+field columns filling the panel.
-        let w = field_width(ui.available_width(), 2, PROP_LABEL_W);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = LABEL_GAP;
-            label(ui, "Angle");
-            if let Some(v) = field(ui, &format!("angle{id}"), angle, -180.0..=180.0, "°", w) {
-                runs.push(json!({"angle": v}));
-            }
-            ui.add_space(COL_GAP - LABEL_GAP);
-            label(ui, "Scale");
-            if let Some(v) = field(ui, &format!("scale{id}"), scale * 100.0, 10.0..=150.0, "%", w) {
-                runs.push(json!({"scale": v}));
-            }
-        });
-        ui.add_space(crate::theme::ROW_GAP);
-        ui.horizontal_wrapped(|ui| {
-            let mut r = reverse;
-            if widgets::checkbox(ui, &mut r, "Reverse").changed() {
-                runs.push(json!({"reverse": r}));
-            }
-            let mut d = dither;
-            if widgets::checkbox(ui, &mut d, "Dither").changed() {
-                runs.push(json!({"dither": d}));
-            }
-            let mut a = align;
-            if widgets::checkbox(ui, &mut a, "Align with layer").changed() {
-                runs.push(json!({"align": a}));
-            }
-        });
-        ui.add_space(crate::theme::ROW_GAP);
-        if widgets::secondary_button(ui, "Reset Alignment", ui.available_width()).on_hover_text(tl!("Centre the gradient (offset 0, 0)")).clicked() {
-            runs.push(json!({"offset": [0, 0]}));
-        }
-        ui.add_space(crate::theme::ROW_GAP);
-    }
-    for mut p in runs {
-        p["layer"] = json!(id);
-        let _ = app.run(cmds::SET, p);
-    }
+    properties_panel::show(app, ui, layer);
 }
 
 /// Which marker of the stops editor is being dragged.
@@ -769,6 +687,15 @@ enum Marker {
     Color(usize),
     Opacity(usize),
     Mid(usize),
+}
+
+fn strip_key(app: &PhotocraftApp, sink: Sink) -> egui::Id {
+    // Layer IDs can repeat in different documents. Tool presets belong to the session.
+    let document = match sink {
+        Sink::Layer(_) => app.session.active().map(|s| s.doc.id),
+        Sink::Preset => None,
+    };
+    sink.key().with(document)
 }
 
 /// What a stops editor instance edits: a Gradient Fill layer (`gradient.fill.stop`) or the
@@ -781,6 +708,12 @@ enum Sink {
 }
 
 impl Sink {
+    fn fill(self, app: &PhotocraftApp) -> Option<Fill> {
+        match self {
+            Sink::Layer(id) => fill_of(app.session.active()?.doc.layer(id)?).cloned(),
+            Sink::Preset => preset_fill(app),
+        }
+    }
     /// Uniqueness for the drag state.
     fn key(self) -> egui::Id {
         match self {
@@ -805,15 +738,6 @@ impl Sink {
             p["layer"] = json!(id.0);
         }
         p
-    }
-}
-
-/// Photoshop's Gradient Editor strip: opacity stops above the ramp, colour stops and midpoints
-/// below. Drag a stop to move it (off the strip to delete it), click above / below to add one,
-/// double-click a colour stop for the Color Picker.
-fn stops_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
-    if let Some(f) = fill_of(layer).cloned() {
-        stops_editor_for(app, ui, Sink::Layer(layer.id), f);
     }
 }
 
@@ -858,13 +782,50 @@ fn preset_stop_color(app: &mut PhotocraftApp, i: usize) {
 }
 
 fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: Fill) {
+    let key = strip_key(app, sink).with("selection");
+    if ui.data(|d| d.get_temp::<Marker>(key)).is_none() {
+        ui.data_mut(|d| d.insert_temp(key, Marker::Color(0)));
+    }
+    stop_strip(app, ui, sink, f);
+    properties_panel::stop_fields(app, ui, sink);
+}
+
+/// Keep selection on a stop after the engine sorts its new position.
+fn selection_after_edit(f: &Fill, p: &Value, previous: Option<Marker>) -> Option<Marker> {
+    let Fill::Gradient { stops, opacity_stops, .. } = f else { return previous };
+    let opacity = p.get("kind").and_then(Value::as_str) == Some("opacity");
+    let mut locations: Vec<f32> = if opacity {
+        if opacity_stops.is_empty() { vec![0.0, 1.0] } else { opacity_stops.iter().map(|s| s.0).collect() }
+    } else {
+        stops.iter().map(|s| s.0).collect()
+    };
+    locations.sort_by(f32::total_cmp);
+    let action = p.get("action").and_then(Value::as_str);
+    let index = p.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok());
+    let at = match action {
+        Some("move" | "add") => {
+            let location = p.get("location").and_then(Value::as_f64)? as f32;
+            locations
+                .iter()
+                .enumerate()
+                .filter(|(i, value)| Some(*i) != index && (**value < location || (**value == location && index.is_none_or(|old| *i < old))))
+                .count()
+        }
+        Some("delete") => 0,
+        _ => return previous,
+    };
+    Some(if opacity { Marker::Opacity(at) } else { Marker::Color(at) })
+}
+
+fn stop_strip(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: Fill) {
     let Fill::Gradient { stops, .. } = &f else { return };
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width().max(120.0);
     let (outer, resp) = ui.allocate_exact_size(vec2(w, 58.0), Sense::click_and_drag());
     // Name the strip for accessibility (and so tests and agents can find it).
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!("Gradient stops")));
-    let bar = Rect::from_min_max(pos2(outer.left() + 8.0, outer.top() + 16.0), pos2(outer.right() - 8.0, outer.top() + 40.0));
+    let top = outer.top() + 16.0;
+    let bar = Rect::from_min_max(pos2(outer.left() + 8.0, top), pos2(outer.right() - 8.0, top + 24.0));
     let x_of = |loc: f32| bar.left() + loc.clamp(0.0, 1.0) * bar.width();
     let loc_of = |x: f32| ((x - bar.left()) / bar.width().max(1.0)).clamp(0.0, 1.0);
     // The ramp being shown (with a pending drag's edit applied).
@@ -874,7 +835,12 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
     };
     let (fg, bg) = (app.session.tools.foreground, app.session.tools.background);
     let shown = pending.as_ref().and_then(|p| cmds::apply_stop(&f, p, fg, bg).ok()).unwrap_or_else(|| f.clone());
-    if let Some(ramp) = gf::Ramp::new(&shown) {
+    let mut track_fill = shown.clone();
+    if let Fill::Gradient { reverse, .. } = &mut track_fill {
+        // All markers address un-reversed positions; Reverse applies to the canvas output.
+        *reverse = false;
+    }
+    if let Some(ramp) = gf::Ramp::new(&track_fill) {
         paint_ramp(ui.painter(), bar, |u| ramp.sample(u));
     }
     ui.painter().rect_stroke(bar, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
@@ -884,29 +850,27 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
     };
     let mut sorted = ss.clone();
     sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let ops: Vec<(f32, f32)> = if os.is_empty() { vec![(0.0, 1.0), (1.0, 1.0)] } else { os.clone() };
-    let key = sink.key();
+    let mut ops: Vec<(f32, f32)> = if os.is_empty() { vec![(0.0, 1.0), (1.0, 1.0)] } else { os.clone() };
+    ops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let key = strip_key(app, sink);
+    let selection_key = key.with("selection");
+    let selected: Option<Marker> = ui.data(|d| d.get_temp(selection_key));
     let dragging: Option<Marker> = ui.data(|d| d.get_temp(key));
     // Markers.
     let p = ui.painter();
     for (i, (loc, c)) in sorted.iter().enumerate() {
         let x = x_of(*loc);
-        let sel = dragging == Some(Marker::Color(i));
+        let sel = dragging.or(selected) == Some(Marker::Color(i));
         let tip = pos2(x, bar.bottom() + 1.0);
         let body = Rect::from_center_size(pos2(x, bar.bottom() + 10.0), vec2(10.0, 10.0));
+        let rgb = c.to_rgb();
+        let color = c32([rgb[0], rgb[1], rgb[2], 1.0]);
         p.add(egui::Shape::convex_polygon(
             vec![tip, pos2(x + 5.0, body.top()), pos2(x - 5.0, body.top())],
             if sel { t.accent } else { t.text_dim },
             Stroke::NONE,
         ));
-        p.rect_filled(
-            body,
-            1.0,
-            c32({
-                let r = c.to_rgb();
-                [r[0], r[1], r[2], 1.0]
-            }),
-        );
+        p.rect_filled(body, 1.0, color);
         p.rect_stroke(body, 1.0, Stroke::new(1.0, if sel { t.accent } else { t.text_dim }), StrokeKind::Outside);
     }
     if sink.midpoints() {
@@ -914,21 +878,23 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
             let (a, b) = (sorted[i].0, sorted[i + 1].0);
             if b - a > 1e-3 {
                 let m = mids.get(i).copied().unwrap_or(0.5);
-                let sel = dragging == Some(Marker::Mid(i));
+                let sel = dragging.or(selected) == Some(Marker::Mid(i));
                 diamond(p, pos2(x_of(a + (b - a) * m), bar.bottom() + 6.0), 3.0, if sel { t.accent } else { t.text_faint }, t.text_faint);
             }
         }
     }
     for (i, (loc, a)) in ops.iter().enumerate() {
         let x = x_of(*loc);
-        let sel = dragging == Some(Marker::Opacity(i));
-        let body = Rect::from_center_size(pos2(x, bar.top() - 10.0), vec2(10.0, 10.0));
+        let sel = dragging.or(selected) == Some(Marker::Opacity(i));
+        let y = bar.top() - 10.0;
+        let body = Rect::from_center_size(pos2(x, y), vec2(10.0, 10.0));
+        let color = Color32::from_gray((a.clamp(0.0, 1.0) * 255.0) as u8);
         p.add(egui::Shape::convex_polygon(
             vec![pos2(x, bar.top() - 1.0), pos2(x + 5.0, body.bottom()), pos2(x - 5.0, body.bottom())],
             if sel { t.accent } else { t.text_dim },
             Stroke::NONE,
         ));
-        p.rect_filled(body, 1.0, Color32::from_gray((a.clamp(0.0, 1.0) * 255.0) as u8));
+        p.rect_filled(body, 1.0, color);
         p.rect_stroke(body, 1.0, Stroke::new(1.0, if sel { t.accent } else { t.text_dim }), StrokeKind::Outside);
     }
     // Interaction.
@@ -953,10 +919,11 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
         None
     };
     if resp.drag_started()
-        && let Some(pos) = resp.interact_pointer_pos()
+        && let Some(pos) = ui.input(|i| i.pointer.press_origin())
         && let Some(m) = hit(pos)
     {
         ui.data_mut(|d| d.insert_temp(key, m));
+        ui.data_mut(|d| d.insert_temp(selection_key, m));
     }
     let dragging: Option<Marker> = ui.data(|d| d.get_temp(key));
     if let (Some(m), Some(pos)) = (dragging, resp.interact_pointer_pos()) {
@@ -984,12 +951,22 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
         match sink {
             Sink::Layer(_) => {
                 if let Some((_, cmd, p)) = app.gradient.panel.take() {
-                    let _ = app.run(cmd, p);
+                    let selection = selection_after_edit(&f, &p, selected);
+                    if app.run(cmd, p).is_ok()
+                        && let Some(marker) = selection
+                    {
+                        ui.data_mut(|d| d.insert_temp(selection_key, marker));
+                    }
                 }
             }
             Sink::Preset => {
                 if let Some(p) = app.gradient.preset_stop.take() {
-                    let _ = app.run(sink.cmd(), p);
+                    let selection = selection_after_edit(&f, &p, selected);
+                    if app.run(sink.cmd(), p).is_ok()
+                        && let Some(marker) = selection
+                    {
+                        ui.data_mut(|d| d.insert_temp(selection_key, marker));
+                    }
                 }
             }
         }
@@ -999,6 +976,7 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
         && let Some(pos) = resp.interact_pointer_pos()
         && let Some(Marker::Color(i)) = hit(pos)
     {
+        ui.data_mut(|d| d.insert_temp(selection_key, Marker::Color(i)));
         match sink {
             Sink::Layer(id) => edit_stop_color(app, id, i),
             Sink::Preset => preset_stop_color(app, i),
@@ -1007,15 +985,24 @@ fn stops_editor_for(app: &mut PhotocraftApp, ui: &mut egui::Ui, sink: Sink, f: F
     }
     if resp.clicked()
         && let Some(pos) = resp.interact_pointer_pos()
-        && hit(pos).is_none()
     {
+        if let Some(marker) = hit(pos) {
+            ui.data_mut(|d| d.insert_temp(selection_key, marker));
+            return;
+        }
         let loc = loc_of(pos.x);
-        let p = if pos.y < bar.center().y {
+        let opacity = pos.y < bar.center().y;
+        let p = if opacity {
             sink.params(json!({"action": "add", "kind": "opacity", "location": loc}))
         } else {
             sink.params(json!({"action": "add", "location": loc}))
         };
-        let _ = app.run(sink.cmd(), p);
+        let selection = selection_after_edit(&f, &p, selected);
+        if app.run(sink.cmd(), p).is_ok()
+            && let Some(marker) = selection
+        {
+            ui.data_mut(|d| d.insert_temp(selection_key, marker));
+        }
     }
 }
 
@@ -1126,6 +1113,18 @@ mod tests {
         drag(&mut app, [100.0, 10.0], [100.0, 110.0]);
         assert_eq!(app.session.active().unwrap().doc.layers.len(), 2);
         assert!((get(&mut app)["from"][1].as_f64().unwrap() - 10.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn dragging_the_midpoint_diamond_moves_it() {
+        let mut app = app_with_gradient("linear");
+        drag(&mut app, [20.0, 60.0], [180.0, 60.0]);
+        // The untouched midpoint sits at the segment centre (doc x = 100). Drag it to a quarter.
+        drag(&mut app, [100.0, 60.0], [60.0, 60.0]);
+        let g = get(&mut app);
+        assert_eq!(g["stops"].as_array().map(Vec::len), Some(2), "a midpoint drag must not add a stop: {g}");
+        let m = g["midpoints"][0].as_f64().unwrap_or(f64::NAN);
+        assert!((m - 0.25).abs() < 1e-3, "the midpoint did not move: {g}");
     }
 
     #[test]
@@ -1315,7 +1314,7 @@ mod tests {
         assert!(app.ui.panels.gradient_editor, "the window stays open");
 
         // A committed live gradient fill layer: `selected_gradient` finds it, so the full editor
-        // (the same sections the Properties panel shows) is what gets built.
+        // (combined stops and Gradient Options) is what gets built.
         let mut app = app_with_gradient("linear");
         drag(&mut app, [10.0, 10.0], [150.0, 90.0]);
         assert!(selected_gradient(&app).is_some(), "the drag left a gradient fill layer selected");

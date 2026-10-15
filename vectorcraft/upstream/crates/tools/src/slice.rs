@@ -43,7 +43,7 @@ fn snap(cx: &ToolContext, p: Point) -> (Point, Vec<Overlay>) {
         cx.doc
             .guides
             .iter()
-            .filter(|g| g.vertical == vertical && (g.pos - v).abs() <= tol && cx.doc.guide_passes(g, p, tol))
+            .filter(|g| g.vertical == vertical && (g.pos - v).abs() <= tol && cx.doc.guide_shown(g) && cx.doc.guide_passes(g, p, tol))
             .min_by(|a, b| (a.pos - v).abs().total_cmp(&(b.pos - v).abs()))
     };
     if let Some(g) = nearest(true, p.x) {

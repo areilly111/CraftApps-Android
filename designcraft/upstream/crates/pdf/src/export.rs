@@ -630,7 +630,6 @@ impl Exporter<'_> {
                 let Some((ppi, ppage)) = doc.parent_page_for(first + pi) else { continue };
                 let parent = &doc.parents[ppi];
                 let dx = page.x - parent.pages[ppage].x;
-                let page_name = doc.page_name(first + pi);
                 for it in &parent.items {
                     if it.layer != layer.id || page.overridden.contains(&it.id) {
                         continue;
@@ -639,7 +638,7 @@ impl Exporter<'_> {
                     if parent.page_at_x(it.bounds().center().x) != Some(ppage) && parent.pages.len() > 1 {
                         continue;
                     }
-                    self.top_item(s, it, Affine::translate((dx, 0.0)), Some(&page_name), true);
+                    self.top_item(s, it, Affine::translate((dx, 0.0)), Some(first + pi), true);
                 }
             }
             for it in &sp.items {
@@ -679,9 +678,9 @@ impl Exporter<'_> {
     }
 
     /// A spread or parent item, inside its structure tag when tagging.
-    fn top_item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>, on_parent: bool) {
+    fn top_item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page: Option<usize>, on_parent: bool) {
         if !self.opts.tagged || it.hidden || it.nonprinting {
-            return self.item(s, it, parent, page_name);
+            return self.item(s, it, parent, page);
         }
         let story = it.text_frame().map(|t| t.story);
         let figure = !it.alt_text.is_empty() || matches!(it.content, Content::Graphic(_)) || it.has_nested_items();
@@ -689,7 +688,7 @@ impl Exporter<'_> {
             // Page furniture and decoration.
             let kind = if on_parent { ArtifactType::Page } else { ArtifactType::Other };
             s.start_tagged(ContentTag::Artifact(Artifact::new(kind, None)));
-            self.item(s, it, parent, page_name);
+            self.item(s, it, parent, page);
             s.end_tagged();
             return;
         }
@@ -700,12 +699,12 @@ impl Exporter<'_> {
                 self.tags.push(TagEntry::Story(sid));
             }
             self.tag_story = Some(sid);
-            self.item(s, it, parent, page_name);
+            self.item(s, it, parent, page);
             self.tag_story = None;
             return;
         }
         let id = s.start_tagged(ContentTag::Other);
-        self.item(s, it, parent, page_name);
+        self.item(s, it, parent, page);
         s.end_tagged();
         let alt = (!it.alt_text.is_empty()).then(|| it.alt_text.clone());
         let mut g = TagGroup::new(Tag::Figure(alt));
@@ -751,10 +750,10 @@ impl Exporter<'_> {
         tree
     }
 
-    fn item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {
+    fn item(&mut self, s: &mut Surface, it: &Item, parent: Affine, page: Option<usize>) {
         let gf = &it.effects.gradient_feather;
         if !gf.on || it.hidden || it.nonprinting {
-            return self.item_inner(s, it, parent, page_name);
+            return self.item_inner(s, it, parent, page);
         }
         // Gradient feather: a luminosity mask (white = opaque) over the object.
         let xf = parent * it.xf;
@@ -804,11 +803,11 @@ impl Exporter<'_> {
         ms.finish();
         let stream = sb.finish();
         s.push_mask(krilla::mask::Mask::new(stream, krilla::mask::MaskType::Luminosity));
-        self.item_inner(s, it, parent, page_name);
+        self.item_inner(s, it, parent, page);
         s.pop();
     }
 
-    fn item_inner(&mut self, s: &mut Surface, it: &Item, parent: Affine, page_name: Option<&str>) {
+    fn item_inner(&mut self, s: &mut Surface, it: &Item, parent: Affine, page: Option<usize>) {
         if it.hidden || it.nonprinting {
             return;
         }
@@ -843,7 +842,7 @@ impl Exporter<'_> {
                 s.push_clip_path(c, &FillRule::NonZero);
             }
             for c in it.children() {
-                self.item(s, c, xf, page_name);
+                self.item(s, c, xf, page);
             }
             if clip.is_some() {
                 s.pop();
@@ -863,7 +862,7 @@ impl Exporter<'_> {
         if !it.children().is_empty() {
             let pushes = Self::push_group(s, it.opacity, it.blend) + Self::push_isolation(s, it);
             for c in it.shown_children() {
-                self.item(s, c, xf, page_name);
+                self.item(s, c, xf, page);
             }
             for _ in 0..pushes {
                 s.pop();
@@ -921,7 +920,7 @@ impl Exporter<'_> {
                 }
             }
             Content::Text(tfr) => {
-                let cs = self.cache.get(doc, tfr.story, page_name);
+                let cs = self.cache.get(doc, tfr.story, page);
                 if let (Some(ft), Some(pt)) = (cs.frame(it.id), &tfr.options.path) {
                     // Type on a path: the glyphs as outlines along the path.
                     for (si, gp) in designcraft_compose::path_glyphs(&cs, ft, &bp, pt) {
@@ -966,11 +965,11 @@ impl Exporter<'_> {
         if let Content::Text(tfr) = &it.content
             && let Some(st) = doc.story(tfr.story).filter(|st| !st.objects.is_empty())
         {
-            let cs = self.cache.get(doc, tfr.story, page_name);
+            let cs = self.cache.get(doc, tfr.story, page);
             if let Some(ft) = cs.frame(it.id) {
                 for o in &ft.objects {
                     if let Some(obj) = st.objects.get(o.index) {
-                        self.item(s, &obj.item, xf * Affine::translate(o.origin.to_vec2()), page_name);
+                        self.item(s, &obj.item, xf * Affine::translate(o.origin.to_vec2()), page);
                     }
                 }
             }

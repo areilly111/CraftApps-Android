@@ -28,12 +28,20 @@ pub struct PrintJob<'a> {
     pub pdf: &'a [u8],
 }
 
+/// Submission callable from the desktop background worker.
+pub type SharedPrintFn = std::sync::Arc<dyn Fn(&PrintJob<'_>) -> Result<String, String> + Send + Sync>;
+
 /// The platform's printing ([`crate::Services::print`]).
 pub trait PrintService {
     /// The printers the system knows (none: only the default one, or the browser's dialog).
     fn printers(&mut self) -> Vec<Printer>;
     /// Send `job` to its printer → what happened, for the status bar.
     fn print(&mut self, job: &PrintJob) -> Result<String, String>;
+    /// Desktop services can submit on the existing background worker; browser services stay
+    /// on the UI thread to invoke their print dialog.
+    fn shared_print(&self) -> Option<SharedPrintFn> {
+        None
+    }
     /// Whether Setup… can open the system's printer settings.
     fn has_setup(&self) -> bool {
         false
@@ -88,6 +96,35 @@ pub fn run(app: &mut VectorcraftApp, p: &Value) -> Result<Value, String> {
     let title = app.session.active().map(|d| d.title()).unwrap_or_default();
     let printer = s("printer").filter(|n| !n.is_empty());
     let service = app.services.print.as_mut().ok_or("no print service")?;
+    if let Some(submit) = service.shared_print() {
+        let pending_printer = printer.clone();
+        let mut pending = crate::background::run(
+            app,
+            true,
+            format!("Printing {title}"),
+            None,
+            move |_| {
+                submit(&PrintJob { printer: printer.as_deref(), title: &title, pdf: &pdf }).map(|note| json!({ "note": note, "printer": printer }))
+            },
+            move |app, result| {
+                let receipt = result?;
+                app.status(receipt.get("note").and_then(Value::as_str).unwrap_or_default());
+                Ok(json!({ "printer": receipt["printer"], "printed": true }))
+            },
+        )?;
+        if pending.get("background").and_then(Value::as_bool) == Some(true) {
+            // Acceptance by the worker is not acceptance by the spooler.
+            pending["printer"] = json!(pending_printer);
+            pending["printed"] = json!(false);
+        }
+        // Preserve the engine's pages, byte count, format and warnings in automation replies.
+        if let Some(fields) = pending.as_object() {
+            for (key, value) in fields {
+                v[key] = value.clone();
+            }
+        }
+        return Ok(v);
+    }
     let done = service.print(&PrintJob { printer: printer.as_deref(), title: &title, pdf: &pdf })?;
     app.status(done);
     v["printer"] = json!(printer);

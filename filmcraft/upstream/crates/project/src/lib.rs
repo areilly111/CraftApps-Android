@@ -1595,9 +1595,10 @@ impl Project {
         // a multi-camera source sequence edits in as a multi-camera clip showing its first angle
         let multicam =
             it.as_sequence().and_then(|q| q.multicam.as_ref()).map(|m| MulticamSel { enabled: true, angle: m.first_video_angle().unwrap_or(0) as u32 });
-        let source_channels = match (kind, &it.kind) {
-            (TrackKind::Audio, ItemKind::Media(m)) => m.interpret.audio_channels.as_ref().and_then(|a| a.clips.first().cloned()).unwrap_or_default(),
-            _ => Vec::new(),
+        let source_channels = if kind == TrackKind::Audio {
+            self.resolve_media(item).and_then(|(_, m, _)| m.interpret.audio_channels.as_ref()).and_then(|a| a.clips.first().cloned()).unwrap_or_default()
+        } else {
+            Vec::new()
         };
         let id = ClipId(self.alloc_id());
         let dur = seq_rate.snap_nearest(source.duration).max(seq_rate.frame_duration());
@@ -1671,6 +1672,16 @@ fn resolve_auto_points_sized(e: &mut EffectInstance, frame: (u32, u32), source: 
 }
 
 impl Project {
+    /// Available picture and sound, resolving a subclip to its parent media. Missing parents,
+    /// cycles and overly deep subclip chains carry neither stream.
+    pub fn source_streams(&self, item: ItemId) -> (bool, bool) {
+        let Some(pi) = self.item(item) else { return (false, false) };
+        match &pi.kind {
+            ItemKind::Subclip { .. } => self.resolve_media(item).map_or((false, false), |(_, m, _)| (m.info.has_video(), m.info.has_audio())),
+            _ => (pi.has_video(), pi.has_audio()),
+        }
+    }
+
     /// Resolve media through at most sixteen items, preserving the outermost subclip range.
     /// Missing parents, cycles and longer chains are unavailable media.
     pub fn resolve_media(&self, item: ItemId) -> Option<(ItemId, &MediaClip, Option<TimeRange>)> {
@@ -1895,6 +1906,7 @@ mod tests {
     fn media_resolution_bounds_depth_and_preserves_the_outer_range() {
         let (mut p, media, _) = demo_project();
         assert_eq!(p.resolve_media(media).map(|(id, _, range)| (id, range)), Some((media, None)));
+        let streams = p.source_streams(media);
         let mut parent = media;
         let mut last_range = TimeRange::default();
         for n in 0..15 {
@@ -1902,9 +1914,14 @@ mod tests {
             parent = p.add_item("Sub", Label::Iris, ItemKind::Subclip { parent, range: last_range, restrict_trims: false }, None);
         }
         assert_eq!(p.resolve_media(parent).map(|(id, _, range)| (id, range)), Some((media, Some(last_range))));
+        assert_eq!(p.source_streams(parent), streams);
         let too_deep = p.add_item("Too deep", Label::Iris, ItemKind::Subclip { parent, range: last_range, restrict_trims: false }, None);
         assert!(p.resolve_media(too_deep).is_none());
         assert!(p.resolve_media(ItemId(u64::MAX)).is_none());
+        assert_eq!(p.source_streams(too_deep), (false, false));
+        assert_eq!(p.source_streams(ItemId(u64::MAX)), (false, false));
+        p.item_mut(parent).unwrap().kind = ItemKind::Subclip { parent, range: last_range, restrict_trims: false };
+        assert_eq!(p.source_streams(parent), (false, false));
     }
 
     #[test]

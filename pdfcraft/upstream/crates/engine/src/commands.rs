@@ -24,6 +24,8 @@ pub enum Needs {
     Modification,
     /// The open document's security allows adding and changing comments.
     Annotate,
+    /// The open document's security allows copying text and images out of it.
+    Copying,
     /// The document has form fields and its security allows filling them in.
     FillForms,
     /// The document has comments and allows changes.
@@ -34,10 +36,14 @@ pub enum Needs {
     HasRedactions,
     /// The document has page marks of this kind and allows changes.
     Marks(crate::MarkKind),
-    /// The document's security may be changed (owner, or nothing restricted).
+    /// The document's security may be changed (owner, or nothing restricted), or would be
+    /// once its permissions password is entered.
     Security,
-    /// The document is protected and its security may be removed.
+    /// The document is protected and its security may be removed (perhaps after entering
+    /// its permissions password).
     ProtectedSecurity,
+    /// The document's restrictions can be lifted with its permissions password.
+    Unlock,
     /// There is something to undo.
     Undo,
     /// There is something to redo.
@@ -173,6 +179,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("page.paste", "Paste pages", None, None, Assembly, "clipboard-paste"),
     c("create.file", "Create PDF from file…", FILE, None, Nothing, "file-input"),
     c("create.multiple", "Create PDF from multiple files…", FILE, None, Nothing, "files"),
+    c("create.multiple_separate", "Create separate PDFs…", FILE, None, Nothing, "files"),
     c("create.images", "Create PDF from images…", FILE, None, Nothing, "image"),
     c("create.clipboard", "Create PDF from clipboard", FILE, None, Nothing, "copy-plus"),
     c("page.combine", "Combine files…", FILE, None, Nothing, "files"),
@@ -188,11 +195,12 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("edit.find", "Find…", EDIT, Some(Shortcut::cmd("F")), Document, "search"),
     c("edit.advanced_search", "Advanced search…", EDIT, Some(Shortcut::cmd_shift("F")), Document, "search"),
     c("view.palette", "Find tools and commands…", VIEW, Some(Shortcut::cmd("K")), Nothing, "search"),
-    // Page display: View ▸ Page display and the rail's button list these as radios, so
-    // `menu = None` keeps them out of the generated menus. The palette still runs them.
-    c("view.layout.continuous", "Continuous scrolling", None, None, Document, "arrow-up-down"),
+    // Page display: View ▸ Page display and the rail's button list the base layouts as radios and
+    // continuous scrolling as a checkbox, so `menu = None` keeps them out of the generated menus.
+    // The palette still runs them.
     c("view.layout.single", "Single page", None, None, Document, "file-text"),
     c("view.layout.two_up", "Two-page view", None, None, Document, "columns-2"),
+    c("view.continuous", "Continuous scrolling", None, None, Document, "arrow-up-down"),
     c("view.layout.cover", "Show cover page in two-page view", None, None, TwoPageView, "bookmark"),
     // Acrobat's view modes, a page display and a zoom at once (the rail's Page display menu).
     c("view.fit_width_scrolling", "Fit to width scrolling", None, None, Document, "arrow-left-right"),
@@ -205,10 +213,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     // drag with the Select tool does the same; this is the way in where the desktop takes
     // Alt-drag for moving windows (several Linux window managers).
     c("edit.column_select", "Column select", EDIT, None, Document, "text-select"),
-    c("edit.snapshot", "Take a snapshot", EDIT, None, Document, "camera"),
+    c("edit.snapshot", "Take a snapshot", EDIT, None, Copying, "camera"),
     c("view.full_screen", "Full screen mode", VIEW, Some(Shortcut::cmd("L")), Document, "maximize"),
     c("view.read_mode", "Read mode", VIEW, Some(Shortcut { command: true, shift: false, mac_ctrl: true, key: "H" }), Document, "book-open"),
     c("view.focus_page_input", "Go to page…", VIEW, Some(Shortcut::cmd_shift("N")), Document, "text-cursor-input"),
+    c("ui.dock.reset", "Reset panel layout", VIEW, None, Nothing, "settings"),
     c("view.theme", "Switch light / dark theme", None, None, Nothing, "moon"),
     c("view.theme.system", "Use system setting", None, None, Nothing, "settings"),
     c("view.theme.light", "Light gray", None, None, Nothing, "sun"),
@@ -297,23 +306,26 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("sign.fill.signature.remove", "Fill & Sign: remove saved signature", None, None, Nothing, "x"),
     c("sign.fill.initials.remove", "Fill & Sign: remove saved initials", None, None, Nothing, "x"),
     c("sign.fill.initials.change", "Fill & Sign: change initials", None, None, Nothing, "signature"),
-    c("export.image", "Export to image…", FILE, None, Document, "image"),
+    c("export.image", "Export to image…", FILE, None, Copying, "image"),
     c("optimize.reduce", "Reduce file size…", FILE, None, Document, "file-down"),
     c("optimize.advanced", "Optimize PDF…", FILE, None, Document, "settings-2"),
-    c("export.text", "Export to text…", FILE, None, Document, "type"),
-    c("export.docx", "Export to Word…", FILE, None, Document, "file-text"),
-    c("export.html", "Export to HTML…", FILE, None, Document, "file-symlink"),
-    c("export.rtf", "Export to RTF…", FILE, None, Document, "file-text"),
+    c("export.text", "Export to text…", FILE, None, Copying, "type"),
+    c("export.docx", "Export to Word…", FILE, None, Copying, "file-text"),
+    c("export.pptx", "Export to PowerPoint…", FILE, None, Copying, "presentation"),
+    c("export.html", "Export to HTML…", FILE, None, Copying, "file-symlink"),
+    c("export.rtf", "Export to RTF…", FILE, None, Copying, "file-text"),
     c("app.preferences", "Preferences…", EDIT, Some(Shortcut::cmd(",")), Nothing, "settings"),
     c("tools.js_console", "JavaScript console…", None, Some(Shortcut::cmd("J")), Document, "square-terminal"),
     c("tools.document_js", "Document JavaScripts…", None, None, Modification, "file-code"),
     c("ocr.recognize", "Recognize text…", None, None, Modification, "scan-text"),
+    c("ocr.enhance_camera", "Enhance camera image", None, None, Modification, "camera"),
     c("ocr.recognize_batch", "Recognize text in multiple files…", None, None, Nothing, "files"),
     c("a11y.check", "Check for accessibility…", None, None, Document, "accessibility"),
     c("a11y.report", "Open accessibility report", None, None, Document, "file-text"),
     c("a11y.reading_options", "Change reading options…", None, None, Document, "book-open"),
     c("a11y.alt_text", "Add alternate text…", None, None, Modification, "image"),
-    c("export.all_images", "Export all images…", FILE, None, Document, "image"),
+    c("a11y.tags", "Tags panel", None, None, Document, "tag"),
+    c("export.all_images", "Export all images…", FILE, None, Copying, "image"),
     c("edit.header_footer", "Add header & footer…", None, None, Modification, "heading"),
     c("edit.header_footer.update", "Update header & footer…", None, None, Marks(crate::MarkKind::HeaderFooter), "heading"),
     c("edit.header_footer.remove", "Remove header & footer", None, None, Marks(crate::MarkKind::HeaderFooter), "heading"),
@@ -325,6 +337,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("edit.background.remove", "Remove background", None, None, Marks(crate::MarkKind::Background), "palette"),
     c("protect.password", "Protect using password…", FILE, None, Security, "lock"),
     c("protect.remove", "Remove security", FILE, None, ProtectedSecurity, "lock-open"),
+    c("protect.unlock", "Enter permissions password…", None, None, Unlock, "lock-open"),
     c("protect.properties", "Security properties…", FILE, None, Document, "shield-check"),
     c("page.organize", "Organize pages", PAGES, None, Document, "layout-grid"),
     c("bookmark.add", "New bookmark", PAGES, Some(Shortcut::cmd("B")), Assembly, "bookmark-plus"),
@@ -369,25 +382,36 @@ pub fn is_enabled(spec: &CommandSpec, session: &Session, active: Option<DocId>) 
         Assembly => doc.is_some_and(|d| d.allows_assembly()),
         Modification => doc.is_some_and(|d| d.allows_modification()),
         Annotate => doc.is_some_and(|d| d.allows_annotation()),
+        Copying => doc.is_some_and(|d| d.allows_copying()),
         FillForms => doc.is_some_and(|d| d.allows_form_filling() && !d.form.is_empty()),
         Marks(k) => doc.is_some_and(|d| d.allows_modification() && d.marks.contains(&k)),
         HasComments => doc.is_some_and(|d| d.allows_modification() && !d.info.annotations.is_empty()),
         HasFields => doc.is_some_and(|d| d.allows_modification() && !d.form.is_empty()),
         HasRedactions => doc.is_some_and(|d| d.allows_modification() && d.redaction_marks() > 0),
-        Security => doc.is_some_and(|d| d.allows_security_change()),
-        ProtectedSecurity => doc.is_some_and(|d| d.allows_security_change() && d.security_summary().is_some()),
+        Security => doc.is_some_and(|d| d.allows_security_change() || d.can_unlock()),
+        ProtectedSecurity => doc.is_some_and(|d| (d.allows_security_change() || d.can_unlock()) && d.security_summary().is_some()),
+        Unlock => doc.is_some_and(|d| d.can_unlock()),
         Undo => doc.is_some_and(|d| d.can_undo().is_some()),
         Redo => doc.is_some_and(|d| d.can_redo().is_some()),
     }
 }
 
+/// The edit `spec` names now, with the wording that names it ("Undo {}"), so an interface can say
+/// each part in its own language. `None` for every other command, and when there is nothing to undo.
+pub fn current_edit<'a>(spec: &CommandSpec, session: &'a Session, active: Option<DocId>) -> Option<(&'static str, &'a crate::Label)> {
+    let doc = active.and_then(|id| session.get(id))?;
+    match spec.id {
+        "edit.undo" => doc.undo_label().map(|l| ("Undo {}", l)),
+        "edit.redo" => doc.redo_label().map(|l| ("Redo {}", l)),
+        _ => None,
+    }
+}
+
 /// The label to show for `spec` now ("Undo Rotate page" rather than "Undo").
 pub fn current_label(spec: &CommandSpec, session: &Session, active: Option<DocId>) -> String {
-    let doc = active.and_then(|id| session.get(id));
-    match (spec.id, doc) {
-        ("edit.undo", Some(d)) => d.can_undo().map(|l| format!("Undo {l}")).unwrap_or_else(|| spec.label.into()),
-        ("edit.redo", Some(d)) => d.can_redo().map(|l| format!("Redo {l}")).unwrap_or_else(|| spec.label.into()),
-        _ => spec.label.into(),
+    match current_edit(spec, session, active) {
+        Some((wording, label)) => wording.replacen("{}", label.as_str(), 1),
+        None => spec.label.into(),
     }
 }
 

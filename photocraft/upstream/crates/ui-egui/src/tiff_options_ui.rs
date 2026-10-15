@@ -70,8 +70,14 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         if p.dont_ask_again {
             app.session.edit_prefs(|prefs| prefs.file_handling.ask_before_saving_layered_tiff = false);
         }
-        let settings = ExportSettings { tiff_layers: !p.discard_layers, ..Default::default() };
-        match app.with_document(p.doc, |app| app.write_document(p.path, &settings, p.discard_layers)) {
+        let settings = ExportSettings { tiff_layers: !p.discard_layers, ..app.save_settings() };
+        let step = serde_json::json!({"path": p.path, "tiffLayers": !p.discard_layers});
+        let written = app.with_document(p.doc, |app| app.write_document(p.path, &settings, p.discard_layers));
+        if written.is_ok() {
+            // An action being recorded keeps the Save As with this answer (#2032).
+            app.session.journal.push(("file.saveAs".into(), step));
+        }
+        match written {
             Err(e) => {
                 app.ui.status = crate::i18n::fmt(tl!("Save failed: {error}"), &[("error", &e)]);
                 app.ui.status_error = true;

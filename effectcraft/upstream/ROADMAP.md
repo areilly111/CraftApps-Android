@@ -97,7 +97,7 @@ UI strings translated out of ≈ 3,900 (detail: [localization-parity.md](docs/lo
 | Korean | none | 0% |
 | Vietnamese | none | 0% |
 
-Also shipped: Traditional Chinese (partial, 28%) and Ukrainian (partial, 26%). No language has had
+Also shipped: Traditional Chinese (partial, 28%) and Ukrainian (partial, 29%). No language has had
 native-speaker review.
 
 ## Upcoming
@@ -117,6 +117,13 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 
 ## Progress log
 
+- 2026-10-11: Ukrainian panels caught up with the Chinese catalogs. The 95 rows the panel
+  catalog gained since 9 October are translated: the Home screen (recent files, their Kind and
+  Opened columns, the empty and no-match states), the viewer's toolbar tooltips, magnification,
+  resolution, grid, channel and Fast Previews popups, the Appearance settings, the solid dialog
+  and the project, import, export and colour-management forms. `uk` now carries 495 of the 496
+  panel rows — `RGB` reads the same in Ukrainian, so it falls back to the English source by
+  design — alongside its 618/618 menus.
 - 2026-10-10: Full parity re-measure against After Effects 2026 26.5 (installed bundle, 26.2–26.5
   release notes, repository counts): breadth ≈ 91%, ready ≈ 45%, stage alpha. Progress docs
   follow the shared standard: `docs/parity.md` became `docs/target-app-parity.md`; new
@@ -125,6 +132,10 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 - 2026-10-10: Spanish (#460) and Brazilian Portuguese (#217) menu translations.
 - 2026-10-10: Japanese now translates the interface below the menu bar too: `crates/ui-egui/src/i18n/ui.rs` has a Japanese table with the same 396 rows as the Chinese ones (panels, dialogs, buttons and tooltips; the shape test keeps the three catalogs listing the same source strings). Menus were already Japanese.
 - 2026-10-09: Ukrainian now covers all 396 current panel-catalog strings, including dialogs, buttons and tooltips, alongside its menu translation. The catalog keeps the same source keys and placeholder counts as the Chinese catalogs; missing or engine-generated text still falls back to English.
+
+- UI.6: Viewer breadcrumbs use theme colors for readable active text. The bottom control row scrolls horizontally at compact widths; keyboard focus reveals the selected control while dropdowns, exposure adjustments and snapshot holds retain their behavior.
+- UI.3: Shared docking transactions and pointer targets now handle panel moves, splits, tab ordering and floating groups, preserving accordion metadata and the saved workspace schema. Dock dividers use bounded shared geometry and keyboard-accessible resize handles. Tiny layouts no longer reach an invalid floating-point clamp; workspace trees and saved layouts are retained.
+
 - 2026-10-09: Settings ▸ General ▸ Language now translates the interface below the menu bar as well: panels, dialogs, buttons and tooltips read their text through `crates/ui-egui/src/i18n/ui.rs`, keyed by the English source string. Simplified and Traditional Chinese are complete (384 strings); Japanese rows can follow in the same file. A test fails when a converted panel gains a hard-coded string, and another keeps the catalog free of unused rows.
 - 2026-10-08: `effectcraft-cli render --out` resolves a relative path against the working directory, like `--project` (it used the project's folder, which doubled a path that already named it). Render Queue outputs set in a project are unchanged.
 - 2026-10-08: Long-press a grouped toolbar button to choose its tools, including Horizontal/Vertical Type; releasing the hold keeps the menu open. Existing point/paragraph text creation is unchanged.

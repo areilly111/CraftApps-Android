@@ -123,6 +123,20 @@ fn deeply_nested() {
     assert_eq!(depth, 51);
 }
 
+/// #2940: the capped tree keeps a group at the cap but not its children, so its depth is bounded
+/// whatever the file nests.
+#[test]
+fn layer_tree_max_depth_drops_deeper_children() {
+    let mut v = vec![rec("</Layer group>", END), rec("</Layer group>", END), rec("</Layer group>", END), rec("x", None)];
+    v.extend([rec("g2", OPEN), rec("g1", OPEN), rec("g0", OPEN), rec("top", None)]);
+    let f = file_with(v);
+    assert_eq!(names(&f, &f.layer_tree()), "g0[g1[g2[x]]],top");
+    assert_eq!(names(&f, &f.layer_tree_max_depth(usize::MAX)), "g0[g1[g2[x]]],top");
+    assert_eq!(names(&f, &f.layer_tree_max_depth(2)), "g0[g1[g2[]]],top");
+    assert_eq!(names(&f, &f.layer_tree_max_depth(1)), "g0[g1[]],top");
+    assert_eq!(names(&f, &f.layer_tree_max_depth(0)), "g0[],top");
+}
+
 #[test]
 fn folder_without_divider_is_empty_group() {
     let f = file_with(vec![rec("a", None), rec("G", OPEN), rec("b", None)]);

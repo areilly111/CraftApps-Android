@@ -431,6 +431,15 @@ fn write_xref_table(out: &mut Vec<u8>, offsets: &BTreeMap<u32, (u64, u16, bool)>
     if include_zero {
         all.insert(0, (0, (0, 65535, false)));
     }
+    // A section is one or more subsections. `xref` followed immediately by `trailer` is not a
+    // table (qpdf: "xref syntax invalid") and is what an incremental save of a classic-table
+    // file used to append when nothing was edited. A zero-length subsection names no objects,
+    // so the free list and every in-use entry stay as they were, while a trailer-only change
+    // (a missing `/ID`, or a caller edit of the trailer) is still written.
+    if all.is_empty() {
+        let _ = writeln!(out, "0 0");
+        return;
+    }
     let mut i = 0;
     while i < all.len() {
         let start = all[i].0;

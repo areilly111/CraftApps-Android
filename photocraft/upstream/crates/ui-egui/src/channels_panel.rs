@@ -65,7 +65,10 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // The active layer's mask (Photoshop lists it, in italics, below the colour channels).
     let masked = active_layer.and_then(|id| doc.layer(id)).filter(|l| l.mask.is_some()).cloned();
     let mask_tex = masked.as_ref().and_then(|l| Some(app.mask_thumb(&ctx, &doc, l.id, l.mask.as_ref()?)));
-    let mask_targeted = masked.is_some() && app.ui.mask_target && view.target == ChannelTarget::Composite && !quick;
+    let mask_targeted = masked.is_some()
+        && (app.ui.mask_target || view.target == ChannelTarget::LayerMask)
+        && (view.target == ChannelTarget::Composite || view.target == ChannelTarget::LayerMask)
+        && !quick;
     // Multichannel images are their ink channels only (no composite or colour rows).
     let multichannel = doc.mode == photocraft_doc::ColorMode::Multichannel;
     let mut rows = if multichannel { Vec::new() } else { vec![Row::Composite] };
@@ -171,7 +174,12 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             let italic = matches!(row, Row::QuickMask | Row::LayerMask) || matches!(row, Row::Alpha(i) if doc.channels[i].spot.is_some());
             let mut job = egui::text::LayoutJob::default();
             let font = if selected && !t.pro { theme::medium(12.5) } else { egui::FontId::proportional(12.0) };
-            job.append(&name, 0.0, egui::TextFormat { font_id: font, color: t.text, italics: italic, ..Default::default() });
+            // Built-in labels only: alpha/spot names and "{layer} Mask" stay verbatim.
+            let label = match row {
+                Row::Composite | Row::Color(_) | Row::QuickMask => tl!(&name).to_owned(),
+                Row::Alpha(_) | Row::LayerMask => name.clone(),
+            };
+            job.append(&label, 0.0, egui::TextFormat { font_id: font, color: t.text, italics: italic, ..Default::default() });
             let galley = painter.layout_job(job);
             let text_pos = pos2(cell.right() + 10.0, rect.center().y - galley.size().y / 2.0);
             painter.galley(text_pos, galley, t.text);
@@ -195,7 +203,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 } else if row == Row::LayerMask {
                     // Targets the mask, as clicking its thumbnail in the Layers panel does.
                     mask_click = Some(true);
-                    actions.push(("channel.target".into(), json!({ "channel": "composite" })));
+                    actions.push(("channel.target".into(), json!({ "channel": "mask" })));
                 } else {
                     if matches!(row, Row::Composite | Row::Color(_)) {
                         mask_click = Some(false);
@@ -256,7 +264,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         }
                         Row::LayerMask => {
                             let enabled = masked.as_ref().and_then(|l| l.mask.as_ref()).is_none_or(|m| m.enabled);
-                            item(ui, a, if enabled { "Disable Layer Mask" } else { "Enable Layer Mask" }, "layer.layerMask.enabled", json!({}));
+                            item(ui, a, crate::layer_menu_ui::mask_toggle_label(enabled), "layer.layerMask.enabled", json!({}));
                             item(ui, a, "Delete Layer Mask", "layer.layerMask.delete", json!({}));
                         }
                     }
@@ -276,6 +284,8 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ChannelTarget::Alpha(i) => json!(i),
             ChannelTarget::Color(k) => json!({ "color": k }),
             ChannelTarget::Composite => json!("composite"),
+            ChannelTarget::LayerMask => json!("mask"),
+            ChannelTarget::VectorMask => json!("vectorMask"),
         };
         if icons::button(ui, "trash", 26.0, false, tl!("Delete current channel")).clicked() {
             actions.push(("channel.delete".into(), json!({})));
@@ -291,9 +301,6 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         }
     });
     ctx.data_mut(|d| d.insert_temp(thumbs_id(), drawn));
-    if let Some(on) = mask_click {
-        app.ui.mask_target = on;
-    }
     for (id, p) in actions {
         if id == "ui.renameChannel" {
             if let Some(i) = p.as_u64().and_then(|i| doc.channels.get(i as usize)) {
@@ -303,6 +310,10 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             continue;
         }
         let _ = app.run(&id, p);
+    }
+    if let Some(on) = mask_click {
+        app.ui.mask_target = on;
+        app.sync_mask_targets();
     }
 }
 

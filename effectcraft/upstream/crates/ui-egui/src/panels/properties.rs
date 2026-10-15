@@ -72,6 +72,17 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut y = top;
     let mut actions: Actions = vec![];
 
+    // Several layers selected: "(3) Selected Objects", as in After Effects. The rows show the
+    // first layer; the stopwatch, keyframe button and value edits apply to all of them (#355).
+    let selected = app.session.state.selected_layers.iter().filter(|id| comp.layer(**id).is_some()).count();
+    if selected > 1 {
+        let n = selected.to_string();
+        let label = crate::i18n::tr_args("({}) Selected Objects", &[&n]);
+        p.text(pos2(x0, y + ROW_H / 2.0), Align2::LEFT_CENTER, &label, Tokens::semibold(12.0), t.text);
+        app.auto.add("properties.selectedObjects", Rect::from_min_size(pos2(x0, y), vec2(w, ROW_H)), &label);
+        y += ROW_H + 4.0;
+    }
+
     // ---------------------------------------------------------------- Layer Transform
     if let Some(tr) = layer.transform().cloned() {
         section_header(app, ui, &p, x0, w, y, "Layer Transform", "properties.transform");
@@ -218,7 +229,7 @@ fn transform_row(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
                 match what {
                     "prev" => actions.push(("time.go".into(), json!({"to": "prevKey", "prop": uid}))),
                     "next" => actions.push(("time.go".into(), json!({"to": "nextKey", "prop": uid}))),
-                    _ => actions.push(("prop.toggleKey".into(), json!({"layer": lid, "prop": uid}))),
+                    _ => actions.push(("prop.toggleKey".into(), json!({"layer": lid, "prop": uid, "selected": true}))),
                 }
             }
         }
@@ -228,13 +239,18 @@ fn transform_row(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
         icons::paint(p, swr, Icon::Stopwatch, if resp.hovered() { t.text } else { t.text_dim });
         app.auto.add(&format!("{base}.stopwatch"), swr, &pr.name);
         if resp.clicked() {
-            actions.push(("prop.toggleAnimation".into(), json!({"layer": lid, "prop": uid})));
+            actions.push(("prop.toggleAnimation".into(), json!({"layer": lid, "prop": uid, "selected": true})));
         }
     }
     p.text(pos2(r.min.x + 42.0, cy), Align2::LEFT_CENTER, &pr.name, Tokens::ui(12.0), t.text);
     let vx = r.min.x + (r.width() * 0.5).max(130.0);
     let merge = format!("props-{uid}");
-    let set = |actions: &mut Actions, v: serde_json::Value| actions.push(("prop.set".into(), json!({"layer": lid, "prop": uid, "value": v, "merge": merge})));
+    // With several layers selected the edit applies to all: a scrub by the same change, a typed
+    // value as it is.
+    let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
+    let set = |actions: &mut Actions, v: serde_json::Value| {
+        actions.push(("prop.set".into(), json!({"layer": lid, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
+    };
     let value = ectx.value(layer, pr);
     let is_scale = pr.name == "Scale";
     let pct = is_scale || pr.name == "Opacity";

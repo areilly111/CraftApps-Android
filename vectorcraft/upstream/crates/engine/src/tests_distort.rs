@@ -37,6 +37,20 @@ fn undo_len(s: &Session) -> usize {
     s.doc().unwrap().history.undo.len()
 }
 
+/// How many steps there are to undo and to redo, and whether the document has unsaved changes.
+fn history(s: &Session) -> (usize, usize, bool) {
+    let st = s.doc().unwrap();
+    (st.history.undo.len(), st.history.redo.len(), st.is_dirty())
+}
+
+/// Leave a step to redo (a rectangle drawn and undone, which keeps the selection) and mark the
+/// document saved.
+fn with_a_step_to_redo(s: &mut Session) {
+    rect(s, 700.0, 500.0, 10.0, 10.0);
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.doc_mut().unwrap().mark_saved();
+}
+
 fn gesture(s: &mut Session, tool: &str, pts: &[(f64, f64)], mods: Mods) {
     let v = ViewInfo::default();
     s.select_tool(tool, v).unwrap();
@@ -112,6 +126,58 @@ fn width_tool_gesture_is_one_undo_step() {
     assert_eq!(profile(&s, id).unwrap().len(), 2);
 }
 
+/// Width Point with the place and widths a point has already (given its index, or at its place, with
+/// Adjust Adjoining Width Points, or as Width Point Edit gives back the widths it shows), Copy Width
+/// Point onto the side of a discontinuous point that has its widths already, and Width Profile with
+/// the profile the strokes have already (or null for a uniform stroke and for art with no stroke)
+/// record no undo step: the step to redo stays and the document stays unmodified.
+#[test]
+fn width_commands_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    let id = line(&mut s);
+    let uniform = line(&mut s);
+    let r = rect(&mut s, 100.0, 400.0, 20.0, 20.0);
+    s.execute("select.set", &json!({"ids": [r.0]})).unwrap();
+    let group = NodeId(s.execute("object.group", &json!({})).unwrap()["id"].as_u64().unwrap());
+    // Points 1 and 2 make a discontinuous point at 0.5 whose sides are both 2 pt and 3 pt wide
+    // (point 1 copied onto its own place), and point 3 is at 0.75.
+    s.execute("stroke.widthPoint.set", &json!({"id": id.0, "t": 0.5, "left": 2, "right": 3})).unwrap();
+    s.execute("stroke.widthPoint.copy", &json!({"id": id.0, "index": 1, "t": 0.5})).unwrap();
+    s.execute("stroke.widthPoint.set", &json!({"id": id.0, "t": 0.75, "left": 4, "right": 4})).unwrap();
+    let points = profile(&s, id).unwrap();
+    assert_eq!(points, vec![(0.0, 1.0, 1.0), (0.5, 0.4, 0.6), (0.5, 0.4, 0.6), (0.75, 0.8, 0.8), (1.0, 1.0, 1.0)]);
+    // Width Point Edit shows a width as its factor times half the weight (5 pt) and gives that back.
+    // For this factor the round trip changes the last bit.
+    let dragged = line(&mut s);
+    let f = 1.8822996672167678;
+    assert_ne!(f * 5.0 / 5.0, f);
+    s.execute("stroke.widthProfile.set", &json!({"ids": [dragged.0], "points": [[0, 1, 1], [0.5, f, f], [1, 1, 1]]})).unwrap();
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    let calls = [
+        ("stroke.widthPoint.set", json!({"id": id.0, "index": 1, "t": 0.5, "left": 2, "right": 3}), json!({"index": 1})),
+        ("stroke.widthPoint.set", json!({"id": id.0, "t": 0.75, "left": 4, "right": 4}), json!({"index": 3})),
+        // Adjust Adjoining multiplies point 2's 0.4 by 0.8 and divides the product by 0.8, which
+        // gives 0.4000000000000001.
+        ("stroke.widthPoint.set", json!({"id": id.0, "index": 3, "t": 0.75, "left": 4, "right": 4, "adjustAdjoining": true}), json!({"index": 3})),
+        ("stroke.widthPoint.set", json!({"id": dragged.0, "index": 1, "t": 0.5, "left": f * 5.0, "right": f * 5.0}), json!({"index": 1})),
+        ("stroke.widthPoint.copy", json!({"id": id.0, "index": 2, "t": 0.5}), json!({"index": 2})),
+        ("stroke.widthProfile.set", json!({"ids": [id.0], "points": points}), json!(null)),
+        ("stroke.widthProfile.set", json!({"ids": [uniform.0, group.0], "points": null}), json!(null)),
+    ];
+    for (c, p, reply) in calls {
+        assert_eq!(s.execute(c, &p).unwrap(), reply, "{c} {p}");
+        assert_eq!(history(&s), before, "{c} {p}");
+        assert_eq!(profile(&s, id).unwrap(), points, "{c} {p}");
+        assert_eq!(s.journal.last().unwrap().0, c);
+    }
+    assert_eq!(profile(&s, dragged).unwrap()[1], (0.5, f, f));
+    // Other widths are one undo step, and they clear Redo.
+    s.execute("stroke.widthPoint.set", &json!({"id": id.0, "index": 1, "t": 0.5, "left": 3, "right": 3})).unwrap();
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
+}
+
 // ---------- liquify ----------
 
 fn warp_params() -> serde_json::Value {
@@ -171,6 +237,23 @@ fn liquify_tool_replays_from_the_journal() {
     assert_eq!(path(&t, a), after);
 }
 
+/// A Liquify stroke that reshapes no path (the brush reaches none) records no undo step, run as a
+/// command or dragged with the tool, and the command replies with no ids.
+#[test]
+fn liquify_that_reshapes_no_path_records_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 100.0, 100.0, 200.0, 200.0);
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    let r = s.execute("object.liquify", &json!({"tool": "warp", "points": [[600, 450], [640, 450]], "diameter": 50})).unwrap();
+    assert_eq!(r["ids"], json!([]));
+    assert_eq!(history(&s), before, "object.liquify");
+    gesture(&mut s, "warp", &[(600.0, 450.0), (620.0, 450.0), (640.0, 450.0)], Mods::default());
+    assert_eq!(s.journal.last().unwrap().0, "object.liquify");
+    assert_eq!(history(&s), before, "a Warp tool drag");
+    assert_eq!(path(&s, a).bounds().unwrap(), Rect::new(100.0, 100.0, 300.0, 300.0));
+}
+
 fn session_with_rect() -> Session {
     let mut s = session();
     rect(&mut s, 100.0, 100.0, 200.0, 200.0);
@@ -223,6 +306,40 @@ fn puppet_tool_drag_warps_selection() {
     assert_eq!(undo_len(&s), n + 1);
     assert_eq!(s.journal.last().unwrap().0, "object.puppetWarp");
     assert!(path(&s, a).bounds().unwrap().y0 < 95.0);
+}
+
+/// Puppet Warp with the pins the art holds already (as object.puppetWarp.pins lists them), and
+/// Puppet Warp with every pin left where it is and turning the art by 0° or free, record no undo
+/// step and leave the art as it is: a live shape stays live.
+#[test]
+fn puppet_warp_that_moves_nothing_records_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 100.0, 100.0, 300.0, 100.0);
+    let b = rect(&mut s, 100.0, 300.0, 300.0, 100.0);
+    // The automatic pins, the right end's moved up 30 pt, warp the art in one undo step.
+    let mut p = s.execute("object.puppetWarp.pins", &json!({"id": a.0})).unwrap();
+    let moved = p["moved"].as_array().unwrap();
+    let right = (0..moved.len()).max_by(|&i, &j| moved[i][0].as_f64().unwrap().total_cmp(&moved[j][0].as_f64().unwrap())).unwrap();
+    let y = p["moved"][right][1].as_f64().unwrap();
+    p["moved"][right][1] = json!(y - 30.0);
+    let undo = undo_len(&s);
+    s.execute("object.puppetWarp", &p).unwrap();
+    assert_eq!(undo_len(&s), undo + 1);
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    let pins = json!([[120, 350], [250, 350]]);
+    assert_eq!(s.execute("object.puppetWarp", &json!({"id": b.0, "pins": pins, "moved": pins})).unwrap(), json!({"ids": [b.0]}));
+    let live = matches!(s.doc().unwrap().doc.node(b).unwrap().kind, NodeKind::Path { live: Some(_), .. });
+    assert_eq!((history(&s), live), (before, true), "a live shape with its pins left where they are");
+    let held = s.execute("object.puppetWarp.pins", &json!({"id": a.0})).unwrap();
+    assert_eq!(held["auto"], json!(false));
+    let warped = path(&s, a);
+    let still = json!({"id": a.0, "pins": [[120, 150], [250, 150]], "moved": [[120, 150], [250, 150]], "angles": [null, 0]});
+    for p in [held, still] {
+        assert_eq!(s.execute("object.puppetWarp", &p).unwrap(), json!({"ids": [a.0]}), "{p}");
+        assert_eq!(history(&s), before, "{p}");
+        assert_eq!(path(&s, a), warped, "{p}");
+    }
 }
 
 // ---------- perspective ----------
@@ -381,4 +498,104 @@ fn perspective_move_attaches_loose_objects_to_the_given_plane() {
     s.execute("perspective.move", &json!({"ids": [a.0], "from": [260, 390], "to": [270, 390], "plane": "ground"})).unwrap();
     assert_eq!(grid(&s).attached_plane(a), Some(Plane::Ground));
     assert!(s.execute("perspective.attach", &json!({"ids": [a.0], "plane": "none"})).is_err());
+}
+
+/// With the grid defined, Define Perspective Grid with the values the grid has (Reproject or not),
+/// Attach to Active Plane with no object, Release with Perspective on art not in perspective, Move
+/// Plane to where the plane is (its objects moved with it or not), and Move Plane to Match Object for
+/// an object the active plane is at already record no undo step and reply as before.
+#[test]
+fn perspective_grid_commands_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    s.execute("perspective.grid.preset", &json!({"kind": 2})).unwrap();
+    s.execute("perspective.grid.set", &json!({"cell": 40})).unwrap();
+    s.execute("perspective.plane.set", &json!({"plane": "left"})).unwrap();
+    let a = rect(&mut s, 300.0, 320.0, 40.0, 40.0);
+    s.execute("perspective.attach", &json!({"ids": [a.0], "plane": "left"})).unwrap();
+    let loose = rect(&mut s, 600.0, 100.0, 20.0, 20.0);
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    let definition = grid(&s).definition_json();
+    let left = |ids: Vec<u64>| json!({"plane": "left", "offset": 0.0, "ids": ids});
+    let calls = [
+        ("perspective.grid.set", json!({"cell": 40}), definition.clone()),
+        ("perspective.grid.set", json!({"cell": 40, "reproject": true}), definition),
+        ("perspective.attach", json!({"ids": []}), json!({"ids": [], "plane": "left"})),
+        ("perspective.release", json!({"ids": [loose.0]}), json!(null)),
+        ("perspective.plane.move", json!({"by": 0}), left(vec![])),
+        ("perspective.plane.move", json!({"offset": 0, "objects": "move"}), left(vec![a.0])),
+        ("perspective.plane.matchObject", json!({"id": a.0}), json!({"plane": "left", "offset": 0.0})),
+    ];
+    for (c, p, reply) in calls {
+        assert_eq!(s.execute(c, &p).unwrap(), reply, "{c} {p}");
+        assert_eq!(history(&s), before, "{c} {p}");
+        assert_eq!(s.journal.last().unwrap().0, c);
+    }
+    // Moving the plane by 0 with copies of its objects is one undo step.
+    s.execute("perspective.plane.move", &json!({"by": 0, "objects": "copy"})).unwrap();
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
+}
+
+/// For an object in perspective, Move in Perspective by 0 (along its plane or its normal),
+/// Transform in Perspective by the identity, Transform Again after each, and a Perspective Selection
+/// drag that ends where it started record no undo step. So do a Move by 0 and a 1 pt Nudge that
+/// Snap to Grid takes back to the gridlines the object's edges are on, and Transform Again after
+/// each. With Copy, the identity copies the object in one undo step.
+#[test]
+fn perspective_moves_that_move_nothing_record_no_undo_step() {
+    let mut s = session();
+    s.execute("perspective.grid.preset", &json!({"kind": 2})).unwrap();
+    s.execute("perspective.grid.snap", &json!({"on": false})).unwrap();
+    let a = rect(&mut s, 450.0, 380.0, 60.0, 60.0);
+    s.execute("perspective.attach", &json!({"ids": [a.0], "plane": "right"})).unwrap();
+    s.execute("select.set", &json!({"ids": [a.0]})).unwrap();
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    let shape = path(&s, a);
+    let at = json!([480, 410]);
+    let calls = [
+        ("perspective.move", json!({"from": at, "to": at})),
+        ("object.transformAgain", json!({})),
+        ("perspective.move", json!({"from": at, "to": at, "perpendicular": true})),
+        ("object.transformAgain", json!({})),
+        ("perspective.transform", json!({"matrix": [1, 0, 0, 1, 0, 0]})),
+        ("object.transformAgain", json!({})),
+    ];
+    for (c, p) in calls {
+        assert_eq!(s.execute(c, &p).unwrap(), json!({"ids": [a.0]}), "{c} {p}");
+        assert_eq!((history(&s), path(&s, a)), (before, shape.clone()), "{c} {p}");
+        assert_eq!(s.journal.last().unwrap().0, c);
+    }
+    // Grabbing the object makes its plane the active one (perspective.plane.set), which marks the
+    // document modified without an undo step.
+    gesture(&mut s, "perspectiveSelection", &[(480.0, 410.0), (500.0, 420.0), (480.0, 410.0), (480.0, 410.0)], Mods::default());
+    assert_eq!(s.journal.last().unwrap().0, "perspective.move");
+    let (undo, redo, _) = history(&s);
+    assert_eq!(((undo, redo), path(&s, a)), ((before.0, before.1), shape.clone()), "a drag back to its start");
+    // Snap to Grid takes a move that ends 0.3 pt past a gridline crossing onto the crossing. Then it
+    // takes a move by 0 and a 1 pt nudge back there, and Transform Again after each moves nothing.
+    s.execute("perspective.grid.snap", &json!({"on": true})).unwrap();
+    let g = grid(&s);
+    let (_, _, b) = g.plane_bounds(&s.doc().unwrap().doc, &[a]).unwrap();
+    let past = |v: f64| (v / g.cell).ceil() * g.cell + 0.3 - v;
+    let (c, dv) = (b.center(), vectorcraft_geom::Vec2::new(past(b.x0), past(b.y0)));
+    let (from, to) = (g.to_page(Plane::Right, c).unwrap(), g.to_page(Plane::Right, c + dv).unwrap());
+    s.execute("perspective.move", &json!({"from": [from.x, from.y], "to": [to.x, to.y]})).unwrap();
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    let on_grid = path(&s, a);
+    let calls = [
+        ("perspective.move", json!({"from": [to.x, to.y], "to": [to.x, to.y]})),
+        ("object.transformAgain", json!({})),
+        ("perspective.nudge", json!({"dx": 1, "dy": 0})),
+        ("object.transformAgain", json!({})),
+    ];
+    for (c, p) in calls {
+        assert_eq!(s.execute(c, &p).unwrap(), json!({"ids": [a.0]}), "{c} {p}");
+        assert_eq!((history(&s), path(&s, a)), (before, on_grid.clone()), "{c} {p}");
+    }
+    // The identity with Copy copies the object in one undo step.
+    let r = s.execute("perspective.transform", &json!({"matrix": [1, 0, 0, 1, 0, 0], "copy": true})).unwrap();
+    assert_ne!(r, json!({"ids": [a.0]}));
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
 }

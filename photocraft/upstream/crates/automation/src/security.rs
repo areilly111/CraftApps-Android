@@ -118,6 +118,18 @@ pub fn authentication_reply(line: &str, expected_token: &str) -> (Value, bool) {
     }
 }
 
+/// Answer a repeat `auth` frame on an already authenticated connection. Returns `None` for any
+/// other frame, which the caller dispatches as usual.
+/// Without this, a second `auth` fell through to the method dispatcher as an unknown method.
+pub fn repeat_auth_reply(line: &str) -> Option<Value> {
+    let req: Value = serde_json::from_str(line).ok()?;
+    if req.get("method").and_then(Value::as_str) != Some(AUTH_METHOD) {
+        return None;
+    }
+    let id = req.get("id").cloned().unwrap_or(Value::Null);
+    Some(json!({"id": id, "ok": false, "error": "already authenticated"}))
+}
+
 fn read_token_file(path: &Path) -> Result<String, AutomationError> {
     let token = std::fs::read_to_string(path).map_err(|e| AutomationError::Io(format!("{}: {e}", path.display())))?;
     let token = token.trim().to_owned();
@@ -292,6 +304,17 @@ mod tests {
         let (reply, authenticated) = authentication_reply(&line, &token);
         assert!(authenticated);
         assert_eq!(reply["result"]["authenticated"], true);
+    }
+
+    #[test]
+    fn repeat_auth_on_an_authenticated_connection_says_so() {
+        let line = json!({"id": 3, "method": AUTH_METHOD, "params": {"token": "anything"}}).to_string();
+        let reply = repeat_auth_reply(&line).unwrap();
+        assert_eq!(reply["id"], 3);
+        assert_eq!(reply["ok"], false);
+        assert_eq!(reply["error"], "already authenticated");
+        assert!(repeat_auth_reply(r#"{"id":4,"method":"methods"}"#).is_none());
+        assert!(repeat_auth_reply("{not json").is_none());
     }
 
     #[test]

@@ -110,12 +110,9 @@ pub fn warp_from_params(cmd: &str, p: &Value, rect: [f64; 4]) -> Result<Warp> {
     Ok(w)
 }
 
+/// A Background is turned into a normal layer by the caller first
+/// ([`crate::extra_cmds::background_to_layer`]).
 fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, rect: Rect, interp: Interp) -> Result<()> {
-    if l.locks.position && l.name == "Background" {
-        l.locks.position = false;
-        l.locks.transparency = false;
-        l.name = "Layer 0".into();
-    }
     let locks = l.locks.union(group);
     if locks.position || locks.all {
         return Err(EngineError::Other(format!("layer \"{}\" is locked", l.name)));
@@ -128,7 +125,8 @@ fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, 
             }
         }
         LayerContent::Text(_) => return Err(EngineError::Other("Warp needs rasterized type (or use Type › Warp Text)".into())),
-        LayerContent::Shape(_) => return Err(EngineError::Other("Warp needs a rasterized shape (Layer › Rasterize › Shape)".into())),
+        // The path is warped and the shape stays a shape (#3009).
+        LayerContent::Shape(sh) => crate::vector_cmds::map_shape(sh, None, Some(w))?,
         LayerContent::Smart(sm) => {
             // Store in source space: undo the placement (affine, or Distort / Perspective) around the warp.
             let inv = crate::smart_cmds::placement(sm).inverse().ok_or_else(|| EngineError::Other("the smart object's transform is degenerate".into()))?;
@@ -153,7 +151,7 @@ fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, 
             if let Some(surf) = l.surface_mut() {
                 *surf = match doc_sel {
                     Some(sel) => {
-                        let (lifted, mut rest) = crate::transform_cmds::split_selected(surf, sel);
+                        let (lifted, mut rest) = crate::transform_cmds::split_selected(surf, sel)?;
                         let moved = warp_mesh_surface(&lifted, rect, &map, interp);
                         crate::transform_cmds::composite_over(&mut rest, &moved);
                         rest.prune();
@@ -164,7 +162,7 @@ fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, 
                         let fmt = surf.format();
                         let warped = warp_mesh_surface(surf, rect, &map, interp);
                         let mut rest = surf.convert(photocraft_color::PixelFormat::new(fmt.mode, fmt.sample, true));
-                        crate::pixels::clear_surface(&mut rest, rect, None);
+                        crate::pixels::try_clear_surface(&mut rest, rect, None)?;
                         crate::transform_cmds::composite_over(&mut rest, &warped);
                         rest.prune();
                         rest
@@ -177,6 +175,11 @@ fn warp_layer(doc_sel: Option<&Surface>, group: Locks, l: &mut Layer, w: &Warp, 
         && m.linked
     {
         m.surface = warp_mesh_gray(&m.surface, &map, interp);
+    }
+    if let Some(vm) = l.vector_mask.as_mut()
+        && vm.linked
+    {
+        vm.path = crate::vector_cmds::map_path(&vm.path, None, Some(w))?;
     }
     Ok(())
 }
@@ -208,9 +211,53 @@ fn target(s: &Session, cmd: &str, p: &Value) -> Result<(LayerId, Rect)> {
     Ok((id, rect))
 }
 
+/// The Warp Text settings a transform warp gives a type layer: a preset style (or none) keeps the
+/// type editable, as Photoshop's Edit › Transform › Warp on type does (#3004).
+fn type_warp(cmd: &str, w: &Warp) -> Result<Option<photocraft_doc::text::TextWarp>> {
+    let clamp = |v: f64| if v.is_finite() { v.clamp(-100.0, 100.0) as f32 } else { 0.0 };
+    match w.style {
+        WarpStyle::None => Ok(None),
+        WarpStyle::Custom if w.is_identity() => Ok(None),
+        WarpStyle::Custom => Err(bad(cmd, "type can only take a warp style (arc, flag, …); a custom mesh needs rasterized type")),
+        s => Ok(Some(photocraft_doc::text::TextWarp {
+            style: s.psd_name().into(),
+            value: clamp(w.bend),
+            horizontal_distortion: clamp(w.h_distort),
+            vertical_distortion: clamp(w.v_distort),
+            horizontal: !w.vertical,
+        })),
+    }
+}
+
+/// Warp on a type layer sets its Warp Text style: one history step, and the type stays editable.
+fn warp_type_layer(s: &mut Session, cmd: &str, id: LayerId, w: &Warp) -> Result<Value> {
+    let tw = type_warp(cmd, w)?;
+    let unchanged = s.active().and_then(|d| d.doc.layer(id)).is_some_and(|l| matches!(&l.content, LayerContent::Text(t) if t.warp == tw));
+    if unchanged {
+        return Ok(json!({"layer": id.0, "changed": false}));
+    }
+    s.edit("Warp", |doc, _| {
+        let group = crate::transform_cmds::group_locks(doc, id);
+        let snapshot = doc.clone();
+        let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
+        let locks = l.locks.union(group);
+        if locks.position || locks.all {
+            return Err(EngineError::Other(format!("layer \"{}\" is locked", l.name)));
+        }
+        let LayerContent::Text(t) = &mut l.content else { return Err(EngineError::Other("not a type layer".into())) };
+        t.warp = tw.clone();
+        crate::type_cmds::refresh(&snapshot, t);
+        Ok(())
+    })?;
+    Ok(json!({"layer": id.0, "changed": true, "warp": tw}))
+}
+
 fn apply(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
     let (id, rect) = target(s, cmd, p)?;
     let w = warp_from_params(cmd, p, rect_f(rect))?;
+    if matches!(s.active().and_then(|d| d.doc.layer(id)).map(|l| &l.content), Some(LayerContent::Text(_))) {
+        return warp_type_layer(s, cmd, id, &w);
+    }
     let is_smart = matches!(s.active().and_then(|d| d.doc.layer(id)).map(|l| &l.content), Some(LayerContent::Smart(_)));
     if w.is_identity() && !is_smart {
         return Ok(json!({"layer": id.0, "changed": false}));
@@ -220,6 +267,7 @@ fn apply(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
         let sel = doc.selection.clone();
         let is_group = doc.layer(id).is_some_and(Layer::is_group);
         let group = crate::transform_cmds::group_locks(doc, id);
+        crate::extra_cmds::background_to_layer(doc, id);
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
         warp_layer(if is_group { None } else { sel.as_ref() }, group, l, &w, rect, interp)?;
         let snapshot = doc.clone();
@@ -407,7 +455,7 @@ fn grid(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    const P: &str = r##"{"layer":id?,"rect":[x0,y0,x1,y1]? (warp box; default = layer content ∩ selection),"style":"custom|none|arc|arcLower|arcUpper|arch|bulge|shellLower|shellUpper|flag|wave|fish|rise|fisheye|inflate|squeeze|twist","bend":%=50,"hDistort":%,"vDistort":%,"vertical":bool,"mesh":{"us":[0,…,1],"vs":[0,…,1],"points":[[x,y]…]} ((3c+1)×(3r+1) control points, row-major, document px),"grid":[cols,rows]?,"warp":{full warp object}?,"interpolation":"bicubic|bilinear|nearest"}"##;
+    const P: &str = r##"{"layer":id?,"rect":[x0,y0,x1,y1]? (warp box; default = layer content ∩ selection),"style":"custom|none|arc|arcLower|arcUpper|arch|bulge|shellLower|shellUpper|flag|wave|fish|rise|fisheye|inflate|squeeze|twist","bend":%=50,"hDistort":%,"vDistort":%,"vertical":bool,"mesh":{"us":[0,…,1],"vs":[0,…,1],"points":[[x,y]…]} ((3c+1)×(3r+1) control points, row-major, document px),"grid":[cols,rows]?,"warp":{full warp object}?,"interpolation":"bicubic|bilinear|nearest"} — on a type layer a style (or none) sets its Warp Text and the type stays editable"##;
     const S: &str = r##"{"warp":{…}? (the warp being edited; returned split),"rect":[x0,y0,x1,y1]?,"at":[x,y]? (document point; default = middle of the patch)} — without `warp`, edits the active smart object's warp. A 1×1 custom mesh is divided at the thirds first (the guides drawn on the default grid), so splitWarpCrosswise on an identity custom warp returns a 4×4 mesh (knots at 0, 1/3, 1/2, 2/3 and 1), not a 2×2. A preset is fitted as one patch and split without that step."##;
     const G: &str = r##"{"warp":{…}? (the warp being edited; returned with the new mesh),"rect":[x0,y0,x1,y1]?,"size":n|"default"|"3"|"4"|"5" (square patches, 1..=64; 1 and "default" are the single-patch grid)} — without `warp`/`style`/`mesh`, edits the active smart object's warp. The surface is kept and the new lines are real splits at i/n."##;
     vec![
@@ -512,6 +560,23 @@ mod tests {
         st.doc.layer(st.active_layer.unwrap()).unwrap().surface().unwrap().clone()
     }
 
+    /// Warp on type sets its Warp Text (#3004): the layer stays type, one step; a custom mesh is
+    /// refused rather than rasterizing.
+    #[test]
+    fn warp_style_on_type_is_warp_text() {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 200, "height": 100})).unwrap();
+        s.execute("type.create", json!({"x": 10, "y": 60, "text": "Hi"})).unwrap();
+        let n = s.active().unwrap().history.past_len();
+        s.execute("edit.transform.warp", json!({"style": "arc", "bend": 30})).unwrap();
+        let st = s.active().unwrap();
+        let LayerContent::Text(t) = &st.doc.layer(st.active_layer.unwrap()).unwrap().content else { panic!("type") };
+        assert_eq!(t.warp.as_ref().map(|w| (w.style.as_str(), w.value)), Some(("warpArc", 30.0)));
+        assert_eq!(st.history.past_len(), n + 1);
+        let mesh = BezierMesh::identity([0.0, 0.0, 10.0, 10.0], 1, 1).map_points(|p| [p[0] * 2.0, p[1]]);
+        assert!(s.execute("edit.transform.warp", json!({"warp": Warp::custom(mesh, [0.0, 0.0, 10.0, 10.0])})).is_err());
+    }
+
     #[test]
     fn identity_and_bend_zero_are_no_ops_at_every_depth() {
         for depth in [8u64, 16, 32] {
@@ -539,8 +604,9 @@ mod tests {
         let before = active_surface(&s);
         s.execute("edit.transform.warp", json!({"style": "arc", "bend": 50})).unwrap();
         let after = active_surface(&s);
-        assert!(after.content_bounds().y1 > 42, "{:?}", after.content_bounds());
-        assert!(after.pixel(11, 11)[3] < 0.5, "top-left corner pulls in");
+        // As in Photoshop: the bottom edge keeps its corners, the top rises and spreads.
+        let c = after.content_bounds();
+        assert!(c.y1 <= 41 && c.y0 < 8 && c.x0 < 8 && c.x1 > 62, "{c:?}");
         s.undo();
         assert_eq!(active_surface(&s), before);
         assert!(s.execute("edit.transform.warp", json!({"style": "spiral"})).is_err());

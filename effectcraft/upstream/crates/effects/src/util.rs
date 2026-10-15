@@ -433,6 +433,17 @@ pub fn layer_rect_at(ctx: &crate::EffectCtx, offset: [f64; 2], scale: f64) -> (f
     (offset[0], offset[1], ctx.layer_size[0] * scale, ctx.layer_size[1] * scale)
 }
 
+/// Transparent pixels to add on every side ([`crate::Buf::pad`]) of a buffer `size` pixels big,
+/// with `offset` and `scale`, so it covers the whole layer rectangle (at most 4096). A text or
+/// shape layer's buffer only surrounds its content, but its layer bounds are comp-sized (see
+/// the renderer's `effect_bounds`): an effect that fills the layer, such as CC Tiler, fills
+/// those as in After Effects (#659).
+pub fn layer_cover_pad(ctx: &crate::EffectCtx, size: [u32; 2], offset: [f64; 2], scale: f64) -> u32 {
+    let (x0, y0, w, h) = layer_rect_at(ctx, offset, scale);
+    let need = [-x0, -y0, x0 + w - f64::from(size[0]), y0 + h - f64::from(size[1])].into_iter().fold(0.0, f64::max);
+    need.ceil().min(4096.0) as u32
+}
+
 /// Resample another layer (a layer parameter) into `b`'s pixel grid. With `stretch` the other
 /// layer is scaled to this layer's size ("Stretch to Fit"); otherwise it is centred.
 pub fn fit_layer(ctx: &crate::EffectCtx, b: &crate::Buf, other: &crate::LayerPixels, stretch: bool) -> Image {

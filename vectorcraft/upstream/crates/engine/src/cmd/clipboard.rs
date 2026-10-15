@@ -21,7 +21,7 @@ use vectorcraft_color::Swatch;
 use vectorcraft_doc::{Document, GraphicStyle, ImageBlob, Node, NodeId, PatternDef, Symbol, TextStyleDef};
 use vectorcraft_geom::Rect;
 
-pub use flavours::{BITMAP, EMF, FILE_HEAD, Flavour, PASTE_ORDER, PDF, PNG, SVG, TEXT, file_flavour, is_address};
+pub use flavours::{BITMAP, EMF, FILE_HEAD, Flavour, PASTE_ORDER, PDF, PNG, SVG, TEXT, file_flavour, is_address, names_a_picture};
 pub(crate) use resources::SwatchChoices;
 
 use super::*;
@@ -142,8 +142,8 @@ impl Clipboard {
         d.patterns = self.patterns.clone();
         d.swatches.extend(self.swatches.iter().cloned());
         d.graphic_styles.extend(self.graphic_styles.iter().cloned());
-        d.char_styles = self.char_styles.clone();
-        d.para_styles = self.para_styles.clone();
+        d.char_styles = self.char_styles.clone().into();
+        d.para_styles = self.para_styles.clone().into();
         if !self.brushes.is_empty() {
             let mut lib = vectorcraft_brush::library(&d);
             for b in &self.brushes {
@@ -245,6 +245,24 @@ mod tests {
         }
         for t in ["Pasted words", "see https://example.com", "https://a.org https://b.org", "https://", "example.com/cat.png", ""] {
             assert!(!is_address(t), "{t}");
+        }
+    }
+
+    /// The image markup some browsers put as text next to a copied picture names it too (#1089);
+    /// markup with words in it is text.
+    #[test]
+    fn markup_of_only_images_names_a_picture() {
+        for m in [
+            r#"<img src="https://static.example.com/eagle.png" jsaction="" class="sFlh5c" style="max-width: 351px" alt="">"#,
+            r#"<meta http-equiv="content-type" content="text/html; charset=utf-8"><img src="a.png">"#,
+            "<html><body><!--StartFragment--><IMG SRC=\"a.png\"/><!--EndFragment--></body></html>",
+            r#"<a href="https://x.org"><img src="a.png"></a>"#,
+            "https://example.com/cat.png",
+        ] {
+            assert!(names_a_picture(m), "{m}");
+        }
+        for t in ["<p>Hello</p>", r#"<img src="a.png"> and a caption"#, "<b>bold</b>", "<imgx>", "<img", "plain words", "<br>", ""] {
+            assert!(!names_a_picture(t), "{t}");
         }
     }
 

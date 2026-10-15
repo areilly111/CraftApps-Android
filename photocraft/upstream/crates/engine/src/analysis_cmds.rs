@@ -171,11 +171,20 @@ fn set_quiet(s: &mut Session, f: impl FnOnce(&mut Document)) -> Result<()> {
     Ok(())
 }
 
-/// Run several commands as one history step labelled `label`.
+/// Run several commands as one history step labelled `label`. On failure the document goes back
+/// as it was and the journal forgets the commands `f` ran, so an action being recorded does not
+/// replay an edit that was taken back.
 pub(crate) fn compound<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Session) -> Result<R>) -> Result<R> {
     let st = s.active().ok_or(EngineError::NoDocument)?;
     let (before, history, prior) = (st.doc.clone(), st.history.clone(), st.layer_target());
+    let journal = s.journal.len();
+    // Color Sampler points are view state a step may move (crop, rotation): roll them back too, so
+    // a failed second step can't leave them pinned to pixels the restored document no longer has.
+    let samplers = st.color_samplers.clone();
     let r = f(s);
+    if r.is_err() {
+        s.journal.truncate(journal);
+    }
     let st = s.active_mut().ok_or(EngineError::NoDocument)?;
     st.history = history;
     match r {
@@ -189,6 +198,7 @@ pub(crate) fn compound<R>(s: &mut Session, label: &str, f: impl FnOnce(&mut Sess
         }
         Err(e) => {
             st.doc = before;
+            st.color_samplers = samplers;
             st.revision += 1;
             st.last_damage = None;
             Err(e)
@@ -660,7 +670,7 @@ fn straighten(s: &mut Session, p: &Value) -> Result<Value> {
         return Ok(json!({"angle": 0.0}));
     }
     let st = s.active().ok_or(EngineError::NoDocument)?;
-    let active_bg = st.active_layer.and_then(|id| d.layer(id)).is_some_and(|l| l.name == "Background" && l.locks.position);
+    let active_bg = st.active_layer.and_then(|id| d.layer(id)).is_some_and(|l| d.is_background(l.id));
     let crop = p.get("crop").and_then(Value::as_bool).unwrap_or(active_bg || st.active_layer.is_none());
     let (w0, h0) = (f64::from(d.size.width), f64::from(d.size.height));
     compound(s, "Straighten", |s| {

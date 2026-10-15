@@ -39,6 +39,9 @@ fn form(app: &mut PhotocraftApp, command: &str, label: &str, fields: Value, choi
     json!({"dialog": app.ui.open_dialog(DialogKind::Command, f)})
 }
 
+/// File › Scripts › Browse… lists these script files (plus the JSON/text the engine parses).
+const SCRIPT_EXTENSIONS: &[&str] = &["psjs", "ccjs", "jsx", "js", "jsxbin", "json", "txt"];
+
 /// Menu items fronted here (dialogs before the engine command). `None` when not ours.
 pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Value) -> Option<Result<Value, String>> {
     if !no_params(params) {
@@ -86,10 +89,11 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &V
             form(app, id, "Image Statistics", json!({"mode": "median", "input": dir, "align": false}), json!({"mode": modes}))
         }
         "file.scripts.browse" => {
-            return Some(app.pick_file_bytes(|app, name, bytes| {
+            return Some(app.pick_file_bytes_filtered(SCRIPT_EXTENSIONS, |app, name, bytes| {
                 let r = app.run("file.scripts.browse", json!({"script": String::from_utf8_lossy(&bytes)}));
                 if r.is_ok() {
-                    app.ui.status = format!("Ran script {name}");
+                    let template = "Ran script {name}";
+                    app.ui.status = crate::i18n::fmt(tl!(template), &[("name", &name)]);
                 }
                 r
             }));
@@ -486,7 +490,7 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             let nslices = photocraft_doc::slices::resolve(&doc).len();
             if !doc.slices.is_empty() {
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(format!("{nslices} slices")).color(t.text_dim));
+                ui.label(egui::RichText::new(crate::i18n::trn(crate::i18n::current(), nslices as u64, "{n} slice", "{n} slices")).color(t.text_dim));
                 check(ui, f, "html", tl!("Save HTML and Images"), true);
                 dropdown_str(ui, "web-slices", f, "slices", &[("all", tl!("All Slices")), ("user", tl!("All User Slices"))], 150.0);
             }
@@ -539,7 +543,8 @@ fn save_for_web(app: &mut PhotocraftApp, p: Value) -> Result<Value, String> {
         app.ui.status_error = true;
     })?;
     app.sync_views();
-    app.ui.status = format!("Saved for Web: {} file(s)", r["files"].as_array().map_or(0, Vec::len));
+    app.ui.status =
+        crate::i18n::trn(crate::i18n::current(), r["files"].as_array().map_or(0, Vec::len) as u64, "Saved for Web: {n} file", "Saved for Web: {n} files");
     app.ui.status_error = false;
     Ok(r)
 }
@@ -582,11 +587,40 @@ pub fn open_print(app: &mut PhotocraftApp) -> u64 {
         ("registrationMarks", json!(false)),
         ("description", json!(false)),
         ("labels", json!(false)),
+        ("emulsionDown", json!(false)),
+        ("units", json!("cm")),
         ("output", json!("")),
     ] {
         f.entry(k.to_string()).or_insert(v);
     }
     app.ui.open_dialog(DialogKind::Command, f)
+}
+
+/// Points per unit for the Position and Size fields.
+fn unit_pt(units: &str) -> f64 {
+    match units {
+        "mm" => 72.0 / 25.4,
+        "in" => 72.0,
+        _ => 72.0 / 2.54,
+    }
+}
+
+/// A number field in `units` for a value kept in points; true when edited.
+fn length_field(ui: &mut egui::Ui, label: &str, pt: &mut f64, units: &str) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let k = unit_pt(units);
+    let mut v = (*pt / k) as f32;
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).color(t.text_dim));
+        let before = v;
+        crate::widgets::value_field(ui, &mut v, 0.0..=10000.0, units, 70.0);
+        if (v - before).abs() > 1e-4 && v.is_finite() {
+            *pt = f64::from(v) * k;
+            changed = true;
+        }
+    });
+    changed
 }
 
 fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) {
@@ -606,6 +640,8 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                     ui.painter().rect_filled(page, 0.0, egui::Color32::WHITE);
                     ui.painter().rect_stroke(page, 0.0, egui::Stroke::new(1.0, t.separator), egui::StrokeKind::Outside);
                     let (x, y, w, h) = l.rect;
+                    // Emulsion Down shows the page as it prints: mirrored.
+                    let x = if l.emulsion_down { pw - x - w } else { x };
                     let img = egui::Rect::from_min_size(
                         egui::pos2(page.left() + x as f32 * k, page.bottom() - (y + h) as f32 * k),
                         egui::vec2(w as f32 * k, h as f32 * k),
@@ -620,7 +656,12 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                         tx
                     });
                     let clip = ui.painter().with_clip_rect(page);
-                    clip.image(tex.id(), img, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                    let uv = if l.emulsion_down {
+                        egui::Rect::from_min_max(egui::pos2(1.0, 0.0), egui::pos2(0.0, 1.0))
+                    } else {
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0))
+                    };
+                    clip.image(tex.id(), img, uv, egui::Color32::WHITE);
                     let mark = egui::Stroke::new(1.0, egui::Color32::BLACK);
                     if l.marks.corner_crop {
                         for (c, dx, dy) in
@@ -688,20 +729,27 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                 240.0,
             );
             if s(f, "colorHandling", "") == "photocraftManages" {
-                dropdown_str(
-                    ui,
-                    "print-profile",
-                    f,
-                    "printerProfile",
-                    &[
-                        ("coated-cmyk", tl!("Coated CMYK")),
-                        ("srgb", "sRGB IEC61966-2.1"),
-                        ("adobe-rgb-compat", tl!("Adobe RGB (1998) compatible")),
-                        ("display-p3", tl!("Display P3")),
-                        ("gray-gamma-2.2", tl!("Gray Gamma 2.2")),
-                    ],
-                    240.0,
-                );
+                // Photoshop's Printer Profile menu: the built-ins, then every installed printer
+                // (output class) profile by its description.
+                let installed: Vec<_> = photocraft_engine::installed_profiles::installed()
+                    .into_iter()
+                    .filter(|p| p.is_destination() && p.class == photocraft_cms::ProfileClass::Output)
+                    .collect();
+                let mut profiles: Vec<(&str, &str)> = vec![
+                    ("coated-cmyk", tl!("Coated CMYK")),
+                    ("srgb", "sRGB IEC61966-2.1"),
+                    ("adobe-rgb-compat", tl!("Adobe RGB (1998) compatible")),
+                    ("display-p3", tl!("Display P3")),
+                    ("gray-gamma-2.2", tl!("Gray Gamma 2.2")),
+                ];
+                profiles.extend(installed.iter().map(|p| (p.path.as_str(), p.description.as_str())));
+                // A remembered profile that is no longer installed still shows, by its file name.
+                let cur = s(f, "printerProfile", "coated-cmyk");
+                let stem = std::path::Path::new(&cur).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                if !profiles.iter().any(|(v, _)| *v == cur) {
+                    profiles.push((cur.as_str(), stem.as_str()));
+                }
+                dropdown_str(ui, "print-profile", f, "printerProfile", &profiles, 240.0);
                 ui.horizontal(|ui| {
                     dropdown_str(
                         ui,
@@ -720,16 +768,54 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                 });
             }
             head(ui, tl!("Position and Size"));
+            dropdown_str(ui, "print-units", f, "units", &[("cm", tl!("Centimeters")), ("mm", tl!("Millimeters")), ("in", tl!("Inches"))], 130.0);
+            let units = s(f, "units", "cm");
             check(ui, f, "center", tl!("Center"), true);
             if !b(f, "center", true) {
                 ui.horizontal(|ui| {
-                    number(ui, f, "top", tl!("Top"), 0.0..=100.0, "in", 0.0);
-                    number(ui, f, "left", tl!("Left"), 0.0..=100.0, "in", 0.0);
+                    // Kept in inches (Photoshop's Position fields), shown in the chosen units.
+                    for (key, label) in [("top", tl!("Top")), ("left", tl!("Left"))] {
+                        let mut pt = n(f, key, 0.0) * 72.0;
+                        if length_field(ui, label, &mut pt, &units) {
+                            f.insert(key.into(), json!(pt / 72.0));
+                        }
+                    }
                 });
             }
             check(ui, f, "scaleToFit", tl!("Scale to Fit Media"), false);
-            if !b(f, "scaleToFit", false) {
-                number(ui, f, "scale", tl!("Scale"), 1.0..=1000.0, "%", 100.0);
+            // Scaled Print Size: Scale, Height and Width move together; Print Resolution follows.
+            if let Ok(l) = photocraft_engine::print_cmds::layout(&doc, &params(f), "file.print") {
+                let (_, _, w, h) = l.rect;
+                let (mut w2, mut h2) = (w, h);
+                let fit = b(f, "scaleToFit", false);
+                if !fit {
+                    // Two decimals: Height and Width set fractional scales.
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(tl!("Scale")).color(t.text_dim));
+                        let mut v = n(f, "scale", 100.0) as f32;
+                        crate::widgets::value_field(ui, &mut v, 1.0..=1000.0, "%", 64.0);
+                        f.insert("scale".into(), json!((f64::from(v) * 100.0).round() / 100.0));
+                    });
+                }
+                ui.horizontal(|ui| {
+                    let hc = length_field(ui, tl!("Height"), &mut h2, &units);
+                    let wc = length_field(ui, tl!("Width"), &mut w2, &units);
+                    let k = if wc && w > 0.0 {
+                        Some(w2 / w)
+                    } else if hc && h > 0.0 {
+                        Some(h2 / h)
+                    } else {
+                        None
+                    };
+                    if let Some(k) = k.filter(|k| k.is_finite() && *k > 0.0) {
+                        f.insert("scale".into(), json!(((l.scale * k * 100.0) * 100.0).round() / 100.0));
+                        f.insert("scaleToFit".into(), json!(false));
+                    }
+                });
+                if w > 0.0 {
+                    let ppi = f64::from(doc.size.width) / (w / 72.0);
+                    ui.label(egui::RichText::new(format!("{} {ppi:.0} PPI", tl!("Print Resolution:"))).color(t.text_dim).size(11.0));
+                }
             }
             head(ui, tl!("Printing Marks"));
             ui.horizontal(|ui| {
@@ -741,6 +827,8 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                 check(ui, f, "description", tl!("Description"), false);
                 check(ui, f, "labels", tl!("Labels"), false);
             });
+            head(ui, tl!("Functions"));
+            check(ui, f, "emulsionDown", tl!("Emulsion Down"), false);
             head(ui, tl!("Save as PDF"));
             let mut out = s(f, "output", "");
             if ui.add(egui::TextEdit::singleline(&mut out).hint_text(tl!("(print to the printer)")).desired_width(300.0)).changed() {
@@ -753,9 +841,11 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
 fn print_confirm(app: &mut PhotocraftApp, f: &Map<String, Value>) -> Result<Value, String> {
     let r = app.run("file.print", params(f))?;
     app.ui.status = if r["sent"] == json!(true) {
-        format!("Sent to the printer ({})", r["spooler"].as_str().unwrap_or(""))
+        let template = "Sent to the printer ({spooler})";
+        crate::i18n::fmt(tl!(template), &[("spooler", r["spooler"].as_str().unwrap_or(""))])
     } else {
-        format!("Printed to {}", r["pdf"].as_str().unwrap_or(""))
+        let template = "Printed to {path}";
+        crate::i18n::fmt(tl!(template), &[("path", r["pdf"].as_str().unwrap_or(""))])
     };
     Ok(r)
 }
@@ -886,6 +976,20 @@ mod tests {
         for id in ["file.automate.contactSheetII", "file.scripts.statistics", "file.scripts.scriptEventsManager", "file.package"] {
             let r = crate::menus::invoke(&mut app, &ctx, id, json!({})).unwrap();
             assert!(r["dialog"].is_u64(), "{id}");
+        }
+    }
+
+    #[test]
+    fn print_dialog_does_not_inherit_scripted_send_override() {
+        for send in [false, true] {
+            let (mut app, ctx) = app();
+            let out = std::env::temp_dir().join(format!("pc-printui-state-{}-{send}.pdf", std::process::id())).to_string_lossy().into_owned();
+            app.session.execute("file.print", json!({"output": out, "send": send, "dryRun": true})).unwrap();
+            assert!(app.session.file_menu.last_print.as_ref().unwrap().get("send").is_none());
+            let r = crate::menus::invoke(&mut app, &ctx, "file.print", json!({})).unwrap();
+            let id = r["dialog"].as_u64().unwrap();
+            assert!(app.ui.dialog_mut(id).unwrap().fields.get("send").is_none());
+            std::fs::remove_file(out).unwrap();
         }
     }
 }

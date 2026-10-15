@@ -86,7 +86,14 @@ fn an_embedded_image_is_recoloured_and_the_original_pixels_stay() {
     d.images.insert(key.clone(), blob.clone());
     let mut n = Node::new(
         NodeId(0),
-        NodeKind::Image(ImageObject { key, width: 30, height: 30, xf: Affine::translate((20.0, 20.0)), link: None, placement: Default::default() }),
+        NodeKind::Image(Box::new(ImageObject {
+            key,
+            width: 30,
+            height: 30,
+            xf: Affine::translate((20.0, 20.0)),
+            link: None,
+            placement: Default::default(),
+        })),
     );
     n.appearance.effects.push(hue());
     d = {

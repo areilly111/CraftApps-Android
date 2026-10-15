@@ -46,6 +46,418 @@ fn grey(v: u8) -> [u8; 4] {
 }
 
 #[test]
+fn film_grain_parameters_are_bounded_and_neutral_settings_preserve_the_art() {
+    assert_eq!(fx("artistic.filmGrain", json!({})), PixelFx::FilmGrain { grain: 4.0, highlight: 0.0, intensity: 10.0 });
+    assert_eq!(
+        fx("artistic.filmGrain", json!({"grain": 1e308, "highlightArea": -100, "intensity": 200})),
+        PixelFx::FilmGrain { grain: 20.0, highlight: 0.0, intensity: 10.0 }
+    );
+    assert_eq!(fx("artistic.filmGrain", json!({"grain": "1e999", "intensity": []})), fx("artistic.filmGrain", json!({})));
+    let (w, h) = (24, 18);
+    let src = image(w, h, |x, y| [(3 * x) as u8, (2 * y) as u8, 12, 128]);
+    let mut out = src.clone();
+    let neutral = fx("artistic.filmGrain", json!({"grain": 0, "highlightArea": 0, "intensity": 0}));
+    neutral.apply(&mut out, w, h, &space(w, h));
+    assert_eq!(out, src);
+    assert_eq!(neutral.outset(Rect::new(0.0, 0.0, w as f64, h as f64)), 0.0);
+    assert_eq!(neutral.reach(), Some(0.0));
+}
+
+#[test]
+fn film_grain_is_monochrome_and_quieter_in_highlights() {
+    let (w, h) = (64, 48);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20, "intensity": 0}));
+    let mut changes = Vec::new();
+    for tone in [64, 128, 240] {
+        let mut out = image(w, h, |_, _| grey(tone));
+        grain.apply(&mut out, w, h, &space(w, h));
+        assert!(out.as_chunks::<4>().0.iter().all(|p| p[0] == p[1] && p[1] == p[2] && p[3] == 255));
+        changes.push(out.as_chunks::<4>().0.iter().map(|p| f64::from(p[0].abs_diff(tone))).sum::<f64>() / (w * h) as f64);
+    }
+    assert!(changes[0] > 3.0 * changes[2] && changes[1] > 3.0 * changes[2], "shadows and midtones take more grain: {changes:?}");
+}
+
+#[test]
+fn film_grain_highlight_area_and_intensity_change_the_tones() {
+    let (w, h) = (16, 16);
+    let apply = |tone, area, intensity| {
+        let mut out = image(w, h, |_, _| grey(tone));
+        fx("artistic.filmGrain", json!({"grain": 0, "highlightArea": area, "intensity": intensity})).apply(&mut out, w, h, &space(w, h));
+        out[0]
+    };
+    assert_eq!(apply(64, 0, 10), 64, "intensity alone doesn't recolour shadows");
+    assert_eq!(apply(192, 0, 10), 192, "intensity alone doesn't add global contrast");
+    assert!(apply(192, 20, 10) > apply(192, 20, 0), "intensity sets highlight strength");
+    let tone = 192;
+    let mut strong = image(w, h, |_, _| grey(tone));
+    let mut quiet = strong.clone();
+    fx("artistic.filmGrain", json!({"grain": 20, "highlightArea": 0, "intensity": 0})).apply(&mut strong, w, h, &space(w, h));
+    fx("artistic.filmGrain", json!({"grain": 20, "highlightArea": 0, "intensity": 10})).apply(&mut quiet, w, h, &space(w, h));
+    let spread = |data: &[u8]| data.as_chunks::<4>().0.iter().map(|p| u32::from(p[0].abs_diff(tone))).sum::<u32>();
+    assert!(spread(&strong) > spread(&quiet), "Intensity also quiets highlight grain with the default Highlight Area");
+    let highlights = [0, 10, 20].map(|area| apply(192, area, 10));
+    assert!(highlights.windows(2).all(|p| p[0] < p[1]), "wider highlight area lifts more midtones: {highlights:?}");
+    assert_eq!(apply(0, 20, 10), 0, "black doesn't become a white background");
+}
+
+#[test]
+fn film_grain_preserves_coverage_without_a_halo() {
+    let (w, h) = (40, 30);
+    let src = image(w, h, |x, y| match (x + y) % 5 {
+        0 => [0; 4],
+        1 => [1, 0, 1, 1],
+        2 => [75, 12, 25, 128],
+        _ => [180, 60, 90, 255],
+    });
+    let mut out = src.clone();
+    fx("artistic.filmGrain", json!({"grain": 20, "highlightArea": 20})).apply(&mut out, w, h, &space(w, h));
+    assert_ne!(out, src);
+    for (p, original) in out.as_chunks::<4>().0.iter().zip(src.as_chunks::<4>().0) {
+        assert_eq!(p[3], original[3]);
+        assert!(p[..3].iter().all(|c| *c <= p[3]), "premultiplied: {p:?}");
+        if original[3] == 0 {
+            assert_eq!(p, original);
+        }
+    }
+}
+
+#[test]
+fn film_grain_pattern_survives_redraws_moves_resolution_changes_and_tiles() {
+    let (w, h) = (32, 24);
+    let src = image(w, h, |_, _| grey(128));
+    let grain = fx("artistic.filmGrain", json!({"grain": 15}));
+    let mut whole = src.clone();
+    grain.apply(&mut whole, w, h, &space(w, h));
+    let mut again = src.clone();
+    grain.apply(&mut again, w, h, &space(w, h));
+    assert_eq!(whole, again);
+    let moved =
+        PixelSpace { to_doc: Affine::translate((17.0, -9.0)), center: space(w, h).center + vectorcraft_geom::Vec2::new(17.0, -9.0), ..space(w, h) };
+    let mut shifted = src;
+    grain.apply(&mut shifted, w, h, &moved);
+    assert_eq!(whole, shifted);
+    let mut two = image(2 * w, 2 * h, |_, _| grey(128));
+    grain.apply(&mut two, 2 * w, 2 * h, &PixelSpace { to_doc: Affine::scale(0.5), px: 0.5, ..space(w, h) });
+    let mut difference = 0u64;
+    for y in 0..h {
+        for x in 0..w {
+            let down = [(0, 0), (1, 0), (0, 1), (1, 1)].map(|(dx, dy)| u32::from(at(&two, 2 * w, 2 * x + dx, 2 * y + dy)[0]));
+            let down = (down.iter().sum::<u32>() / 4) as u8;
+            difference += u64::from(at(&whole, w, x, y)[0].abs_diff(down));
+        }
+    }
+    let mean_delta = difference as f64 / (w * h) as f64;
+    let fine_deviation = film_grain_deviation(two.as_chunks::<4>().0.iter().map(|p| f64::from(p[0])));
+    // Two diagonal samples approximate the four point samples in the finer raster. Bound
+    // their error relative to grain strength, so a stronger tonal curve does not fail it.
+    assert!(mean_delta < 0.25 * fine_deviation, "the field keeps its document scale: mean delta {mean_delta}, point deviation {fine_deviation}");
+    let (tw, th) = (13, 11);
+    let mut tile = image(tw, th, |_, _| grey(128));
+    grain.apply(&mut tile, tw, th, &PixelSpace { to_doc: Affine::translate((5.0, 3.0)), ..space(w, h) });
+    for y in 0..th {
+        for x in 0..tw {
+            assert_eq!(at(&tile, tw, x, y), at(&whole, w, x + 5, y + 3), "no tile seam");
+        }
+    }
+}
+
+#[test]
+fn film_grain_keeps_colour_without_an_extra_contrast_curve_and_scales_with_alpha() {
+    let (w, h) = (256, 256);
+    let original = [180, 100, 60, 255];
+    let mut out = image(w, h, |_, _| original);
+    // Intensity with no highlight area must not silently change colour or clip channels.
+    fx("artistic.filmGrain", json!({"grain": 0, "intensity": 10})).apply(&mut out, w, h, &space(w, h));
+    assert!(out.as_chunks::<4>().0.iter().all(|p| *p == original));
+    let grain = fx("artistic.filmGrain", json!({"grain": 4}));
+    grain.apply(&mut out, w, h, &space(w, h));
+    for p in out.as_chunks::<4>().0 {
+        // A neutral floating offset can round either side of a half-byte tie in each channel.
+        assert!((i32::from(p[0]) - i32::from(p[1]) - 80).abs() <= 1, "one neutral offset, no channel clipping");
+        assert!((i32::from(p[1]) - i32::from(p[2]) - 40).abs() <= 1);
+    }
+    // These straight colours have exact premultiplied representations at alpha 85 and 170.
+    let colour = [180, 120, 60];
+    let mut opaque = image(w, h, |_, _| [colour[0], colour[1], colour[2], 255]);
+    grain.apply(&mut opaque, w, h, &space(w, h));
+    for alpha in [85u8, 170] {
+        let mut translucent = image(w, h, |_, _| {
+            let [r, g, b] = colour.map(|c| (u32::from(c) * u32::from(alpha) / 255) as u8);
+            [r, g, b, alpha]
+        });
+        grain.apply(&mut translucent, w, h, &space(w, h));
+        for (p, full) in translucent.as_chunks::<4>().0.iter().zip(opaque.as_chunks::<4>().0) {
+            for c in 0..3 {
+                let expected = (u32::from(full[c]) * u32::from(alpha) + 127) / 255;
+                assert!(i32::from(p[c]).abs_diff(expected as i32) <= 1, "alpha scales colour consistently: {p:?}, {full:?}");
+            }
+            assert_eq!(p[3], alpha);
+        }
+    }
+    let mut white = image(w, h, |_, _| grey(255));
+    fx("artistic.filmGrain", json!({"grain": 20, "highlightArea": 20, "intensity": 10})).apply(&mut white, w, h, &space(w, h));
+    assert!(white.as_chunks::<4>().0.iter().all(|p| *p == grey(255)), "white stays clean");
+}
+
+#[test]
+fn film_grain_is_visible_on_dark_fills_with_even_shadow_and_midtone_strength() {
+    let (w, h) = (128, 96);
+    let grain = fx("artistic.filmGrain", json!({}));
+    let render = |tone| {
+        let mut out = image(w, h, |_, _| grey(tone));
+        grain.apply(&mut out, w, h, &space(w, h));
+        out
+    };
+    let black = render(0);
+    assert!(black.as_chunks::<4>().0.iter().any(|p| p[0] > 2), "pure black takes light grain speckles");
+    assert!(film_grain_deviation(black.as_chunks::<4>().0.iter().map(|p| f64::from(p[0]))) > 2.0);
+    let dark = render(26);
+    let mid = render(128);
+    let [dark, mid] = [dark, mid].map(|out| film_grain_deviation(out.as_chunks::<4>().0.iter().map(|p| f64::from(p[0]))));
+    assert!(dark > 4.0 && (dark / mid - 1.0).abs() < 0.02, "default grain must remain even across shadows and midtones: {dark}, {mid}");
+}
+
+#[test]
+fn film_grain_leaves_soft_but_visible_grain_on_light_fills_at_defaults() {
+    let (w, h) = (128, 96);
+    let colour = [245, 240, 225, 255];
+    let mut cream = image(w, h, |_, _| colour);
+    fx("artistic.filmGrain", json!({})).apply(&mut cream, w, h, &space(w, h));
+    let deviation = film_grain_deviation(cream.as_chunks::<4>().0.iter().map(|p| f64::from(p[0])));
+    let changed = cream.as_chunks::<4>().0.iter().filter(|p| **p != colour).count();
+    assert!((0.5..3.0).contains(&deviation), "soft grain must remain visible on cream: {deviation}");
+    assert!(changed > w * h / 4, "grain should cover the fill, not just a few outliers: {changed}");
+    assert!(cream.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+}
+
+#[test]
+fn film_grain_tiles_match_at_fractional_centres_and_rotated_scales() {
+    let (w, h) = (40, 32);
+    let grain = fx("artistic.filmGrain", json!({"grain": 15}));
+    for scale in [0.7, 2.5] {
+        let s = PixelSpace { to_doc: Affine::rotate(0.37) * Affine::scale(scale), px: scale, center: Point::new(12.375, -4.625), ..space(w, h) };
+        let mut whole = image(w, h, |_, _| grey(128));
+        grain.apply(&mut whole, w, h, &s);
+        let (tw, th) = (19, 13);
+        let mut tile = image(tw, th, |_, _| grey(128));
+        grain.apply(&mut tile, tw, th, &PixelSpace { to_doc: s.to_doc * Affine::translate((7.0, 5.0)), ..s });
+        for y in 0..th {
+            for x in 0..tw {
+                assert_eq!(at(&tile, tw, x, y), at(&whole, w, x + 7, y + 5), "fractional rotated tile seam at scale {scale}");
+            }
+        }
+    }
+}
+
+#[test]
+fn film_grain_minification_quiets_the_noise_instead_of_aliasing_at_full_strength() {
+    let (w, h) = (64, 64);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    let spread = |scale| {
+        let mut out = image(w, h, |_, _| grey(128));
+        grain.apply(&mut out, w, h, &PixelSpace { to_doc: Affine::scale(scale), px: scale, ..space(w, h) });
+        out.as_chunks::<4>().0.iter().map(|p| f64::from(p[0].abs_diff(128))).sum::<f64>() / (w * h) as f64
+    };
+    let normal = spread(1.0);
+    assert!(normal > 2.0);
+    assert!(spread(2.0) < normal && spread(4.0) < normal / 2.0);
+}
+
+#[test]
+fn film_grain_sampling_modes_blend_without_a_zoom_threshold_pop() {
+    let (w, h) = (64, 48);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    for boundary in [0.5, 0.75, 1.0, 1.5, 2.0] {
+        // Hold sample coordinates fixed to isolate the footprint-mode boundary. Changing
+        // to_doc as well moves the texture, which can exceed this limit far from the origin.
+        let render = |scale| {
+            let mut out = image(w, h, |_, _| grey(128));
+            grain.apply(&mut out, w, h, &PixelSpace { to_doc: Affine::scale(boundary), px: scale, ..space(w, h) });
+            out
+        };
+        let (left, right) = (render(boundary - 1e-4), render(boundary + 1e-4));
+        let change = left.iter().zip(right).map(|(a, b)| f64::from(a.abs_diff(b))).sum::<f64>() / left.len() as f64;
+        assert!(change < 0.25, "no sudden grain change around px={boundary}: {change}");
+    }
+}
+
+#[test]
+fn film_grain_coarse_variance_tracks_an_independent_dense_footprint_average() {
+    let (w, h, samples) = (32, 32, 16);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    let deviation = |values: &[f64]| {
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        (values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64).sqrt()
+    };
+    for scale in [1.0, 2.0, 4.0, 8.0] {
+        let s = PixelSpace {
+            to_doc: Affine::scale(scale),
+            px: scale,
+            center: Point::new(w as f64 * scale / 2.0 + 0.375, h as f64 * scale / 2.0 - 0.625),
+            ..space(w, h)
+        };
+        let mut actual = image(w, h, |_, _| grey(128));
+        grain.apply(&mut actual, w, h, &s);
+        // 16×16 independent point samples per coarse pixel; the finest raster never takes
+        // the footprint branch, so this does not reproduce the filter's quadrature weights.
+        let fine_scale = scale / samples as f64;
+        let mut fine = image(w * samples, h * samples, |_, _| grey(128));
+        grain.apply(&mut fine, w * samples, h * samples, &PixelSpace { to_doc: Affine::scale(fine_scale), px: fine_scale, ..s });
+        let mut reference = Vec::new();
+        let mut coarse = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let mut sum = 0u32;
+                for dy in 0..samples {
+                    for dx in 0..samples {
+                        sum += u32::from(at(&fine, w * samples, x * samples + dx, y * samples + dy)[0]);
+                    }
+                }
+                reference.push(f64::from(sum) / (samples * samples) as f64);
+                coarse.push(f64::from(at(&actual, w, x, y)[0]));
+            }
+        }
+        let ratio = deviation(&coarse) / deviation(&reference);
+        assert!((0.75..=1.25).contains(&ratio), "bounded footprint approximation at px={scale}: relative deviation {ratio}");
+    }
+}
+
+#[test]
+fn film_grain_strength_is_stable_under_subpixel_centre_shifts() {
+    let (w, h) = (192, 128);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    for scale in [0.25, 0.5, 1.0] {
+        let mut deviations = Vec::new();
+        for phase in [0.0, 0.25, 0.5, 0.75] {
+            let mut out = image(w, h, |_, _| grey(128));
+            let s = PixelSpace {
+                to_doc: Affine::scale(scale),
+                px: scale,
+                center: Point::new(w as f64 * scale / 2.0 + phase, h as f64 * scale / 2.0 + phase),
+                ..space(w, h)
+            };
+            grain.apply(&mut out, w, h, &s);
+            deviations.push(film_grain_deviation(out.as_chunks::<4>().0.iter().map(|p| f64::from(p[0]))));
+        }
+        let min = deviations.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = deviations.iter().copied().fold(0.0, f64::max);
+        assert!(min > 1.0 && max / min < 1.06, "centre phase must not change grain strength at px={scale}: {deviations:?}");
+    }
+}
+
+fn film_grain_deviation(values: impl Iterator<Item = f64>) -> f64 {
+    let (mut count, mut sum, mut square_sum) = (0.0, 0.0, 0.0);
+    for v in values {
+        count += 1.0;
+        sum += v;
+        square_sum += v * v;
+    }
+    (square_sum / count - (sum / count).powi(2)).max(0.0).sqrt()
+}
+
+#[test]
+fn film_grain_preserves_byte_values_when_the_grain_is_too_small_to_round() {
+    let (w, h) = (256, 256);
+    let src = image(w, h, |x, y| {
+        let alpha = y as u8;
+        [(x as u8).min(alpha), (255 - x as u8).min(alpha), (x / 2) as u8 % alpha.max(1), alpha]
+    });
+    let mut out = src.clone();
+    // Even the maximum field value cannot change half a premultiplied byte at this strength.
+    fx("artistic.filmGrain", json!({"grain": 0.01})).apply(&mut out, w, h, &space(w, h));
+    assert_eq!(out, src, "invisible noise preserves every colour/coverage combination");
+}
+
+#[test]
+fn film_grain_cmy_and_k_planes_share_the_noise_and_preserve_coverage() {
+    let (w, h) = (64, 48);
+    let grain = fx("artistic.filmGrain", json!({"grain": 14}));
+    // Complemented inks of a rich black, premultiplied by the same coverage.
+    let mut cmy = image(w, h, |_, _| [70, 80, 90, 200]);
+    let mut k = image(w, h, |_, _| [40, 40, 40, 200]);
+    grain.apply(&mut cmy, w, h, &PixelSpace { channels: Channels::CmyPlane, ..space(w, h) });
+    grain.apply(&mut k, w, h, &PixelSpace { channels: Channels::KPlane, ..space(w, h) });
+    let mut changed = 0;
+    for (cmy, k) in cmy.as_chunks::<4>().0.iter().zip(k.as_chunks::<4>().0) {
+        assert_eq!((cmy[3], k[3]), (200, 200));
+        assert!(cmy[..3].iter().all(|v| *v <= 200) && k[..3].iter().all(|v| *v <= 200));
+        assert_eq!(k[0], k[1]);
+        assert_eq!(k[1], k[2]);
+        let (dc, dk) = (i16::from(cmy[0]) - 70, i16::from(k[0]) - 40);
+        if dc != 0 && dk != 0 {
+            assert_eq!(dc.signum(), dk.signum(), "the same field modulates both ink planes");
+            changed += 1;
+        }
+    }
+    assert!(changed > w * h / 2);
+}
+
+#[test]
+fn film_grain_does_not_imprint_a_periodic_contrast_grid_at_close_zoom() {
+    let (w, h) = (256, 256);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    for (scale, period) in [(0.25, 4), (0.125, 8)] {
+        let mut out = image(w, h, |_, _| grey(128));
+        grain.apply(&mut out, w, h, &PixelSpace { to_doc: Affine::scale(scale), px: scale, center: Point::new(32.0, 32.0), ..space(w, h) });
+        // Bin by location within a document-unit lattice cell. An axis-aligned value field
+        // puts stronger noise at corners than between them; rotated normalised fields do not.
+        let mut deviations = Vec::new();
+        for dy in 0..period {
+            for dx in 0..period {
+                let values = (dy..h).step_by(period).flat_map(|y| (dx..w).step_by(period).map(move |x| (x, y)));
+                deviations.push(film_grain_deviation(values.map(|(x, y)| f64::from(at(&out, w, x, y)[0]))));
+            }
+        }
+        let min = deviations.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = deviations.iter().copied().fold(0.0, f64::max);
+        assert!(max / min < 1.12, "no visible cell-contrast grid at px={scale}: min={min}, max={max}");
+    }
+}
+
+#[test]
+fn film_grain_strength_falls_smoothly_across_noninteger_zoom_levels() {
+    let (w, h) = (128, 96);
+    let grain = fx("artistic.filmGrain", json!({"grain": 20}));
+    let mut previous = f64::INFINITY;
+    for scale in [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0] {
+        let mut out = image(w, h, |_, _| grey(128));
+        grain.apply(
+            &mut out,
+            w,
+            h,
+            &PixelSpace {
+                to_doc: Affine::scale(scale),
+                px: scale,
+                center: Point::new(w as f64 * scale / 2.0 + 0.375, h as f64 * scale / 2.0 - 0.625),
+                ..space(w, h)
+            },
+        );
+        let deviation = film_grain_deviation(out.as_chunks::<4>().0.iter().map(|p| f64::from(p[0])));
+        assert!(deviation <= previous * 1.06, "grain must not gain contrast when zooming out at px={scale}: {deviation} after {previous}");
+        previous = deviation;
+    }
+}
+
+#[test]
+fn film_grain_leaves_invalid_coordinate_spaces_alone() {
+    let (w, h) = (8, 8);
+    let src = image(w, h, |_, _| grey(128));
+    for invalid in [
+        PixelSpace { px: 0.0, ..space(w, h) },
+        PixelSpace { px: f64::NAN, ..space(w, h) },
+        PixelSpace { to_doc: Affine::scale(0.0), ..space(w, h) },
+        PixelSpace { center: Point::new(f64::INFINITY, 0.0), ..space(w, h) },
+    ] {
+        let mut out = src.clone();
+        fx("artistic.filmGrain", json!({})).apply(&mut out, w, h, &invalid);
+        assert_eq!(out, src);
+    }
+    let mut out = src.clone();
+    PixelFx::FilmGrain { grain: f64::NAN, highlight: 0.0, intensity: 10.0 }.apply(&mut out, w, h, &space(w, h));
+    assert_eq!(out, src, "directly constructed non-finite parameters are harmless too");
+}
+
+#[test]
 fn params_take_defaults_and_stay_in_range() {
     assert_eq!(fx("blur.radial", json!({})), PixelFx::RadialBlur { amount: 10.0, zoom: false, passes: 6 });
     assert_eq!(

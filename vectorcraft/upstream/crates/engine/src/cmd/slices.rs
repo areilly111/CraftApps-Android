@@ -210,7 +210,7 @@ fn selected(s: &Session) -> Result<Vec<NodeId>> {
 }
 
 pub(crate) fn selected_slices(d: &Document, sel: &vectorcraft_doc::Selection) -> Vec<NodeId> {
-    let objects = sel.objects.iter().filter(|id| d.node(**id).is_some_and(|n| n.slice.is_some()));
+    let objects = sel.objects.iter().filter(|id| d.node(**id).is_some_and(|n| n.extras().slice.is_some()));
     dedup(sel.slices.iter().chain(objects).copied().collect())
 }
 
@@ -234,7 +234,7 @@ fn doc_has_slices(s: &Session) -> std::result::Result<(), String> {
 fn object_slice_ids(d: &Document) -> Vec<NodeId> {
     let mut ids = vec![];
     d.walk(|n| {
-        if n.slice.is_some() {
+        if n.extras().slice.is_some() {
             ids.push(n.id);
         }
     });
@@ -260,7 +260,7 @@ pub(crate) fn remove_slice(d: &mut Document, id: NodeId) {
     if d.slices.len() == before
         && let Some(n) = d.node_mut(id)
     {
-        n.slice = None;
+        n.extras_mut().slice = None;
     }
 }
 
@@ -284,14 +284,14 @@ fn make(s: &mut Session, p: &Value) -> Result<Value> {
         None => super::edit::selected_roots(s)?,
     };
     let d = &s.doc()?.doc;
-    let made: Vec<NodeId> = ids.into_iter().filter(|id| d.node(*id).is_some_and(|n| !n.is_layer() && n.slice.is_none())).collect();
+    let made: Vec<NodeId> = ids.into_iter().filter(|id| d.node(*id).is_some_and(|n| !n.is_layer() && n.extras().slice.is_none())).collect();
     if made.is_empty() {
         return Ok(json!({ "ids": [] }));
     }
     s.edit("Make Slice", |d, _| {
         for id in &made {
             if let Some(n) = d.node_mut(*id) {
-                n.slice = Some(Box::default());
+                n.extras_mut().slice = Some(Box::default());
             }
         }
         Ok(())
@@ -559,7 +559,7 @@ fn options(s: &mut Session, p: &Value) -> Result<Value> {
             for id in &targets {
                 let o = match d.slice_mut(*id) {
                     Some(sl) => Some(&mut sl.options),
-                    None => d.node_mut(*id).and_then(|n| n.slice.as_deref_mut()),
+                    None => d.node_mut(*id).and_then(|n| n.extras_if_any().and_then(|e| e.slice.as_deref_mut())),
                 };
                 if let Some(o) = o {
                     edits.apply(o);

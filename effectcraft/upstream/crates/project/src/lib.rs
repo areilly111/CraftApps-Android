@@ -8,6 +8,7 @@
 
 pub mod build;
 pub mod essential;
+pub mod limits;
 pub mod props;
 pub mod render_queue;
 pub mod render_templates;
@@ -46,6 +47,42 @@ pub fn saved_by(text: &str) -> Option<String> {
         saved_by: Option<String>,
     }
     serde_json::from_str::<Meta>(text).ok()?.saved_by
+}
+
+/// The compositions that were open when a project file was saved (`activeComp` and `openComps`
+/// next to `savedBy`), so it reopens where it was left (#748). Editor state rather than project
+/// content: opening a comp doesn't make the project unsaved, and it isn't part of
+/// [`Project`]. Older files have none; older versions ignore it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedView {
+    /// The comp shown in the viewer and the Timeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_comp: Option<ItemId>,
+    /// The open comps (Timeline tabs), in tab order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub open_comps: Vec<ItemId>,
+}
+
+/// The view a project file was saved with ([`SavedView`]); empty for older files. Values that
+/// aren't ids are ignored (whether an id still names a comp is up to the caller).
+pub fn saved_view(text: &str) -> SavedView {
+    #[derive(Deserialize)]
+    struct Meta {
+        #[serde(rename = "activeComp", default)]
+        active_comp: Option<serde_json::Value>,
+        #[serde(rename = "openComps", default)]
+        open_comps: Option<serde_json::Value>,
+    }
+    let Ok(m) = serde_json::from_str::<Meta>(text) else { return SavedView::default() };
+    SavedView {
+        active_comp: m.active_comp.as_ref().and_then(serde_json::Value::as_u64).map(ItemId),
+        open_comps: m
+            .open_comps
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .map_or_else(Vec::new, |a| a.iter().filter_map(serde_json::Value::as_u64).map(ItemId).collect()),
+    }
 }
 
 /// Whether version `a` (`major.minor.patch`, pre-release suffixes ignored) is newer than `b`.
@@ -301,6 +338,71 @@ pub enum Renderer {
     Advanced3D,
 }
 
+/// A composition's Resolution (the Composition panel's Resolution/Down Sample Factor popup, View ▸
+/// Resolution): how many of its pixels the viewer renders. Auto follows the magnification.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Resolution {
+    #[default]
+    Auto,
+    Full,
+    Half,
+    Third,
+    Quarter,
+    /// View ▸ Resolution ▸ Custom: render every n-th pixel (2..=40).
+    Custom(u8),
+}
+
+impl Resolution {
+    pub const ALL: [Resolution; 5] = [Resolution::Auto, Resolution::Full, Resolution::Half, Resolution::Third, Resolution::Quarter];
+    pub fn label(self) -> &'static str {
+        match self {
+            Resolution::Auto => "Auto",
+            Resolution::Full => "Full",
+            Resolution::Half => "Half",
+            Resolution::Third => "Third",
+            Resolution::Quarter => "Quarter",
+            Resolution::Custom(_) => "Custom",
+        }
+    }
+    pub fn is_auto(&self) -> bool {
+        *self == Resolution::Auto
+    }
+    /// The down-sample factor (render every n-th pixel); `None` for Auto.
+    pub fn factor(self) -> Option<u8> {
+        match self {
+            Resolution::Auto => None,
+            Resolution::Full => Some(1),
+            Resolution::Half => Some(2),
+            Resolution::Third => Some(3),
+            Resolution::Quarter => Some(4),
+            Resolution::Custom(n) => Some(n),
+        }
+    }
+    /// The resolution that renders every `n`-th pixel (1 = Full … 4 = Quarter; up to 40).
+    pub fn from_factor(n: u64) -> Resolution {
+        match n.clamp(1, 40) {
+            1 => Resolution::Full,
+            2 => Resolution::Half,
+            3 => Resolution::Third,
+            4 => Resolution::Quarter,
+            n => Resolution::Custom(n as u8),
+        }
+    }
+    /// Render scale for a viewer magnification (and display pixel density).
+    pub fn scale(self, zoom: f32, ppp: f32) -> f64 {
+        match self.factor() {
+            Some(n) => 1.0 / f64::from(n.clamp(1, 40)),
+            // As in After Effects, Auto renders the pixels the magnification needs: the coarsest
+            // whole factor that still gives every screen pixel a rendered one (Full above 50 %,
+            // Half down to 33.3 %, Third down to 25 %, Quarter below), never fewer (#417).
+            None => {
+                let n = (1.0 / (zoom * ppp) as f64 + 1e-3).floor();
+                if n >= 1.0 { 1.0 / n.min(4.0) } else { 1.0 }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Comp {
     pub width: u32,
@@ -354,6 +456,11 @@ pub struct Comp {
     /// Essential Graphics: the controls this comp exposes to instances and templates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub essential: Option<essential::EssentialGraphics>,
+    /// The Composition panel's Resolution, saved with the project as in After Effects. It changes
+    /// what the viewer renders, not the comp's pixels ([`Comp::same_pixels`]), and stays out of
+    /// the undo history.
+    #[serde(default, skip_serializing_if = "Resolution::is_auto")]
+    pub resolution: Resolution,
 }
 
 /// A viewer guide line: vertical guides sit at an x position, horizontal ones at a y position.
@@ -399,6 +506,7 @@ impl Comp {
             guides: vec![],
             global_light: styles::GlobalLight::default(),
             essential: None,
+            resolution: Resolution::Auto,
         }
     }
     /// Whether the composition has a frame at its time `t`: nested, it shows nothing before it
@@ -698,8 +806,8 @@ impl Layer {
 }
 
 impl Comp {
-    /// Draws the same pixels as `o`: equal but for its layers' Audio, Lock and Shy switches and
-    /// Hide Shy Layers.
+    /// Draws the same pixels as `o`: equal but for its layers' Audio, Lock and Shy switches, Hide
+    /// Shy Layers and the viewer's Resolution.
     pub fn same_pixels(&self, o: &Comp) -> bool {
         // Every field (no `..`: a new field must be considered here); the layers last.
         let Comp {
@@ -728,6 +836,7 @@ impl Comp {
             global_light,
             guides,
             essential,
+            resolution: _,
         } = self;
         *width == o.width
             && *height == o.height
@@ -756,14 +865,15 @@ impl Comp {
             && layers.iter().zip(&o.layers).all(|(a, b)| a.same_pixels(b))
     }
 
-    /// The comp with those switches at their defaults (borrowed when they already are), for
-    /// keys that hash the whole comp.
+    /// The comp with those switches and the Resolution at their defaults (borrowed when they
+    /// already are), for keys that hash the whole comp.
     pub fn pixel_form(&self) -> std::borrow::Cow<'_, Comp> {
-        if !self.hide_shy && self.layers.iter().all(|l| l.switches == l.switches.pixels()) {
+        if !self.hide_shy && self.resolution.is_auto() && self.layers.iter().all(|l| l.switches == l.switches.pixels()) {
             return std::borrow::Cow::Borrowed(self);
         }
         let mut c = self.clone();
         c.hide_shy = false;
+        c.resolution = Resolution::Auto;
         for l in &mut c.layers {
             l.switches = l.switches.pixels();
         }
@@ -1246,7 +1356,9 @@ impl Project {
             _ => None,
         }
     }
-    pub fn add_item(&mut self, name: &str, label: Label, parent: Option<ItemId>, kind: ItemKind) -> ItemId {
+    /// Adds an item; its size, frame rate and the like are brought within [`limits`] first.
+    pub fn add_item(&mut self, name: &str, label: Label, parent: Option<ItemId>, mut kind: ItemKind) -> ItemId {
+        limits::repair_kind(name, &mut kind, &mut vec![]);
         let id = ItemId(self.alloc());
         self.items.insert(id, Item { id, name: name.into(), label, comment: String::new(), parent, kind, proxy: None });
         id
@@ -1315,14 +1427,20 @@ impl Project {
     /// to read back, so a save never writes a file that can't be opened (JSON has no NaN or
     /// infinity: such a value would be written as `null`).
     pub fn to_file_json(&self) -> Result<String, ProjectError> {
+        self.to_file_json_with_view(&SavedView::default())
+    }
+    /// [`Project::to_file_json`] that also records the open compositions ([`SavedView`]).
+    pub fn to_file_json_with_view(&self, view: &SavedView) -> Result<String, ProjectError> {
         #[derive(Serialize)]
         struct File<'a> {
             #[serde(rename = "savedBy")]
             saved_by: &'a str,
             #[serde(flatten)]
+            view: &'a SavedView,
+            #[serde(flatten)]
             project: &'a Project,
         }
-        let text = serde_json::to_string_pretty(&File { saved_by: APP_VERSION, project: self })
+        let text = serde_json::to_string_pretty(&File { saved_by: APP_VERSION, view, project: self })
             .map_err(|e| ProjectError::Invalid(format!("the project can't be saved: {e}")))?;
         Project::from_json(&text)
             .map_err(|e| ProjectError::Invalid(format!("the project can't be saved: it holds a value a project file can't store ({e})")))?;
@@ -1336,12 +1454,22 @@ impl Project {
         serde_json::to_string(self).unwrap_or_default()
     }
     pub fn from_json(s: &str) -> Result<Project, ProjectError> {
+        Project::from_json_repaired(s).map(|(p, _)| p)
+    }
+    /// [`Project::from_json`], also returning one line per value that was out of [`limits`] and
+    /// was corrected (a composition of a billion pixels, a zero frame rate…), so a corrupt or
+    /// hostile file still opens, within bounds, and the user can be told what changed.
+    pub fn from_json_repaired(s: &str) -> Result<(Project, Vec<String>), ProjectError> {
         let mut p: Project = serde_json::from_str(s).map_err(|e| ProjectError::Invalid(e.to_string()))?;
         if p.schema > SCHEMA_VERSION {
             return Err(ProjectError::Invalid(format!("project schema {} is newer than this version supports ({SCHEMA_VERSION})", p.schema)));
         }
         p.fix_next_id();
-        Ok(p)
+        let mut notes = vec![];
+        for item in p.items.values_mut() {
+            limits::repair_item(item, &mut notes);
+        }
+        Ok((p, notes))
     }
 }
 

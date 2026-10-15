@@ -122,7 +122,7 @@ const RAW_FORMAT: u16 = 0x002d;
 /// The in-camera aspect-ratio crop: top, left, bottom, right in sensor coordinates.
 const CROP: [u16; 4] = [0x002f, 0x0030, 0x0031, 0x0032];
 const ISO_32: u16 = 0x0037;
-const RAW_OFFSET: u16 = 0x0118;
+pub(crate) const RAW_OFFSET: u16 = 0x0118;
 const HUFFMAN_CODES: u16 = 0x0040;
 const STRIP_OFFSETS: u16 = 0x0044;
 const STRIP_LEFT: u16 = 0x0045;

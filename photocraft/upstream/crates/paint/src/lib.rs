@@ -22,6 +22,7 @@ pub mod bg_erase;
 pub mod brush;
 pub mod dynamics;
 pub mod mixer;
+pub mod outline;
 pub mod presets;
 pub mod procedural;
 pub mod render;
@@ -36,7 +37,7 @@ pub use brush::{
     SectionLocks, ShapeDynamics, Smoothing, Texture, TipShape, Transfer,
 };
 pub use mixer::MixerSettings;
-pub use render::{BrushContext, StrokeRenderer, grid_center, grid_square, render_stroke};
+pub use render::{BrushContext, StrokeRenderer, UnionLive, grid_center, grid_square, render_stroke};
 pub use tile::{GrayTile, StoredTile};
 
 /// One input sample. Missing stylus data defaults to "mouse": full pressure, no tilt/rotation.
@@ -137,6 +138,34 @@ pub fn dabs(stroke: &Stroke) -> Vec<Dab> {
     out
 }
 
+/// Opacity of a round tip at distance `d` from its centre, without edge anti-aliasing: 1 in the
+/// hard core (`hardness` of the radius), then a Gaussian-like fall to 0 at the radius:
+/// `(1 - t²)⁴`, which tracks `exp(-4.6 t²)` closely but is exact (no `exp`, the same on every
+/// platform), reaches exactly 0 at the edge and leaves it flat. A soft tip keeps most of its area
+/// faint, so a stroke of overlapping dabs (Flow builds up) stays about as soft as one dab, as in
+/// Photoshop; the old smoothstep kept so much near the centre that strokes came out hard.
+#[inline]
+pub fn tip_falloff(d: f32, radius: f32, hardness: f32) -> f32 {
+    let inner = radius * hardness.clamp(0.0, 1.0);
+    if d <= inner || radius - inner < 1e-3 {
+        return 1.0;
+    }
+    let t = ((d - inner) / (radius - inner)).clamp(0.0, 1.0);
+    let s = 1.0 - t * t;
+    let s2 = s * s;
+    s2 * s2
+}
+
+/// Distance from the centre where [`tip_falloff`] drops to 50 %: the contour Preferences ›
+/// Cursors › Normal Brush Tip outlines. It inverts `(1 - t²)⁴ = ½`, so `t = √(1 - ½^¼) ≈ 0.399`
+/// of the way from the hard core (`hardness · radius`) to the edge.
+#[inline]
+pub fn half_coverage_radius(radius: f32, hardness: f32) -> f32 {
+    let h = if hardness.is_nan() { 0.0 } else { hardness.clamp(0.0, 1.0) };
+    let t = (1.0 - 0.5f32.sqrt().sqrt()).sqrt();
+    radius * (h + t * (1.0 - h))
+}
+
 /// Coverage of a round dab at distance `d` from its centre (anti-aliased edge, hardness falloff).
 #[inline]
 pub fn dab_coverage(d: f32, radius: f32, hardness: f32) -> f32 {
@@ -144,16 +173,7 @@ pub fn dab_coverage(d: f32, radius: f32, hardness: f32) -> f32 {
         return 0.0;
     }
     let edge = ((radius + 0.5 - d).clamp(0.0, 1.0)).min(1.0);
-    let h = hardness.clamp(0.0, 1.0);
-    let inner = radius * h;
-    let falloff = if d <= inner || radius - inner < 1e-3 {
-        1.0
-    } else {
-        let t = ((d - inner) / (radius - inner)).clamp(0.0, 1.0);
-        // smoothstep falloff
-        1.0 - t * t * (3.0 - 2.0 * t)
-    };
-    edge * falloff
+    edge * tip_falloff(d, radius, hardness)
 }
 
 /// Rasterize a stroke onto `target`, optionally limited by a selection (grayscale coverage surface).

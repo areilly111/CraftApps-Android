@@ -96,7 +96,9 @@ impl LoadOptions {
         self.pages.is_some() || self.crop != CropTo::default() || self.password.is_some() || !self.layers
     }
 
-    /// The PDF import options: `pages` resolved against the file's page count.
+    /// The PDF import options: `pages` resolved against the file's page count. A PDF-compatible
+    /// `.ai` asked for its crop box opens on its trim boxes, its editor's artboards, with the bleed
+    /// round them (its crop box takes the bleed in).
     fn import_options(&self, bytes: &[u8]) -> Result<ImportOptions> {
         let pages = match &self.pages {
             None => None,
@@ -105,9 +107,10 @@ impl LoadOptions {
                 Some(parse_range(range, count).map_err(|e| err(format!("pages: {e}")))?)
             }
         };
+        let is_ai = self.crop == CropTo::Crop && vectorcraft_pdf::has_illustrator_data(bytes, self.password.as_deref());
         Ok(ImportOptions {
             pages,
-            crop: self.crop,
+            crop: if is_ai { CropTo::Trim } else { self.crop },
             password: self.password.clone(),
             text_as: self.text_as,
             layers: self.layers,

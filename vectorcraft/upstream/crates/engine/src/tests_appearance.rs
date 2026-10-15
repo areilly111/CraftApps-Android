@@ -332,6 +332,94 @@ fn clear_and_reduce_to_basic() {
     assert_eq!(node(&s, id).opacity, 0.4);
 }
 
+/// How many steps there are to undo and to redo, and whether the document has unsaved changes.
+fn history(s: &Session) -> (usize, usize, bool) {
+    let st = s.doc().unwrap();
+    (st.history.undo.len(), st.history.redo.len(), st.is_dirty())
+}
+
+/// Select `ids` with a move of them left to redo, and mark the document saved.
+fn select_with_a_step_to_redo(s: &mut Session, ids: &[NodeId]) {
+    s.execute("select.set", &json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>()})).unwrap();
+    s.execute("object.move", &json!({"dx": 5, "dy": 0})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.doc_mut().unwrap().mark_saved();
+}
+
+/// Fill, stroke and gradient edits that leave every object as it was (the color, stroke options,
+/// gradient or item values the objects have already) record no undo step: the step to redo stays
+/// and the document stays unmodified. A fill that changes one of them is one step.
+#[test]
+fn fill_stroke_and_gradient_edits_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 50.0);
+    let b = rect(&mut s, 200.0);
+    run(&mut s, "select.set", json!({"ids": [a.0, b.0]}));
+    run(&mut s, "paint.setFill", json!({"color": "#ff0000"}));
+    run(&mut s, "paint.setStroke", json!({"color": "#0000ff"}));
+    run(&mut s, "stroke.set", json!({"weight": 3, "dash": [4, 2], "cap": "round"}));
+    run(&mut s, "appearance.addFill", json!({}));
+    run(&mut s, "appearance.addFill", json!({})); // [Fill, Stroke, Fill, Fill], every fill red
+    run(&mut s, "paint.setGradientGeom", json!({"item": 0, "start": [60, 150], "end": [140, 150]}));
+    run(&mut s, "paint.editGradient", json!({"item": 2, "kind": "freeform"}));
+    run(&mut s, "paint.freeform.setPoint", json!({"item": 2, "index": 0, "color": "#00ff00"}));
+    select_with_a_step_to_redo(&mut s, &[a, b]);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    for (id, p) in [
+        ("paint.setFill", json!({"color": "#ff0000"})),
+        ("paint.setStroke", json!({"color": "#0000ff"})),
+        ("paint.setFill", json!({"color": "#ff0000", "ids": [a.0]})),
+        ("paint.lastColor", json!({"stroke": false})),
+        ("stroke.set", json!({"weight": 3, "dash": [4, 2], "cap": "round"})),
+        ("stroke.setAdvanced", json!({"arrowScale": [100, 100]})),
+        ("paint.setGradientGeom", json!({"item": 0, "start": [60, 150], "end": [140, 150]})),
+        ("paint.editGradient", json!({"item": 0, "kind": "linear"})),
+        ("paint.freeform.setPoint", json!({"item": 2, "index": 0, "color": "#00ff00"})),
+        ("transparency.set", json!({"item": 1, "opacity": 100, "blend": "normal"})),
+    ] {
+        run(&mut s, id, p.clone());
+        assert_eq!(history(&s), before, "{id} {p}");
+    }
+    run(&mut s, "paint.setFill", json!({"color": "#00ff00", "ids": [b.0]}));
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
+    assert_eq!(fill_paint(&node(&s, b), 3).color().unwrap().to_hex(), "#00ff00");
+}
+
+/// Appearance panel commands that leave every object as it was record no undo step: Reduce to Basic
+/// Appearance on a basic appearance, an item set to the values it has or to an index no object has,
+/// Remove Item past every stack, Move Item to where the item is, the Eyedropper and Move Appearance
+/// between objects that look the same, and Clear Appearance on cleared objects. Clearing objects that
+/// have something to clear is one step.
+#[test]
+fn appearance_commands_that_change_nothing_record_no_undo_step() {
+    let mut s = session();
+    let a = rect(&mut s, 50.0);
+    let b = rect(&mut s, 200.0);
+    select_with_a_step_to_redo(&mut s, &[a, b]);
+    let before = history(&s);
+    for (id, p) in [
+        ("appearance.reduceToBasic", json!({})),
+        ("appearance.setItem", json!({"index": 1, "opacity": 100, "blend": "normal", "visible": true, "weight": 1})),
+        ("appearance.setItem", json!({"index": 5, "opacity": 50})),
+        ("appearance.removeItem", json!({"index": 5})),
+        ("appearance.moveItem", json!({"from": 1, "to": 1})),
+        ("appearance.copyFrom", json!({"source": b.0, "ids": [a.0]})),
+        ("appearance.transfer", json!({"source": b.0, "target": a.0, "copy": true})),
+    ] {
+        run(&mut s, id, p.clone());
+        assert_eq!(history(&s), before, "{id} {p}");
+    }
+    run(&mut s, "appearance.clear", json!({}));
+    assert_eq!(history(&s), (before.0 + 1, 0, true), "the first Clear is one step");
+    s.doc_mut().unwrap().mark_saved();
+    let cleared = history(&s);
+    for (id, p) in [("appearance.clear", json!({})), ("appearance.transfer", json!({"source": b.0, "target": a.0}))] {
+        run(&mut s, id, p.clone());
+        assert_eq!(history(&s), cleared, "{id} {p}");
+    }
+}
+
 #[test]
 fn graphic_style_apply_replaces_the_stack() {
     let mut s = session();

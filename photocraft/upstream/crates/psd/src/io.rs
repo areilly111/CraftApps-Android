@@ -2,6 +2,23 @@
 
 use crate::error::{PsdError, Result};
 
+/// A name as UTF-16 code units, capped at `max` **without ever splitting a surrogate pair**.
+/// `encode_utf16().take(max)` would cut between the high and low half of a pair above U+FFFF and
+/// write ill-formed UTF-16 to disk, so whole scalar values are added until one would not fit.
+/// Both the `.aco` and `.ase` writers share this; keeping it in one place is deliberate, so the
+/// surrogate fix cannot drift between the two formats.
+pub(crate) fn utf16_units(name: &str, max: usize) -> Vec<u16> {
+    let mut units = Vec::new();
+    for c in name.chars() {
+        if units.len() + c.len_utf16() > max {
+            break;
+        }
+        let mut buf = [0u16; 2];
+        units.extend_from_slice(c.encode_utf16(&mut buf));
+    }
+    units
+}
+
 /// A cursor over a byte slice. Every read is bounds checked. Integers are big-endian (the PSD
 /// byte order) unless the reader was made with [`Reader::new_little`], which only the TIFF
 /// byte-order transcoder uses ([`crate::tiff`]).

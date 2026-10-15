@@ -95,6 +95,52 @@ pub struct CharStyle {
     /// their line line up with it.
     #[serde(default, rename = "charAlign", skip_serializing_if = "crate::skip::is_default")]
     pub char_align: CharAlign,
+    /// Proportional Metrics (Character panel menu, East Asian options): full-width glyphs take the
+    /// font's own proportional widths, OpenType `palt` (#966); in vertical type upright glyphs take
+    /// its proportional heights, `vpal`.
+    #[serde(default, rename = "proportionalMetrics", skip_serializing_if = "crate::skip::is_default")]
+    pub proportional_metrics: bool,
+    /// Digits (Character panel menu, Middle Eastern options): the numeral system the digits of
+    /// these characters are drawn in, whatever digits were typed.
+    #[serde(default, skip_serializing_if = "crate::skip::is_default")]
+    pub digits: Digits,
+}
+
+/// The numeral system digits are drawn in ([`CharStyle::digits`]): as typed, or every digit of
+/// the Western, Arabic-Indic and Eastern Arabic-Indic sets drawn in one of them. The text keeps
+/// the digits that were typed; only the glyphs change (like All Caps).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Digits {
+    /// Each digit as typed.
+    #[default]
+    Default,
+    /// Western digits 0–9 (the digits Arabic typography calls Arabic).
+    Arabic,
+    /// Arabic-Indic digits ٠–٩ (U+0660–U+0669), used in Arabic.
+    Hindi,
+    /// Eastern Arabic-Indic digits ۰–۹ (U+06F0–U+06F9), used in Persian and Urdu.
+    Farsi,
+}
+
+impl Digits {
+    /// The digit `c` is drawn as in this numeral system: the same digit in the chosen set, or `c`
+    /// itself when `c` isn't a digit of the Western, Arabic-Indic or Eastern Arabic-Indic set.
+    pub fn map(self, c: char) -> char {
+        let value = match c {
+            '0'..='9' => c as u32 - '0' as u32,
+            '\u{660}'..='\u{669}' => c as u32 - 0x660,
+            '\u{6F0}'..='\u{6F9}' => c as u32 - 0x6F0,
+            _ => return c,
+        };
+        let base = match self {
+            Digits::Default => return c,
+            Digits::Arabic => '0' as u32,
+            Digits::Hindi => 0x660,
+            Digits::Farsi => 0x6F0,
+        };
+        char::from_u32(base + value).unwrap_or(c)
+    }
 }
 
 /// Where a character smaller than the largest on its line lines up with it: on the Roman
@@ -205,7 +251,9 @@ impl Default for CharStyle {
             stroke_dash: None,
             position: CharPosition::Normal,
             char_align: CharAlign::RomanBaseline,
+            proportional_metrics: false,
             small_caps: None,
+            digits: Digits::Default,
         }
     }
 }
@@ -954,7 +1002,49 @@ pub struct TextObject {
     pub cached_baselines: Vec<(Point, Point)>,
 }
 
+/// Conversion from stored character attributes to document-space type controls.
+/// Point size follows the transformed em-height axis; horizontal scale is the ratio of
+/// the two transformed em axes. Rotation, reflection and shear remain in the affine.
+#[derive(Clone, Copy, Debug)]
+pub struct TextStyleScale {
+    pub points: f64,
+    pub horizontal: f64,
+}
+
 impl TextObject {
+    /// None for collapsed or unrepresentable transforms, whose type dimensions cannot
+    /// be edited by compensating the stored attributes.
+    pub fn style_scale(&self) -> Option<TextStyleScale> {
+        let [a, b, c, d, e, f] = self.xf.as_coeffs();
+        if ![a, b, c, d, e, f].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let (sx, sy) = (a.hypot(b), c.hypot(d));
+        let determinant = (a / sx) * (d / sy) - (b / sx) * (c / sy);
+        let horizontal = sx / sy;
+        if !sy.is_finite() || sy <= 0.0 || !horizontal.is_finite() || horizontal <= 0.0 || !determinant.is_finite() || determinant.abs() <= 1e-12 {
+            return None;
+        }
+        // Avoid a pure rotation turning otherwise identical fields into mixed values.
+        let unit = |v: f64| if (v - 1.0).abs() <= 1e-12 { 1.0 } else { v };
+        Some(TextStyleScale { points: unit(sy), horizontal: unit(horizontal) })
+    }
+
+    /// Character attributes as presented by controls (stored runs stay local for layout
+    /// and rich-text clipboard operations). Explicit vertical character scale stays separate.
+    pub fn effective_char_style(&self, style: &CharStyle) -> Option<CharStyle> {
+        let scale = self.style_scale()?;
+        let mut style = style.clone();
+        style.size *= scale.points;
+        style.leading = style.leading.map(|v| v * scale.points);
+        style.baseline_shift *= scale.points;
+        style.h_scale *= scale.horizontal;
+        if ![style.size, style.leading.unwrap_or(0.0), style.baseline_shift, style.h_scale].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        Some(style)
+    }
+
     pub fn point(origin: Point, text: &str, style: CharStyle) -> Self {
         Self {
             vertical: false,
@@ -1189,6 +1279,42 @@ impl TextObject {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Digits map every digit of the three sets into the chosen one, leave the rest alone, and
+    /// are saved only when set.
+    #[test]
+    fn digits_map_between_the_numeral_systems() {
+        let map = |d: Digits, s: &str| -> String { s.chars().map(|c| d.map(c)).collect() };
+        for s in ["0123456789", "٠١٢٣٤٥٦٧٨٩", "۰۱۲۳۴۵۶۷۸۹"] {
+            assert_eq!(map(Digits::Default, s), s);
+            assert_eq!(map(Digits::Arabic, s), "0123456789");
+            assert_eq!(map(Digits::Hindi, s), "٠١٢٣٤٥٦٧٨٩");
+            assert_eq!(map(Digits::Farsi, s), "۰۱۲۳۴۵۶۷۸۹");
+        }
+        // Letters, punctuation and other scripts' digits (Devanagari ३) are not digits of these sets.
+        assert_eq!(map(Digits::Hindi, "a-Z ३ ٪ ۔"), "a-Z ३ ٪ ۔");
+        let st = CharStyle::default();
+        assert!(serde_json::to_value(&st).unwrap().get("digits").is_none());
+        let farsi = CharStyle { digits: Digits::Farsi, ..CharStyle::default() };
+        assert_eq!(serde_json::to_value(&farsi).unwrap()["digits"], "farsi");
+        // Styles written before the attribute existed (no `digits` key) read as Default.
+        let old = serde_json::to_value(&st).unwrap();
+        assert_eq!(serde_json::from_value::<CharStyle>(old).unwrap().digits, Digits::Default);
+        assert_eq!(serde_json::from_value::<CharStyle>(serde_json::to_value(&farsi).unwrap()).unwrap(), farsi);
+    }
+
+    #[test]
+    fn character_controls_reject_collapsed_and_nonfinite_transforms() {
+        let mut t = TextObject::point(Point::ZERO, "Text", CharStyle::default());
+        for matrix in [[0.0; 6], [1.0, 1.0, 2.0, 2.0, 0.0, 0.0], [f64::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 1.0, f64::NAN, 0.0]] {
+            t.xf = Affine::new(matrix);
+            assert!(t.effective_char_style(&t.first_style()).is_none());
+        }
+        t.xf = Affine::rotate(0.83);
+        assert_eq!(t.effective_char_style(&t.first_style()).unwrap().size, 12.0);
+        t.xf = Affine::scale(1e308);
+        assert!(t.effective_char_style(&t.first_style()).is_none(), "overflowing point size");
+    }
 
     #[test]
     fn point_text_basics() {

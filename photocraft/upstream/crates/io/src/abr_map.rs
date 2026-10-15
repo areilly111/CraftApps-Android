@@ -389,7 +389,9 @@ impl Mapper<'_> {
             t.invert = boolean(d, "InvT").unwrap_or(false);
             t.scale = pct(d, "textureScale").unwrap_or(1.0).clamp(0.01, 10.0);
             t.brightness = (num(d, "textureBrightness").unwrap_or(0.0) / 150.0).clamp(-1.0, 1.0) as f32;
-            t.contrast = (num(d, "textureContrast").unwrap_or(0.0) / 50.0).clamp(-1.0, 2.0) as f32;
+            // Photoshop's -50..100 onto the model's -1..1 (negative and positive scale apart).
+            let c = num(d, "textureContrast").unwrap_or(0.0);
+            t.contrast = (if c < 0.0 { c / 50.0 } else { c / 100.0 }).clamp(-1.0, 1.0) as f32;
             t.mode = mask_mode(enum_value(d, "textureBlendMode")).unwrap_or(MaskMode::Multiply);
             t.depth = pct(d, "textureDepth").unwrap_or(1.0).clamp(0.0, 1.0);
             let mut dj = self.dynamic(obj(d, "textureDepthDynamics"));

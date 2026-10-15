@@ -8,6 +8,7 @@
 
 use effectcraft_project::{AlphaMode, Footage};
 use effectcraft_raster::{Image, Px};
+use effectcraft_render::FloatCurve;
 use filmcraft_color::{Matrix, Range};
 use filmcraft_frame::{Chroma, PixelData, VideoFrame};
 use rayon::prelude::*;
@@ -17,24 +18,33 @@ use rayon::prelude::*;
 pub(crate) struct AlphaOp {
     mode: AlphaMode,
     matte: [f32; 3],
-    /// Interpret Footage ▸ Preserve RGB: float values stay as the file stores them (not
-    /// sRGB-encoded).
-    preserve_rgb: bool,
+    /// How float values (linear light) are encoded: sRGB by default, a pure 2.4 power curve
+    /// (Working Gamma 2.4), or not at all (Preserve RGB, Interpret As Linear Light).
+    float: FloatCurve,
 }
 
 impl AlphaOp {
     pub(crate) fn new(mode: AlphaMode, matte: [f32; 3]) -> Self {
-        Self { mode, matte, preserve_rgb: false }
+        Self { mode, matte, float: FloatCurve::Srgb }
     }
-    /// The interpretation of footage `f`.
-    pub(crate) fn of(f: &Footage) -> Self {
-        Self { preserve_rgb: f.preserve_rgb, ..Self::new(f.alpha, f.premul_color) }
+    /// The interpretation of footage `f`, float values handed over as `float` says (as stored
+    /// under Preserve RGB, whatever it says).
+    pub(crate) fn of(f: &Footage, float: FloatCurve) -> Self {
+        let float = if f.preserve_rgb { FloatCurve::Linear } else { float };
+        Self { float, ..Self::new(f.alpha, f.premul_color) }
     }
-    /// A linear float value as the compositor takes it: sRGB-encoded, or the file's own value
-    /// under Preserve RGB.
+    /// How float values are encoded.
+    pub(crate) fn float_curve(self) -> FloatCurve {
+        self.float
+    }
+    /// A linear float value as the compositor takes it.
     #[inline(always)]
     fn float(self, v: f32) -> f32 {
-        if self.preserve_rgb { v } else { encode(v) }
+        match self.float {
+            FloatCurve::Srgb => encode(v),
+            FloatCurve::Gamma24 => v.abs().powf(1.0 / 2.4).copysign(v),
+            FloatCurve::Linear => v,
+        }
     }
     /// `c` is the file's colour (straight or premultiplied as the mode says), `a` its alpha.
     #[inline(always)]
@@ -104,6 +114,32 @@ pub(crate) fn frame_to_image_in(f: &VideoFrame, op: AlphaOp, mut buf: Vec<Px>) -
     img
 }
 
+/// A movie frame turned the way its file says it is shown ([`crate::probe::video_turn`]:
+/// clockwise quarter turns; anything else leaves it as decoded).
+pub(crate) fn turned(img: Image, turn: image::metadata::Orientation) -> Image {
+    use image::metadata::Orientation;
+    let (w, h) = (img.width as usize, img.height as usize);
+    if img.data.len() != w * h || w == 0 || h == 0 {
+        return img;
+    }
+    // The source pixel shown at (x, y) of the turned picture.
+    let (tw, th, from): (usize, usize, fn(usize, usize, usize, usize) -> usize) = match turn {
+        Orientation::Rotate90 => (h, w, |x, y, w, h| (h - 1 - x) * w + y),
+        Orientation::Rotate180 => (w, h, |x, y, w, h| (h - 1 - y) * w + (w - 1 - x)),
+        Orientation::Rotate270 => (h, w, |x, y, w, _| x * w + (w - 1 - y)),
+        _ => return img,
+    };
+    let mut data = vec![[0.0; 4]; tw * th];
+    data.par_chunks_mut(tw).enumerate().for_each(|(y, row)| {
+        for (x, px) in row.iter_mut().enumerate() {
+            if let Some(s) = img.data.get(from(x, y, w, h)) {
+                *px = *s;
+            }
+        }
+    });
+    Image { width: tw as u32, height: th as u32, data }
+}
+
 /// A FilmCraft frame for a render that shows it at `w` × `h`, at most half its size each way:
 /// what `resample(&frame_to_image(f, op), w, h)` makes, converting a quarter of the pixels.
 /// Opaque 4:2:0 Y'CbCr is box-filtered to half size before conversion (each 2×2 block of luma,
@@ -154,7 +190,7 @@ fn half_420<T: Sample>(w: usize, h: usize, [luma, cb, cr]: [&[T]; 3], k: &Yuv) -
                 (dst[0], dst[cw + 1]) = (dst[1], dst[cw]);
             }
             let (top, bottom) = (row_of(luma, 2 * cy, w), row_of(luma, 2 * cy + 1, w));
-            let pixels = top.chunks_exact(2).zip(bottom.chunks_exact(2)).zip(uc.windows(3).zip(vc.windows(3)));
+            let pixels = top.as_chunks::<2>().0.iter().zip(bottom.as_chunks::<2>().0).zip(uc.windows(3).zip(vc.windows(3)));
             for (o, ((a, b), (u, v))) in row.iter_mut().zip(pixels) {
                 let (u, v) = ((u[0] + u[2]) * 0.125 + u[1] * 0.75, (v[0] + v[2]) * 0.125 + v[1] * 0.75);
                 let yy = ((a[0].f() + a[1].f() + b[0].f() + b[1].f()) * 0.25 - k.y_off) * k.y_scale;

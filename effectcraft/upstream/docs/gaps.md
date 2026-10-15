@@ -63,25 +63,25 @@ are grouped by area; the issue tracker has the rest.
 | 4 | **No CI gate on pull requests** | `.github/workflows` has release, packaging-lint, FreeBSD and Windows ARM64 jobs only; `cargo xtask ci` runs locally | Regressions reach main unseen; 49 community PRs landed in one batch (#598) | 4–8 h | G3 · this file |
 | 5 | **Playback and scrubbing feel** | #595 stutter on cached frames, #304, #329 slow scrubbing, #554 / #504 / #335 audio late or crackling, #586 puppet lag | Preview is where motion designers spend their day | 25–50 h | G5 · [hardware-parity.md](hardware-parity.md) |
 | 6 | **Linux and Windows interaction bugs** | #491 multi-layer edits, #488 rename arrows, #493, #492, #467 shortcuts, #268 drag and drop, #320 workspaces not persisting, #302 docking, #613 Direct3D 12 compositor, #596 GPU not detected | Many reports come from Linux; some Windows GPUs fail to start the compositor | 25–45 h | G2 · [ui-parity.md](ui-parity.md) |
-| 7 | **Animation presets: 8 against 621** | After Effects ships 621 `.ffx` presets (Behaviors, Backgrounds, Shapes, Synthetics, Text, Transitions…); we ship 8 original text-animator presets and read only our `.ecpreset` | Presets are how many designers start; tutorials assume them | 20–40 h (original presets; `.ffx` reading is out of clean-room scope) | G8 · [effects-parity.md](effects-parity.md) |
+| 7 | **Animation presets: 31 against 621** | After Effects ships 621 `.ffx` presets (Behaviors, Backgrounds, Shapes, Synthetics, Text, Transitions…); we ship 31 original presets (8 text-animator, 23 Transitions: wipes, clock and fan reveals, blinds, dissolves, card flips, CC wipes, fades; #757) and read only our `.ecpreset`. Missing: Behaviors, Backgrounds, Shapes, Synthetics, Image and more Text | Presets are how many designers start; tutorials assume them | 15–35 h (original presets; `.ffx` reading is out of clean-room scope) | G8 · [effects-parity.md](effects-parity.md) |
 | 8 | **Mask and shape bugs** | #510, #513, #527 (first Intersect/Darken mask), #509 Roto Brush size, #303 Mesh Warp, #553 pen tools on motion paths | Masks are core compositing | 10–20 h | G2 · [target-app-parity.md](target-app-parity.md) |
 | 9 | **Effect behaviour bugs** | #580, #526 Fractal reset, #514 Apply Color LUT, #463 Curl Noise, #369 Motion Tile output size, #473 Cryptomatte selection, #474 multi-layer EXR decoded twice, #534–#536 community fixes pending | Each one breaks a look someone built | 10–20 h | G1/G2 · [effects-parity.md](effects-parity.md) |
-| 10 | **Colour pipeline differences** | #494 32-bpc blend modes clamp and apply opacity differently; #495 no Working Gamma 2.4; #340 ProRes 4444 tagged bt709 but sRGB-encoded; ACES 2.0 / OCIO 2.5 configs (26.5) missing; #546 / #547 viewer colour | Wrong colour in delivery is a client-visible failure | 15–30 h | G1 · [file-format-parity.md](file-format-parity.md) |
+| 10 | **Colour pipeline differences** | #494 32-bpc blend modes clamp and apply opacity differently; #495 Working Gamma 2.4 (in, also for float footage: #750); #340 ProRes 4444 tagged bt709 but sRGB-encoded; ACES 2.0 / OCIO 2.5 configs (26.5) missing; #546 / #547 viewer colour | Wrong colour in delivery is a client-visible failure | 15–30 h | G1 · [file-format-parity.md](file-format-parity.md) |
 | 11 | **Text rendering and layout** | #453 CJK text in comps, #316 paragraph alignment inverted, #483 squeezed at 4:3, #417 soft at Fit, #583 font search, #550 toolbar font options | Text is in almost every motion graphic | 10–20 h | G2 · [ui-parity.md](ui-parity.md) |
-| 12 | **3D interaction and depth** | No 3D transform gizmos (#392, #347); Z position (#489); camera aperture (#260); reflections (#261); bevel options (#315); 3D issue reopened (#307) | Advanced 3D is After Effects' growth area since 2023 | 20–35 h | G2 · [ui-parity.md](ui-parity.md) |
-| 13 | **3D model formats and materials** | After Effects 26 imports FBX, USD/USDZ, STL besides glTF and OBJ (`usd_plugins`), and Substance 3D materials with mesh displacement (26.0–26.2); we read glTF and OBJ | Product shots and 3D scenes come as FBX/USDZ | 25–45 h | — · [file-format-parity.md](file-format-parity.md) |
+| 12 | **3D interaction and depth** | No 3D transform gizmos (#392, #347); Z position (#489); camera aperture (#260); reflections (#261); extruded surface materials beyond Front / Bevel / Side / Back Color (#315); 3D issue reopened (#307) | Advanced 3D is After Effects' growth area since 2023 | 20–35 h | G2 · [ui-parity.md](ui-parity.md) |
+| 13 | **3D model formats and materials** | After Effects 26 imports FBX, USD/USDZ, STL besides glTF and OBJ (`usd_plugins`), and Substance 3D materials with mesh displacement (26.0–26.2); we read glTF, OBJ, STL (binary and ASCII, with facet colours) and FBX 7.x (binary and ASCII: meshes, hierarchy, Lambert/Phong materials and textures; no FBX animation or skinning yet) | Product shots and 3D scenes come as FBX/USDZ | 25–45 h | — · [file-format-parity.md](file-format-parity.md) |
 | 14 | **Object Matte** (26.2, disk cache in 26.5) | Not present; MobileSAM is already in `effectcraft-segment` and could back it | The new one-click roto; Roto Brush covers part of it | 15–30 h | G7 · [target-app-parity.md](target-app-parity.md) |
 | 15 | **Hardware video decode and encode** | No VideoToolbox, NVENC, Quick Sync or VA-API; #498 asks for it; FilmCraft has VideoToolbox / NVENC / VA-API paths to borrow | 4K playback and export speed | 25–45 h | G5/G6 · [hardware-parity.md](hardware-parity.md) |
 | 16 | **Localization depth** | Menus in 6 languages; panels in 4; effect names and ~1,650 effect parameter names untranslated; French, German, Korean, Italian, Russian (After Effects ships them) absent; #599 Hangul boxes on macOS | After Effects is used heavily in Japan, China, Korea, Brazil, Europe | 60–110 h + native review | G9 · [localization-parity.md](localization-parity.md) |
-| 17 | **Media Browser lists files import refuses** | `media_browser.rs` lists TGA, DPX, HDR, AVI, MXF; `media::is_importable` has none of them; #431 any image imports as a sequence; #324 MP3 goes silent | Confusing failures on common VFX formats (DPX, TGA) | 15–30 h | G6 · [file-format-parity.md](file-format-parity.md) |
+| 17 | **Media Browser lists files import refuses** | `media_browser.rs` lists AVI; `media::is_importable` has none of them (Targa and Radiance HDR import since #745; DPX and Cineon since #756, log shown as stored: no Cineon Settings conversion yet; MXF OP1a / OP-Atom since #767; FilmCraft has no AVI demuxer); #431 any image imports as a sequence; #324 MP3 goes silent | Confusing failures on common VFX formats | 15–30 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 18 | **Relative paths and relinking** | Projects store absolute footage paths; no relink when a project moves | Moving or sharing a project breaks it | 6–12 h | G4 · [file-format-parity.md](file-format-parity.md) |
 | 19 | **Plug-in ecosystem** | No After Effects SDK hosting (#600, #327 OpenFX, #334, #376 plug-in manager); our WebAssembly API has no third-party plug-ins | Many pro projects depend on Trapcode, Element, Saber… | 40–80 h for API growth; SDK hosting needs an owner decision | G8 · [scripting-parity.md](scripting-parity.md) |
-| 20 | **Multi-monitor and video output** | #486 multi-screen, floating panels on other screens, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
-| 21 | **Small 26.x features** | Proportional Scrubbing (26.2), copy frame to clipboard and paste SVG/AI as shapes (26.3), variable-font filter (26.3), percentage guides and effect colour labels (26.5), the rebuilt Effect Controls (26.5) | Users of the current version expect them | 15–25 h | — · [ui-parity.md](ui-parity.md) |
-| 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; #372 uncompressed single-file output; #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
+| 20 | **Multi-monitor and video output** | #486: any panel can move into a native window of its own (panel menu ▸ Move Panel to New Window, `window.panelWindow`) and so onto another screen, restored with the workspace; still missing: dragging tabs between those windows, app shortcuts while one has the focus, named workspaces remembering them, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
+| 21 | **Small 26.x features** | Proportional Scrubbing (26.2), pasting Illustrator's own clipboard data as shapes (26.3; SVG markup on the clipboard pastes as a shape layer, #738), variable-font filter (26.3), percentage guides and effect colour labels (26.5), the rebuilt Effect Controls (26.5) | Users of the current version expect them | 15–25 h | — · [ui-parity.md](ui-parity.md) |
+| 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; single-file intermediates are 8-bit uncompressed QuickTime only (#372: no 16-bpc, AVI or lossless-compressed codec); #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 23 | **Essential Graphics interchange** | Templates are `.ectemplate`, not `.mogrt`; #338 Scale exposes X and Y; #611 FilmCraft rejects exported `.fcgt` | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
 | 24 | **Timeline depth requests** | #601 expand precomps in place, #602 reorderable render stack, #604 guide-only effects, #355 bulk keyframes, #425 keyframe confusion, #428 more shortcuts | Power-user speed | 15–30 h | G2 · [ui-parity.md](ui-parity.md) |
-| 25 | **Accessibility** | AccessKit is enabled in eframe and tests read focus labels, but no screen-reader pass, keyboard navigation audit or contrast check | Excludes users; After Effects supports screen readers poorly too | 15–30 h | G9 · [ui-parity.md](ui-parity.md) |
+| 25 | **Accessibility** | AccessKit is enabled in eframe and tests read focus labels; the Project panel has After Effects' arrow-key navigation and named, stateful AccessKit nodes (#776), but the other panels have had no screen-reader pass or keyboard navigation audit, and there is no contrast check | Excludes users; After Effects supports screen readers poorly too | 15–30 h | G9 · [ui-parity.md](ui-parity.md) |
 
 ## Where we're going: workstreams in priority order
 
@@ -129,6 +129,27 @@ The most important missing piece: it turns every other estimate here into a meas
   the prompt, with their layers, in one undo step, for single items, multiple selections and
   folder contents. Nothing happens with an empty selection, in other panels, while typing or with
   a dialog open, and the next Delete still asks.
+- Regression evidence for [#612](https://github.com/storytold/effectcraft/issues/612): the
+  `ui_gradient_value` and `ui_gradient_editor` input tests, checked headlessly on Windows, open
+  the Gradient Editor from the Timeline's "Edit Gradient…" on a shape layer's Gradient Fill. They
+  check that OK sets the edited stops (added, dragged, recoloured in the picker, down to a single
+  colour stop) in one undo step, at the composition time the editor opened (also on offset and
+  stretched layers), and that OK without a change, Cancel and Escape change nothing; Escape with
+  the picker open closes only the picker. On an animated gradient only the keyframe at that time
+  changes, with a warning when its stop counts no longer match a neighbour's. Delete never
+  removes the last stop, a layer or a stop while typing; a stop moved past another by its
+  Location keeps its selection and fields; a layer deleted while editing is reported; and
+  `prop.editGradient` is an error for a target that isn't a gradient. Unit tests in `keyframe`
+  and `gradient_editor` cover per-track sampling (no double opacity), the typed one-stop round
+  trip, and stops staying in order, and selected, while they move. The `ui_gradient_handles`
+  tests, checked headlessly on Windows, drag a selected Gradient Fill's start and end points in
+  the Composition viewer: one undo step, the layer stays, a point inside a moved and scaled group
+  converts to the group's space, and the handles show only for a selected gradient.
+- Regression evidence for the toolbar's gradient swatches (#612, reported on Discord): the
+  `ui_toolbar_gradient` input tests, checked headlessly on Windows, click a Linear Fill swatch and
+  a Radial Stroke swatch on a selected shape layer and get the Gradient Editor on its Gradient Fill
+  / Gradient Stroke Colors (OK saves); without such a gradient the swatch still opens the options,
+  and the words, Solid swatches and Alt-click are unchanged.
 - Regression evidence for the reports of 6 October, checked headlessly on Windows: real pointer
   drags in `ui_drag_drop` (Project items into the Timeline between layers and at a time, and onto
   the viewer; an effect onto a layer in the viewer: #85, #88, #89), `ui_render_queue` (a template
@@ -198,7 +219,12 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
   gate is a P0.
 - Fuzz the inputs we don't control: project files, imported media and documents, expressions,
   scripts, control-channel and MCP requests. Every crash found becomes a regression test
-  (AGENTS.md "Never crash").
+  (AGENTS.md "Never crash"). Project files are fuzzed (#779): a seeded, dependency-free mutation
+  fuzzer runs in `cargo test -p effectcraft-engine` (`fuzz_file_open_never_crashes`, `.ecproj`
+  JSON and `.ecprojx` XML through File ▸ Open, the first queries and a thumbnail render; longer
+  runs via `EFFECTCRAFT_FUZZ_ITERS` / `EFFECTCRAFT_FUZZ_SECS`). It found one crash, deeply nested
+  XML overflowing the stack, now refused. Imported media and documents, expressions, scripts and
+  control-channel / MCP requests are still to do.
 - Run the gate on every pull request in CI (gap 4): today no workflow runs the tests on PRs.
 - Fix the open crash reports first (gap 3).
 - Done when: the gate is green on stable, runs on every pull request, and the fuzzers run

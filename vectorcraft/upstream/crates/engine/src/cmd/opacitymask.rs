@@ -154,7 +154,7 @@ pub(crate) fn percent(o: f64) -> f32 {
 /// The [`transparency_targets`] that have an opacity mask.
 fn masked_targets(s: &Session, p: &Value) -> Result<Vec<NodeId>> {
     let d = &s.doc()?.doc;
-    let ids: Vec<NodeId> = transparency_targets(s, p)?.into_iter().filter(|id| d.node(*id).is_some_and(|n| n.mask.is_some())).collect();
+    let ids: Vec<NodeId> = transparency_targets(s, p)?.into_iter().filter(|id| d.node(*id).is_some_and(|n| n.extras().mask.is_some())).collect();
     if ids.is_empty() {
         return Err(EngineError::Other("no target object has an opacity mask: select one or give `id`".into()));
     }
@@ -200,12 +200,12 @@ fn make(s: &mut Session, p: &Value) -> Result<Value> {
             gid
         };
         let n = d.node_mut(target).ok_or(EngineError::NoNode(target))?;
-        if n.mask.is_some() {
+        if n.extras().mask.is_some() {
             return Err(EngineError::Other("the object already has an opacity mask".into()));
         }
         let mut m = OpacityMask::new(mask_art, clip);
         m.invert = invert;
-        n.mask = Some(Box::new(m));
+        n.extras_mut().mask = Some(Box::new(m));
         sel.set_target(d, target);
         let layer = if mask_id.is_none() { Some(begin(d, sel, target)?) } else { None };
         Ok((target, layer))
@@ -224,7 +224,7 @@ fn release(s: &mut Session, p: &Value) -> Result<Value> {
         finish(d, sel);
         let mut out = vec![];
         for id in &ids {
-            let Some(m) = d.node_mut(*id).and_then(|n| n.mask.take()) else { continue };
+            let Some(m) = d.node_mut(*id).and_then(|n| n.extras_mut().mask.take()) else { continue };
             let (par, idx, _) = d.position(*id).ok_or(EngineError::NoNode(*id))?;
             out.push(*id);
             for (k, part) in mask_parts(&m.art).iter().enumerate() {
@@ -250,9 +250,21 @@ fn set_flags(s: &mut Session, target: &Value, label: &str, p: &Value) -> Result<
         return Err(bad("transparency.setOpacityMask", "give at least one of clip, invert, disabled, linked"));
     }
     let ids = masked_targets(s, target)?;
+    // When every mask already has the flags given, the document and its undo history stay as they
+    // are.
+    let has_flags = |m: &OpacityMask| {
+        clip.is_none_or(|v| m.clip == v)
+            && invert.is_none_or(|v| m.invert == v)
+            && disabled.is_none_or(|v| m.disabled == v)
+            && linked.is_none_or(|v| m.linked == v)
+    };
+    let d = &s.doc()?.doc;
+    if ids.iter().all(|id| d.node(*id).and_then(|n| n.extras().mask.as_deref()).is_none_or(has_flags)) {
+        return ok();
+    }
     s.edit(label, |d, _| {
         for id in &ids {
-            if let Some(m) = d.node_mut(*id).and_then(|n| n.mask.as_mut()) {
+            if let Some(m) = d.node_mut(*id).and_then(|n| n.extras_if_any().and_then(|e| e.mask.as_mut())) {
                 m.clip = clip.unwrap_or(m.clip);
                 m.invert = invert.unwrap_or(m.invert);
                 m.disabled = disabled.unwrap_or(m.disabled);
@@ -379,7 +391,7 @@ fn mask_info(s: &mut Session, p: &Value) -> Result<Value> {
     let v: Vec<Value> = nodes_of(d, &transparency_targets(s, p)?)
         .into_iter()
         .filter_map(|n| {
-            let m = n.mask.as_deref()?;
+            let m = n.extras().mask.as_deref()?;
             Some(json!({ "id": n.id.0, "clip": m.clip, "invert": m.invert, "disabled": m.disabled, "linked": m.linked, "art": m.art.id.0 }))
         })
         .collect();
@@ -412,7 +424,7 @@ mod tests {
         assert_eq!(r["editing"], false);
         let d = &s.doc().unwrap().doc;
         assert!(d.node(NodeId(b)).is_none(), "mask art left the layer tree");
-        let m = d.node(NodeId(a)).unwrap().mask.as_deref().unwrap();
+        let m = d.node(NodeId(a)).unwrap().extras().mask.as_deref().unwrap();
         assert!(m.clip && m.linked && !m.invert && !m.disabled);
         assert_eq!(m.art.id, NodeId(b));
     }
@@ -426,7 +438,7 @@ mod tests {
         let d = &s.doc().unwrap().doc;
         let n = d.node(NodeId(g)).unwrap();
         assert_eq!(n.children().unwrap().len(), 2);
-        assert!(!n.mask.as_ref().unwrap().clip);
+        assert!(!n.extras().mask.as_ref().unwrap().clip);
     }
 
     #[test]
@@ -436,11 +448,11 @@ mod tests {
         s.execute("transparency.makeOpacityMask", &json!({})).unwrap();
         s.execute("transparency.releaseOpacityMask", &json!({})).unwrap();
         let st = s.doc().unwrap();
-        assert!(st.doc.node(NodeId(a)).unwrap().mask.is_none());
+        assert!(st.doc.node(NodeId(a)).unwrap().extras().mask.is_none());
         assert_eq!(st.selection.len(), 2);
         assert_eq!(st.doc.layers[0].children().unwrap().len(), 2);
         s.execute("edit.undo", &json!({})).unwrap();
-        assert!(s.doc().unwrap().doc.node(NodeId(a)).unwrap().mask.is_some());
+        assert!(s.doc().unwrap().doc.node(NodeId(a)).unwrap().extras().mask.is_some());
     }
 
     #[test]
@@ -457,13 +469,13 @@ mod tests {
         assert_eq!(info[0]["disabled"], true);
         assert_eq!(info[0]["linked"], false);
         // Unlinked: moving the object leaves the mask art where it was.
-        let before = s.doc().unwrap().doc.node(NodeId(a)).unwrap().mask.as_ref().unwrap().art.clone();
+        let before = s.doc().unwrap().doc.node(NodeId(a)).unwrap().extras().mask.as_ref().unwrap().art.clone();
         s.execute("object.move", &json!({"dx": 30, "dy": 0})).unwrap();
-        let after = s.doc().unwrap().doc.node(NodeId(a)).unwrap().mask.as_ref().unwrap().art.clone();
+        let after = s.doc().unwrap().doc.node(NodeId(a)).unwrap().extras().mask.as_ref().unwrap().art.clone();
         assert_eq!(before.geometric_bounds(), after.geometric_bounds());
         s.execute("transparency.linkOpacityMask", &json!({})).unwrap();
         s.execute("object.move", &json!({"dx": 30, "dy": 0})).unwrap();
-        let moved = s.doc().unwrap().doc.node(NodeId(a)).unwrap().mask.as_ref().unwrap().art.clone();
+        let moved = s.doc().unwrap().doc.node(NodeId(a)).unwrap().extras().mask.as_ref().unwrap().art.clone();
         assert!((moved.geometric_bounds().unwrap().x0 - after.geometric_bounds().unwrap().x0 - 30.0).abs() < 1e-9);
     }
 
@@ -473,7 +485,7 @@ mod tests {
         assert_eq!(s.execute("transparency.toggleNewMasksClipping", &json!({})).unwrap()["value"], false);
         select(&mut s, &[a, b]);
         s.execute("transparency.makeOpacityMask", &json!({})).unwrap();
-        assert!(!s.doc().unwrap().doc.node(NodeId(a)).unwrap().mask.as_ref().unwrap().clip);
+        assert!(!s.doc().unwrap().doc.node(NodeId(a)).unwrap().extras().mask.as_ref().unwrap().clip);
         s.execute("transparency.toggleNewMasksInverted", &json!({})).unwrap();
         assert_eq!(s.new_mask_defaults(), (false, true));
     }
@@ -486,6 +498,6 @@ mod tests {
         let d = s.doc().unwrap().doc.clone();
         let bytes = vectorcraft_format::save(&d, false);
         let back = vectorcraft_format::load(&bytes).unwrap();
-        assert_eq!(back.node(NodeId(a)).unwrap().mask, d.node(NodeId(a)).unwrap().mask);
+        assert_eq!(back.node(NodeId(a)).unwrap().extras().mask, d.node(NodeId(a)).unwrap().extras().mask);
     }
 }

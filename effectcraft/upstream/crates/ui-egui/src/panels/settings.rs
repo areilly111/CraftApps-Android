@@ -10,7 +10,7 @@
 use crate::i18n::{tr, tr_args};
 use effectcraft_engine::prefs::{APPEARANCE_MODES, DARK_THEMES, Item, Kind, LIGHT_THEMES, Page, pages};
 use effectcraft_engine::segment::Task;
-use egui::{Color32, RichText, vec2};
+use egui::{Color32, Rect, RichText, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::{ThemeKind, Tokens};
@@ -50,12 +50,6 @@ fn reg(app: &mut EffectcraftApp, id: &str, r: &egui::Response, label: &str) {
 
 /// One page's rows.
 fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value, t: &Tokens, acts: &mut Vec<Act>) {
-    // Android only: the port draws its own Storage page (not engine prefs).
-    #[cfg(target_os = "android")]
-    if page.id == "storage" {
-        android_storage_section(app, ui, t);
-        return;
-    }
     let get = |key: &str| cur.pointer(&format!("/{}", key.replace('.', "/"))).cloned().unwrap_or(Value::Null);
     let label_w = 250.0;
     for item in &page.items {
@@ -124,7 +118,10 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                             let r = match kind {
                                 Kind::Int(lo, hi, unit) => {
                                     let mut x = v.as_i64().unwrap_or(0);
-                                    let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.25)));
+                                    // A typed number applies once entered: typing 85 into UI Scale
+                                    // doesn't resize the interface to 75 % at its first digit.
+                                    let drag = egui::DragValue::new(&mut x).range(lo..=hi).speed(0.25).update_while_editing(false);
+                                    let r = ui.add(crate::widgets::drag_value(drag));
                                     if !unit.is_empty() {
                                         ui.label(RichText::new(unit).color(t.text_dim));
                                     }
@@ -158,7 +155,6 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                     r
                                 }
                                 Kind::Choice(opts) => {
-                                    // (A number with choices, UI Scale, shows as its text.)
                                     let curv = v.as_str().map_or_else(|| v.to_string(), str::to_string);
                                     let shown = opts.iter().find(|o| o.1 == curv).map(|o| o.0).unwrap_or(curv.as_str()).to_string();
                                     egui::ComboBox::from_id_salt(("settings", key))
@@ -216,43 +212,6 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
             }
         }
     }
-}
-
-/// Android only: Settings ▸ Storage — the port's shared-storage layout. Drawn by
-/// the port (not engine prefs): where projects live by default, and the SD-card
-/// option. The hooks reach the native shell (see [`crate::AndroidHooks`]).
-#[cfg(target_os = "android")]
-fn android_storage_section(app: &mut EffectcraftApp, ui: &mut egui::Ui, t: &Tokens) {
-    ui.label(
-        RichText::new(
-            "Where new projects and imported media live. EffectCraft and the other craft apps \
-             share these folders, so a file saved here is visible to all of them.",
-        )
-        .color(t.text_dim),
-    );
-    ui.add_space(8.0);
-    let Some(hooks) = app.hooks.android_hooks.as_ref() else {
-        ui.label(RichText::new("Storage settings are unavailable.").color(t.text_faint));
-        return;
-    };
-    ui.label(RichText::new(format!("Current: {}", (hooks.storage.location_label)())).color(t.text));
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui.button("Tablet storage").clicked() {
-            (hooks.storage.use_tablet_storage)();
-        }
-        if ui.button("SD card…").clicked() {
-            (hooks.storage.pick_sd_card)();
-        }
-    });
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new(
-            "“SD card…” opens the system folder picker. The chosen folder is remembered, and \
-             projects are read and written through it directly.",
-        )
-        .color(t.text_faint),
-    );
 }
 
 /// A small EffectCraft window painted with theme `kind`'s tokens: the Tools bar, the Project
@@ -374,11 +333,39 @@ fn theme_card(
             theme_preview(ui, kind, ui.available_width());
             ui.add_space(4.0);
             for (label, value) in options {
-                let r = ui.radio(cur == *value, tr(label));
-                reg(app, &format!("settings.{key}.{value}"), &r, label);
-                if r.clicked() && cur != *value {
-                    acts.push(Act::Set(key.into(), json!(value)));
-                }
+                let row = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 24.0));
+                let hovered = ui.ctx().pointer_hover_pos().is_some_and(|p| row.contains(p));
+                ui.horizontal(|ui| {
+                    let r = ui.radio(cur == *value, tr(label));
+                    reg(app, &format!("settings.{key}.{value}"), &r, label);
+                    if r.clicked() && cur != *value {
+                        acts.push(Act::Set(key.into(), json!(value)));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let mut favorites = app.session.prefs.appearance.favorite_themes.clone();
+                        let favorite = favorites.iter().any(|id| id == value);
+                        let tip = tr(if favorite { "Remove from favorites" } else { "Add to favorites" });
+                        let r = ui.add_visible(favorite || hovered, egui::Button::new("").min_size(vec2(24.0, 24.0)).frame(false)).on_hover_text(tip);
+                        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: {}", tip, tr(label))));
+                        reg(app, &format!("settings.appearance.favoriteThemes.{value}"), &r, tip);
+                        if favorite || hovered {
+                            crate::icons::paint(
+                                ui.painter(),
+                                r.rect.shrink(4.0),
+                                if favorite { crate::icons::Icon::StarFilled } else { crate::icons::Icon::Star },
+                                if favorite { t.accent } else { t.text_dim },
+                            );
+                        }
+                        if r.clicked() {
+                            if favorite {
+                                favorites.retain(|id| id != value);
+                            } else {
+                                favorites.push((*value).into());
+                            }
+                            acts.push(Act::Set("appearance.favoriteThemes".into(), json!(favorites)));
+                        }
+                    });
+                });
             }
         });
 }
@@ -636,16 +623,7 @@ fn labels_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, cur: &Value, acts: &mu
 }
 
 pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
-    // Android only: the port's own Storage page (shared /ArtCraft layout, SD-card
-    // option); it is not engine prefs.
-    #[cfg(target_os = "android")]
-    let all: Vec<Page> = {
-        let mut all = pages();
-        all.push(Page { id: "storage", title: "Storage", items: vec![] });
-        all
-    };
-    #[cfg(not(target_os = "android"))]
-    let all: Vec<Page> = pages();
+    let all = pages();
     let mut page = app.dialog_state.settings_page.clone();
     if !all.iter().any(|p| p.id == page) {
         page = "general".into();
@@ -654,10 +632,40 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let cur = serde_json::to_value(&app.session.prefs).unwrap_or_default();
     let mut acts: Vec<Act> = vec![];
     let (mut ok, mut cancel) = (false, false);
-    super::dialogs::modal(ctx, "Settings", vec2(820.0, 600.0), t, |ui| {
-        let body_h = (ctx.content_rect().height() - 170.0).clamp(120.0, 470.0);
-        ui.allocate_ui_with_layout(vec2(ui.available_width(), body_h), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-            ui.set_height(body_h);
+    super::dialogs::modal_fit(ctx, "Settings", vec2(820.0, 600.0), t, |ui, height| {
+        // The buttons go first, from the bottom up, and the pages get the height they leave: at
+        // a high UI Scale the pages scroll and the buttons stay in view.
+        let area = ui.allocate_space(vec2(ui.available_width(), height)).1;
+        let mut foot = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(egui::Layout::bottom_up(egui::Align::Min)));
+        foot.horizontal(|ui| {
+            let r = ui.add_enabled(idx > 0, egui::Button::new(tr("Previous")));
+            app.auto.add("settings.previous", r.rect, "Previous");
+            if r.clicked() {
+                page = all[idx - 1].id.to_string();
+            }
+            let r = ui.add_enabled(idx + 1 < all.len(), egui::Button::new(tr("Next")));
+            app.auto.add("settings.next", r.rect, "Next");
+            if r.clicked() {
+                page = all[idx + 1].id.to_string();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let r = ui.add(egui::Button::new(RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent));
+                app.auto.add("settings.ok", r.rect, "OK");
+                ok |= r.clicked();
+                let r = ui.button(tr("Cancel"));
+                app.auto.add("settings.cancel", r.rect, "Cancel");
+                cancel |= r.clicked();
+            });
+        });
+        foot.separator();
+        foot.add_space(8.0);
+        let body_h = (foot.min_rect().top() - area.top()).max(0.0);
+        // (A child, clipped to its share, so a wide page can't widen the dialog under the buttons.)
+        let pages = Rect::from_min_size(area.min, vec2(area.width(), body_h));
+        let mut body = ui.new_child(egui::UiBuilder::new().max_rect(pages).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        body.set_clip_rect(pages.intersect(body.clip_rect()));
+        {
+            let ui = &mut body;
             // Page list (left, like After Effects).
             ui.vertical(|ui| {
                 ui.set_width(180.0);
@@ -692,33 +700,11 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 let p = &all[idx];
                 ui.label(RichText::new(tr(p.title)).font(Tokens::semibold(14.0)).color(t.tab_text_active));
                 ui.add_space(6.0);
-                egui::ScrollArea::vertical().max_height(body_h - 30.0).auto_shrink([false, false]).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height((body_h - 30.0).max(0.0)).auto_shrink([false, false]).show(ui, |ui| {
                     page_ui(app, ui, p, &cur, t, &mut acts);
                 });
             });
-        });
-        ui.add_space(8.0);
-        ui.separator();
-        ui.horizontal(|ui| {
-            let r = ui.add_enabled(idx > 0, egui::Button::new(tr("Previous")));
-            app.auto.add("settings.previous", r.rect, "Previous");
-            if r.clicked() {
-                page = all[idx - 1].id.to_string();
-            }
-            let r = ui.add_enabled(idx + 1 < all.len(), egui::Button::new(tr("Next")));
-            app.auto.add("settings.next", r.rect, "Next");
-            if r.clicked() {
-                page = all[idx + 1].id.to_string();
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = ui.add(egui::Button::new(RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent));
-                app.auto.add("settings.ok", r.rect, "OK");
-                ok |= r.clicked();
-                let r = ui.button(tr("Cancel"));
-                app.auto.add("settings.cancel", r.rect, "Cancel");
-                cancel |= r.clicked();
-            });
-        });
+        }
     });
     app.dialog_state.settings_page = page;
     for a in acts {
@@ -830,6 +816,9 @@ pub fn recovery(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             }
         });
     });
+    if choice.is_none() && super::dialogs::ui_enter(ctx) {
+        choice = Some("autosave");
+    }
     let Some(c) = choice else { return };
     app.dialog = None;
     app.recovery = None;

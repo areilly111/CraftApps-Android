@@ -153,7 +153,7 @@ fn v6_settings_map_onto_brush_sections() {
         assert_eq!((sc.count, sc.scatter.jitter, sc.scatter.control, sc.scatter.fade_steps, sc.count_jitter.jitter), (3, 2.5, Control::Fade, 40, 0.5));
         let tx = &b.texture;
         assert!(tx.enabled && tx.each_tip && tx.invert);
-        assert_eq!((tx.scale, tx.brightness, tx.contrast, tx.mode, tx.depth), (1.5, -0.5, 0.5, MaskMode::ColorBurn, 0.6));
+        assert_eq!((tx.scale, tx.brightness, tx.contrast, tx.mode, tx.depth), (1.5, -0.5, 0.25, MaskMode::ColorBurn, 0.6));
         assert_eq!((tx.depth_jitter.jitter, tx.depth_jitter.minimum), (0.3, 0.2));
         let Pattern::Tile(pt) = &tx.pattern else { panic!("embedded pattern expected, got {:?}", tx.pattern) };
         assert_eq!((pt.width, pt.height, pt.data[3]), (4, 2, 65535));
@@ -329,4 +329,51 @@ fn sampled_tip_paints_the_brush_colour_never_black() {
     // The helper writes an alternating 255/0 tip, so both painted and unpainted pixels exist.
     assert!(painted > 0, "the imported tip painted nothing");
     assert!(painted < 64 * 64, "the tip covered everything - coverage was treated as solid colour");
+}
+
+/// #3340: Photoshop's texture Contrast runs -50..100; the model maps -50..0 and 0..100 onto
+/// -1..0 and 0..1 (as Brush Settings shows it), so +24 must not read back as +48.
+#[test]
+fn texture_contrast_maps_both_halves() {
+    for (c, want) in [(24, 0.24), (100, 1.0), (-30, -0.6), (-50, -1.0), (0, 0.0)] {
+        let preset = Descriptor::new("brushPreset")
+            .with("Nm  ", t("C"))
+            .with("Brsh", Value::Descriptor(Descriptor::new("computedBrush").with("Dmtr", u(b"#Pxl", 20.0))))
+            .with("useTexture", Value::Boolean(true))
+            .with("textureContrast", Value::Integer(c));
+        let bytes = write_v6(2, &[], &[], &[preset], false).unwrap();
+        let imp = read_abr(&bytes, "Test").unwrap();
+        let got = imp.presets[0].brush.texture.contrast;
+        assert!((got - want).abs() < 1e-6, "contrast {c}: {got}");
+    }
+}
+
+/// #3340: a Height-mode brush at a low depth with a darkened pattern (how Photoshop's own
+/// "Pen" presets in the reported file are set up) imported but painted nothing.
+#[test]
+fn low_depth_height_texture_brush_paints() {
+    use photocraft_color::PixelFormat;
+    use photocraft_paint::StrokePoint;
+    use photocraft_paint::render::render_stroke;
+    use photocraft_raster::Surface;
+
+    for mode in ["Hght", "linearHeight"] {
+        let preset = Descriptor::new("brushPreset")
+            .with("Nm  ", t("Pen"))
+            .with("Brsh", Value::Descriptor(Descriptor::new("computedBrush").with("Dmtr", u(b"#Pxl", 20.0)).with("Hrdn", prc(100.0)).with("Spcn", prc(5.0))))
+            .with("useTexture", Value::Boolean(true))
+            .with("textureBlendMode", en("BlnM", mode))
+            .with("textureDepth", prc(13.0))
+            .with("textureBrightness", Value::Integer(-87))
+            .with("textureContrast", Value::Integer(5))
+            .with("Txtr", Value::Descriptor(Descriptor::new("Ptrn").with("Nm  ", t("Grit")).with("Idnt", t("pat-uuid"))));
+        let bytes = write_v6(2, &[], &[grit_pattern()], &[preset], false).unwrap();
+        let imp = read_abr(&bytes, "Test").unwrap();
+        let b = imp.presets[0].brush.clone();
+        let mut s = Surface::new(PixelFormat::RGBA32F);
+        render_stroke(&mut s, &b, &[StrokePoint::new(10.0, 20.0, 1.0), StrokePoint::new(50.0, 20.0, 1.0)], None, false, 1.0);
+        let covered = (12..48).filter(|&x| s.rgba(x, 20)[3] > 0.5).count();
+        // 13 % depth reaches 1.55 pattern ranges: above the whole darkened Grit pattern.
+        assert_eq!(covered, 36, "{mode}: the stroke painted {covered} of 36 pixels");
+    }
 }

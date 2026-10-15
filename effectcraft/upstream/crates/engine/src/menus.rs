@@ -322,6 +322,9 @@ pub fn checked(s: &Session, command: &str, params: &Value) -> Option<bool> {
         }
         "layer.markersLock" => Some(layer?.markers_locked),
         "layer.mask.hideLocked" => Some(s.state.hide_locked_masks),
+        "view.res.full" | "view.res.half" | "view.res.third" | "view.res.quarter" | "view.res.custom" => {
+            Some(comp.resolution.label().eq_ignore_ascii_case(command.trim_start_matches("view.res.")))
+        }
         "view.layout" => Some(params.get("views").and_then(Value::as_u64) == Some(s.state.view_layout.max(1) as u64)),
         "view.shareViewOptions" => Some(s.state.share_view_options),
         "view.extendedViewer" => Some(s.prefs.three_d.extended_viewer),
@@ -693,6 +696,7 @@ Composition
     File... | comp.saveFrameAs
     Photoshop Layers... | comp.saveFrameAsPsd
     ProEXR... | comp.saveFrameAsExr
+  Copy Frame to Clipboard | comp.copyFrame
   Pre-render... | render.preRender
   Save Current Preview... | render.saveCurrentPreview
   ---
@@ -1021,6 +1025,14 @@ Animation
       Brightness | layer.addTextAnimator {"properties":["strokeBrightness"]}
       Opacity | layer.addTextAnimator {"properties":["strokeOpacity"]}
     Stroke Width | layer.addTextAnimator {"properties":["strokeWidth"]}
+    Front
+      Color | layer.addTextAnimator {"properties":["frontColor"]}
+    Bevel
+      Color | layer.addTextAnimator {"properties":["bevelColor"]}
+    Side
+      Color | layer.addTextAnimator {"properties":["sideColor"]}
+    Back
+      Color | layer.addTextAnimator {"properties":["backColor"]}
     ---
     Tracking | layer.addTextAnimator {"properties":["tracking"]}
     Line Anchor | layer.addTextAnimator {"properties":["lineAnchor"]}

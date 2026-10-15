@@ -43,16 +43,27 @@ fn tritone(ctx: &EffectCtx, mut b: Buf) -> Buf {
     b
 }
 
-/// Brightness & Contrast without Use Legacy: tone curves that keep black and white fixed (no
-/// clipping). Brightness bends the curve with a power (`b` in -1.5..1.5), contrast is an S
-/// curve around mid grey (`c` in -1..1). Values above 1 pass through. The GPU kernel mirrors it.
+/// Brightness & Contrast without Use Legacy: pin black and white, then a mild S-curve.
+///
+/// Fitted to After Effects non-legacy grey ramps (#681, kasper9n oracles). Brightness is a
+/// power toward white (`1-(1-v)^e`) or black (`v^e`); contrast uses `g = 1 + 0.53 c` instead of
+/// the old `2^(2c)` (that crushed 0.25 to ~8/255 at Contrast 100; AE is ~40/255). Values above 1
+/// pass through. The GPU kernel mirrors it.
 pub fn bc_modern(v: f32, b: f32, c: f32) -> f32 {
     if v >= 1.0 {
         return v;
     }
-    let v = v.max(0.0).powf(2f32.powf(-b));
-    let g = 2f32.powf(2.0 * c);
-    if v < 0.5 { 0.5 * (2.0 * v).powf(g) } else { 1.0 - 0.5 * (2.0 - 2.0 * v).max(0.0).powf(g) }
+    let mut v = v.max(0.0);
+    if b > 0.0 {
+        v = 1.0 - (1.0 - v).powf(2f32.powf(1.24 * b));
+    } else if b < 0.0 {
+        v = v.powf(2f32.powf(-1.32 * b));
+    }
+    if c != 0.0 {
+        let g = (1.0 + 0.53 * c).max(0.05);
+        v = if v < 0.5 { 0.5 * (2.0 * v).powf(g) } else { 1.0 - 0.5 * (2.0 - 2.0 * v).max(0.0).powf(g) };
+    }
+    v
 }
 
 fn brightness_contrast(ctx: &EffectCtx, mut b: Buf) -> Buf {
@@ -1179,6 +1190,34 @@ mod tests {
         let legacy = [("brightness", num(50.0)), ("useLegacy", Value::Bool(true))];
         assert!((bc(&legacy, 0.2) - 0.7).abs() < 1e-5);
         assert!((bc(&legacy, 0.0) - 0.5).abs() < 1e-5);
+    }
+
+    /// After Effects non-legacy ramps (kasper9n, #681). B0 C-100 matched B0 C-50 and is omitted.
+    #[test]
+    fn brightness_contrast_modern_matches_ae_ramp_samples() {
+        let u8 = |v: f32| (v * 255.0).round() as i32;
+        let go = |b: f64, c: f64, x: u8| {
+            u8(px("ec.color.brightnesscontrast", &[("brightness", num(b)), ("contrast", num(c))], [x as f32 / 255.0, x as f32 / 255.0, x as f32 / 255.0, 1.0])
+                [0])
+        };
+        // (brightness, contrast, input, AE 8-bit)
+        let samples: &[(f64, f64, u8, u8)] = &[
+            (0.0, 100.0, 64, 40),
+            (0.0, 100.0, 128, 129),
+            (0.0, 100.0, 192, 217),
+            (0.0, 50.0, 64, 53),
+            (0.0, 50.0, 192, 205),
+            (0.0, -50.0, 64, 77),
+            (100.0, 0.0, 128, 209),
+            (50.0, 0.0, 128, 171),
+            (106.0, -18.0, 128, 214),
+        ];
+        for &(b, c, x, ae) in samples {
+            let got = go(b, c, x);
+            assert!((got - ae as i32).abs() <= 10, "B{b} C{c} in {x}: got {got} AE {ae}");
+        }
+        // Old g=4 S-curve put Contrast 100 at ~8/255 here.
+        assert!(go(0.0, 100.0, 64) >= 30);
     }
 
     #[test]

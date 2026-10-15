@@ -55,6 +55,18 @@ fn conventions_commands_batch_and_bounded_preview() {
         assert_eq!(p["failed"], 1);
         assert_eq!(p["completed"], total - 1);
     }
+    // atomic: the whole batch is one undo step, named by `label` (#1163).
+    let undo_steps = |s: &mut Server| payload(&call(s, "doc_inspect", json!({"depth":0})))["history"].as_array().map_or(0, Vec::len);
+    let before = undo_steps(&mut s);
+    let two = json!([{"id":"shape.rectangle","params":{"x":0,"y":0,"width":5,"height":5}}, {"id":"shape.ellipse","params":{"x":9,"y":0,"width":5,"height":5}}]);
+    let r = call(&mut s, "command_batch", json!({"steps":two,"atomic":true,"label":"Agent build"}));
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(undo_steps(&mut s), before + 1);
+    assert_eq!(payload(&call(&mut s, "run_command", json!({"command":"edit.undo"})))["undone"], "Agent build");
+    assert_eq!(undo_steps(&mut s), before);
+    for bad in [json!({"steps":two,"label":"x"}), json!({"steps":two,"atomic":"yes"}), json!({"steps":two,"atomic":true,"label":""})] {
+        assert_eq!(call(&mut s, "command_batch", bad.clone())["isError"], true, "{bad}");
+    }
     let before = call(&mut s, "doc_inspect", json!({}));
     let r = call(&mut s, "render_preview", json!({"max_side":64}));
     assert_eq!(r["isError"], false, "{r}");
@@ -64,6 +76,17 @@ fn conventions_commands_batch_and_bounded_preview() {
     assert_eq!(before, call(&mut s, "doc_inspect", json!({})));
     for max in [json!(0), json!(4097), json!("64")] {
         assert_eq!(call(&mut s, "render_preview", json!({"max_side":max}))["isError"], true);
+    }
+    // Another artboard, three times wider than tall, previews by its index (#1163).
+    let r = call(&mut s, "run_command", json!({"command":"artboard.new","params":{"x":2000,"y":0,"width":300,"height":100}}));
+    assert_eq!(r["isError"], false, "{r}");
+    let r = call(&mut s, "render_preview", json!({"max_side":60,"artboard":1}));
+    assert_eq!(r["isError"], false, "{r}");
+    let png = vectorcraft_format::base64_decode(r["content"][0]["data"].as_str().unwrap()).unwrap();
+    let img = image::load_from_memory(&png).unwrap();
+    assert_eq!((img.width(), img.height()), (60, 20));
+    for board in [json!(2), json!(-1), json!("1")] {
+        assert_eq!(call(&mut s, "render_preview", json!({"artboard":board}))["isError"], true, "{board}");
     }
     for name in ["ui_inspect", "ui_screenshot"] {
         assert_eq!(call(&mut s, name, json!({}))["isError"], true);

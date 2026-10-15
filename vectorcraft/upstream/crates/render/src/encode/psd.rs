@@ -520,7 +520,7 @@ impl Parts<'_> {
 
 /// Can layer `n` be written as a group of its parts without changing its look?
 fn splits(n: &Node) -> bool {
-    matches!(n.kind, NodeKind::Layer { clip: false, .. }) && n.mask.is_none() && n.knockout != Knockout::On && !fx::has_object_fx(n)
+    matches!(n.kind, NodeKind::Layer { clip: false, .. }) && n.extras().mask.is_none() && n.knockout != Knockout::On && !fx::has_object_fx(n)
 }
 
 /// Does anything in `n` carry effects of its own that may paint outside the art's bounds?

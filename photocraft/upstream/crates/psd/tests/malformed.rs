@@ -114,10 +114,11 @@ fn huge_declared_dimensions_small_data() {
     f.header.height = 300_000;
     let b = f.to_bytes().unwrap();
     assert!(PsdFile::from_bytes(&b).is_err());
+    // ZIP over `MAX_DECODED_BYTES` is not inflated at parse time (#2926); decoding refuses it.
     f.image_data.compression = Compression::Zip;
     f.image_data.data = compression::zip_compress(&[0; 100]);
     let b = f.to_bytes().unwrap();
-    assert!(PsdFile::from_bytes(&b).is_err());
+    assert!(matches!(PsdFile::from_bytes(&b).and_then(|f| f.decode_merged()), Err(PsdError::LimitExceeded(_))));
 }
 
 #[test]

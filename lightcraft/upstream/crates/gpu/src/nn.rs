@@ -86,6 +86,8 @@ fn make_device(backends: wgpu::Backends) -> Result<Dev, String> {
     desc.backends = backends;
     // DX12 shaders compile with FXC (issue #471)
     desc.backend_options = crate::backend::backend_options();
+    // no indirect-call validation pipeline: Intel Metal fails to compile it (#250)
+    desc.flags = crate::backend::instance_flags_from_env(desc.flags);
     let instance = wgpu::Instance::new(desc);
     let wanted = std::env::var("LIGHTCRAFT_GPU_ADAPTER").ok().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
     let adapter = match &wanted {
@@ -670,7 +672,8 @@ pub fn runner(net: &Net, tile: usize) -> Result<NetRunner, String> {
         d.device.push_error_scope(wgpu::ErrorFilter::Validation),
         d.device.push_error_scope(wgpu::ErrorFilter::Internal),
     ];
-    let pipes = build_pipelines(d, &layout);
+    // the driver compiles the kernels here: a crash in it is reported at the next launch (issue #250)
+    let pipes = crate::backend::with_marker("denoise kernel compilation", || build_pipelines(d, &layout));
     let weights: Vec<(wgpu::Buffer, wgpu::Buffer)> = layers
         .iter()
         .map(|l| {

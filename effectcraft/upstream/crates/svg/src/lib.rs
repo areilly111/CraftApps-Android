@@ -794,10 +794,10 @@ impl<'a, 'i> Parser<'a, 'i> {
                 let vb = viewbox_transform(n, w, h);
                 let mut children = vec![];
                 let saved = (self.vw, self.vh);
-                if let Some((_, vw, vh)) = viewbox(n) {
-                    self.vw = vw;
-                    self.vh = vh;
-                }
+                // Percentages use this viewport's user space, even without a viewBox.
+                let (vw, vh) = viewbox(n).map_or((w, h), |(_, vw, vh)| (vw, vh));
+                self.vw = vw;
+                self.vh = vh;
                 for c in n.children() {
                     self.node(c, &st, &mut children, depth + 1);
                 }

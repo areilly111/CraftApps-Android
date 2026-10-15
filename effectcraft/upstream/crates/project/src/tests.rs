@@ -66,6 +66,54 @@ fn animate_and_roundtrip_json() {
 }
 
 #[test]
+fn comp_resolution_is_saved_and_old_projects_load_with_auto() {
+    use crate::Resolution;
+    let (mut p, cid) = project_with_layer();
+    // Auto (the default) isn't written, so older versions read the file as before.
+    assert!(!p.to_file_json().unwrap().contains("\"resolution\""));
+    p.comp_mut(cid).unwrap().resolution = Resolution::Custom(5);
+    let q = Project::from_json(&p.to_file_json().unwrap()).unwrap();
+    assert_eq!(q.comp(cid).unwrap().resolution, Resolution::Custom(5));
+    p.comp_mut(cid).unwrap().resolution = Resolution::Half;
+    let text = p.to_file_json().unwrap();
+    assert_eq!(Project::from_json(&text).unwrap().comp(cid).unwrap().resolution, Resolution::Half);
+    // A project saved before comps had a resolution opens with Auto.
+    fn strip(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(m) => {
+                m.remove("resolution");
+                m.values_mut().for_each(strip);
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut old: serde_json::Value = serde_json::from_str(&text).unwrap();
+    strip(&mut old);
+    assert_eq!(Project::from_json(&old.to_string()).unwrap().comp(cid).unwrap().resolution, Resolution::Auto);
+    // It's not part of the comp's pixels.
+    let (a, b) = (p.comp(cid).unwrap(), q.comp(cid).unwrap());
+    assert!(a != b && a.same_pixels(b));
+    assert_eq!(format!("{:?}", a.pixel_form()), format!("{:?}", b.pixel_form()));
+}
+
+#[test]
+fn resolution_factors_and_scales() {
+    use crate::Resolution;
+    assert_eq!(Resolution::from_factor(1), Resolution::Full);
+    assert_eq!(Resolution::from_factor(4), Resolution::Quarter);
+    assert_eq!(Resolution::from_factor(0), Resolution::Full);
+    assert_eq!(Resolution::from_factor(7), Resolution::Custom(7));
+    assert_eq!(Resolution::from_factor(1000), Resolution::Custom(40));
+    assert_eq!(Resolution::Custom(5).factor(), Some(5));
+    assert_eq!(Resolution::Auto.factor(), None);
+    // A hostile factor from a file renders within the Custom range.
+    assert_eq!(Resolution::Custom(0).scale(1.0, 1.0), 1.0);
+    assert_eq!(Resolution::Custom(255).scale(1.0, 1.0), 1.0 / 40.0);
+    assert_eq!(Resolution::Third.scale(0.1, 1.0), 1.0 / 3.0);
+}
+
+#[test]
 fn unique_names_and_cycles() {
     let (p, cid) = project_with_layer();
     let c = p.comp(cid).unwrap();
@@ -120,4 +168,17 @@ fn project_files_name_their_version_and_always_read_back() {
     assert!(e.contains("can't be saved"), "{e}");
     assert!(crate::is_newer_version("0.2.0", "0.1.9") && crate::is_newer_version("1.0.0-rc.1", "0.9.9"));
     assert!(!crate::is_newer_version("0.1.1", "0.1.1") && !crate::is_newer_version("0.1.0", "0.1.1"));
+}
+
+#[test]
+fn project_files_remember_the_open_comps() {
+    let (p, cid) = project_with_layer();
+    let view = crate::SavedView { active_comp: Some(cid), open_comps: vec![cid] };
+    let text = p.to_file_json_with_view(&view).unwrap();
+    assert_eq!(crate::saved_view(&text), view);
+    assert_eq!(Project::from_json(&text).unwrap(), p, "the view is not part of the project");
+    // Files from before #748 have no view; a garbled one is ignored, not an error.
+    assert_eq!(crate::saved_view(&p.to_file_json().unwrap()), crate::SavedView::default());
+    let odd = text.replacen(&format!("\"activeComp\": {}", cid.0), "\"activeComp\": \"Main\"", 1);
+    assert_eq!(crate::saved_view(&odd), crate::SavedView { active_comp: None, open_comps: vec![cid] });
 }

@@ -3,7 +3,7 @@
 
 mod support;
 
-use filmcraft_interchange::{ExportOptions, Format, detect, export, import};
+use filmcraft_interchange::{ExportOptions, Format, Imported, detect, export, import};
 use filmcraft_media::Generator;
 use filmcraft_project::{ItemKind, Keyframe, Label, Marker, MarkerId, MarkerKind, MediaRef, Param, ParamValue, Project, TrackKind, TransitionAlign};
 use filmcraft_time::{FrameRate, Tick};
@@ -599,4 +599,67 @@ fn audio_trackindex_1_is_channel_0_only_when_the_file_is_split() {
     assert_eq!(a1[0].source_channels, vec![0u16]);
     assert!(a1[1].source_channels.is_empty(), "{:?}", a1[1].source_channels);
     assert_eq!(seq.tracks(TrackKind::Audio)[1].items[0].source_channels, vec![1u16]);
+}
+
+/// A Premiere-style stereo file split onto two mono tracks (A1 = `trackindex` 1, A2 = 2).
+fn split_stereo_doc(pan_a1: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4"><sequence id="sequence-1"><name>S</name><duration>48</duration>{RATE}
+  <media><audio>
+  <track currentExplodedTrackIndex="0" totalExplodedTrackCount="2" premiereTrackType="Stereo"><clipitem id="clipitem-1"><name>sfx</name>{RATE}<start>0</start><end>48</end><in>0</in><out>48</out>
+    <file id="file-1"><name>sfx.wav</name><pathurl>file://localhost/media/sfx.wav</pathurl>{RATE}<duration>48</duration><media><audio><channelcount>2</channelcount></audio></media></file>
+    <sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>{pan_a1}
+  </clipitem><outputchannelindex>1</outputchannelindex></track>
+  <track currentExplodedTrackIndex="1" totalExplodedTrackCount="2" premiereTrackType="Stereo"><clipitem id="clipitem-2"><name>sfx</name>{RATE}<start>0</start><end>48</end><in>0</in><out>48</out>
+    <file id="file-1"/>
+    <sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>
+  </clipitem><outputchannelindex>2</outputchannelindex></track>
+  </audio></media>
+</sequence></xmeml>"#
+    )
+}
+
+fn balances(imp: &Imported) -> Vec<f64> {
+    let seq = imp.project.sequence(only_seq(imp)).unwrap();
+    seq.tracks(TrackKind::Audio)
+        .iter()
+        .flat_map(|t| &t.items)
+        .map(|i| i.effect("panner").and_then(|e| e.param("balance")).and_then(|p| p.value.as_f64()).unwrap_or(0.0))
+        .collect()
+}
+
+/// #371: the halves of a split stereo file played centred, so both channels summed on both sides
+/// (+3 dB for a stereo effect, +6 dB for dual-mono dialogue). They now play on their own side.
+#[test]
+fn split_stereo_halves_are_panned_to_their_side() {
+    let (imp, _) = import(split_stereo_doc("").as_bytes(), Format::Fcp7Xml, None).unwrap();
+    assert_eq!(balances(&imp), vec![-100.0, 100.0]);
+}
+
+/// An Audio Pan filter on a split half still wins.
+#[test]
+fn split_stereo_half_keeps_its_audio_pan() {
+    let pan = r#"<filter><effect><name>Audio Pan</name><effectid>audiopan</effectid><effectcategory>audiopan</effectcategory><effecttype>audiopan</effecttype><mediatype>audio</mediatype>
+      <parameter><parameterid>pan</parameterid><name>Pan</name><valuemin>-1</valuemin><valuemax>1</valuemax><value>0</value></parameter></effect></filter>"#;
+    let (imp, _) = import(split_stereo_doc(pan).as_bytes(), Format::Fcp7Xml, None).unwrap();
+    assert_eq!(balances(&imp), vec![0.0, 100.0]);
+}
+
+/// A centred one-channel clip (Breakout to Mono) round-trips centred: export writes its Audio Pan.
+#[test]
+fn centred_mono_breakout_round_trips_centred() {
+    let r = FrameRate::FPS_23_976;
+    let mut p = Project::new("P");
+    let a = media(&mut p, "/m/a.wav", false, true, r);
+    let s = sequence(&mut p, "t", r, false);
+    let left = clip(&mut p, s, TrackKind::Audio, 0, a, 0, 24, 0);
+    let right = clip(&mut p, s, TrackKind::Audio, 1, a, 0, 24, 0);
+    for (id, ch) in [(left, 0u16), (right, 1u16)] {
+        let (_, it) = p.sequence_mut(s).unwrap().find_item_mut(id).unwrap();
+        it.source_channels = vec![ch];
+    }
+    let (imp, xml, _) = roundtrip(&p, s, Format::Fcp7Xml, &ExportOptions::default());
+    assert_eq!(balances(&imp), vec![0.0, 0.0], "{xml}");
 }

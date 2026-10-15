@@ -1,8 +1,9 @@
 //! Links panel: every image in the document, linked files with their status (missing, modified)
 //! and embedded images, as rows with a thumbnail, name, page and status. Clicking a row selects
 //! its image; the buttons Relink, Go To, Update and Edit Original act on the selected rows; Link
-//! Info shows the details of the first. The flyout adds Relink to Folder, Embed / Unembed,
-//! Placement Options, Show filters, Sort, thumbnail size and Show in Folder.
+//! Info shows the details of the first. The flyout adds Relink to Folder, Find in Folder (Find
+//! Linked Files: `ui.findLinksInFolder`), Embed / Unembed, Placement Options, Show filters, Sort,
+//! thumbnail size and Show in Folder.
 //!
 //! Everything runs through the `links.*` commands (`links.editOriginal` and `links.reveal` are UI
 //! commands: they hand the file to the system).
@@ -233,7 +234,9 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         widgets::dim_label(ui, tl!("No document"));
         return;
     };
-    let Some(doc) = app.session.active().map(|st| st.doc.clone()) else { return };
+    let Some(st) = app.session.active() else { return };
+    let doc = st.doc.clone();
+    let thumbs = super::layers::ThumbSource::of(app, st, &doc);
     let selected = selected_images(app);
     let rows: &[Value] = cache.list["links"].as_array().map_or(&[], Vec::as_slice);
     let mut clicked: Option<(u64, bool, bool)> = None;
@@ -266,8 +269,8 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
                 if o.thumb > 0.0 {
                     let tr = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - o.thumb / 2.0), vec2(o.thumb, o.thumb));
                     ui.painter().rect_filled(tr, 0.0, egui::Color32::WHITE);
-                    if let Some(n) = doc.node(NodeId(id)) {
-                        super::layers::real_thumb(ui, &doc, n, tr);
+                    if let Some(n) = super::layers::node_arc(&doc, NodeId(id)) {
+                        super::layers::real_thumb(ui, &thumbs, &n, tr);
                     }
                     ui.painter().rect_stroke(tr, 0.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
                     x = tr.right() + 6.0;
@@ -455,6 +458,9 @@ pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui) {
     }
     if menu_item(ui, tl!("Relink to Folder…"), (any || missing_any) && app.services.pick_folder.is_some(), false) {
         relink_to_folder(app, ids(&sel, |_| true));
+    }
+    if menu_item(ui, tl!("Find in Folder…"), (!linked.is_empty() || missing_any) && app.services.pick_folder.is_some(), false) {
+        crate::menus::invoke(app, "ui.findLinksInFolder", json!({ "ids": linked }));
     }
     if menu_item(ui, tl!("Go To Link"), sel.len() == 1, false)
         && let Some(id) = sel.first().and_then(|r| r["id"].as_u64())

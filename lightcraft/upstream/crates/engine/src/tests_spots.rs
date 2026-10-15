@@ -55,3 +55,13 @@ fn spots_select_move_edit_refresh_and_delete() {
     s.execute("library.next", &json!({})).unwrap();
     assert_eq!(s.active_spot, None);
 }
+
+#[test]
+fn a_content_aware_spot_has_no_source() {
+    let mut s = Session::with_demo();
+    s.execute("spot.add", &json!({"mode": "fill", "points": [[0.4, 0.5]], "size": 0.03})).unwrap();
+    let sp = &spots(&s)[0];
+    assert_eq!((sp.mode, sp.source_offset), (lightcraft_develop::SpotMode::Fill, None));
+    assert_eq!(serde_json::to_value(sp).unwrap()["mode"], "fill");
+    assert!(s.execute("spot.update", &json!({"mode": "nonsense"})).is_err());
+}

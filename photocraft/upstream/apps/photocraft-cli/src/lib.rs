@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use photocraft_automation::{AuthorizedWorkspace, Headless, PhotocraftMcp, files, security};
+use photocraft_engine::actions_cmds::Action;
 use photocraft_io::ExportOptions;
 use serde_json::{Value, json};
 
@@ -14,20 +15,25 @@ pub const USAGE: &str = "\
 photocraft-cli: headless Photocraft
 
 USAGE:
-  photocraft-cli convert <in> <out> [--format <ext>] [--quality <1-100>] [--tiff-layers]
+  photocraft-cli convert <in> <out> [--format <ext>] [--quality <1-100>] [--tiff-layers] [--tga-bits <24|32>]
       Convert between formats (.pcraft, .psd, .png, .jpg, .tif, .webp, .exr, …).
       TIFF output is flat unless --tiff-layers keeps the layers (Photoshop layer data).
       --quality sets the JPEG or WebP quality; a WebP written with a quality is lossy, without one lossless.
+      --tga-bits sets a TGA's bits per pixel: 32 writes the alpha channel (or else the transparency) as
+      its alpha, 24 none. Without it: 32 with an alpha channel or transparency, else 24.
   photocraft-cli info <file> [--compact]
       Print the document as JSON (size, mode, depth, layer tree).
-  photocraft-cli run (<file> | --new <json>) --cmd <id> [--params <json>] [--cmd …] [--out <file>] [--format <ext>] [--quality <1-100>] [--tiff-layers]
+  photocraft-cli run (<file> | --new <json>) --cmd <id> [--params <json>] [--cmd …] [--out <file>] [--format <ext>] [--quality <1-100>] [--tiff-layers] [--tga-bits <24|32>]
       Open a file, run engine commands in order, save the result. Each --params
       applies to the preceding --cmd. Prints each command's JSON result.
-  photocraft-cli batch --actions <actions.json> --in <dir> --out <dir> [--format <ext>] [--quality <1-100>] [--in-place] [--tiff-layers]
+  photocraft-cli batch --actions <actions.json> [--action <name>] --in <dir> --out <dir> [--format <ext>] [--quality <1-100>] [--in-place] [--tiff-layers] [--tga-bits <24|32>]
       Apply an action list to every image in a directory. Steps are [id, params] pairs,
       {\"command\": id, \"params\": {…}} objects or bare ids, as a recorded action or droplet stores them
-      (a list, or wrapped in {\"actions\": …}, {\"steps\": …} or a droplet). An --out folder that is the
-      --in folder is refused, as the results would replace the originals; --in-place allows it.
+      (a list, or wrapped in {\"actions\": …}, {\"steps\": …} or a droplet). An Actions set (the Actions
+      panel's actions.json, {\"actions\": [{\"name\", \"steps\"}…]}) plays the action --action names (needed
+      when the set holds more than one) with the whole set loaded, so its steps can play other actions
+      of the set. An --out folder that is the --in folder is refused, as the results would replace
+      the originals; --in-place allows it.
   photocraft-cli droplet <file.pcdroplet> <file-or-dir>… [--out <dir>]
       Run a droplet (File › Automate › Create Droplet) on images and folders.
   photocraft-cli commands [--json] [--filter <text>]
@@ -39,7 +45,7 @@ USAGE:
       [--automation-read-root <dir>] [--automation-write-root <dir>]
       Keep one headless session open and answer JSON lines ({\"id\",\"method\",\"params\"}) on stdio,
       or on 127.0.0.1:<port>. Methods: engine.execute, jobs.list/cancel, engine.commands,
-      doc.open/new/save/inspect/render/select/close, session.list, batch, methods
+      doc.open/new/place/save/exportLayers/exportDataSets/importDataSets/inspect/render/select/close, session.list, batch, methods
       (docs/control-protocol.md#headless-server).
 
   photocraft-cli <subcommand> --help (or -h) prints this text. A flag the subcommand doesn't take is
@@ -61,10 +67,20 @@ struct Subcommand {
 }
 
 const SUBCOMMANDS: &[Subcommand] = &[
-    Subcommand { name: "convert", values: &["--format", "--quality"], bare: &["--tiff-layers"], run: convert },
+    Subcommand { name: "convert", values: &["--format", "--quality", "--tga-bits"], bare: &["--tiff-layers"], run: convert },
     Subcommand { name: "info", values: &[], bare: &["--compact"], run: |a, out, _| info(a, out) },
-    Subcommand { name: "run", values: &["--new", "--cmd", "--params", "--out", "--format", "--quality"], bare: &["--tiff-layers"], run: run_cmds },
-    Subcommand { name: "batch", values: &["--actions", "--in", "--out", "--format", "--quality"], bare: &["--in-place", "--tiff-layers"], run: batch },
+    Subcommand {
+        name: "run",
+        values: &["--new", "--cmd", "--params", "--out", "--format", "--quality", "--tga-bits"],
+        bare: &["--tiff-layers"],
+        run: run_cmds,
+    },
+    Subcommand {
+        name: "batch",
+        values: &["--actions", "--action", "--in", "--out", "--format", "--quality", "--tga-bits"],
+        bare: &["--in-place", "--tiff-layers"],
+        run: batch,
+    },
     Subcommand { name: "droplet", values: &["--out"], bare: &[], run: droplet },
     Subcommand { name: "commands", values: &["--filter"], bare: &["--json"], run: |a, out, _| commands(a, out) },
     Subcommand {
@@ -194,6 +210,9 @@ fn export_opts(a: &Args) -> Result<ExportOptions, String> {
         o.encode.webp_quality = q;
         o.encode.webp_lossless = false;
     }
+    if let Some(b) = a.get("--tga-bits") {
+        o.tga_bits = Some(b.parse().ok().and_then(photocraft_io::TgaBits::from_bits).ok_or_else(|| format!("bad --tga-bits `{b}`: expected 24 or 32"))?);
+    }
     Ok(o)
 }
 
@@ -221,7 +240,7 @@ fn convert(a: &Args, _out: &mut dyn Write, err: &mut dyn Write) -> R {
     let opts = export_opts(a)?;
     let o = files::open(Path::new(input)).map_err(|e| e.to_string())?;
     warn_all(err, &o.warnings);
-    warn_all(err, &missing_font_warnings(photocraft_engine::type_extra_cmds::missing_fonts(&o.document)));
+    warn_all(err, &photocraft_engine::type_extra_cmds::missing_font_warnings(&o.document));
     let ws = files::save(&o.document, Path::new(output), a.get("--format"), &opts, None).map_err(|e| e.to_string())?;
     warn_all(err, &ws);
     Ok(())
@@ -273,11 +292,15 @@ fn command_list(a: &Args) -> Result<Vec<(String, Value)>, String> {
 fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     let opts = export_opts(a)?;
     let mut h = Headless::trusted_local();
+    // Each missing-font warning is printed once, wherever it is first detected (open, a command or
+    // the save).
+    let mut reported_fonts = std::collections::HashSet::<String>::new();
     match (a.positional.as_slice(), a.get("--new")) {
         ([file], None) => {
             let o = h.open(Path::new(file)).map_err(|e| e.to_string())?;
             let ws: Vec<String> = serde_json::from_value(o["warnings"].clone()).unwrap_or_default();
             warn_all(err, &ws);
+            reported_fonts.extend(ws);
         }
         ([], Some(new)) => {
             let p: Value = serde_json::from_str(new).map_err(|e| format!("bad --new JSON: {e}"))?;
@@ -289,9 +312,11 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     if cmds.is_empty() && a.get("--out").is_none() {
         return Err("run needs at least one --cmd (or --out)".into());
     }
-    let mut reported_fonts = std::collections::HashSet::<String>::new();
     for (id, params) in cmds {
         let r = h.command_run(&id, params).map_err(|e| format!("`{id}`: {e}"))?;
+        if let Some(e) = photocraft_engine::actions_cmds::nested_failure(&id, &r) {
+            return Err(format!("`{id}`: {e}"));
+        }
         let new_warnings: Vec<String> = h
             .session
             .active()
@@ -319,7 +344,9 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     warn_all(err, &remaining);
     if let Some(o) = a.get("--out") {
         let r = h.save(None, Some(Path::new(o)), a.get("--format"), &opts).map_err(|e| e.to_string())?;
-        let ws: Vec<String> = serde_json::from_value(r["warnings"].clone()).unwrap_or_default();
+        // The save repeats the document's missing-font warnings; each was already reported above.
+        let ws: Vec<String> =
+            serde_json::from_value::<Vec<String>>(r["warnings"].clone()).unwrap_or_default().into_iter().filter(|w| !reported_fonts.contains(w)).collect();
         warn_all(err, &ws);
     }
     Ok(())
@@ -330,7 +357,39 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
 /// list or wrapped in `{"actions": […]}`, `{"steps": […]}` or a droplet (#489).
 pub fn parse_actions(text: &str) -> Result<Vec<(String, Value)>, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| format!("actions JSON: {e}"))?;
-    photocraft_engine::automate_cmds::parse_action(v.get("actions").unwrap_or(&v), "batch --actions").map_err(|e| e.to_string())
+    steps_of(&v)
+}
+
+fn steps_of(v: &Value) -> Result<Steps, String> {
+    photocraft_engine::automate_cmds::parse_action(v.get("actions").unwrap_or(v), "batch --actions").map_err(|e| e.to_string())
+}
+
+/// Engine commands to run in order: `(id, params)`.
+pub type Steps = Vec<(String, Value)>;
+
+/// The steps `batch` plays on each file, and the actions they can call. An Actions set (the
+/// Actions panel's `actions.json`: `{"actions": [{"name", "steps"}…]}`, or the bare list) plays
+/// the action `name` picks (optional when the set holds one) with the whole set loaded, as
+/// Photoshop's Batch does; anything else is one action's steps ([`parse_actions`]) (#2786).
+pub fn load_actions(text: &str, name: Option<&str>) -> Result<(Steps, Vec<Action>), String> {
+    let v: Value = serde_json::from_str(text).map_err(|e| format!("actions JSON: {e}"))?;
+    let list = v.get("actions").unwrap_or(&v);
+    let is_set = list.as_array().is_some_and(|a| !a.is_empty() && a.iter().all(|x| x.get("name").is_some_and(Value::is_string)));
+    if !is_set {
+        if name.is_some() {
+            return Err("--action picks an action from an Actions set ({\"actions\": [{\"name\", \"steps\"}…]}), but this file holds one action's steps".into());
+        }
+        return Ok((steps_of(&v)?, Vec::new()));
+    }
+    let set: Vec<Action> = serde_json::from_value(list.clone()).map_err(|e| format!("Actions set: {e}"))?;
+    let names = || set.iter().map(|a| format!("`{}`", a.name)).collect::<Vec<_>>().join(", ");
+    let action = match (name, set.as_slice()) {
+        (Some(n), _) => set.iter().find(|a| a.name == n).ok_or_else(|| format!("no action named `{n}` in the set (it holds {})", names()))?,
+        (None, [only]) => only,
+        (None, _) => return Err(format!("the Actions set holds {} actions: pick one with --action <name> ({})", set.len(), names())),
+    };
+    let play = vec![("actions.play".to_string(), json!({"action": action.name}))];
+    Ok((play, set))
 }
 
 /// Whether `a` and `b` name the same existing folder, however they are spelt (relative, with a
@@ -341,7 +400,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 fn is_input(p: &Path) -> bool {
     let known = |e: &str| {
-        matches!(e, "pcraft" | "psd" | "psb" | "pdn" | "af" | "afdesign" | "afphoto" | "afpub")
+        matches!(e, "pcraft" | "psd" | "psb" | "pdn" | "ora" | "af" | "afdesign" | "afphoto" | "afpub")
             || photocraft_codecs::from_extension(e).is_some_and(|f| photocraft_codecs::caps(f).read)
     };
     p.is_file() && p.extension().is_some_and(|e| known(&e.to_string_lossy().to_ascii_lowercase()))
@@ -352,7 +411,7 @@ fn batch(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     let in_dir = PathBuf::from(a.get("--in").ok_or("batch needs --in <dir>")?);
     let out_dir = PathBuf::from(a.get("--out").ok_or("batch needs --out <dir>")?);
     let text = std::fs::read_to_string(actions_path).map_err(|e| format!("{actions_path}: {e}"))?;
-    let actions = parse_actions(&text)?;
+    let (actions, set) = load_actions(&text, a.get("--action"))?;
     let opts = export_opts(a)?;
     // Results are saved as `<out>/<stem>.<ext>`, so an `--out` that is the `--in` folder would
     // replace the originals (#492).
@@ -378,9 +437,19 @@ fn batch(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
         let r = (|| -> Result<Vec<String>, String> {
             written.check(&target_text)?;
             let mut h = Headless::trusted_local();
+            // Steps that play another action find it in the set; the session's playback stack
+            // stops an action that calls itself.
+            h.session.actions.list = set.clone();
             h.open(input).map_err(|e| e.to_string())?;
             for (id, p) in &actions {
-                h.command_run(id, p.clone()).map_err(|e| format!("`{id}`: {e}"))?;
+                if photocraft_engine::actions_cmds::shell_view_command(id) || photocraft_engine::actions_cmds::shell_save_command(id) {
+                    continue;
+                }
+                let r = h.command_run(id, p.clone()).map_err(|e| format!("`{id}`: {e}"))?;
+                // A failed step inside a called action makes this file an error, not a saved result.
+                if let Some(e) = photocraft_engine::actions_cmds::nested_failure(id, &r) {
+                    return Err(format!("`{id}`: {e}"));
+                }
             }
             let r = h.save(None, Some(&target), Some(&ext), &opts).map_err(|e| e.to_string())?;
             Ok(serde_json::from_value(r["warnings"].clone()).unwrap_or_default())
@@ -549,6 +618,26 @@ mod missing_font_warning_tests {
     }
 
     #[test]
+    fn convert_reads_and_writes_openraster() {
+        let folder = std::env::temp_dir().join(format!("photocraft-cli-ora-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = |name: &str| folder.join(name).to_string_lossy().to_string();
+        let (native, ora, png) = (path("layers.pcraft"), path("layers.ora"), path("back.png"));
+        let (code, _, stderr) = invoke(&["run", "--new", r#"{"width":16,"height":12}"#, "--cmd", "layer.new.layer", "--out", &native]);
+        assert_eq!(code, 0, "{stderr}");
+        let (code, _, stderr) = invoke(&["convert", &native, &ora]);
+        assert_eq!(code, 0, "{stderr}");
+        let (code, stdout, stderr) = invoke(&["info", &ora, "--compact"]);
+        assert_eq!(code, 0, "{stderr}");
+        let info: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(info["layers"].as_array().map(Vec::len), Some(2), "{info}");
+        let (code, _, stderr) = invoke(&["convert", &ora, &png]);
+        assert_eq!(code, 0, "{stderr}");
+        assert!(is_input(std::path::Path::new(&ora)));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
     fn no_type_layers_do_not_produce_missing_font_warnings() {
         let folder = std::env::temp_dir().join(format!("photocraft-cli-no-font-warning-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -567,5 +656,56 @@ mod missing_font_warning_tests {
         assert_eq!(code, 0, "{stderr}");
         assert!(!stderr.contains("font '"), "{stderr}");
         let _ = std::fs::remove_dir_all(&folder);
+    }
+}
+
+#[cfg(test)]
+mod batch_action_set_tests {
+    use super::*;
+
+    fn invoke(args: &[&str]) -> (i32, String, String) {
+        let (mut output, mut errors) = (Vec::new(), Vec::new());
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let code = run(&args, &mut output, &mut errors);
+        (code, String::from_utf8(output).unwrap(), String::from_utf8(errors).unwrap())
+    }
+
+    /// A batched action that plays another action of its set finds it in every file's session; a
+    /// failure inside the called action fails the file, and a self-call stops instead of looping.
+    #[test]
+    fn batch_plays_an_action_that_calls_another_action_of_its_set() {
+        let dir = std::env::temp_dir().join(format!("photocraft-cli-action-set-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = |name: &str| dir.join(name).to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.join("in")).unwrap();
+        for name in ["a", "b"] {
+            let (code, _, stderr) = invoke(&["run", "--new", r#"{"width":8,"height":6}"#, "--out", &path(&format!("in/{name}.png"))]);
+            assert_eq!(code, 0, "{stderr}");
+        }
+        let set = json!({"version": 1, "actions": [
+            {"name": "Outer", "steps": [["actions.play", {"action": "Rotate"}]]},
+            {"name": "Rotate", "steps": [["image.imageRotation.90cw", {}]]},
+            {"name": "Calls bad", "steps": [["actions.play", {"action": "Bad"}]]},
+            {"name": "Bad", "steps": [["layer.delete", {"layer": 999_999}]]},
+            {"name": "Loop", "steps": [["actions.play", {"action": "Loop"}]]},
+        ]});
+        std::fs::write(dir.join("actions.json"), set.to_string()).unwrap();
+        let batch = |action: &str| invoke(&["batch", "--actions", &path("actions.json"), "--action", action, "--in", &path("in"), "--out", &path(action)]);
+
+        let (code, stdout, stderr) = batch("Outer");
+        assert_eq!(code, 0, "{stdout}{stderr}");
+        for name in ["a", "b"] {
+            let (code, info, stderr) = invoke(&["info", &path(&format!("Outer/{name}.png")), "--compact"]);
+            assert_eq!(code, 0, "{stderr}");
+            let info: Value = serde_json::from_str(&info).unwrap();
+            assert_eq!((info["width"].as_u64(), info["height"].as_u64()), (Some(6), Some(8)), "rotated by the called action");
+        }
+        for action in ["Calls bad", "Loop"] {
+            let (code, stdout, stderr) = batch(action);
+            assert_ne!(code, 0, "{stdout}");
+            assert_eq!(stderr.matches("FAIL").count(), 2, "{stderr}");
+            assert!(!dir.join(action).join("a.png").exists(), "a file whose called action failed is not saved");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

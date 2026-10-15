@@ -1,4 +1,6 @@
-//! Still images (PNG, JPEG, GIF (first frame), WebP, TIFF, BMP) as media sources.
+//! Still images (PNG, JPEG, GIF, WebP, TIFF, BMP, Targa, DPX, OpenEXR, DNG camera raw) as media
+//! sources. Animated PNG and GIF files open as movies instead ([`crate::animated`]); here they would
+//! show their first frame.
 
 use std::sync::Arc;
 
@@ -7,17 +9,48 @@ use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 
 use crate::{FrameRequest, MediaError, MediaInfo, MediaKind, MediaSource, Result, VideoStreamInfo};
 
+pub mod dng;
+pub mod exr;
+
 /// Default still duration (Premiere's preference default is 5 seconds).
 pub const DEFAULT_STILL_DURATION: Tick = Tick(5 * TICKS_PER_SECOND);
 
-pub fn sniff(b: &[u8]) -> bool {
-    b.starts_with(b"\x89PNG")
+/// Whether `b` (the contents of the file `name`) is a still image we decode.
+pub fn sniff(name: &str, b: &[u8]) -> bool {
+    crate::dpx::sniff(b)
+        || crate::tga::sniff(name, b)
+        || b.starts_with(b"\x89PNG")
         || b.starts_with(&[0xFF, 0xD8, 0xFF])
         || b.starts_with(b"GIF8")
         || (b.len() > 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP")
         || b.starts_with(b"II*\0")
         || b.starts_with(b"MM\0*")
         || b.starts_with(b"BM")
+}
+
+/// A decoded picture: straight-alpha RGBA8, top row first.
+pub struct Raster {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    /// Whether any pixel is not fully opaque.
+    pub has_alpha: bool,
+}
+
+/// Decode a still image file (`name` picks Targa, which has no magic number; the content picks
+/// every other format).
+pub fn decode_raster(name: &str, bytes: &[u8]) -> Result<Raster> {
+    if crate::dpx::sniff(bytes) {
+        return crate::dpx::decode(name, bytes);
+    }
+    if crate::tga::sniff(name, bytes) {
+        return crate::tga::decode(name, bytes);
+    }
+    let img = image::load_from_memory(bytes).map_err(|e| MediaError::Decode(format!("{name}: {e}")))?;
+    let has_alpha = img.color().has_alpha();
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(Raster { width, height, rgba: rgba.into_raw(), has_alpha })
 }
 
 pub struct StillSource {
@@ -27,11 +60,12 @@ pub struct StillSource {
 
 impl StillSource {
     pub fn decode(name: &str, bytes: &[u8]) -> Result<Self> {
-        let img = image::load_from_memory(bytes).map_err(|e| MediaError::Decode(format!("{name}: {e}")))?;
-        let has_alpha = img.color().has_alpha();
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        Ok(Self::from_rgba(name, w, h, rgba.into_raw(), has_alpha, bytes.len() as u64))
+        // a DNG is a TIFF too: develop its raw image instead of reading its preview
+        if dng::sniff(bytes) {
+            return dng::still(name, bytes);
+        }
+        let r = decode_raster(name, bytes)?;
+        Ok(Self::from_rgba(name, r.width, r.height, r.rgba, r.has_alpha, bytes.len() as u64))
     }
 
     pub fn from_rgba(name: &str, w: u32, h: u32, rgba: Vec<u8>, has_alpha: bool, file_size: u64) -> Self {

@@ -64,7 +64,7 @@ fn group_of(n: &DockNode, p: PanelKind) -> Option<Vec<PanelKind>> {
     match n {
         DockNode::Split { a, b, .. } => group_of(a, p).or_else(|| group_of(b, p)),
         DockNode::Tabs { panels, .. } => panels.contains(&p).then(|| panels.clone()),
-        DockNode::Stack { entries } => entries.iter().any(|e| e.panel == p).then(|| entries.iter().map(|e| e.panel).collect()),
+        DockNode::Stack { entries } => entries.iter().find(|e| e.contains(p)).map(|e| e.panels.clone()),
     }
 }
 
@@ -167,6 +167,18 @@ fn nested_comp_markers_show_on_the_precomp_bar() {
     assert!((h.state().session.time().seconds() - 1.0).abs() < 0.034, "{}", h.state().session.time().seconds());
 }
 
+/// #637: double-clicking a precomp layer's bar opens its comp, as double-clicking its name does.
+#[test]
+fn double_clicking_a_precomp_bar_opens_its_comp() {
+    let (mut h, pre, main) = harness();
+    h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
+    h.run_steps(4);
+    let l = h.state().session.project.comp(ItemId(main)).unwrap().layers[0].id.0;
+    let bar = rect(&h, &format!("timeline.layer.{l}.bar"));
+    click_n(&mut h, bar.center(), 2);
+    assert_eq!(h.state().session.active_comp_id(), Some(ItemId(pre)));
+}
+
 /// Issue #46: a panel dragged by its panel-menu (hamburger) button onto the left edge of another
 /// group docks there as its own group; dragging the gap between panels resizes them.
 #[test]
@@ -209,7 +221,7 @@ fn stacked_panel_gaps_resize_the_panels() {
         match n {
             DockNode::Split { a, b, .. } => height(a, p).or_else(|| height(b, p)),
             DockNode::Tabs { .. } => None,
-            DockNode::Stack { entries } => entries.iter().find(|e| e.panel == p).map(|e| e.height),
+            DockNode::Stack { entries } => entries.iter().find(|e| e.contains(p)).map(|e| e.height),
         }
     }
     let (preview, props) = (rect(&h, "panel.Preview"), rect(&h, "panel.Properties"));
@@ -344,4 +356,24 @@ fn a_stacked_panels_whole_header_bar_toggles_it() {
     let menu = rect(&h, "panel.menu.Preview");
     click_n(&mut h, menu.center(), 1);
     assert!(open(&h), "the panel menu button doesn't toggle the panel");
+}
+
+/// #302: a panel dropped onto a stacked panel becomes a tab in that panel's frame (it was
+/// inserted as a stacked panel of its own below it); its tabs switch the frame's panel.
+#[test]
+fn a_tab_dropped_on_a_stacked_panel_joins_its_frame() {
+    let (mut h, _, _) = harness();
+    let dock = |h: &Harness<'_, EffectcraftApp>| h.state().ui.dock.clone();
+    let fx = rect(&h, "panel.tab.EffectControls");
+    let props = rect(&h, "panel.Properties");
+    drag(&mut h, fx.center(), props.center());
+    assert_eq!(group_of(&dock(&h), PanelKind::Properties), Some(vec![PanelKind::Properties, PanelKind::EffectControls]));
+    assert!(dock(&h).is_visible(PanelKind::EffectControls) && !dock(&h).is_visible(PanelKind::Properties));
+    // The frame's other tab shows Properties again, the frame stays open.
+    let tab = rect(&h, "panel.tab.Properties");
+    click_n(&mut h, tab.center(), 1);
+    assert!(dock(&h).is_visible(PanelKind::Properties) && !dock(&h).is_visible(PanelKind::EffectControls));
+    // The layout (saved workspaces) round-trips.
+    let s = serde_json::to_string(&dock(&h)).unwrap();
+    assert_eq!(serde_json::from_str::<DockNode>(&s).unwrap(), dock(&h));
 }

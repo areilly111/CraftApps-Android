@@ -35,7 +35,11 @@ fn fixture(n: usize) -> Vec<u8> {
 }
 
 fn harness(pages: usize, setup: impl FnOnce(&mut PdfCraftApp) + 'static) -> Harness<'static, PdfCraftApp> {
-    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if std::env::var_os("PDFCRAFT_ORGANIZE_SNAPSHOT").is_some() {
+        builder = builder.wgpu();
+    }
+    let mut h = builder.build_eframe(move |_cc| {
         let mut app = PdfCraftApp::new();
         app.set_option("language", "en").unwrap();
         app.open_bytes("doc.pdf", None, fixture(pages)).expect("fixture opens");
@@ -48,6 +52,186 @@ fn harness(pages: usize, setup: impl FnOnce(&mut PdfCraftApp) + 'static) -> Harn
 
 fn organize(pages: usize) -> Harness<'static, PdfCraftApp> {
     harness(pages, |app| app.set_option("organize", "on").unwrap())
+}
+
+fn type_selection(h: &mut Harness<'static, PdfCraftApp>, text: &str) {
+    use egui::accesskit::Role;
+    h.get_by_role_and_label(Role::TextInput, "Selected pages").click();
+    h.run_steps(1);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    h.get_by_role_and_label(Role::TextInput, "Selected pages").type_text(text);
+    h.run_steps(2);
+}
+
+#[test]
+fn organize_page_range_tracks_thumbnails_and_applies_typed_selection() {
+    use egui::accesskit::Role;
+    let mut h = organize(100);
+    h.get_by_label("Select page 2").click();
+    h.run_steps(2);
+    assert_eq!(h.get_by_role_and_label(Role::TextInput, "Selected pages").value().as_deref(), Some("2"));
+    h.get_by_label("Select page 3").click();
+    h.run_steps(2);
+    assert_eq!(h.get_by_role_and_label(Role::TextInput, "Selected pages").value().as_deref(), Some("2-3"));
+    let old = h.state().views[0].selected.clone();
+    type_selection(&mut h, "1,12,16-18,89,92,93,97,99");
+    assert_eq!(h.state().views[0].selected, old, "typing is not committed until Enter or focus loss");
+    h.key_press(Key::Enter);
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [0, 11, 15, 16, 17, 88, 91, 92, 96, 98]);
+    assert_eq!(h.get_by_role_and_label(Role::TextInput, "Selected pages").value().as_deref(), Some("1, 12, 16-18, 89, 92-93, 97, 99"));
+    if let Some(path) = std::env::var_os("PDFCRAFT_ORGANIZE_SNAPSHOT") {
+        h.render().unwrap().save(std::path::Path::new(&path)).unwrap();
+    }
+    h.get_by_label("Rotate clockwise").click();
+    h.run_steps(3);
+    let doc = h.state().session.get(h.state().views[0].id).unwrap();
+    for (i, page) in doc.info.pages.iter().enumerate() {
+        assert_eq!(page.rotation, if h.state().views[0].selected.contains(&i) { 90 } else { 0 });
+    }
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().info.pages.iter().all(|p| p.rotation == 0));
+}
+
+#[test]
+fn organize_page_range_rejects_invalid_input_and_escape_cancels_without_clearing() {
+    use egui::accesskit::Role;
+    let mut h = organize(5);
+    h.state_mut().set_option("select", "2-3").unwrap();
+    h.run_steps(2);
+    for text in ["0", "6", "1,", "no"] {
+        type_selection(&mut h, text);
+        h.key_press(Key::Enter);
+        h.run_steps(2);
+        assert_eq!(h.state().views[0].target_pages(), [1, 2]);
+    }
+    type_selection(&mut h, "1-5");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [1, 2]);
+    assert_eq!(h.get_by_role_and_label(Role::TextInput, "Selected pages").value().as_deref(), Some("2-3"));
+    type_selection(&mut h, "5, 4, 4");
+    h.get_by_label("Apply").click();
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [3, 4]);
+    type_selection(&mut h, " ");
+    h.key_press(Key::Enter);
+    h.run_steps(2);
+    assert!(h.state().views[0].selected.is_empty());
+    assert!(h.state_mut().set_option("select", "0").is_err());
+    assert!(h.state_mut().set_option("select", "6").is_err());
+}
+
+#[test]
+fn organize_tool_opens_the_overview_directly_and_can_be_reentered() {
+    let mut h = harness(12, |_| {});
+    assert!(!h.state().views[0].organize);
+    h.get_by_label("Organize pages").click();
+    h.run_steps(3);
+    assert!(h.state().views[0].organize);
+    h.get_by_label("Page 1");
+    h.get_by_label("Page 5");
+    h.get_by_label("Select page 2").click();
+    h.run_steps(2);
+    h.get_by_label("Close").click();
+    h.run_steps(2);
+    assert!(!h.state().views[0].organize);
+    h.state_mut().set_option("tool", "organize").unwrap();
+    h.state_mut().set_option("tool", "organize").unwrap();
+    h.run_steps(2);
+    assert!(h.state().views[0].organize, "entering the tool is idempotent");
+    assert_eq!(h.state().views[0].target_pages(), [1]);
+    h.state_mut().set_option("tool", "edit").unwrap();
+    h.run_steps(2);
+    assert!(!h.state().views[0].organize, "another tool returns to the document");
+}
+
+#[test]
+fn organize_tool_chosen_before_opening_a_document_shows_its_pages() {
+    let mut app = PdfCraftApp::new();
+    app.set_option("tool", "organize").unwrap();
+    app.open_bytes("doc.pdf", None, fixture(3)).unwrap();
+    assert!(app.views[0].organize);
+}
+
+#[test]
+fn organize_checkboxes_toggle_multiple_pages_without_modifiers() {
+    let mut h = organize(4);
+    h.get_by_label("Select page 1").click();
+    h.run_steps(2);
+    h.get_by_label("Select page 3").click();
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [0, 2]);
+    h.get_by_label("Select page 1").click();
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [2]);
+    h.get_by_label("Page 4").click_modifiers(Modifiers::SHIFT);
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].target_pages(), [0, 1, 2, 3], "checkbox toggles update the range anchor");
+}
+
+#[test]
+fn organize_page_actions_rotate_only_the_named_page_and_undo() {
+    let mut h = organize(3);
+    h.get_by_label("Select page 1").click();
+    h.run_steps(2);
+    h.get_by_label("Select page 3").click();
+    h.run_steps(2);
+    h.get_by_label("Rotate page 1 clockwise").click();
+    h.run_steps(3);
+    let rotations = |h: &Harness<'static, PdfCraftApp>| {
+        h.state().session.get(h.state().views[0].id).unwrap().info.pages.iter().map(|p| p.rotation).collect::<Vec<_>>()
+    };
+    assert_eq!(rotations(&h), [90, 0, 0]);
+    assert_eq!(h.state().views[0].target_pages(), [0, 2], "a local action preserves the multi-selection");
+    h.get_by_label("Rotate counterclockwise").click();
+    h.run_steps(3);
+    assert_eq!(rotations(&h), [0, 0, 270], "toolbar actions apply to the selection");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(rotations(&h), [90, 0, 0]);
+    h.get_by_label("Rotate page 1 counterclockwise").click();
+    h.run_steps(3);
+    assert_eq!(rotations(&h), [0, 0, 0]);
+}
+
+#[test]
+fn organize_hover_actions_delete_only_the_named_page_and_undo() {
+    let mut h = organize(3);
+    h.get_by_label("Page 2").hover();
+    h.run_steps(2);
+    h.get_by_label("Delete page 2").click();
+    h.run_steps(3);
+    assert_eq!(page_texts(h.state()), ["Page 1", "Page 3"]);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(page_texts(h.state()), ["Page 1", "Page 2", "Page 3"]);
+    let single = organize(1);
+    assert!(single.get_by_label("Delete page 1").accesskit_node().is_disabled());
+}
+
+#[test]
+fn organize_local_actions_respect_document_permissions() {
+    let mut h = harness(3, |app| {
+        app.apply_edit(pdfcraft_engine::Edit::Protect(pdfcraft_engine::Protection {
+            permissions_password: Some("owner".into()),
+            changes: pdfcraft_engine::Changes::None,
+            ..Default::default()
+        }));
+        let bytes = app.session.save_bytes(app.views[0].id).unwrap();
+        app.open_bytes("restricted.pdf", None, bytes.as_ref().clone()).unwrap();
+        app.set_option("tool", "organize").unwrap();
+    });
+    h.get_by_label("Select page 2").click();
+    h.run_steps(2);
+    assert!(h.get_by_label("Rotate page 2 clockwise").accesskit_node().is_disabled());
+    assert!(h.get_by_label("Rotate page 2 counterclockwise").accesskit_node().is_disabled());
+    assert!(h.get_by_label("Delete page 2").accesskit_node().is_disabled());
+    let app = h.state();
+    let view = &app.views[app.active.unwrap()];
+    assert_eq!(view.target_pages(), [1]);
+    assert!(!app.session.get(view.id).unwrap().dirty);
 }
 
 /// Page labels of the active document, read back from its current bytes.
@@ -668,6 +852,85 @@ fn edit_menu_names_the_step_to_undo() {
 
 // ── Combine / insert from file / extract / split ──────────────────────────────────────────────
 
+/// A one-page PDF whose form holds one text field named `name`.
+fn form_pdf(name: &str) -> Vec<u8> {
+    form_pdf_pages(name, 1)
+}
+
+/// A PDF of `pages` pages whose form holds one text field named `name` (on the first page).
+fn form_pdf_pages(name: &str, pages: usize) -> Vec<u8> {
+    let kids: Vec<String> = (0..pages).map(|i| format!("{} 0 R", 3 + i)).collect();
+    let mut objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>".into(),
+        format!("<< /Type /Pages /Kids [{}] /Count {pages} /MediaBox [0 0 300 400] >>", kids.join(" ")),
+        "<< /Type /Page /Parent 2 0 R /Annots [4 0 R] >>".into(),
+        format!("<< /Type /Annot /Subtype /Widget /FT /Tx /T ({name}) /V (x) /Rect [60 60 200 80] /P 3 0 R >>"),
+    ];
+    for _ in 1..pages {
+        objs.push("<< /Type /Page /Parent 2 0 R >>".to_string()); // objects after the field's number
+    }
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    out
+}
+
+/// organize.field-name-conflicts: the Combine tab warns, before anything is combined, that a
+/// file's form fields collide with earlier files' and will be renamed, naming the new names.
+#[test]
+fn combine_list_warns_that_colliding_field_names_will_be_renamed() {
+    let mut h = harness(1, |app| {
+        app.set_option("combine-view", "list").unwrap();
+        app.use_files(pdfcraft_ui_egui::FilePurpose::Combine, vec![("one.pdf".into(), form_pdf("Text1")), ("two.pdf".into(), form_pdf("Text1"))]);
+    });
+    h.run_steps(3);
+    h.get_by_label_contains("will be renamed");
+    h.get_by_label_contains("Text1 → Text1-1");
+}
+
+/// A file split into parts (its pages moved among other files') is combined as one file, once —
+/// so the preview must not warn that its field names collide with their own.
+#[test]
+fn combine_list_does_not_warn_that_a_split_file_collides_with_itself() {
+    let mut h = harness(1, |app| {
+        app.set_option("combine-view", "list").unwrap();
+        app.use_files(pdfcraft_ui_egui::FilePurpose::Combine, vec![("one.pdf".into(), form_pdf_pages("Text1", 2))]);
+    });
+    h.run_steps(3);
+    // one.pdf in two parts — pages 1 and 2, sharing a group, as moving its pages apart leaves it.
+    let mut part = h.state().combine_draft[0].clone();
+    part.id += 1000;
+    h.state_mut().combine_draft[0].range = "1".into();
+    part.range = "2".into();
+    h.state_mut().combine_draft.push(part);
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("will be renamed").is_none(), "one file, however many parts, cannot collide with itself");
+}
+
+/// Copying a page with a field and pasting it back into the same document is a duplicate: the
+/// copy keeps the field's name rather than becoming Text1-1.
+#[test]
+fn pasting_pages_into_their_own_document_keeps_field_names() {
+    let mut app = PdfCraftApp::new();
+    app.set_option("language", "en").unwrap();
+    app.open_bytes("form.pdf", None, form_pdf("Text1")).unwrap();
+    app.views[0].select_pages(&[0]);
+    assert!(app.execute("page.copy"));
+    assert!(app.execute("page.paste"));
+    let doc = app.session.get(app.views[0].id).unwrap();
+    assert_eq!(doc.info.pages.len(), 2, "pasted");
+    assert!(doc.form.iter().all(|f| f.name == "Text1"), "{:?}", doc.form.iter().map(|f| &f.name).collect::<Vec<_>>());
+}
+
 fn texts_of(app: &PdfCraftApp, tab: usize) -> Vec<String> {
     let doc = app.session.get(app.views[tab].id).unwrap();
     let mut r = PageRenderer::new(doc.bytes.clone(), Default::default());
@@ -735,7 +998,7 @@ fn combine_files_opens_in_its_own_tab() {
     h.state_mut().execute("page.combine");
     h.run_steps(3);
     assert!(h.state().combine_showing() && h.state().active.is_none());
-    h.get_by_label("Add the PDFs to combine");
+    h.get_by_label("Add the files to combine");
     // Back to the document, then to Combine through its tab.
     h.get_by_label("doc.pdf").click();
     h.run_steps(3);
@@ -991,31 +1254,91 @@ fn columns_resize_and_the_layout_is_kept_in_the_settings() {
 }
 
 #[test]
-fn a_folder_adds_its_pdfs_in_order_and_optionally_its_subfolders() {
+fn a_folder_adds_its_pdfs_images_and_text_in_order_and_optionally_its_subfolders() {
     let dir = std::env::temp_dir().join(format!("pdfcraft-combine-folder-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     for (name, pages) in [("page10.pdf", 1), ("page2.PDF", 2), ("sub/inner.pdf", 3)] {
         std::fs::write(dir.join(name), fixture(pages)).unwrap();
     }
-    std::fs::write(dir.join("notes.txt"), b"not a pdf").unwrap();
+    // #569: images and text files join too; other files are left out.
+    std::fs::write(dir.join("notes.txt"), b"Some notes").unwrap();
+    std::fs::write(dir.join("readme.md"), b"# not combinable").unwrap();
     let mut h = harness(1, |_| {});
     h.state_mut().execute("page.combine");
     h.run_steps(2);
     h.state_mut().pick_override = Some(vec![dir.to_string_lossy().into_owned()]);
     h.get_by_label("Add folder…").click();
     h.run_steps(4);
-    assert_eq!(combine_names(&h), ["page2.PDF", "page10.pdf"], "PDFs only, numbers by value");
+    assert_eq!(combine_names(&h), ["notes.txt", "page2.PDF", "page10.pdf"], "numbers by value");
     // The toolbar's menu: the folder and its subfolders, as one undo step.
     h.get_by_label("More ways to add files").click();
     h.run_steps(2);
     h.get_by_label("Add folder and subfolders…").click();
     h.run_steps(4);
-    assert_eq!(combine_names(&h), ["page2.PDF", "page10.pdf", "page2.PDF", "page10.pdf", "inner.pdf"]);
+    assert_eq!(combine_names(&h), ["notes.txt", "page2.PDF", "page10.pdf", "notes.txt", "page2.PDF", "page10.pdf", "inner.pdf"]);
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run_steps(2);
-    assert_eq!(combine_names(&h).len(), 2);
+    assert_eq!(combine_names(&h).len(), 3);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #569: an image or a text file added to Combine files becomes a PDF as it joins the list, an
+/// ordinary row with its pages.
+#[test]
+fn images_and_text_files_join_the_combine_list_as_pdfs() {
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbImage::from_pixel(40, 20, image::Rgb([90, 120, 200])).write_to(&mut png, image::ImageFormat::Png).unwrap();
+    let mut h = combine_of(&[("one.pdf", 2)]);
+    h.state_mut()
+        .use_files(pdfcraft_ui_egui::FilePurpose::Combine, vec![("scan.png".into(), png.into_inner()), ("notes.txt".into(), b"Some notes".to_vec())]);
+    h.run_steps(3);
+    assert_eq!(combine_names(&h), ["one.pdf", "scan.png", "notes.txt"]);
+    let draft = &h.state().combine_draft;
+    assert!(draft.iter().all(|f| f.bytes.starts_with(b"%PDF-") && f.problem.is_none()), "made into PDFs");
+    assert_eq!(draft.iter().map(|f| f.pages).collect::<Vec<_>>(), [2, 1, 1]);
+    h.get_by_label("Combine").click();
+    h.run_steps(3);
+    assert_eq!(texts_of(h.state(), 1), ["Page 1", "Page 2", "", "Some notes"]);
+}
+
+/// A file that can't be read (a damaged image, a type that can't be made into a PDF) joins the
+/// list all the same, with why; Combine asks before leaving it out, and Cancel changes nothing.
+#[test]
+fn files_that_cannot_be_read_are_listed_and_left_out_once_the_user_agrees() {
+    let mut h = combine_of(&[("one.pdf", 2)]);
+    let bad = vec![("broken.jpg".to_string(), b"\xff\xd8\xff\xe0 not a JPEG".to_vec()), ("report.docx".to_string(), b"PK\x03\x04".to_vec())];
+    h.state_mut().use_files(pdfcraft_ui_egui::FilePurpose::Combine, bad);
+    h.run_steps(3);
+    assert_eq!(combine_names(&h), ["one.pdf", "broken.jpg", "report.docx"]);
+    for f in &h.state().combine_draft[1..] {
+        let why = f.problem.as_deref().expect("why it can't be combined");
+        assert!(why.starts_with("Can't be read: ") && !why.contains(&f.name), "{why}");
+        assert!(f.lock.is_none() && f.pages == 0);
+    }
+    h.get_by_label_contains("this file type can't be converted");
+    // One readable file is not enough to combine.
+    assert!(h.get_by_label("Combine").accesskit_node().is_disabled());
+    h.state_mut().use_files(pdfcraft_ui_egui::FilePurpose::Combine, vec![("two.pdf".into(), fixture(1))]);
+    h.run_steps(3);
+    assert!(!h.get_by_label("Combine").accesskit_node().is_disabled());
+    // Combine asks first, naming the files left out; Cancel leaves everything as it was.
+    h.get_by_label("Combine").click();
+    h.run_steps(3);
+    h.get_by_label("Leave out files that can't be read?");
+    h.get_by_label("• broken.jpg");
+    h.get_by_label("• report.docx");
+    h.get_by_label("Cancel").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("Leave out files that can't be read?").is_none());
+    assert_eq!(h.state().views.len(), 1, "nothing combined");
+    assert_eq!(combine_names(&h).len(), 4);
+    // Asked again: Combine the rest.
+    h.get_by_label("Combine").click();
+    h.run_steps(3);
+    h.get_by_label("Combine the rest").click();
+    h.run_steps(3);
+    assert_eq!(texts_of(h.state(), 1), ["Page 1", "Page 2", "Page 1"]);
 }
 
 fn type_password(h: &mut Harness<'static, PdfCraftApp>, password: &str) {
@@ -1151,6 +1474,84 @@ fn extract_button_copies_selected_pages_to_a_new_tab() {
     assert_eq!(texts_of(app, 1), ["Page 2", "Page 3"]);
     assert_eq!(texts_of(app, 0).len(), 3, "the original is unchanged");
     assert!(!app.session.get(app.views[0].id).unwrap().dirty);
+}
+
+#[test]
+fn replace_button_replaces_selected_pages_in_organize() {
+    let dir = temp_path("replace-btn");
+    std::fs::create_dir_all(&dir).unwrap();
+    let other = dir.join("other.pdf");
+    std::fs::write(&other, fixture(5)).unwrap();
+
+    let mut h = organize(3);
+    h.get_by_label("Page 2").click();
+    h.run_steps(1);
+    h.get_by_label("Page 3").click_modifiers(Modifiers::COMMAND);
+    h.run_steps(2);
+    h.state_mut().pick_override = Some(vec![other.to_string_lossy().into_owned()]);
+    h.get_by_label("Replace pages…").click();
+    h.run_steps(3);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "Replace Pages");
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().from, 2);
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().to, 3);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "OK").click();
+    h.run_steps(3);
+    let s = h.state();
+    let doc = s.session.get(s.views[0].id).unwrap();
+    assert_eq!(doc.info.pages.len(), 3);
+    assert_eq!(doc.can_undo(), Some("Replace pages"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn replace_pages_from_thumbnail_context_menu() {
+    let dir = temp_path("replace-ctx");
+    std::fs::create_dir_all(&dir).unwrap();
+    let other = dir.join("other.pdf");
+    std::fs::write(&other, fixture(5)).unwrap();
+
+    let mut h = organize(3);
+    h.state_mut().pick_override = Some(vec![other.to_string_lossy().into_owned()]);
+    h.get_by_label("Page 2").click_button(egui::PointerButton::Secondary);
+    h.run_steps(2);
+    h.get_all_by_label("Replace pages…").last().unwrap().click();
+    h.run_steps(3);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "Replace Pages");
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().from, 2);
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().to, 2);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "OK").click();
+    h.run_steps(3);
+    let s = h.state();
+    let doc = s.session.get(s.views[0].id).unwrap();
+    assert_eq!(doc.info.pages.len(), 3);
+    assert_eq!(doc.can_undo(), Some("Replace page"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn replace_pages_from_pages_panel_context_menu() {
+    let dir = temp_path("replace-panel-ctx");
+    std::fs::create_dir_all(&dir).unwrap();
+    let other = dir.join("other.pdf");
+    std::fs::write(&other, fixture(5)).unwrap();
+
+    let mut h = harness(4, |app| app.right = Some(pdfcraft_ui_egui::RightPanel::Pages));
+    h.state_mut().pick_override = Some(vec![other.to_string_lossy().into_owned()]);
+    let thumb = h.get_all_by_label("Page 2").max_by(|a, b| a.rect().left().total_cmp(&b.rect().left())).unwrap();
+    thumb.click_button(egui::PointerButton::Secondary);
+    h.run_steps(2);
+    h.get_all_by_label("Replace pages…").last().unwrap().click();
+    h.run_steps(3);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "Replace Pages");
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().from, 2);
+    assert_eq!(h.state().replace_draft.as_ref().unwrap().to, 2);
+    egui_kittest::kittest::Queryable::get_by_label(&h, "OK").click();
+    h.run_steps(3);
+    let s = h.state();
+    let doc = s.session.get(s.views[0].id).unwrap();
+    assert_eq!(doc.info.pages.len(), 4);
+    assert_eq!(doc.can_undo(), Some("Replace page"));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1341,7 +1742,9 @@ fn zoomed_pages_in_view_are_rendered_at_the_size_drawn() {
         app.set_option("organize", "on").unwrap();
         app.set_option("grid-zoom", "300").unwrap();
     });
-    let drawn = 146.0 * 3.0 * h.ctx.pixels_per_point();
+    // The 200 × 300 fixture fits by height; keep its aspect ratio instead of stretching
+    // it to the full cell width. Request enough pixels for that actual preview width.
+    let drawn = 194.0 * 3.0 * (200.0 / 300.0) * h.ctx.pixels_per_point();
     let sharp = |h: &Harness<'static, PdfCraftApp>, page| h.state().views[0].grid_page_pixels(page);
     for _ in 0..200 {
         if sharp(&h, 0).is_some_and(|w| w as f32 >= drawn * 0.9) {
@@ -1543,6 +1946,61 @@ fn the_security_notice_wraps_beside_its_buttons_and_lines_up_with_them() {
     }
 }
 
+/// #995, #1077: a file with only a permissions password opens without asking, restricted. Its
+/// notice offers Unlock…, which takes the permissions password and lifts the restrictions.
+#[test]
+fn the_security_notice_unlocks_with_the_permissions_password() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("locked.pdf", None, protected("", "owner", 0b0100)).unwrap();
+        app
+    });
+    h.run_steps(4);
+    h.get_by_label_contains("This document is secured");
+    h.get_by_label("Unlock…").click();
+    h.run_steps(2);
+    h.get_by_label_contains("Enter its permissions password");
+    type_password(&mut h, "wrong");
+    h.get_by_label("Incorrect password. Try again.");
+    type_password(&mut h, "owner");
+    assert!(h.state().unlock_prompt.is_none());
+    assert!(h.query_by_label_contains("This document is secured").is_none(), "the restrictions are lifted");
+    h.state_mut().set_option("dialog", "properties").unwrap();
+    h.run_steps(2);
+    h.get_by_label("Security").click();
+    h.run_steps(3);
+    h.get_by_label("Owner password (no restrictions apply)");
+    assert!(!h.state().session.get(h.state().active_ids().unwrap().1).unwrap().dirty, "unlocking is not an edit");
+}
+
+/// Changing a restricted document's security asks for its permissions password first (Acrobat
+/// does too), then carries on.
+#[test]
+fn remove_security_asks_for_the_permissions_password_first() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("locked.pdf", None, protected("", "owner", 0b0100)).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("protect.remove"));
+    h.run_steps(2);
+    assert!(h.state().unlock_prompt.is_some(), "asks for the password");
+    // Cancelling changes nothing.
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().unlock_prompt.is_none());
+    let id = h.state().active_ids().unwrap().1;
+    assert!(!h.state().session.get(id).unwrap().dirty);
+    assert!(h.state_mut().execute("protect.remove"));
+    h.run_steps(2);
+    type_password(&mut h, "owner");
+    let doc = h.state().session.get(id).unwrap();
+    assert!(doc.dirty && doc.security_summary().is_none(), "security is removed (written by the next save)");
+}
+
 #[test]
 fn restricted_documents_show_a_notice_and_block_page_changes() {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
@@ -1569,6 +2027,79 @@ fn restricted_documents_show_a_notice_and_block_page_changes() {
     h.get_by_label("Security settings").click();
     h.run_steps(3);
     assert!(h.query_all_by_label("Not allowed").count() >= 4);
+}
+
+/// Table 22, bit 5 (#568): a document whose security withholds copying keeps its text and images
+/// in. ⌘C, snapshots and exports are refused with a notice; the owner password lifts that.
+#[test]
+fn copying_out_of_a_document_honours_its_security() {
+    fn open(password: &'static str) -> Harness<'static, PdfCraftApp> {
+        let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+            let mut app = PdfCraftApp::new();
+            app.set_option("language", "en").unwrap();
+            app.system_clipboard = false;
+            app.open_bytes("no-copy.pdf", None, protected("pw", "owner", -1 ^ 0b1_0000)).unwrap();
+            app.submit_password(Some(password.into()));
+            app
+        });
+        // Select the page's text once its text layer is loaded (up to ~4 s: a loaded test machine
+        // can take far longer than the 0.2 s this used to allow).
+        for _ in 0..200 {
+            h.run_steps(2);
+            if h.state_mut().views[0].select_all() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(h.state().views[0].selected_text().as_deref(), Some("Page 1"));
+        h
+    }
+    fn copy(h: &mut Harness<'static, PdfCraftApp>) -> bool {
+        h.state_mut().toast = None;
+        h.event(egui::Event::Copy);
+        let mut copied = false;
+        for _ in 0..4 {
+            h.step();
+            copied |= h.output().platform_output.commands.iter().any(|c| matches!(c, egui::OutputCommand::CopyText(t) if t == "Page 1"));
+        }
+        copied
+    }
+    fn snapshot(h: &mut Harness<'static, PdfCraftApp>) {
+        // Around "Page 1", at (20, 150) on the 200 × 300 pt page.
+        let r = h.state().views[0].page_screen_rect(0).expect("on screen");
+        let at = |x: f32, y: f32| egui::pos2(r.left() + x / 200.0 * r.width(), r.top() + (300.0 - y) / 300.0 * r.height());
+        let (a, b) = (at(15.0, 175.0), at(120.0, 140.0));
+        h.hover_at(a);
+        h.run_steps(1);
+        h.drag_at(a);
+        h.run_steps(1);
+        h.hover_at(b);
+        h.run_steps(1);
+        h.drop_at(b);
+        h.run_steps(3);
+    }
+    let refused = Some("The document's security settings don't allow copying text and images");
+
+    let mut h = open("pw");
+    assert!(!copy(&mut h), "⌘C copies nothing");
+    assert_eq!(h.state().toast.as_ref().map(|t| t.0.as_str()), refused);
+    for command in ["edit.snapshot", "export.image", "export.text", "export.docx", "export.pptx", "export.html", "export.rtf", "export.all_images"] {
+        h.state_mut().toast = None;
+        assert!(!h.state_mut().execute(command), "{command} is refused");
+        assert_eq!(h.state().toast.as_ref().map(|t| t.0.as_str()), refused, "{command} says why");
+    }
+    assert_eq!(h.state().dialog, None, "no export dialog");
+    // The snapshot tool, chosen on another tab, takes nothing here either.
+    h.state_mut().set_option("quick", "snapshot").unwrap();
+    snapshot(&mut h);
+    assert!(h.state().last_snapshot.is_none());
+    assert_eq!(h.state().toast.as_ref().map(|t| t.0.as_str()), refused);
+
+    let mut h = open("owner");
+    assert!(copy(&mut h), "the owner may copy");
+    assert!(h.state_mut().execute("edit.snapshot"));
+    snapshot(&mut h);
+    assert!(h.state().last_snapshot.is_some());
 }
 
 #[test]
@@ -1672,7 +2203,10 @@ fn copying_cutting_and_pasting_pages() {
 }
 
 fn source_font_fixture() -> Vec<u8> {
-    let body = "BT /F1 18 Tf 20 220 Td (Serif) Tj ET BT /F2 18 Tf 20 120 Td (Mono) Tj ET";
+    source_font_fixture_with_text("BT /F1 18 Tf 20 220 Td (Serif) Tj ET BT /F2 18 Tf 20 120 Td (Mono) Tj ET")
+}
+
+fn source_font_fixture_with_text(body: &str) -> Vec<u8> {
     let objs: Vec<String> = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".into(),
         "<< /Type /Pages /Kids [4 0 R] /Count 1 /MediaBox [0 0 300 300] >>".into(),
@@ -1741,6 +2275,109 @@ fn clicking_existing_text_selects_its_source_font_style() {
 }
 
 #[test]
+fn deleting_a_draft_does_not_show_the_original_text_underneath() {
+    let mut h = harness(1, |_| {});
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    let r = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = egui::pos2(r.left() + 40.0 / 200.0 * r.width(), r.top() + 142.0 / 300.0 * r.height());
+    h.hover_at(at);
+    h.run_steps(1);
+    h.drag_at(at);
+    h.run_steps(1);
+    h.drop_at(at);
+    h.run_steps(3);
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text.clear();
+    for _ in 0..100 {
+        h.run_steps(2);
+        if !h.state().render_pending() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let shot = h.render().unwrap();
+    if let Ok(path) = std::env::var("PDFCRAFT_TEXT_PREVIEW_SHOT") {
+        shot.save(path).unwrap();
+    }
+    // The right half of the original glyphs, away from the caret and editor border.
+    let k = r.width() / 200.0;
+    for y in 152..166 {
+        for x in 65..82 {
+            let px = (r.left() + x as f32 * k) as u32;
+            let py = (r.top() + (300 - y) as f32 * k) as u32;
+            let [red, green, blue, alpha] = shot.get_pixel(px, py).0;
+            assert!(
+                !(red < 100 && green < 100 && blue < 100) && alpha == 255,
+                "the deleted source is still visible at {x},{y}: {:?}",
+                [red, green, blue, alpha]
+            );
+        }
+    }
+    assert!(!dirty(&h), "the document is unchanged until the draft is applied");
+    assert_eq!(page_texts(h.state()), ["Page 1"]);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(page_texts(h.state()), ["Page 1"]);
+}
+
+#[test]
+fn switching_from_a_narrow_editor_keeps_one_frame_and_a_wide_heading_on_one_line() {
+    let bytes = source_font_fixture_with_text(
+        "BT /F1 18 Tf 20 220 Td (Editable PDF heading) Tj ET BT /F2 18 Tf 20 120 Td (Mono) Tj ET BT /F2 18 Tf 20 98 Td (Text) Tj ET",
+    );
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("editor.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    for y in [128.0, 228.0] {
+        let point = egui::pos2(page.left() + 25.0 / 300.0 * page.width(), page.top() + (300.0 - y) / 300.0 * page.height());
+        h.hover_at(point);
+        h.run_steps(1);
+        h.drag_at(point);
+        h.run_steps(1);
+        h.drop_at(point);
+        h.run_steps(4);
+        if y == 128.0 {
+            assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().text, "Mono\nText", "opening a paragraph keeps its source line breaks");
+            h.key_press(Key::Escape);
+            h.run_steps(2);
+        }
+    }
+    let heading = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == "Editable PDF heading" => Some(&text.galley),
+            _ => None,
+        })
+        .expect("the heading editor is painted");
+    assert_eq!(heading.rows.len(), 1, "opening a wider block must not reuse the previous editor's narrow width");
+    let frames = h
+        .output()
+        .shapes
+        .iter()
+        .filter(|shape| {
+            matches!(&shape.shape,
+                egui::Shape::Rect(rect) if rect.stroke.color == egui::Color32::from_rgb(0x14, 0x73, 0xE6)
+                    && rect.rect.width() > 100.0 && page.contains(rect.rect.center())
+            )
+        })
+        .count();
+    assert_eq!(frames, 1, "the active block has only the editor frame");
+    if let Ok(path) = std::env::var("PDFCRAFT_TEXT_FRAME_SHOT") {
+        h.render().unwrap().save(path).unwrap();
+    }
+    assert!(!dirty(&h));
+}
+
+#[test]
 fn editing_existing_text_in_place() {
     let mut h = harness(1, |_| {});
     assert!(h.state_mut().execute("edit.edit_text"));
@@ -1756,8 +2393,8 @@ fn editing_existing_text_in_place() {
     h.run_steps(3);
     let ed = h.state().views[0].line_editor.clone().expect("the line opens for editing");
     assert_eq!((ed.page, ed.block, ed.text.as_str()), (0, 0, "Page 1"));
-    // A single-line paragraph's box may grow to the page's edge as the text does.
-    assert!(ed.growth().is_some(), "the editor box may grow");
+    // The source container stays visible while added text can overflow it.
+    assert!(ed.growth().is_none(), "opening the editor preserves the source container");
     h.state_mut().views[0].line_editor.as_mut().unwrap().text = "Chapter One".into();
     h.run_steps(1);
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
@@ -1933,6 +2570,37 @@ fn the_format_panel_restyles_the_paragraph_being_edited() {
     assert!(s.views[0].line_editor.as_ref().is_some_and(|e| e.extras.underline));
 }
 
+#[test]
+fn selected_text_formatting_keeps_the_rest_of_the_paragraph_and_reopens() {
+    let mut h = harness(1, |_| {});
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    let r = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = egui::pos2(r.left() + 40.0 / 200.0 * r.width(), r.top() + (300.0 - 158.0) / 300.0 * r.height());
+    h.hover_at(at);
+    h.run_steps(1);
+    h.drag_at(at);
+    h.run_steps(1);
+    h.drop_at(at);
+    h.run_steps(4);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::ArrowRight);
+    h.run_steps(1);
+    h.key_press_modifiers(Modifiers::SHIFT, Key::ArrowLeft);
+    h.run_steps(2);
+    assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().selection, Some(5..6));
+    h.get_by_label("B").click();
+    h.run_steps(5);
+    let id = h.state().views[0].id;
+    let doc = h.state().session.get(id).unwrap();
+    let lines = doc.text_lines(0);
+    assert!(lines.iter().any(|l| l.text == "1" && l.base_font == "Helvetica-Bold"), "{lines:?}");
+    assert!(lines.iter().any(|l| l.text.trim_end() == "Page" && l.base_font == "Helvetica"));
+    let saved = h.state_mut().session.save_bytes(id).unwrap();
+    let mut reopen = pdfcraft_engine::Session::new();
+    let rid = reopen.open("saved.pdf", None, saved, None).unwrap();
+    assert_eq!(reopen.get(rid).unwrap().text_lines(0), lines);
+}
+
 /// Drag with the pointer from `from` to `to` in a few steps.
 fn drag(h: &mut Harness<'static, PdfCraftApp>, from: egui::Pos2, to: egui::Pos2) {
     h.hover_at(from);
@@ -1969,7 +2637,7 @@ fn dragging_a_paragraph_moves_it_and_its_edge_rewraps_it() {
     assert_eq!(moved.text, "Page 1");
     let near = |a: f64, b: f64| (a - b).abs() < 1.5;
     assert!(near(moved.rect[0], before.rect[0] + 30.0) && near(moved.rect[1], before.rect[1] + 50.0), "{:?} → {:?}", before.rect, moved.rect);
-    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().can_undo(), Some("Edit text"));
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().can_undo(), Some("Move object"));
     // Drag the handle on its right edge in to about 45 pt wide: "Page" and "1" rewrap onto two lines.
     let edge = screen(moved.rect[2], (moved.rect[1] + moved.rect[3]) / 2.0) + egui::vec2(2.0, 0.0);
     let narrower = (moved.rect[2] - moved.rect[0] - 45.0) as f32 * k;
@@ -1979,7 +2647,391 @@ fn dragging_a_paragraph_moves_it_and_its_edge_rewraps_it() {
     let lines: Vec<String> = doc.text_lines(0).iter().map(|l| l.text.clone()).collect();
     assert_eq!(lines, ["Page", "1"], "rewrapped to the narrower box");
     assert!(near(doc.text_lines(0)[0].rect[0], moved.rect[0]), "it keeps its place");
+    assert_eq!(doc.can_undo(), Some("Edit text"), "edge drags still rewrap text");
     assert!(h.state().views[0].line_editor.is_none());
+}
+
+/// Contributor-original text, with an off-origin CropBox. Keep the moving paragraph last in
+/// source order so an ordinary hit picks it again when two independent boxes fully overlap.
+fn paragraph_drag_fixture(content: &str, rotation: i64, unit: i64) -> Vec<u8> {
+    use pdfcraft_cos::{Dict, Document, Object, Stream};
+    let mut doc = Document::open(std::sync::Arc::new(fixture(1))).unwrap();
+    let page = pdfcraft_model::pages(&doc)[0].obj;
+    let contents = doc.add(Object::Stream(Stream::flate(Dict::new(), content.as_bytes())));
+    doc.update_dict(page, |d| {
+        d.set(b"Contents".to_vec(), Object::Ref(contents));
+        d.set(b"MediaBox".to_vec(), Object::Array([0, 0, 400, 500].map(Object::Int).to_vec()));
+        d.set(b"CropBox".to_vec(), Object::Array([20, 30, 380, 470].map(Object::Int).to_vec()));
+        d.set(b"Rotate".to_vec(), Object::Int(rotation));
+        d.set(b"UserUnit".to_vec(), Object::Int(unit));
+    })
+    .unwrap();
+    pdfcraft_cos::write_incremental(&doc, &Default::default()).unwrap()
+}
+
+fn paragraph_drag_harness(bytes: Vec<u8>, view_rotation: u16) -> Harness<'static, PdfCraftApp> {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.session = pdfcraft_engine::Session::new().with_clock(|| 1_700_000_000);
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("paragraphs.pdf", None, bytes).unwrap();
+        app.set_option("zoom", "75").unwrap();
+        app.views[0].rotation = view_rotation;
+        assert!(app.execute("edit.edit_text"));
+        app
+    });
+    h.run_steps(4);
+    h
+}
+
+fn dragged_paragraphs(h: &Harness<'static, PdfCraftApp>) -> Vec<pdfcraft_engine::TextBlock> {
+    let app = h.state();
+    app.session.get(app.views[0].id).unwrap().text_blocks(0)
+}
+
+/// Resolve the current inventory and transform for every gesture, never an old block index
+/// or cached screen position. With identical labels, choose the last (topmost) source box.
+fn paragraph_drag_points(h: &Harness<'static, PdfCraftApp>, text: &str, offset: [f64; 2]) -> (egui::Pos2, egui::Pos2) {
+    let app = h.state();
+    let view = &app.views[0];
+    let doc = app.session.get(view.id).unwrap();
+    let b = doc.text_blocks(0).into_iter().rfind(|b| b.text == text).unwrap();
+    let xf = pdfcraft_ui_egui::canvas::PageXform {
+        rect: view.page_screen_rect(0).unwrap(),
+        rot: view.rotation,
+        pw: doc.info.pages[0].width,
+        ph: doc.info.pages[0].height,
+    };
+    let moved = std::array::from_fn(|i| (b.rect[i] + offset[i % 2]) as f32);
+    (xf.user_rect(&doc.info, 0, b.rect.map(|v| v as f32)).center(), xf.user_rect(&doc.info, 0, moved).center())
+}
+
+fn drag_paragraph(h: &mut Harness<'static, PdfCraftApp>, text: &str, offset: [f64; 2]) {
+    let (from, to) = paragraph_drag_points(h, text, offset);
+    h.get_by_label("Shift-click to select several objects. Drag empty space to select an area.");
+    assert!(h.state().views[0].line_editor.is_none());
+    drag(h, from, to);
+    assert!(h.state().views[0].line_editor.is_none(), "a body drag must not open the typing editor");
+    h.get_by_label("Shift-click to select several objects. Drag empty space to select an area.");
+}
+
+fn assert_dragged_paragraphs(actual: &[pdfcraft_engine::TextBlock], expected: &[pdfcraft_engine::TextBlock]) {
+    assert_eq!(actual.len(), expected.len(), "independent paragraphs must survive");
+    // Source order is itself an invariant, including when text and geometry are identical.
+    for (a, e) in actual.iter().zip(expected) {
+        assert_eq!((&a.text, &a.base_font, a.size, a.bold, a.italic, a.color), (&e.text, &e.base_font, e.size, e.bold, e.italic, e.color));
+        assert_eq!(a.lines.len(), e.lines.len(), "moving must not rewrap");
+        assert!(a.rect.iter().zip(e.rect).all(|(a, e)| (a - e).abs() < 0.01), "{a:?} != {e:?}");
+    }
+}
+
+/// Read only the current page contents, not stale revisions or the renderer's deduplicated
+/// text layer. These synthetic fixtures contain each literal exactly once per source draw.
+fn paragraph_drag_content(h: &Harness<'static, PdfCraftApp>) -> String {
+    let app = h.state();
+    let doc = pdfcraft_cos::Document::open(app.session.get(app.views[0].id).unwrap().bytes.clone()).unwrap();
+    let page = pdfcraft_model::pages(&doc)[0].clone();
+    let contents = doc.resolve(page.dict.get(b"Contents").unwrap());
+    let pieces = match contents.as_array() {
+        Some(a) => a.clone(),
+        None => vec![contents.as_ref().clone()],
+    };
+    let mut bytes = Vec::new();
+    for piece in pieces {
+        let object = doc.resolve(&piece);
+        let pdfcraft_cos::Object::Stream(stream) = object.as_ref() else { panic!("fixture content must be a stream") };
+        bytes.extend(stream.decoded().unwrap());
+    }
+    String::from_utf8(bytes).unwrap()
+}
+
+fn save_paragraph_drag(h: &mut Harness<'static, PdfCraftApp>, name: &str, original: &[u8]) -> Vec<u8> {
+    let out = temp_path(name);
+    let id = h.state().views[0].id;
+    h.state_mut().save_override = Some(out.to_string_lossy().into_owned());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.run_steps(4);
+    let saved = std::fs::read(&out).unwrap();
+    assert!(saved.starts_with(original), "Save keeps the opened/saved revisions");
+    assert!(!h.state().session.get(id).unwrap().dirty);
+    assert_eq!(h.state().session.get(id).unwrap().bytes.as_slice(), saved.as_slice());
+    std::fs::remove_file(out).unwrap();
+    saved
+}
+
+fn paragraph_drag_shot(h: &mut Harness<'static, PdfCraftApp>, name: &str) {
+    if let Ok(directory) = std::env::var("PDFCRAFT_PARAGRAPH_DRAG_SHOTS") {
+        for _ in 0..60 {
+            h.run_steps(2);
+            if !h.state().render_pending() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!h.state().render_pending(), "the screenshot must show the current document generation");
+        let directory = std::path::Path::new(&directory);
+        std::fs::create_dir_all(directory).unwrap();
+        h.render().unwrap().save(directory.join(name)).unwrap();
+    }
+}
+
+fn check_paragraph_overlap_drag(identical: bool, reopen_between: bool) {
+    let (stationary, moving) = if identical { ("Repeated", "Repeated") } else { ("Stationary beta", "Moving alpha") };
+    let content =
+        format!("BT /F1 12 Tf 60 220 Td ({stationary}) Tj ET BT /F1 12 Tf 250 100 Td (Keep here) Tj ET BT /F1 12 Tf 60 320 Td ({moving}) Tj ET");
+    let mut saved_base = paragraph_drag_fixture(&content, 0, 1);
+    let mut h = paragraph_drag_harness(saved_base.clone(), 0);
+    let before = dragged_paragraphs(&h);
+    assert_eq!(before.len(), 3);
+    paragraph_drag_shot(&mut h, &format!("before-{identical}-{reopen_between}.png"));
+    let moving_index = before.iter().rposition(|b| b.text == moving).unwrap();
+    let mut overlap = before.clone();
+    for i in [1, 3] {
+        overlap[moving_index].rect[i] -= 100.0;
+    }
+    drag_paragraph(&mut h, moving, [0.0, -100.0]);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &overlap);
+    paragraph_drag_shot(&mut h, &format!("overlap-{identical}-{reopen_between}.png"));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(4);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &before);
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().can_undo().is_none(), "the first release was exactly one step");
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    h.run_steps(4);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &overlap);
+
+    if reopen_between {
+        let bytes = save_paragraph_drag(&mut h, &format!("paragraph-overlap-{identical}.pdf"), &saved_base);
+        saved_base = bytes.clone();
+        h = paragraph_drag_harness(bytes, 0);
+        assert_dragged_paragraphs(&dragged_paragraphs(&h), &overlap);
+    }
+    // A rewrite here used to remove the stationary box, even if its text was different.
+    drag_paragraph(&mut h, moving, [150.0, 0.0]);
+    let mut after = overlap.clone();
+    for i in [0, 2] {
+        after[moving_index].rect[i] += 150.0;
+    }
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &after);
+    paragraph_drag_shot(&mut h, &format!("after-{identical}-{reopen_between}.png"));
+    let current = paragraph_drag_content(&h);
+    assert_eq!(current.matches(&format!("({stationary})")).count(), if identical { 2 } else { 1 });
+    assert_eq!(current.matches(&format!("({moving})")).count(), if identical { 2 } else { 1 });
+    assert_eq!(current.matches("(Keep here)").count(), 1);
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().can_undo(), Some("Move object"));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(4);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &overlap);
+    if !reopen_between {
+        h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        h.run_steps(4);
+        assert_dragged_paragraphs(&dragged_paragraphs(&h), &before);
+    }
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().can_undo().is_none(), "each release was exactly one step");
+    if !reopen_between {
+        h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+        h.run_steps(4);
+        assert_dragged_paragraphs(&dragged_paragraphs(&h), &overlap);
+    }
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    h.run_steps(4);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &after);
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().can_redo().is_none());
+    let bytes = save_paragraph_drag(&mut h, &format!("paragraph-separated-{identical}-{reopen_between}.pdf"), &saved_base);
+    let reopened = paragraph_drag_harness(bytes, 0);
+    assert_dragged_paragraphs(&dragged_paragraphs(&reopened), &after);
+    assert_eq!(paragraph_drag_content(&reopened), current);
+}
+
+#[test]
+fn ordinary_paragraph_drags_preserve_overlapping_text_and_history() {
+    check_paragraph_overlap_drag(false, false);
+}
+
+#[test]
+fn ordinary_paragraph_drags_preserve_identical_overlapping_labels() {
+    check_paragraph_overlap_drag(true, false);
+}
+
+#[test]
+fn ordinary_paragraph_drags_preserve_overlap_after_save_and_reopen() {
+    check_paragraph_overlap_drag(false, true);
+    check_paragraph_overlap_drag(true, true);
+}
+
+#[test]
+fn ordinary_paragraph_drags_preserve_partial_overlap_and_touching_labels() {
+    let content = "BT /F1 12 Tf 60 220 Td (Repeated) Tj ET BT /F1 12 Tf 60 320 Td (Repeated) Tj ET";
+    for fraction in [0.25, 0.75, 1.0] {
+        let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, 0, 1), 0);
+        let mut expected = dragged_paragraphs(&h);
+        assert_eq!(expected.len(), 2);
+        let width = expected[1].rect[2] - expected[1].rect[0];
+        // 75% overlap, 25% overlap, then exact touching of the original source rectangles.
+        for offset in [[width * fraction, -100.0], [150.0, -40.0]] {
+            drag_paragraph(&mut h, "Repeated", offset);
+            for (i, coordinate) in expected[1].rect.iter_mut().enumerate() {
+                *coordinate += offset[i % 2];
+            }
+            assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected);
+            assert_eq!(paragraph_drag_content(&h).matches("(Repeated)").count(), 2);
+        }
+    }
+}
+
+#[test]
+fn ordinary_paragraph_drags_preserve_multiline_kerning_strings() {
+    let content =
+        concat!("BT /F1 12 Tf 60 220 Td (Keep here) Tj ET ", "BT /F1 12 Tf 14 TL 60 320 Td [(First) -120 ( line)] TJ T* (Second line) Tj ET");
+    let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, 0, 1), 0);
+    let mut expected = dragged_paragraphs(&h);
+    assert_eq!(expected.len(), 2);
+    assert_eq!(expected[1].lines.len(), 2);
+    let text = expected[1].text.clone();
+    for offset in [[0.0, -100.0], [150.0, 0.0]] {
+        drag_paragraph(&mut h, &text, offset);
+        for (i, coordinate) in expected[1].rect.iter_mut().enumerate() {
+            *coordinate += offset[i % 2];
+        }
+        assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected);
+        let current = paragraph_drag_content(&h);
+        assert!(current.contains("[(First) -120 ( line)] TJ"), "original encoded strings and kerning stay byte-identical");
+        for literal in ["(Keep here)", "(Second line)"] {
+            assert_eq!(current.matches(literal).count(), 1);
+        }
+    }
+}
+
+#[test]
+fn ordinary_paragraph_drag_respects_rotations_crop_and_user_unit() {
+    let content = "BT /F1 12 Tf 60 220 Td (Keep here) Tj ET BT /F1 12 Tf 60 320 Td (Moving alpha) Tj ET";
+    for rotation in [0, 90, 180, 270] {
+        for view_rotation in [0, 90, 180, 270] {
+            let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, rotation, 2), view_rotation);
+            let mut expected = dragged_paragraphs(&h);
+            let moving = expected.iter_mut().find(|b| b.text == "Moving alpha").unwrap();
+            for (i, coordinate) in moving.rect.iter_mut().enumerate() {
+                *coordinate += [35.0, -27.0][i % 2];
+            }
+            drag_paragraph(&mut h, "Moving alpha", [35.0, -27.0]);
+            assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected);
+        }
+    }
+}
+
+#[test]
+fn an_ordinary_added_text_drag_keeps_its_content_edit() {
+    for panel_open in [true, false] {
+        check_added_text_drag(panel_open);
+    }
+}
+
+fn check_added_text_drag(panel_open: bool) {
+    let content = "BT /F1 12 Tf 60 220 Td (Keep here) Tj ET";
+    let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, 0, 1), 0);
+    let id = h.state().views[0].id;
+    h.state_mut()
+        .session
+        .apply(
+            id,
+            pdfcraft_engine::Edit::AddText {
+                page: 0,
+                text: pdfcraft_engine::AddedText { text: "Added note".into(), rect: [100.0, 330.0, 230.0, 354.0], ..Default::default() },
+            },
+        )
+        .unwrap();
+    let original = h.state().session.save_bytes(id).unwrap();
+    h = paragraph_drag_harness(original.as_ref().clone(), 0);
+    h.state_mut().left_open = panel_open;
+    h.run_steps(4);
+    let added = |h: &Harness<'static, PdfCraftApp>| {
+        let app = h.state();
+        app.session.get(app.views[0].id).unwrap().added.clone()
+    };
+    let before_added = added(&h);
+    assert_eq!(before_added.len(), 1);
+    let before = dragged_paragraphs(&h);
+    assert_eq!(before.len(), 2, "added text is also visible in the raw paragraph list");
+    let mut expected = before.clone();
+    let moved = expected.iter_mut().find(|b| b.text == "Added note").unwrap();
+    for (i, coordinate) in moved.rect.iter_mut().enumerate() {
+        *coordinate += [30.0, -20.0][i % 2];
+    }
+    // The same pointer hits added content and its source glyphs. Only content_ui may own it:
+    // a Text target would be excluded from MoveObjects and overwrite the valid UpdateContent.
+    let (from, to) = paragraph_drag_points(&h, "Added note", [30.0, -20.0]);
+    drag(&mut h, from, to);
+    assert!(h.state().views[0].line_editor.is_none());
+    assert!(h.state().views[0].block_drag.is_none());
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected);
+    let after_added = added(&h);
+    assert_eq!(after_added.len(), 1);
+    let (old_rect, new_rect) = (before_added[0].content.rect(), after_added[0].content.rect());
+    for i in 0..4 {
+        assert!((new_rect[i] - old_rect[i] - [30.0, -20.0][i % 2]).abs() < 0.01);
+    }
+    assert_eq!(after_added[0].content, before_added[0].content.with_rect(new_rect));
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().can_undo(), Some("Edit content"));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(4);
+    assert_eq!(added(&h), before_added);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &before);
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().can_undo().is_none(), "one content edit, no paragraph rewrite");
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    h.run_steps(4);
+    assert_eq!(added(&h), after_added);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &expected);
+    let bytes = save_paragraph_drag(&mut h, &format!("paragraph-added-content-{panel_open}.pdf"), original.as_slice());
+    let reopened = paragraph_drag_harness(bytes, 0);
+    assert_eq!(added(&reopened), after_added);
+    assert_dragged_paragraphs(&dragged_paragraphs(&reopened), &expected);
+}
+
+#[test]
+fn an_ordinary_paragraph_drag_refusal_never_rewrites_the_text() {
+    let content = "q BT 4 Tr /F1 12 Tf 60 320 Td (Clipping text) Tj ET Q";
+    let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, 0, 1), 0);
+    let before = dragged_paragraphs(&h);
+    let id = h.state().views[0].id;
+    let bytes = h.state().session.get(id).unwrap().bytes.clone();
+    let generation = h.state().session.get(id).unwrap().edit_generation();
+    drag_paragraph(&mut h, "Clipping text", [30.0, -20.0]);
+    let doc = h.state().session.get(id).unwrap();
+    assert_eq!(doc.bytes, bytes);
+    assert_eq!(doc.edit_generation(), generation);
+    assert!(doc.can_undo().is_none());
+    assert!(!doc.dirty);
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &before);
+    assert!(h.state().toast.as_ref().unwrap().0.contains("Text used as a clipping path cannot be moved with this selection."));
+}
+
+#[test]
+fn an_ordinary_paragraph_drag_cannot_reuse_an_index_after_an_edit() {
+    let content = "BT /F1 12 Tf 60 120 Td (Discard) Tj ET BT /F1 12 Tf 60 320 Td (Moving alpha) Tj ET BT /F1 12 Tf 60 220 Td (Keep here) Tj ET";
+    let mut h = paragraph_drag_harness(paragraph_drag_fixture(content, 0, 1), 0);
+    let (from, to) = paragraph_drag_points(&h, "Moving alpha", [30.0, -20.0]);
+    h.hover_at(from);
+    h.run_steps(1);
+    h.drag_at(from);
+    h.run_steps(1);
+    h.hover_at(to);
+    h.run_steps(2);
+    assert!(h.state().views[0].block_drag.is_some());
+    let id = h.state().views[0].id;
+    h.state_mut()
+        .session
+        .apply(id, pdfcraft_engine::Edit::EditTextBlock { page: 0, block: 0, text: String::new(), style: Default::default() })
+        .unwrap();
+    let after_edit = dragged_paragraphs(&h);
+    assert_eq!(after_edit.len(), 2, "the surviving paragraphs get different indexes");
+    assert_eq!(after_edit[1].text, "Keep here", "the old target index now names an unrelated paragraph");
+    let generation = h.state().session.get(id).unwrap().edit_generation();
+    h.run_steps(2);
+    h.drop_at(to);
+    h.run_steps(4);
+    assert!(h.state().views[0].block_drag.is_none());
+    assert_eq!(h.state().session.get(id).unwrap().edit_generation(), generation, "the stale release adds no edit");
+    assert_dragged_paragraphs(&dragged_paragraphs(&h), &after_edit);
 }
 
 /// A quick flick: press at `from`, and the next frame already finds the pointer at `to`.
@@ -2253,4 +3305,741 @@ fn host_dirty_hears_when_unsaved_work_appears_and_goes() {
     h.run_steps(3);
     assert_eq!(reports.lock().unwrap().last(), Some(&false), "saving clears it");
     let _ = std::fs::remove_file(out);
+}
+
+#[test]
+fn one_editor_contains_mixed_styles_and_visual_rows() {
+    let bytes = source_font_fixture_with_text(
+        "BT 0 0.2 0.5 rg /F1 1 Tf 18 0 0 18 20 240 Tm (Heading) Tj ET \
+         BT 0 g /F2 12 Tf 20 215 Td (Plain ) Tj /F1 12 Tf 0 0.2 0.5 rg (bold) Tj /F2 12 Tf 0 g ( words) Tj ET \
+         BT /F2 10 Tf 20 195 Td (Last row) Tj ET",
+    );
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("mixed.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    let point = egui::pos2(page.left() + 30.0 / 300.0 * page.width(), page.top() + 55.0 / 300.0 * page.height());
+    h.hover_at(point);
+    h.run_steps(1);
+    h.drag_at(point);
+    h.run_steps(1);
+    h.drop_at(point);
+    h.run_steps(6);
+    assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().text, "Heading\nPlain bold words\nLast row");
+    let galley = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(t) if t.galley.text().starts_with("Heading\n") => Some(&t.galley),
+            _ => None,
+        })
+        .expect("one galley contains the whole region");
+    assert_eq!(galley.rows.len(), 3);
+    assert!(galley.job.sections.iter().any(|s| s.format.color == egui::Color32::BLACK));
+    assert!(galley.job.sections.iter().any(|s| s.format.color == egui::Color32::from_rgb(0, 51, 128)));
+    assert!(galley.job.sections.iter().any(|s| s.format.font_id.size > galley.job.sections.last().unwrap().format.font_id.size));
+    let original_text = h.state().views[0].line_editor.as_ref().unwrap().text.clone();
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text.push_str("\nAdditional row\nAnother row");
+    h.run_steps(3);
+    let visible = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.text().ends_with("Another row") => Some(t.galley.rect.translate(t.pos.to_vec2())),
+            _ => None,
+        })
+        .unwrap();
+    let frame = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Rect(r) if r.stroke.color == egui::Color32::from_rgb(0x14, 0x73, 0xE6) && r.rect.width() > 50.0 => Some(r.rect),
+            _ => None,
+        })
+        .unwrap();
+    assert!(frame.contains_rect(visible), "fallback font rows remain inside the growing frame");
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text = original_text;
+    h.run_steps(3);
+    if let Ok(path) = std::env::var("PDFCRAFT_RICH_FRAME_SHOT") {
+        h.render().unwrap().save(path).unwrap();
+    }
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text.clear();
+    h.run_steps(3);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+    h.run_steps(4);
+    assert!(h.state().session.get(h.state().views[0].id).unwrap().text_blocks(0).is_empty());
+    assert!(dirty(&h));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().text_blocks(0)[0].rows.len(), 3);
+}
+
+/// Opt-in private-document regression. This never captures images or saves the source file.
+/// Run with PDFCRAFT_TEXT_REGRESSION_PDF=/path/to/document.pdf and --ignored.
+#[test]
+#[ignore = "requires an explicitly supplied local PDF"]
+fn private_document_regions_open_as_one_editor() {
+    let path = std::env::var("PDFCRAFT_TEXT_REGRESSION_PDF").expect("supply a local PDF path");
+    let bytes = std::fs::read(&path).unwrap();
+    let original = bytes.clone();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("private.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    let page_count = h.state().session.get(h.state().views[0].id).unwrap().info.pages.len();
+    let mut checked = 0;
+    for page_index in 0..page_count {
+        h.state_mut().views[0].go_to_page(page_index);
+        h.run_steps(4);
+        let blocks = h.state().session.get(h.state().views[0].id).unwrap().text_blocks(page_index);
+        let page = h.state().views[0].page_screen_rect(page_index).unwrap();
+        let info = h.state().session.get(h.state().views[0].id).unwrap().info.pages[page_index].clone();
+        let source_lines = h.state().session.get(h.state().views[0].id).unwrap().text_lines(page_index);
+        let programs = h.state().session.get(h.state().views[0].id).unwrap().text_editor_fonts(page_index);
+        assert!(!programs.is_empty(), "source sfnt fonts must be usable in the editor");
+        let scale = page.width() / info.width;
+        for (index, block) in blocks.iter().enumerate().filter(|(_, b)| b.rows.len() >= 3) {
+            let line = &source_lines[block.lines[0]];
+            let v = info.user_to_view((line.rect[0] + 3.0) as f32, (line.rect[1] + line.rect[3]) as f32 / 2.0);
+            let point = egui::pos2(page.left() + v[0] * scale, page.top() + v[1] * scale);
+            h.hover_at(point);
+            h.run_steps(1);
+            h.drag_at(point);
+            h.run_steps(1);
+            h.drop_at(point);
+            h.run_steps(8);
+            let editor = h.state().views[0].line_editor.as_ref().unwrap();
+            assert_eq!(editor.block, index);
+            assert_eq!(editor.text, block.editor_text);
+            assert!(!editor.overflow, "unchanged source region must fit (page {}, region {})", page_index + 1, index + 1);
+            let text_shape = h
+                .output()
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.text() == block.editor_text => Some(t),
+                    _ => None,
+                })
+                .expect("the whole source region is editable");
+            for (section, (_, source)) in text_shape.galley.job.sections.iter().zip(block.edited_spans(&block.editor_text)) {
+                if programs.iter().any(|font| font.resource == source_lines[source].font) {
+                    assert!(
+                        matches!(&section.format.font_id.family,
+                        egui::FontFamily::Name(name) if name.starts_with("pdf-source-")),
+                        "each available embedded source face is used in the editor"
+                    );
+                }
+            }
+            assert_eq!(text_shape.galley.rows.len(), block.rows.len(), "source rows stay in place");
+            for (row, source_row) in text_shape.galley.rows.iter().zip(&block.rows) {
+                let source = &source_lines[source_row[0]];
+                let baseline = text_shape.pos.y + row.pos.y + row.glyphs[0].pos.y;
+                let expected = page.top() + info.user_to_view(0.0, source.baseline()[1] as f32)[1] * scale;
+                assert!((baseline - expected).abs() < 1.5, "editor baseline stays on the source baseline");
+            }
+            let frames = h
+                .output()
+                .shapes
+                .iter()
+                .filter(|s| {
+                    matches!(&s.shape,
+                egui::Shape::Rect(r) if r.stroke.color==egui::Color32::from_rgb(0x14,0x73,0xE6)
+                    && r.rect.width()>50.0 && page.contains(r.rect.center()))
+                })
+                .count();
+            assert_eq!(frames, 1, "one stable editor frame");
+            h.state_mut().views[0].line_editor.as_mut().unwrap().text.push_str("\nAdditional text\nAdditional text");
+            h.run_steps(3);
+            let editor = h.state().views[0].line_editor.as_ref().unwrap();
+            assert!(editor.overflow, "extra rows extend the block");
+            let draft =
+                h.state().session.get(h.state().views[0].id).unwrap().text_edit_layout(page_index, index, &editor.text, &editor.style()).unwrap();
+            let bounds = draft.draft_rect.unwrap();
+            assert!((bounds[3] - block.rect[3]).abs() < 0.5, "draft bounds exclude untouched neighboring regions");
+            h.key_press(Key::Escape);
+            h.run_steps(2);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "the supplied PDF must contain a multiline region");
+    assert!(!dirty(&h));
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
+#[test]
+fn inline_editor_preserves_source_font_and_previews_live_bounds() {
+    use pdfcraft_cos::{Dict, Document, Object, Stream, write_incremental};
+    use skrifa::MetadataProvider as _;
+    let mut cos = Document::open(std::sync::Arc::new(source_font_fixture_with_text(
+        "BT /F1 18 Tf 20 220 Td (Stable source text) Tj ET BT /F1 12 Tf 20 194 Td (The second row stays here) Tj ET",
+    )))
+    .unwrap();
+    let bytes = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+    let face = skrifa::FontRef::new(bytes).unwrap();
+    let metrics = face.metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::default());
+    let glyphs = face.glyph_metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::default());
+    let units = 1000.0 / f64::from(metrics.units_per_em);
+    let program = cos.add(Object::Stream(Stream::flate(Dict::new(), bytes)));
+    let mut descriptor = Dict::new();
+    descriptor.set(b"FontFile2".to_vec(), Object::Ref(program));
+    descriptor.set(b"Ascent".to_vec(), Object::Real(f64::from(metrics.ascent) * units));
+    descriptor.set(b"Descent".to_vec(), Object::Real(f64::from(metrics.descent) * units));
+    let mut font = Dict::new();
+    font.set(b"Type".to_vec(), Object::name("Font"));
+    font.set(b"Subtype".to_vec(), Object::name("TrueType"));
+    font.set(b"BaseFont".to_vec(), Object::name("Inter-Regular"));
+    font.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
+    font.set(b"FirstChar".to_vec(), Object::Int(32));
+    font.set(b"LastChar".to_vec(), Object::Int(126));
+    font.set(
+        b"Widths".to_vec(),
+        Object::Array(
+            (32..=126u8)
+                .map(|c| {
+                    let id = face.charmap().map(char::from(c)).unwrap();
+                    Object::Real(f64::from(glyphs.advance_width(id).unwrap()) * units)
+                })
+                .collect(),
+        ),
+    );
+    font.set(b"FontDescriptor".to_vec(), Object::Dict(descriptor));
+    cos.update_dict(pdfcraft_cos::ObjRef::new(3, 0), |d| *d = font).unwrap();
+    let bytes = write_incremental(&cos, &Default::default()).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("stable.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.run_steps(2);
+    let source = h.state().session.get(h.state().views[0].id).unwrap().text_blocks(0)[0].clone();
+    let lines = h.state().session.get(h.state().views[0].id).unwrap().text_lines(0);
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    let scale = page.width() / 300.0;
+    let point = egui::pos2(page.left() + 30.0 * scale, page.top() + 75.0 * scale);
+    h.hover_at(point);
+    h.run_steps(1);
+    h.drag_at(point);
+    h.run_steps(1);
+    h.drop_at(point);
+    h.run_steps(8);
+    assert!(!h.state().views[0].line_editor.as_ref().unwrap().overflow);
+    let shape = h
+        .output()
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.text() == source.editor_text => Some(t),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(shape.galley.rows.len(), 2);
+    for (row, source_row) in shape.galley.rows.iter().zip(&source.rows) {
+        let line = &lines[source_row[0]];
+        let y = shape.pos.y + row.pos.y + row.glyphs[0].pos.y;
+        assert!((y - (page.top() + (300.0 - line.baseline()[1] as f32) * scale)).abs() < 1.0);
+    }
+    for section in &shape.galley.job.sections {
+        assert!(matches!(&section.format.font_id.family,egui::FontFamily::Name(name) if name.starts_with("pdf-source-")));
+    }
+    let frame = |h: &Harness<'_, PdfCraftApp>| {
+        h.output()
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.stroke.color == egui::Color32::from_rgb(0x14, 0x73, 0xE6) && r.rect.width() > 100.0 => Some(r.rect),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let original_frame = frame(&h);
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text.push_str("\nExtra row that does not fit\nAnother row");
+    h.run_steps(3);
+    assert!(h.state().views[0].line_editor.as_ref().unwrap().overflow);
+    let expanded = frame(&h);
+    assert!(expanded.bottom() > original_frame.bottom() + 20.0, "the frame visibly expands around the extra rows");
+    assert_eq!(expanded.left(), original_frame.left());
+    assert_eq!(expanded.top(), original_frame.top());
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text = "Stable source text".into();
+    h.run_steps(3);
+    let reduced = frame(&h);
+    assert!(reduced.bottom() < original_frame.bottom() - 20.0, "deleting a row visibly shrinks the block");
+    h.state_mut().views[0].line_editor.as_mut().unwrap().text.push_str("\nExtra row that does not fit\nAnother row");
+    h.run_steps(3);
+    if let Ok(path) = std::env::var("PDFCRAFT_OVERFLOW_FRAME_SHOT") {
+        h.render().unwrap().save(path).unwrap();
+    }
+    let id = h.state().views[0].id;
+    let editor = h.state().views[0].line_editor.as_ref().unwrap();
+    let draft_text = editor.text.clone();
+    let measured = h.state().session.get(id).unwrap().text_edit_layout(0, 0, &draft_text, &editor.style()).unwrap().draft_rect.unwrap();
+    let expected_frame = egui::Rect::from_min_max(
+        egui::pos2(page.left() + measured[0] as f32 * scale, page.top() + (300.0 - measured[3] as f32) * scale),
+        egui::pos2(page.left() + measured[2] as f32 * scale, page.top() + (300.0 - measured[1] as f32) * scale),
+    )
+    .expand(2.0);
+    let live = frame(&h);
+    assert!(
+        (live.min - expected_frame.min).length() < 0.1 && (live.max - expected_frame.max).length() < 0.1,
+        "the live frame shows the same PDF geometry as Apply/Save"
+    );
+    assert!(!dirty(&h), "draft measurement does not modify the document");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+    h.run_steps(3);
+    assert!(dirty(&h));
+    assert_eq!(h.state().session.get(id).unwrap().text_blocks(0)[0].rect, measured);
+    let bytes = h.state().session.save_bytes(id).unwrap();
+    let mut reopened = pdfcraft_engine::Session::new();
+    let reopened_id = reopened.open("again.pdf", None, bytes, None).unwrap();
+    assert_eq!(reopened.get(reopened_id).unwrap().text_blocks(0)[0].rect, measured);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(h.state().session.get(h.state().views[0].id).unwrap().text_blocks(0)[0], source);
+}
+
+fn clipped_artwork_with_labels() -> Vec<u8> {
+    clipped_artwork_with_labels_drawn(false)
+}
+
+/// `own_clip` draws the image alone in its clip (`q re W n cm Do Q`), which moves with it (#1049).
+fn clipped_artwork_with_labels_drawn(own_clip: bool) -> Vec<u8> {
+    use pdfcraft_cos::{Dict, Document, Object, Stream, write_incremental};
+    let mut doc = Document::open(std::sync::Arc::new(fixture(2))).unwrap();
+    let mut image = Dict::new();
+    image.set(b"Type".to_vec(), Object::name("XObject"));
+    image.set(b"Subtype".to_vec(), Object::name("Image"));
+    image.set(b"Width".to_vec(), Object::Int(1));
+    image.set(b"Height".to_vec(), Object::Int(1));
+    image.set(b"BitsPerComponent".to_vec(), Object::Int(8));
+    image.set(b"ColorSpace".to_vec(), Object::name("DeviceRGB"));
+    let image = doc.add(Object::Stream(Stream::flate(image, &[220, 235, 245])));
+    for page in pdfcraft_model::pages(&doc) {
+        let contents = doc.add(Object::Stream(Stream::flate(Dict::new(),
+            if own_clip {
+                &b"q 30 170 130 80 re W* n 800 0 0 900 -300 -400 cm /Im0 Do Q BT /F1 12 Tf 30 130 Td (Editable caption) Tj ET BT /F1 12 Tf 40 220 Td (Overlay) Tj ET BT /F1 9 Tf 154 249 Td (Corner label) Tj ET"[..]
+            } else {
+                &b"q 30 170 130 80 re W* n q 800 0 0 900 -300 -400 cm /Im0 Do Q Q BT /F1 12 Tf 30 130 Td (Editable caption) Tj ET BT /F1 12 Tf 40 220 Td (Overlay) Tj ET BT /F1 9 Tf 154 249 Td (Corner label) Tj ET"[..]
+            })));
+        let mut resources = doc.resolve(page.dict.get(b"Resources").unwrap()).as_dict().unwrap().clone();
+        let mut xo = Dict::new();
+        xo.set(b"Im0".to_vec(), Object::Ref(image));
+        resources.set(b"XObject".to_vec(), Object::Dict(xo));
+        doc.update_dict(page.obj, |d| {
+            d.set(b"Resources".to_vec(), Object::Dict(resources));
+            d.set(b"Contents".to_vec(), Object::Ref(contents));
+        })
+        .unwrap();
+    }
+    write_incremental(&doc, &Default::default()).unwrap()
+}
+
+#[test]
+fn cropped_images_do_not_intercept_text_and_stay_inside_each_page() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("clipped.pdf", None, clipped_artwork_with_labels()).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    for page in 0..2 {
+        h.state_mut().views[0].go_to_page(page);
+        h.run_steps(3);
+        let r = h.state().views[0].page_screen_rect(page).unwrap();
+        let at = |x: f32, y: f32| egui::pos2(r.left() + x / 200.0 * r.width(), r.top() + (300.0 - y) / 300.0 * r.height());
+        for (x, y, label) in [(65.0, 134.0, "Editable caption"), (65.0, 224.0, "Overlay")] {
+            let p = at(x, y);
+            h.hover_at(p);
+            h.run_steps(1);
+            h.drag_at(p);
+            h.run_steps(1);
+            h.drop_at(p);
+            h.run_steps(3);
+            assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().text, label);
+            assert!(h.state().views[0].image_selection.is_none(), "text wins even inside the visible artwork");
+            h.key_press(Key::Escape);
+            h.run_steps(2);
+        }
+        let p = at(95.0, 195.0);
+        h.hover_at(p);
+        h.run_steps(1);
+        h.drag_at(p);
+        h.run_steps(1);
+        h.drop_at(p);
+        h.run_steps(3);
+        assert!(h.state().views[0].image_selection.as_ref().is_some_and(|s| s.page == page));
+        for shape in &h.output().shapes {
+            if let egui::Shape::Rect(rect) = &shape.shape
+                && rect.stroke.color == egui::Color32::from_rgb(0x14, 0x73, 0xE6)
+                && rect.rect.width() > 50.0
+            {
+                assert!(r.expand(3.0).contains_rect(rect.rect), "no image frame escapes its own page");
+            }
+        }
+    }
+    assert!(!dirty(&h));
+}
+
+#[test]
+fn cropped_image_corner_resize_keeps_opposite_corner_and_scales_crop() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("clipped.pdf", None, clipped_artwork_with_labels_drawn(true)).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    let page = h.state().views[0].page_screen_rect(0).unwrap();
+    let at = |x: f32, y: f32| egui::pos2(page.left() + x / 200.0 * page.width(), page.top() + (300.0 - y) / 300.0 * page.height());
+    let p = at(95.0, 195.0);
+    h.hover_at(p);
+    h.run_steps(1);
+    h.drag_at(p);
+    h.run_steps(1);
+    h.drop_at(p);
+    h.run_steps(3);
+    let id = h.state().views[0].id;
+    assert!(h.state().views[0].image_selection.is_some());
+    let text = |doc: &pdfcraft_engine::Document| {
+        doc.text_lines(0).into_iter().map(|l| (l.text.clone(), l.rect, l.font.clone(), l.size, l.color, l.baseline())).collect::<Vec<_>>()
+    };
+    let original_text = text(h.state().session.get(id).unwrap());
+    // Grow then shrink using the visible top-right grip, never the off-page raw placement.
+    for (factor, right, top, horizontal_only, off_centre) in [
+        (1.15, 179.5, 262.0, false, false),
+        (0.7, 134.65, 234.4, false, false),
+        (0.75, 108.4875, 218.3, true, false),
+        (1.1, 116.33625, 223.13, false, true),
+    ] {
+        let before = h.state().session.get(id).unwrap().page_images(0)[0].visible_rect.unwrap();
+        let grip = at(before[2] as f32, before[3] as f32);
+        let offset = if off_centre { egui::vec2(3.0, -3.0) } else { egui::Vec2::ZERO };
+        let from = grip + offset;
+        let fixed = at(before[0] as f32, before[1] as f32);
+        let desired = fixed + (grip - fixed) * factor + offset;
+        let to = if horizontal_only { egui::pos2(desired.x, from.y) } else { desired };
+        let generation = h.state().session.get(id).unwrap().edit_generation();
+        h.hover_at(from);
+        h.run_steps(1);
+        h.drag_at(from);
+        h.run_steps(1);
+        for k in 1..=5 {
+            h.hover_at(from + (to - from) * (k as f32 / 5.0));
+            h.run_steps(1);
+        }
+        assert_eq!(h.state().session.get(id).unwrap().edit_generation(), generation, "dragging previews without committing every frame");
+        h.drop_at(to);
+        h.run_steps(4);
+        assert!(h.state().views[0].line_editor.is_none(), "a label under a selected image grip cannot take its drag");
+        let after = h.state().session.get(id).unwrap().page_images(0)[0].visible_rect.unwrap();
+        for (actual, expected) in after.into_iter().zip([30.0, 170.0, right, top]) {
+            assert!((actual - expected).abs() < 0.05, "cropped image follows the visible grip: {actual} vs {expected}");
+        }
+        assert_eq!(text(h.state().session.get(id).unwrap()), original_text, "image resizing leaves captions in place");
+    }
+    let saved = h.state().session.save_bytes(id).unwrap();
+    let mut reopened = pdfcraft_engine::Session::new();
+    let re = reopened.open("again.pdf", None, saved, None).unwrap();
+    assert_eq!(reopened.get(re).unwrap().page_images(0), h.state().session.get(id).unwrap().page_images(0));
+}
+
+/// Exercise actual pointer gestures on each cropped placement, without capturing private pixels.
+#[test]
+#[ignore = "requires an explicitly supplied local PDF with cropped artwork"]
+fn private_cropped_image_grips_resize_without_moving_the_opposite_corner() {
+    let path = std::env::var("PDFCRAFT_CLIPPED_ARTWORK_PDF").expect("supply a local PDF path");
+    let original = std::fs::read(&path).unwrap();
+    let bytes = original.clone();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("private.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    let id = h.state().views[0].id;
+    let pages = h.state().session.get(id).unwrap().info.pages.len();
+    let mut checked = 0;
+    for page_index in 0..pages {
+        h.state_mut().views[0].go_to_page(page_index);
+        h.run_steps(4);
+        let doc = h.state().session.get(id).unwrap();
+        let info = doc.info.pages[page_index].clone();
+        let images = doc.page_images(page_index);
+        let blocks = doc.text_blocks(page_index);
+        let page = h.state().views[0].page_screen_rect(page_index).unwrap();
+        let at = |x: f64, y: f64| {
+            let v = info.user_to_view(x as f32, y as f32);
+            page.min + egui::vec2(v[0], v[1]) * (page.width() / info.width)
+        };
+        for (index, image) in images.iter().enumerate() {
+            let Some(b) = image.visible_rect else { continue };
+            let blank = (1..10)
+                .flat_map(|x| (1..10).map(move |y| (x, y)))
+                .map(|(x, y)| (b[0] + (b[2] - b[0]) * x as f64 / 10.0, b[1] + (b[3] - b[1]) * y as f64 / 10.0))
+                .find(|(x, y)| !blocks.iter().any(|l| *x >= l.rect[0] && *x <= l.rect[2] && *y >= l.rect[1] && *y <= l.rect[3]))
+                .expect("image has an unlabelled selection point");
+            let corners = [at(b[0], b[3]), at(b[2], b[3]), at(b[0], b[1]), at(b[2], b[1])];
+            for corner in 0..4 {
+                for (factor, axis) in [(0.8, 0), (1.04, 0), (0.8, 1), (0.8, 2)] {
+                    let p = at(blank.0, blank.1);
+                    h.hover_at(p);
+                    h.run_steps(1);
+                    h.drag_at(p);
+                    h.run_steps(1);
+                    h.drop_at(p);
+                    h.run_steps(3);
+                    assert_eq!(h.state().views[0].image_selection.as_ref().map(|s| s.index), Some(index));
+                    let generation = h.state().session.get(id).unwrap().edit_generation();
+                    let from = corners[corner];
+                    let fixed = corners[3 - corner];
+                    let desired = fixed + (from - fixed) * factor;
+                    let to = match axis {
+                        1 => egui::pos2(desired.x, from.y),
+                        2 => egui::pos2(from.x, desired.y),
+                        _ => desired,
+                    };
+                    h.hover_at(from);
+                    h.run_steps(1);
+                    h.drag_at(from);
+                    h.run_steps(1);
+                    for k in 1..=5 {
+                        h.hover_at(from + (to - from) * (k as f32 / 5.0));
+                        h.run_steps(1);
+                        assert_eq!(h.state().session.get(id).unwrap().edit_generation(), generation, "no PDF rewrite on pointer movement");
+                    }
+                    h.drop_at(to);
+                    h.run_steps(4);
+                    let after = h.state().session.get(id).unwrap().page_images(page_index)[index].visible_rect.unwrap();
+                    let actual = egui::Rect::from_two_pos(at(after[0], after[1]), at(after[2], after[3]));
+                    let expected = egui::Rect::from_two_pos(fixed, desired).intersect(page);
+                    assert!(
+                        (actual.min - expected.min).length() < 0.2 && (actual.max - expected.max).length() < 0.2,
+                        "page {}, image {}, corner {corner}: {actual:?} vs {expected:?}",
+                        page_index + 1,
+                        index + 1
+                    );
+                    assert!(h.state().views[0].line_editor.is_none());
+                    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+                    h.run_steps(4);
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(h.state().session.get(id).unwrap().bytes.as_slice(), original.as_slice(), "undo restored the source document in memory");
+    assert_eq!(std::fs::read(path).unwrap(), original);
+    println!("verified {checked} real-file corner drag gestures on {pages} pages");
+}
+
+/// Local acceptance check for PDFs containing cropped artwork. No screenshots or source saves.
+#[test]
+#[ignore = "requires an explicitly supplied local PDF with cropped artwork"]
+fn private_document_cropped_artwork_does_not_block_text() {
+    let path = std::env::var("PDFCRAFT_CLIPPED_ARTWORK_PDF").expect("supply a local PDF path");
+    let original = std::fs::read(&path).unwrap();
+    let bytes = original.clone();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("private.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    h.run_steps(3);
+    let pages = h.state().session.get(h.state().views[0].id).unwrap().info.pages.len();
+    let mut checked = 0;
+    let mut cropped = 0;
+    for page in 0..pages {
+        h.state_mut().views[0].go_to_page(page);
+        h.run_steps(4);
+        let doc = h.state().session.get(h.state().views[0].id).unwrap();
+        let info = doc.info.pages[page].clone();
+        let blocks = doc.text_blocks(page);
+        let images = doc.page_images(page);
+        let r = h.state().views[0].page_screen_rect(page).unwrap();
+        for image in &images {
+            let visible = image.visible_rect.unwrap();
+            assert!(visible[0] >= f64::from(info.crop[0]) - 0.01 && visible[1] >= f64::from(info.crop[1]) - 0.01);
+            assert!(visible[2] <= f64::from(info.crop[2]) + 0.01 && visible[3] <= f64::from(info.crop[3]) + 0.01);
+            if image.rect != visible {
+                cropped += 1;
+            }
+        }
+        for (index, block) in blocks.iter().enumerate() {
+            let [x0, y0, x1, y1] = block.rect;
+            let v = info.user_to_view(((x0 + x1) / 2.0) as f32, ((y0 + y1) / 2.0) as f32);
+            let scale = r.width() / info.width;
+            let p = egui::pos2(r.left() + v[0] * scale, r.top() + v[1] * scale);
+            h.hover_at(p);
+            h.run_steps(1);
+            h.drag_at(p);
+            h.run_steps(1);
+            h.drop_at(p);
+            h.run_steps(3);
+            assert_eq!(h.state().views[0].line_editor.as_ref().map(|e| e.block), Some(index), "every source block can open directly");
+            assert!(h.state().views[0].image_selection.is_none());
+            h.key_press(Key::Escape);
+            h.run_steps(2);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0 && cropped > 0);
+    assert!(!dirty(&h));
+    assert_eq!(std::fs::read(path).unwrap(), original);
+    println!("checked {pages} pages, {checked} text regions, {cropped} clipped image placements");
+}
+
+/// Actual keyboard input into every page of a private Chinese PDF; no private captures.
+#[test]
+#[ignore = "requires a private Chinese PDF and an approved full source font file"]
+fn private_new_chinese_keyboard_input_preserves_font_layout_and_saved_pixels() {
+    use pdfcraft_engine::{Edit, Session};
+    use std::sync::Arc;
+    let path = std::env::var("PDFCRAFT_CHINESE_TEXT_PDF").expect("supply a local PDF path");
+    let font_path = std::env::var("PDFCRAFT_CHINESE_FULL_FONT").expect("supply the full source face");
+    let original = std::fs::read(&path).unwrap();
+    let bytes = original.clone();
+    let font = Arc::new(std::fs::read(font_path).unwrap());
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1100.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("private.pdf", None, bytes).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("edit.edit_text"));
+    h.state_mut().views[0].fit = pdfcraft_ui_egui::canvas::Fit::Page;
+    assert!(h.state_mut().execute("view.layout.single"));
+    let id = h.state().views[0].id;
+    let pages = h.state().session.get(id).unwrap().info.pages.len();
+    let all: String = (0..pages).flat_map(|p| h.state().session.get(id).unwrap().text_lines(p)).map(|l| l.text).collect();
+    let new: String = "测试编辑删除龘".chars().filter(|c| !all.contains(*c)).take(4).collect();
+    assert!(new.chars().count() >= 2);
+    let pixels = |bytes: Arc<Vec<u8>>, page| {
+        let mut r = PageRenderer::new(bytes, Default::default());
+        let p = r.render(RenderRequest { page, scale: 1.5, ..Default::default() });
+        assert!(p.error.is_none() && p.warnings.is_empty());
+        p.rgba.to_vec()
+    };
+    for page_index in 0..pages {
+        h.state_mut().views[0].go_to_page(page_index);
+        h.state_mut().session.apply(id, Edit::RegisterTextFont { page: page_index, bytes: font.clone() }).unwrap();
+        h.run_steps(4);
+        let doc = h.state().session.get(id).unwrap();
+        let (index, block) = doc
+            .text_blocks(page_index)
+            .into_iter()
+            .enumerate()
+            .find(|(_, b)| b.rows.len() == 1 && b.editor_text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)))
+            .unwrap();
+        let source = doc.text_lines(page_index)[block.lines[0]].clone();
+        let info = doc.info.pages[page_index].clone();
+        let page = h.state().views[0].page_screen_rect(page_index).unwrap();
+        let scale = page.width() / info.width;
+        let v = info.user_to_view((source.rect[0] + 3.0) as f32, ((source.rect[1] + source.rect[3]) / 2.0) as f32);
+        let point = page.min + egui::vec2(v[0], v[1]) * scale;
+        h.hover_at(point);
+        h.run_steps(1);
+        h.drag_at(point);
+        h.run_steps(1);
+        h.drop_at(point);
+        h.run_steps(8);
+        assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().block, index);
+        let draft = format!("{}{new}", block.editor_text);
+        h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        h.event(egui::Event::Text(draft.clone()));
+        h.run_steps(4);
+        assert_eq!(h.state().views[0].line_editor.as_ref().unwrap().text, draft);
+        let galley = h
+            .output()
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.text() == draft => Some(t.galley.clone()),
+                _ => None,
+            })
+            .expect("typed Chinese is in the actual inline editor");
+        assert!(
+            galley
+                .job
+                .sections
+                .iter()
+                .filter(|s| draft
+                    .get(usize::from(s.byte_range.start)..usize::from(s.byte_range.end))
+                    .is_some_and(|text| text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))))
+                .all(|s| matches!(&s.format.font_id.family, egui::FontFamily::Name(n) if n.starts_with("pdf-source-")))
+        );
+        h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+        h.run_steps(5);
+        assert!(h.state().views[0].line_editor.is_none());
+        let edited = h.state().session.get(id).unwrap();
+        assert!(edited.text_lines(page_index).iter().any(|l| l.text.contains(&new) && l.base_font == "DroidSansFallback"));
+        let first = edited.text_lines(page_index).into_iter().find(|l| l.text.starts_with(source.text.trim())).unwrap();
+        assert!(first.baseline().iter().zip(source.baseline()).all(|(a, b)| (a - b).abs() < 0.01));
+        let current = pixels(edited.display.clone(), page_index);
+        let saved = h.state_mut().session.save_bytes(id).unwrap();
+        let mut reopen = Session::new();
+        let rid = reopen.open("saved.pdf", None, saved, None).unwrap();
+        assert_eq!(pixels(reopen.get(rid).unwrap().display.clone(), page_index), current);
+        // Repeat keyboard input and deletion without recreating the editor via state mutation.
+        h.hover_at(point);
+        h.run_steps(1);
+        h.drag_at(point);
+        h.run_steps(1);
+        h.drop_at(point);
+        h.run_steps(6);
+        assert!(h.state().views[0].line_editor.as_ref().unwrap().text.contains(&new));
+        h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        let shortened = draft.replace(&new, &new.chars().skip(1).collect::<String>());
+        h.event(egui::Event::Text(shortened.clone()));
+        h.run_steps(3);
+        h.key_press_modifiers(Modifiers::COMMAND, Key::Enter);
+        h.run_steps(4);
+        let current = pixels(h.state().session.get(id).unwrap().display.clone(), page_index);
+        let saved = h.state_mut().session.save_bytes(id).unwrap();
+        let rid = reopen.open("deleted.pdf", None, saved, None).unwrap();
+        assert_eq!(pixels(reopen.get(rid).unwrap().display.clone(), page_index), current);
+        let content = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        assert_eq!(content(&reopen.get(rid).unwrap().text_blocks(page_index)[index].editor_text), content(&shortened));
+        h.state_mut().session.undo(id).unwrap();
+        h.state_mut().session.undo(id).unwrap();
+        h.state_mut().session.undo(id).unwrap();
+        h.run_steps(4);
+    }
+    assert_eq!(std::fs::read(path).unwrap(), original);
+    println!("verified Chinese keyboard insertion/deletion and save/reopen rendering on {pages} pages");
 }

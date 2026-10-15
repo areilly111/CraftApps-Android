@@ -942,7 +942,7 @@ impl Appearance {
         })
     }
     /// Gradient paints of the fills and strokes.
-    fn gradients(&self) -> impl Iterator<Item = &vectorcraft_color::GradientPaint> {
+    pub(crate) fn gradients(&self) -> impl Iterator<Item = &vectorcraft_color::GradientPaint> {
         self.items.iter().filter_map(|i| match i {
             AppearanceItem::Fill(FillLayer { paint: Paint::Gradient(g), .. })
             | AppearanceItem::Stroke(StrokeLayer { paint: Paint::Gradient(g), .. }) => Some(&**g),

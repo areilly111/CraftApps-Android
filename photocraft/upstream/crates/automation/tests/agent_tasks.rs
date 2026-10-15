@@ -330,6 +330,7 @@ async fn agent_play_refuses_a_recorded_file_open() {
     headless.session.actions.list.push(photocraft_engine::actions_cmds::Action {
         name: "Open".into(),
         steps: vec![("file.open".into(), json!({"path": "/etc/passwd"})), ("layer.new.layer".into(), json!({}))],
+        disabled: Default::default(),
     });
     let (c, server) = connect_headless(headless).await;
     let played = run(&c, "actions.play", json!({"action": "Open"})).await;
@@ -339,6 +340,105 @@ async fn agent_play_refuses_a_recorded_file_open() {
     assert!(played["failed"]["error"].as_str().unwrap_or("").contains("disabled"), "{played}");
     let session = tool(&c, "session_list", json!({})).await;
     assert!(session["documents"].as_array().is_some_and(|d| d.is_empty()), "{session}");
+    shutdown(c, server).await;
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// The next ten acceptance tasks (11–20): strokes, inverse fills, duplication, merges,
+/// flattening, adjustments, feathering, expand, renaming/deleting and an export/reopen round
+/// trip — all through MCP tools and checked from outside the engine.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_completes_ten_more_scripted_tasks() {
+    let dir = tmp("tasks2");
+    let (c, server) = connect(&dir).await;
+
+    // 11. Stroke a selection: a red square with a black outside stroke.
+    tool(&c, "doc_new", json!({"width": 80, "height": 80, "background": "white"})).await;
+    run(&c, "select.rect", json!({"x": 20, "y": 20, "width": 40, "height": 40})).await;
+    run(&c, "edit.fill", json!({"color": "#ff0000"})).await;
+    run(&c, "edit.stroke", json!({"width": 4, "color": "#000000", "location": "outside"})).await;
+    let inside = pixel(&c, 40, 40).await;
+    let edge = pixel(&c, 18, 40).await;
+    let away = pixel(&c, 5, 5).await;
+    assert!(inside[0] > 0.99 && inside[1] < 0.01, "task 11: the centre is red {inside:?}");
+    assert!(edge[0] < 0.1 && edge[1] < 0.1, "task 11: the stroke is black {edge:?}");
+    assert!(away[0] > 0.99 && away[1] > 0.99, "task 11: outside stays white {away:?}");
+    run(&c, "select.deselect", json!({})).await;
+
+    // 12. Inverse the selection: a blue frame around the red square.
+    run(&c, "select.rect", json!({"x": 20, "y": 20, "width": 40, "height": 40})).await;
+    run(&c, "select.inverse", json!({})).await;
+    run(&c, "edit.fill", json!({"color": "#0000ff"})).await;
+    let centre = pixel(&c, 40, 40).await;
+    let frame = pixel(&c, 4, 4).await;
+    assert!(centre[0] > 0.99 && centre[2] < 0.01, "task 12: the centre keeps red {centre:?}");
+    assert!(frame[2] > 0.99 && frame[0] < 0.01, "task 12: the frame is blue {frame:?}");
+    run(&c, "select.deselect", json!({})).await;
+
+    // 13. Paint a green patch on a new layer and duplicate it (offset, as Photoshop's default).
+    run(&c, "layer.new.layer", json!({"name": "Patch"})).await;
+    run(&c, "select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).await;
+    run(&c, "edit.fill", json!({"color": "#00ff00"})).await;
+    run(&c, "select.deselect", json!({})).await;
+    run(&c, "layer.duplicate", json!({})).await;
+    let doc = inspect(&c).await;
+    assert_eq!(doc["layers"].as_array().unwrap().len(), 3, "task 13: {doc}");
+    let patches = doc["layers"].as_array().unwrap().iter().filter(|l| l["name"].as_str().is_some_and(|n| n.starts_with("Patch"))).count();
+    assert_eq!(patches, 2, "task 13: {doc}");
+
+    // 14. Merge the copy down; the two patches become one layer.
+    run(&c, "layer.mergeDown", json!({})).await;
+    assert_eq!(inspect(&c).await["layers"].as_array().unwrap().len(), 2, "task 14");
+
+    // 15. Flatten the image; the patch survives.
+    run(&c, "layer.flattenImage", json!({})).await;
+    let doc = inspect(&c).await;
+    assert_eq!(doc["layers"].as_array().unwrap().len(), 1, "task 15: {doc}");
+    let green = pixel(&c, 20, 20).await;
+    assert!(green[1] > 0.99 && green[0] < 0.01, "task 15: the patch survives {green:?}");
+
+    // 16. A Hue/Saturation adjustment layer turns the red square green without touching pixels.
+    run(&c, "layer.newAdjustmentLayer.hueSaturation", json!({"hue": 120})).await;
+    assert_eq!(top_layer(&inspect(&c).await)["kind"], "Adjustment", "task 16");
+    let shifted = pixel(&c, 40, 40).await;
+    assert!(shifted[1] > 0.5 && shifted[0] < 0.5, "task 16: red turns green {shifted:?}");
+    run(&c, "layer.delete", json!({})).await;
+
+    // 17. Feather the selection and reveal a mask through it: the edge blends.
+    run(&c, "select.rect", json!({"x": 20, "y": 20, "width": 40, "height": 40})).await;
+    run(&c, "select.modify.feather", json!({"radius": 4})).await;
+    run(&c, "layer.layerMask.revealSelection", json!({})).await;
+    let doc = inspect(&c).await;
+    assert_eq!(top_layer(&doc)["hasMask"], true, "task 17");
+    let boundary = pixel(&c, 20, 40).await;
+    assert!(boundary[3] > 0.05 && boundary[3] < 0.95, "task 17: the feathered edge keeps partial alpha {boundary:?}");
+    run(&c, "select.deselect", json!({})).await;
+
+    // 18. Expand a selection and read its bounds back.
+    run(&c, "select.rect", json!({"x": 20, "y": 20, "width": 20, "height": 20})).await;
+    run(&c, "select.modify.expand", json!({"radius": 5})).await;
+    let bounds = inspect(&c).await["selectionBounds"].clone();
+    let b = bounds.as_array().unwrap_or_else(|| panic!("task 18: {bounds}"));
+    let (x, w) = (b[0].as_i64().unwrap(), b[2].as_i64().unwrap());
+    assert!((13..=15).contains(&x) && (30..=32).contains(&w), "task 18: expanded outward {bounds}");
+    run(&c, "select.deselect", json!({})).await;
+
+    // 19. Rename a layer and delete it again.
+    run(&c, "layer.new.layer", json!({"name": "Scratch"})).await;
+    run(&c, "layer.renameLayer", json!({"name": "Delivery"})).await;
+    assert_eq!(top_layer(&inspect(&c).await)["name"], "Delivery", "task 19");
+    run(&c, "layer.delete", json!({})).await;
+    assert_eq!(inspect(&c).await["layers"].as_array().unwrap().len(), 1, "task 19: deleted");
+
+    // 20. Export the final image and reopen the PNG as a flat document.
+    tool(&c, "doc_export", json!({"path": "final.png"})).await;
+    tool(&c, "doc_close", json!({})).await;
+    tool(&c, "doc_open", json!({"path": "final.png"})).await;
+    let doc = inspect(&c).await;
+    assert_eq!((doc["width"].as_u64(), doc["height"].as_u64()), (Some(80), Some(80)), "task 20");
+    assert_eq!(doc["layers"].as_array().unwrap().len(), 1, "task 20: a flat reopen");
+    tool(&c, "doc_close", json!({})).await;
+
     shutdown(c, server).await;
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -6,8 +6,16 @@
 
 var __ecGlobal = this;
 
+// The scripting host keeps wrappers stable for each project item and comp/layer id.
+// Clear them when loading a different document, whose IDs may be reused.
+var __itemCache = Object.create(null), __layerCache = Object.create(null);
+function __clearIdentityCache() {
+  __itemCache = Object.create(null);
+  __layerCache = Object.create(null);
+}
 function __call(id, p) {
   var r = __exec(id, JSON.stringify(p || {}));
+  if (id === "file.newProject" || id === "file.open" || id === "file.revert") __clearIdentityCache();
   return r === undefined || r === "" ? null : JSON.parse(r);
 }
 function __get(kind, a) {
@@ -25,6 +33,25 @@ function __str(v) {
   if (v === undefined || v === null) return "";
   if (v instanceof File || v instanceof Folder) return v.fsName;
   return String(v);
+}
+
+// ExtendScript includes the ES3 String.substr(start, length) method, which Boa
+// does not currently provide. Follow its legacy length (not end-index) semantics.
+if (typeof String.prototype.substr !== "function") {
+  Object.defineProperty(String.prototype, "substr", {
+    value: function (start, length) {
+      if (this === null || this === undefined) throw new TypeError("String.substr called on null or undefined");
+      var text = String(this), n = text.length;
+      var from = Number(start);
+      if (isNaN(from)) from = 0;
+      // ToIntegerOrInfinity, then clamp positive or negative offsets.
+      from = from < 0 ? Math.max(n + Math.ceil(from), 0) : Math.min(Math.floor(from), n);
+      var count = length === undefined ? n - from : Number(length);
+      if (isNaN(count) || count <= 0) return "";
+      return text.slice(from, from + count);
+    },
+    writable: true, configurable: true
+  });
 }
 
 // ------------------------------------------------------------------ enums
@@ -67,6 +94,9 @@ var MaskMode = __enum("MaskMode", ["NONE", "ADD", "SUBTRACT", "INTERSECT", "LIGH
 var RQItemStatus = __enum("RQItemStatus", ["WILL_CONTINUE", "NEEDS_OUTPUT", "UNQUEUED", "QUEUED", "RENDERING", "USER_STOPPED", "ERR_STOPPED", "DONE"], 3012);
 var CloseOptions = __enum("CloseOptions", ["DO_NOT_SAVE_CHANGES", "PROMPT_TO_SAVE_CHANGES", "SAVE_CHANGES"], 1212);
 var ImportAsType = __enum("ImportAsType", ["COMP_CROPPED_LAYERS", "FOOTAGE", "COMP", "PROJECT"], 3812);
+// Accept the longer names used by some ExtendScript hosts.
+ImportAsType.COMPOSITION_CROPPED_LAYERS = ImportAsType.COMP_CROPPED_LAYERS;
+ImportAsType.COMPOSITION = ImportAsType.COMP;
 var TimeDisplayType = __enum("TimeDisplayType", ["FRAMES", "TIMECODE"], 2012);
 var LogType = __enum("LogType", ["ERRORS_ONLY", "ERRORS_AND_SETTINGS", "ERRORS_AND_PER_FRAME_INFO"], 3212);
 var KeyframeLabel = __enum("KeyframeLabel", ["NONE"], 0);
@@ -111,8 +141,49 @@ var $ = {
   get os() { return "EffectCraft"; },
   get version() { return "EffectCraft scripting"; },
   get locale() { return "en_US"; },
-  evalFile: function () { throw __err("$.evalFile is not supported: scripts can't run scripts"); },
+  // Evaluates the file in the global scope and returns its last value (`timeout` is ignored).
+  evalFile: function (file, timeout) { return __evalFile(__str(file)); },
 };
+
+// ------------------------------------------------------------------ BridgeTalk
+
+// Which application a script runs in, for scripts and frameworks that ask during initialisation.
+// EffectCraft names itself rather than posing as another application; messages to other
+// applications aren't supported.
+function BridgeTalk() {
+  if (!(this instanceof BridgeTalk)) return new BridgeTalk();
+  this.target = "";
+  this.sender = BridgeTalk.appSpecifier;
+  this.body = "";
+  this.type = "ExtendScript";
+  this.headers = {};
+  this.timeout = 0;
+  this.onResult = null;
+  this.onError = null;
+  this.onReceived = null;
+  this.onTimeout = null;
+}
+BridgeTalk.prototype.send = function () {
+  throw __err("BridgeTalk: sending messages to other applications is not supported in EffectCraft");
+};
+BridgeTalk.prototype.sendResult = BridgeTalk.prototype.send;
+BridgeTalk.prototype.toString = function () { return "[object BridgeTalk]"; };
+BridgeTalk.appName = "effectcraft";
+Object.defineProperty(BridgeTalk, "appVersion", { get: function () { return __get("app").buildName; } });
+Object.defineProperty(BridgeTalk, "appSpecifier", { get: function () { return "effectcraft-" + BridgeTalk.appVersion; } });
+BridgeTalk.appLocale = "en_US";
+BridgeTalk.appInstance = "";
+BridgeTalk.appStatus = "idle";
+BridgeTalk.onReceive = null;
+BridgeTalk.__isSelf = function (spec) { return String(spec === undefined || spec === null ? "" : spec).split("-")[0].toLowerCase() === "effectcraft"; };
+BridgeTalk.isRunning = function (spec) { return BridgeTalk.__isSelf(spec); };
+BridgeTalk.launch = function (spec) { return BridgeTalk.__isSelf(spec); };
+BridgeTalk.getSpecifier = function (name) { return BridgeTalk.__isSelf(name) ? BridgeTalk.appSpecifier : null; };
+BridgeTalk.getDisplayName = function (spec) { return BridgeTalk.__isSelf(spec) ? "EffectCraft" : null; };
+BridgeTalk.getTargets = function () { return [BridgeTalk.appName]; };
+BridgeTalk.getStatus = function (spec) { return spec === undefined || BridgeTalk.__isSelf(spec) ? "IDLE" : "ISNOTINSTALLED"; };
+BridgeTalk.bringToFront = function () {};
+BridgeTalk.pump = function () { return false; };
 
 // ------------------------------------------------------------------ File / Folder
 
@@ -138,7 +209,7 @@ File.prototype = {
   get path() { var p = this.__path.split(/[\/\\]/); p.pop(); return p.join("/"); },
   get parent() { return new Folder(this.path); },
   get exists() { return JSON.parse(__file("exists", this.__path)) === true; },
-  get length() { return this.__buf !== null ? this.__buf.length : (this.exists ? JSON.parse(__file("read", this.__path)).length : 0); },
+  get length() { return this.__buf !== null ? this.__buf.length : (this.exists ? JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path)).length : 0); },
   get eof() { return this.__buf === null || this.__pos >= this.__buf.length; },
   toString: function () { return this.__path; },
   open: function (mode) {
@@ -152,9 +223,9 @@ File.prototype = {
         this.__buf = "";
         return true;
       }
-      this.__buf = JSON.parse(__file("read", this.__path));
+      this.__buf = JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path));
     } else if (mode === "a") {
-      this.__buf = this.exists ? JSON.parse(__file("read", this.__path)) : "";
+      this.__buf = this.exists ? JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path)) : "";
       this.__pos = this.__buf.length;
     } else {
       // Check the gate now, like After Effects refusing to open a file for writing.
@@ -191,18 +262,14 @@ File.prototype = {
   tell: function () { return this.__pos; },
   close: function () {
     if ((this.__mode === "w" || this.__mode === "a" || this.__mode === "e") && this.__buf !== null) {
-      __file("write", this.__path, this.__buf);
+      __file(this.encoding.toUpperCase() === "BINARY" ? "writeBinary" : "write", this.__path, this.__buf);
     }
     this.__buf = null;
     this.__mode = null;
     return true;
   },
   remove: function () { return JSON.parse(__file("remove", this.__path)); },
-  copy: function (to) {
-    var data = JSON.parse(__file("read", this.__path));
-    __file("write", __str(to), data);
-    return true;
-  },
+  copy: function (to) { return JSON.parse(__file("copy", this.__path, __str(to))); },
   rename: function () { throw __err("File.rename is not supported"); },
   execute: function () { return JSON.parse(__file("execute", this.__path)); },
   openDlg: function () { return null; },
@@ -339,6 +406,25 @@ var __attr = {
     return c === null ? undefined : c;
   },
 };
+
+// Layers, property groups and properties are callable, like After Effects: `layer("Effects")`,
+// `fx(1)` and `effect("Slider Control")("Slider")` are `.property(...)`. A Proxy is callable
+// only around a function, so the object's state moves onto an arrow function (no `prototype`;
+// its own `name` and `length` are removed so the object's getters show) with the object's
+// prototype; `instanceof` and attribute access are unchanged.
+function __callable(o) {
+  var f = () => undefined;
+  delete f.name;
+  delete f.length;
+  Object.setPrototypeOf(f, Object.getPrototypeOf(o));
+  var keys = Object.keys(o);
+  for (var i = 0; i < keys.length; i++) f[keys[i]] = o[keys[i]];
+  var self = new Proxy(f, {
+    get: __attr.get,
+    apply: function (t, thisArg, args) { return self.property(args[0]); },
+  });
+  return self;
+}
 
 // 1-based collections with `[n]` access.
 var __coll = {
@@ -604,7 +690,7 @@ function PropertyGroup(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "PropertyGroup";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 PropertyGroup.prototype = Object.create(PropertyBase.prototype);
 PropertyGroup.prototype.constructor = PropertyGroup;
@@ -647,7 +733,7 @@ function MaskPropertyGroup(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "MaskPropertyGroup";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 MaskPropertyGroup.prototype = Object.create(PropertyGroup.prototype);
 MaskPropertyGroup.prototype.constructor = MaskPropertyGroup;
@@ -679,7 +765,7 @@ function Property(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "Property";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 Property.prototype = Object.create(PropertyBase.prototype);
 Property.prototype.constructor = Property;
@@ -843,6 +929,19 @@ Property.prototype.property = function () { return null; };
     return __call(id, params);
   };
   P.removeKey = function (i) { this.__keyCmd(i, "keys.delete"); };
+  // EffectCraft extension: remove an inclusive range with one engine edit instead of
+  // cloning the project for every removed key. Indices are one-based as in removeKey.
+  P.removeKeys = function (first, last) {
+    var keys = this.__keys();
+    first = __num(first, "first key");
+    last = __num(last, "last key");
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first || last > keys.length)
+      throw __err("removeKeys: key range is out of bounds");
+    var targets = [];
+    for (var i = first; i <= last; i++)
+      targets.push({ layer: this.__layer.__id, prop: this.__uid, index: i - 1 });
+    return __call("keys.delete", { comp: this.__layer.__comp, __keys: targets });
+  };
   P.keyInInterpolationType = function (i) { return KeyframeInterpolationType[this.__key(i).inInterp]; };
   P.keyOutInterpolationType = function (i) { return KeyframeInterpolationType[this.__key(i).outInterp]; };
   // Values that don't interpolate (checkboxes, popups, text) only hold.
@@ -949,7 +1048,7 @@ MarkerProperty.prototype = {
     t = __num(t, "time");
     if (!(mv instanceof MarkerValue)) throw __err("value must be a MarkerValue");
     var p = this.__p({ time: t, duration: mv.duration || 0, comment: mv.comment, chapter: mv.chapter, url: mv.url, frameTarget: mv.frameTarget, protected: !!mv.protectedRegion, label: mv.label || 0 });
-    p.cuePoint = mv.cuePointName ? { name: mv.cuePointName, navigation: !mv.eventCuePoint, params: mv.__params } : null;
+    p.cuePoint = (mv.cuePointName || mv.__params.length) ? { name: mv.cuePointName, navigation: !mv.eventCuePoint, params: mv.__params } : null;
     var l = this.__list(), at = -1;
     for (var i = 0; i < l.length; i++) if (Math.abs(l[i].time - t) < 1e-6) at = i;
     if (at >= 0) p.index = at;
@@ -965,14 +1064,18 @@ MarkerProperty.prototype = {
 
 function __layer(compId, id) {
   if (id === null || id === undefined) return null;
-  var i = __get("layer", { comp: compId, layer: id });
+  var key = compId + ":" + id;
+  if (Object.prototype.hasOwnProperty.call(__layerCache, key)) return __layerCache[key];
+  var i = __get("layer", { comp: compId, layer: id }), layer;
   switch (i.kind) {
-    case "text": return new TextLayer(compId, id);
-    case "shape": return new ShapeLayer(compId, id);
-    case "camera": return new CameraLayer(compId, id);
-    case "light": return new LightLayer(compId, id);
-    default: return new AVLayer(compId, id);
+    case "text": layer = new TextLayer(compId, id); break;
+    case "shape": layer = new ShapeLayer(compId, id); break;
+    case "camera": layer = new CameraLayer(compId, id); break;
+    case "light": layer = new LightLayer(compId, id); break;
+    default: layer = new AVLayer(compId, id);
   }
+  __layerCache[key] = layer;
+  return layer;
 }
 
 function Layer() {}
@@ -981,7 +1084,7 @@ Layer.prototype = {
     this.__comp = comp;
     this.__id = id;
     this.__kind = kind;
-    return new Proxy(this, __attr);
+    return __callable(this);
   },
   __info: function () { return __get("layer", { comp: this.__comp, layer: this.__id }); },
   __p: function (o) {
@@ -1008,7 +1111,7 @@ Layer.prototype = {
   set name(v) { __call("layer.rename", this.__p1({ name: String(v) })); },
   get index() { return this.__info().index; },
   get matchName() { return this.__info().matchName; },
-  get containingComp() { return new CompItem(this.__comp); },
+  get containingComp() { return __item(this.__comp); },
   get propertyDepth() { return 0; },
   get propertyType() { return PropertyType.INDEXED_GROUP; },
   get parentProperty() { return null; },
@@ -1050,6 +1153,7 @@ Layer.prototype = {
     __call("edit.label", this.__p({ label: n }));
   },
   get comment() { return this.__info().comment; },
+  set comment(v) { __call("layer.setComment", this.__p({ comment: String(v) })); },
   get selected() { return this.__info().selected; },
   set selected(v) {
     var sel = this.containingComp.__info().selectedLayers;
@@ -1117,6 +1221,11 @@ AVLayer.prototype.constructor = AVLayer;
   var P = AVLayer.prototype;
   function def(name, get, set) { Object.defineProperty(P, name, { get: get, set: set }); }
   def("source", function () { return __item(this.__info().source); });
+  // After Effects exposes the most common Transform properties directly on AVLayer.
+  // Return the original Property object, not its current value: scripts can keyframe it.
+  ["anchorPoint", "position", "scale", "rotation", "opacity"].forEach(function (name) {
+    def(name, function () { return this.transform[name]; });
+  });
   def("width", function () { return this.__info().width; });
   def("height", function () { return this.__info().height; });
   def("threeDLayer", function () { return this.__info().threeDLayer; }, function (v) { this.__switch("threeD", v); });
@@ -1273,7 +1382,7 @@ LayerCollection.prototype = {
     var ids = this.__ids(), sel = [];
     for (var i = 0; i < indices.length; i++) sel.push(ids[indices[i] - 1]);
     var r = __call("layer.precompose", { comp: this.__comp, layers: sel, name: String(name), mode: moveAllAttributes === false ? "leave" : "move" });
-    return new CompItem(r.comp);
+    return __item(r.comp);
   },
   byName: function (name) {
     var ids = this.__ids();
@@ -1321,13 +1430,20 @@ ItemCollection.prototype = {
 
 function __item(id) {
   if (id === null || id === undefined) return null;
-  if (id === 0) return new FolderItem(0);
-  var i = __get("item", { id: id });
-  switch (i.kind) {
-    case "comp": return new CompItem(id);
-    case "folder": return new FolderItem(id);
-    default: return new FootageItem(id);
+  if (Object.prototype.hasOwnProperty.call(__itemCache, id)) return __itemCache[id];
+  var item;
+  if (id === 0) {
+    item = new FolderItem(0);
+  } else {
+    var i = __get("item", { id: id });
+    switch (i.kind) {
+      case "comp": item = new CompItem(id); break;
+      case "folder": item = new FolderItem(id); break;
+      default: item = new FootageItem(id);
+    }
   }
+  __itemCache[id] = item;
+  return item;
 }
 
 function Item() {}
@@ -1357,7 +1473,7 @@ Item.prototype = {
       __call("project.select", { items: selection.filter(function (item) { return item !== id; }) });
     }
   },
-  get usedIn() { return this.__info().usedIn.map(function (c) { return new CompItem(c); }); },
+  get usedIn() { return this.__info().usedIn.map(function (c) { return __item(c); }); },
   remove: function () { __call("project.delete", { items: [this.__id] }); },
 };
 
@@ -1584,7 +1700,7 @@ RenderQueueItem.prototype = {
     for (var i = 0; i < l.length; i++) if (l[i].id === this.__id) return l[i];
     throw __err("the render queue item no longer exists");
   },
-  get comp() { return new CompItem(this.__info().comp); },
+  get comp() { return __item(this.__info().comp); },
   get status() {
     var s = this.__info().statusLabel;
     for (var k in __rqStatus) if (s.indexOf(k) === 0) return __rqStatus[k];
@@ -1674,7 +1790,11 @@ function ImportOptions(file) {
   this.rangeStart = 0;
   this.rangeEnd = 0;
 }
-ImportOptions.prototype.canImportAs = function (t) { return t === ImportAsType.FOOTAGE; };
+ImportOptions.prototype.canImportAs = function (t) {
+  if (t === ImportAsType.FOOTAGE) return true;
+  return (t === ImportAsType.COMP || t === ImportAsType.COMP_CROPPED_LAYERS) &&
+    /\.(psd|psb|pdf|ai|eps)$/i.test(__str(this.file));
+};
 
 function Project() {}
 Project.prototype = {
@@ -1682,7 +1802,7 @@ Project.prototype = {
   __info: function () { return __get("project"); },
   get items() { return new ItemCollection(0); },
   get numItems() { return this.__info().items.length; },
-  get rootFolder() { return new FolderItem(0); },
+  get rootFolder() { return __item(0); },
   get activeItem() { return __item(this.__info().active); },
   get selection() { return this.__info().selection.map(__item); },
   get file() { var p = this.__info().path; return p ? new File(p) : null; },
@@ -1728,10 +1848,19 @@ Project.prototype = {
     if (!f) throw __err("importFile(): no file");
     var args = { paths: [__str(f)] };
     // After Effects imports just the picked file unless ImportOptions.sequence is set.
-    if (opts instanceof ImportOptions) args.sequence = !!opts.sequence;
+    if (opts instanceof ImportOptions) {
+      args.sequence = !!opts.sequence;
+      switch (opts.importAs) {
+        case ImportAsType.FOOTAGE: args.importAs = "footage"; break;
+        case ImportAsType.COMP: args.importAs = "composition"; break;
+        case ImportAsType.COMP_CROPPED_LAYERS: args.importAs = "compositionLayerSizes"; break;
+        default: throw __err("importFile(): unsupported ImportOptions.importAs value " + opts.importAs);
+      }
+    }
     var r = __call("file.import", args);
     if (r.errors && r.errors.length) throw __err(r.errors.join("; "));
-    return __item(r.items[0]);
+    // Composition imports create several footage items, but callers need the comp.
+    return __item(r.comps && r.comps.length ? r.comps[0] : r.items[0]);
   },
   importFileWithDialog: function () { return null; },
   importPlaceholder: function (name, w, h, rate, dur) {
@@ -1798,13 +1927,18 @@ var app = {
   beginSuppressDialogs: function () {},
   endSuppressDialogs: function () {},
   purge: function () { __call("edit.purge", { what: "all" }); },
-  findMenuCommandId: function (name) { return __get("menuCommandId", { name: String(name) }); },
+  findMenuCommandId: function (name) {
+    // Well-known After Effects ids must not shift when EffectCraft registers a command.
+    if (String(name) === "Undo") return 16;
+    return __get("menuCommandId", { name: String(name) });
+  },
   executeCommand: function (id) {
+    if (id === 16) return __call("edit.undo", {});
     var cmd = typeof id === "number" ? __get("commandAt", { index: id }) : String(id);
     if (!cmd) throw __err("Unknown command id " + id);
     return __call(cmd, {});
   },
-  scheduleTask: function (code, delay, repeat) { return __task("schedule", String(code), !!repeat); },
+  scheduleTask: function (code, delay, repeat) { return __task("schedule", String(code), Number(delay), !!repeat); },
   cancelTask: function (id) { __task("cancel", id); },
   setMemoryUsageLimits: function () {},
   setMultiFrameRenderingConfig: function () {},

@@ -1120,6 +1120,23 @@
 	Graph	Grafico
 	Graph Data	Dati grafico
 	Graph Type	Tipo di grafico
+	Graph Design	Design del grafico
+	Graph Marker	Indicatore del grafico
+	New Design	Nuovo design
+	Delete Design	Elimina design
+	Paste Design	Incolla design
+	Select Unused	Seleziona non utilizzati
+	Import Data…	Importa dati…
+	Transpose	Trasponi
+	Switch x/y	Scambia x/y
+	Number of Decimals:	Numero di decimali:
+	Column Width:	Larghezza colonna:
+	No Legend	Nessuna legenda
+	Standard Legend	Legenda standard
+	Legends in Wedges	Legende negli spicchi
+	Ratio	Proporzione
+	Even	Uguale
+	Stacked	In pila
 	Graphic Style	Stile grafico
 	Graphic Style Libraries	Librerie stili grafici
 	Graphic Style Libraries Menu	Menu Librerie stili grafici
@@ -1341,6 +1358,7 @@
 	Last Effect…	Ultimo effetto…
 	Last Page	Ultima pagina
 	Latin	Latino
+	Thai	Thailandese
 	Latin Extended	Latino esteso
 	Latin-1 Supplement	Supplemento Latino-1
 	Layer	Livello
@@ -1563,6 +1581,7 @@
 	Move Rows	Sposta righe
 	Move Slices	Sposta sezioni
 	Move Spine Point	Sposta punto dorsale
+	Reshape Spine Segment	Rimodella segmento della dorsale
 	Move Swatch	Sposta campione
 	Move Up	Sposta su
 	Move…	Sposta…
@@ -2051,6 +2070,11 @@
 	Proof Colors	Colori di prova
 	Proof Setup	Impostazione prova
 	Properties	Proprietà
+	Proportional Metrics	Metrica proporzionale
+	Digits	Cifre
+	Arabic	Arabe
+	Hindi	Hindi
+	Farsi	Farsi
 	Proportional Oldstyle	Proporzionali stile antico
 	Pucker & Bloat…	Contrai e gonfia…
 	Pucker Tool	Strumento Contrai
@@ -2141,6 +2165,9 @@
 	Rectangle: Sunshine	Rettangolo: Sole
 	Rectangle…	Rettangolo…
 	Rectangular Grid	Griglia rettangolare
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	Divisori orizzontali:
+	Vertical Dividers:	Divisori verticali:
 	Rectangular Grid Tool	Strumento Griglia rettangolare
 	Red	Rosso
 	Redefine Character Style	Ridefinisci stile carattere
@@ -2150,6 +2177,9 @@
 	Redefine Symbol	Ridefinisci simbolo
 	Redefine {kind} Style	Ridefinisci stile {kind}
 	Redo	Ripeti
+	List Folder	Elenca cartella
+	Begin Undo Group	Inizia gruppo di annullamento
+	End Undo Group	Termina gruppo di annullamento
 	Redo {name}	Ripeti {name}
 	Redo {}	Ripeti {}
 	Reduce Colors	Riduci colori
@@ -2202,6 +2232,13 @@
 	Relinked {n} image(s); not in that folder: {}	Immagini ricollegate: {n}; non presenti in quella cartella: {}
 	Relinked {} image(s)	Immagini ricollegate: {}
 	Relink…	Ricollega…
+	Find Linked Files	Trova file collegati
+	Find Linked Files in Folder…	Trova file collegati in una cartella…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	Scegli il file a cui ricollegare ogni file collegato. I file con le dimensioni e il contenuto salvati con il collegamento compaiono per primi.
+	Same file	Stesso file
+	Same size	Stesse dimensioni
+	Don't Relink	Non ricollegare
+	Copy into the document's folder	Copia nella cartella del documento
 	Reload Plug-ins	Ricarica plug-in
 	Remove	Rimuovi
 	Remove Anchor Points	Rimuovi punti di ancoraggio
@@ -2470,6 +2507,7 @@
 	Select an image to see its Link Info.	Seleziona un'immagine per vederne le informazioni sul collegamento.
 	Select an image to trace	Seleziona un'immagine da ricalcare
 	Select Anchors	Seleziona punti di ancoraggio
+	Select Segments	Seleziona segmenti
 	Select Appearance Item	Seleziona elemento aspetto
 	Select Art	Seleziona grafica
 	Select art and choose Object › Pattern › Make.	Seleziona la grafica e scegli Oggetto › Motivo › Crea.
@@ -2515,7 +2553,6 @@
 	Set base color to the current color	Imposta il colore corrente come colore di base
 	Set Bounds	Imposta limiti
 	Set Current Layer	Imposta livello corrente
-	Set Key Object	Imposta oggetto chiave
 	Set Keyboard Shortcut	Imposta scelta rapida da tastiera
 	Set Mesh Point Color	Imposta colore punto trama
 	Set Preference	Imposta preferenza
@@ -2633,6 +2670,7 @@
 	Size Tile to Art	Adatta tassello alla grafica
 	Size/Leading	Dimensione/interlinea
 	Size:	Dimensione:
+	Ridges per segment:	Creste per segmento:
 	Size: {size}  Tracking: {tracking}	Dimensione: {size}  Spaziatura caratteri: {tracking}
 	Skew	Inclinazione
 	Skin Tone Ramps	Scale di tonalità della pelle
@@ -2902,6 +2940,9 @@
 	Tool Options…	Opzioni strumento…
 	Toolbar: Advanced / Basic	Barra degli strumenti: avanzata / di base
 	Toolbar: Single/Double Column	Barra degli strumenti: colonna singola/doppia
+	Toolbar: Add Tool	Barra degli strumenti: aggiungi strumento
+	Toolbar: Remove Tool	Barra degli strumenti: rimuovi strumento
+	Toolbar: Reset	Barra degli strumenti: ripristina
 	Toolbars	Barre degli strumenti
 	Tools	Strumenti
 	Top	In alto
@@ -3104,6 +3145,7 @@
 	Vertical %	% verticale
 	Vertical Align Bottom	Allinea verticalmente in basso
 	Vertical Align Center	Allinea verticalmente al centro
+	Horizontal & Vertical Align Center	Allinea centri orizzontalmente e verticalmente
 	Vertical Align Top	Allinea verticalmente in alto
 	Vertical Area Type Tool	Strumento Testo in area verticale
 	Vertical Distribute Bottom	Distribuisci verticalmente i bordi inferiori
@@ -3317,6 +3359,7 @@ axis	Horizontal	Orizzontale
 axis	Vertical	Verticale
 axis	Both	Entrambi
 	Drag to move	Trascina per spostare
+	Drag to move out of the set	Trascina per spostare fuori dall’insieme
 	Drag to float as a toolbar	Trascina per rendere mobile come barra degli strumenti
 	Put back in the toolbar	Riporta nella barra degli strumenti
 	Float Panel	Rendi mobile pannello
@@ -3420,6 +3463,7 @@ axis	Both	Entrambi
 @msg	`color` must be a colour	`color` deve essere un colore
 @msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` deve essere un comando la cui voce di menu apre una finestra di dialogo (vedi ui.menuDialog)
 @msg	`freeform.points` must be an array	`freeform.points` deve essere un array
+@msg	`freeform.lines` must be an array	`freeform.lines` deve essere un array
 @msg	`gradient` must be an object	`gradient` deve essere un oggetto
 @msg	`library` is a library id or name (see {list})	`library` è l'id o il nome di una libreria (vedi {list})
 @msg	`mode` applies to freeform gradients	`mode` si applica alle sfumature a forma libera
@@ -3482,6 +3526,7 @@ axis	Both	Entrambi
 @msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art o type
 @msg	artboard {0} does not exist	la tavola da disegno {0} non esiste
 @msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	a questa scala il disegno misura {w} × {h} pt, più di quanto possa contenere l'area di disegno: scegli una scala più piccola o adattalo alla tavola da disegno
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	axis deve essere "vertical", "horizontal" o un angolo in gradi, non `{v}`
 @msg	background {other}: transparent, white, black or a colour such as "#ff8800"	sfondo {other}: transparent, white, black o un colore come "#ff8800"
 @msg	bad color {v}	colore non valido {v}
 @msg	bad colour `{hex}` (#rrggbb)	colore non valido `{hex}` (#rrggbb)
@@ -3521,8 +3566,10 @@ axis	Both	Entrambi
 @msg	empty path	tracciato vuoto
 @msg	file version {0} is newer than this VectorCraft supports ({VERSION})	la versione del file {0} è più recente di quelle supportate da questo VectorCraft ({VERSION})
 @msg	freeform point {i} needs `at` [x, y] and a valid `color`	il punto a forma libera {i} richiede `at` [x, y] e un `color` valido
+@msg	freeform line {i} must be an array of point indices	la linea a forma libera {i} deve essere un array di indici di punti
 @msg	give both `start` and `end` [x, y] (or neither)	specifica sia `start` sia `end` [x, y] (o nessuno dei due)
-@msg	give corners of the path: anchors between two straight sides	specifica angoli del tracciato: punti di ancoraggio tra due lati diritti
+@msg	give corners of the path: anchors where its sides meet at an angle	specifica angoli del tracciato: punti di ancoraggio in cui i suoi lati si incontrano ad angolo
+@msg	give horizontal or vertical	specifica horizontal o vertical
 @msg	give the path `id` and the width point `index`	specifica l'`id` del tracciato e l'`index` del punto di larghezza
 @msg	guides are locked	le guide sono bloccate
 @msg	image '{key}' has no pixels and was left out	l'immagine '{key}' non ha pixel ed è stata omessa
@@ -3663,6 +3710,7 @@ axis	Both	Entrambi
 @msg	nothing to wrap	niente da avvolgere
 @msg	object {0} cannot have children	l'oggetto {0} non può avere elementi figli
 @msg	object {id} is not a path	l'oggetto {id} non è un tracciato
+@msg	object {id} is not a selected top-level object	l'oggetto {id} non è un oggetto selezionato di primo livello
 @msg	page size {w} × {h}	dimensioni pagina {w} × {h}
 @msg	page {0} does not exist (the PDF has {1})	la pagina {0} non esiste (il PDF ne ha {1})
 @msg	paste unavailable	impossibile incollare
@@ -3759,6 +3807,7 @@ axis	Both	Entrambi
 @msg	the image's pixels don't match its size	i pixel dell'immagine non corrispondono alle sue dimensioni
 @msg	the layer has no objects to clip by	il livello non ha oggetti con cui ritagliare
 @msg	the layer or group is locked	il livello o il gruppo è bloccato
+@msg	the guide is on a hidden or locked layer	la guida si trova su un livello nascosto o bloccato
 @msg	the target layer is locked or hidden	il livello di destinazione è bloccato o nascosto
 @msg	the layer to flatten into is hidden	il livello in cui appiattire è nascosto
 @msg	the object already has an opacity mask	l'oggetto ha già una maschera di opacità
@@ -3784,7 +3833,7 @@ axis	Both	Entrambi
 @msg	the {tool} tool has no options	lo strumento {tool} non ha opzioni
 @msg	there are no objects to release	non ci sono oggetti da rilasciare
 @msg	there are no printer settings to open here	non ci sono impostazioni della stampante da aprire qui
-@msg	this PostScript file can't be read ({_1}): save it as PDF or SVG in the app that made it	impossibile leggere questo file PostScript ({_1}): salvalo come PDF o SVG nell'app che lo ha creato
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	impossibile leggere questo file PostScript ({why}): salvalo come PDF o SVG nell'app che lo ha creato
 @msg	this file's PostScript couldn't be read ({why}): {what}	impossibile leggere il PostScript di questo file ({why}): {what}
 @msg	this format holds one artboard: export several as PDF or with document.exportForScreens	questo formato contiene una sola tavola da disegno: esportane più di una come PDF o con document.exportForScreens
 @msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	questo è un disegno DWG, che non può essere letto: salvalo dall'app CAD come DXF ASCII e apri quel file
@@ -3873,6 +3922,9 @@ axis	Both	Entrambi
 @msg	tool (a tool id) is required	tool (un id di strumento) è obbligatorio
 @msg	{tool} isn't in a toolbar group of several tools	{tool} non fa parte di un gruppo di più strumenti nella barra degli strumenti
 @msg	onto must name a panel floating in another group	onto deve indicare un pannello mobile in un altro gruppo
+@msg	below and above must name a panel floating in another group	below e above devono indicare un pannello mobile in un altro gruppo
+@msg	give only one of onto, below and above	indica solo uno tra onto, below e above
+@msg	column must be true or a number from 1	column deve essere true o un numero da 1
 @msg	x and y must both be numbers	x e y devono essere entrambi numeri
 @msg	"{0}" is not a colour: write it as #rrggbb	"{0}" non è un colore: scrivilo come #rrggbb
 @msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	questo non è un logo a colori piatti ({_1}% delle sue aree piene corrisponde a pochi colori piatti), quindi la modalità Logo piatto trasformerebbe i suoi sfumati in macchie: usa la modalità Colore
@@ -3911,6 +3963,9 @@ axis	Both	Entrambi
 @msg	larger than 256 MB	più grande di 256 MB
 @msg	the files come to more than 1 GB: add fewer at a time	i file superano 1 GB: aggiungine meno alla volta
 @msg	every numbered name for it is taken in the Fonts folder	tutti i nomi numerati per il file sono già usati nella cartella Fonts
+@msg	every numbered name for {name} is taken in the document's folder	tutti i nomi numerati per {name} sono già usati nella cartella del documento
+@msg	No linked files to look for	Nessun file collegato da cercare
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	Immagini ricollegate: {n}; impossibile ricollegare {name}: {reason}
 
 # The macOS menu bar (native_menu): the app and Window menus' system items, Settings pages.
 	Services	Servizi
@@ -3924,6 +3979,8 @@ axis	Both	Entrambi
 	Images: link to the file instead of only embedding it.	Immagini: collega il file invece di incorporarlo soltanto.
 	VectorCraft documents: one locked object, updated when the file changes.	Documenti VectorCraft: un unico oggetto bloccato, aggiornato quando il file cambia.
 	A file dialog is open: choose there first	È aperta una finestra di dialogo dei file: scegli prima lì
+	The document was closed while its file dialog was open	Il documento è stato chiuso mentre la sua finestra di dialogo dei file era aperta
+	The dialog was closed before its file dialog answered	La finestra di dialogo è stata chiusa prima che rispondesse la sua finestra di dialogo dei file
 	Shaper	Shaper
 	Expand Shaper Group	Espandi gruppo Shaper
 	Release Shaper Group	Rilascia gruppo Shaper
@@ -3933,6 +3990,7 @@ axis	Both	Entrambi
 	Perspective Distort	Distorsione prospettica
 @msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` è il riferimento al passaggio {r}, che solo `run` e `command_batch` risolvono
 @msg	`ids` must be an array of object ids, not {v}	`ids` deve essere un elenco di ID oggetto, non {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` deve essere un elenco di indici di punti di ancoraggio, non {v}
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: il risultato del passaggio {i} non ha questo valore (scrivi $$ per un $ letterale)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: non c’è un passaggio {i} prima di questo (i passaggi si contano da 0; scrivi $$ per un $ letterale)
 @msg	object ids are non-negative integers, not {v}	gli ID oggetto sono interi non negativi, non {v}
@@ -4040,6 +4098,31 @@ effect	Regular	Normale
 	Define a variable first	Definisci prima una variabile
 	Text	Testo
 	Visibility	Visibilità
+# Shared panel docking
+	Activate Panel	Attiva pannello
+	Change Panel Layout	Modifica disposizione dei pannelli
+	Close Panel	Chiudi pannello
+	Move Panel	Sposta pannello
+	Group with	Raggruppa con
+	Resize panels	Ridimensiona pannelli
+	Resize panel window	Ridimensiona finestra del pannello
+@msg	Invalid panel layout; restored the default dock	La disposizione dei pannelli non è valida; è stato ripristinato l’ancoraggio predefinito
+@msg	action is required	action è obbligatorio
+@msg	anchor must name a registered panel	anchor deve indicare un pannello registrato
+@msg	before must name a panel	before deve indicare un pannello
+@msg	docking action contains an unknown panel or an excessive split path	L’azione di ancoraggio contiene un pannello sconosciuto o un percorso di divisioni troppo lungo
+@msg	group must be true or false	group deve essere true o false
+@msg	move requires a destination panel	Lo spostamento richiede un pannello di destinazione
+@msg	move requires an existing destination panel	Lo spostamento richiede un pannello di destinazione esistente
+@msg	onto must name a floating panel	onto deve indicare un pannello mobile
+@msg	panel group is empty	Il gruppo di pannelli è vuoto
+@msg	panel must name a registered panel	panel deve indicare un pannello registrato
+@msg	saved panel layout is invalid; reset the workspace first	La disposizione salvata dei pannelli non è valida; reimposta prima l’area di lavoro
+@msg	zone must be a string	zone deve essere una stringa
+@msg	zone must be tab, center, left, right, top or bottom	zone deve essere tab, center, left, right, top o bottom
+@msg	{key} must be a finite coordinate	{key} deve essere una coordinata finita
+@msg	x and y must be provided together	x e y devono essere forniti insieme
+@msg	invalid restored panel group	Il gruppo di pannelli ripristinato non è valido
 
 # Revolve profile guidance.
 
@@ -4095,3 +4178,21 @@ lighting	Light	Luce
 	Stroke Pressure	Pressione pennellata
 	Right Diagonal	Diagonale destra
 	Left Diagonal	Diagonale sinistra
+	Vertical Guide	Guida verticale
+	Horizontal Guide	Guida orizzontale
+	Move Guide to Layer	Sposta guida nel livello
+@msg	invalid native panel set	Gruppo nativo di pannelli non valido
+@msg	missing panel layout	Disposizione dei pannelli mancante
+@msg	unsupported native docking operation	Operazione nativa di ancoraggio non supportata
+	Linux Display Server	Server di visualizzazione Linux
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	Origine dei righelli
+	Reset Ruler Origin	Ripristina origine dei righelli
+	Artistic	Artistico
+	Film Grain…	Grana della pellicola…
+	Highlight Area	Area luci
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	il file compresso, una volta decompresso, supera ciò che VectorCraft legge ({_1} MB di documento, {_2} MB per immagine)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	il documento è troppo grande per essere salvato compresso ({0}): salvalo con Usa compressione disattivato
+@msg	the file stopped being read (please report this bug)	la lettura del file si è interrotta (segnala questo errore)
+	Concentric Dividers:	Divisori concentrici:
+	Radial Dividers:	Divisori radiali:

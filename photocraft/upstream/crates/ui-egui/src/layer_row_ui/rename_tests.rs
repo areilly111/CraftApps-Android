@@ -1,6 +1,7 @@
 //! #314: renaming a layer in place works like Photoshop. A click anywhere else, Enter or Tab
 //! commits; Esc cancels; only one rename is open at a time, and starting another (double-click,
-//! the context menu or Layer › Rename Layer) commits the first.
+//! the context menu or Layer › Rename Layer) commits the first. Tab then renames the layer below,
+//! ⇧Tab the layer above.
 
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, pos2, vec2};
 use egui_kittest::Harness;
@@ -127,7 +128,8 @@ fn enter_and_tab_commit_and_escape_cancels() {
     start(&mut h, b);
     type_text(&mut h, "By Tab");
     key(&mut h, Key::Tab);
-    assert_eq!((name(&h, b), renaming(&h.ctx)), ("By Tab".into(), None));
+    assert_eq!((name(&h, b), renaming(&h.ctx)), ("By Tab".into(), Some(a)), "Tab commits and renames the layer below");
+    key(&mut h, Key::Escape);
 
     start(&mut h, c);
     type_text(&mut h, "Never");
@@ -141,6 +143,28 @@ fn enter_and_tab_commit_and_escape_cancels() {
     type_text(&mut h, "   ");
     key(&mut h, Key::Enter);
     assert_eq!(name(&h, c), "Gamma");
+}
+
+#[test]
+fn shift_tab_renames_the_layer_above_and_tab_at_the_bottom_ends() {
+    let (mut h, [a, b, c]) = harness(1.0);
+    start(&mut h, b);
+    type_text(&mut h, "Middle");
+    h.event(Event::ModifiersChanged(Modifiers::SHIFT));
+    h.event(Event::Key { key: Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::SHIFT });
+    h.event(Event::Key { key: Key::Tab, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::SHIFT });
+    h.run_steps(1);
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+    assert_eq!((name(&h, b), renaming(&h.ctx)), ("Middle".into(), Some(c)), "⇧Tab renames the layer above");
+    // Typing replaces the next layer's name too, as the whole name starts selected.
+    type_text(&mut h, "Top");
+    key(&mut h, Key::Enter);
+    assert_eq!((name(&h, c), renaming(&h.ctx)), ("Top".into(), None));
+    // Tab from the lowest layer ends the rename: the Background below isn't renamed in place.
+    start(&mut h, a);
+    key(&mut h, Key::Tab);
+    assert_eq!(renaming(&h.ctx), None);
 }
 
 #[test]

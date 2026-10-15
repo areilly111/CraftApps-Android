@@ -37,7 +37,7 @@ try {
   $CargoArgs = @('--locked') + $Patch + @('--target', $Target, '--no-default-features', '--features', 'vectorcraft/windows7')
   $Tree = cargo "+$Toolchain" tree @CargoArgs -p vectorcraft -e normal --prefix none
   if ($LASTEXITCODE -ne 0) { throw 'dependency inspection failed' }
-  if ($Tree -match '^(wgpu|wgpu-core|wgpu-hal|accesskit_windows) v') { throw 'unsupported Windows backend in compatibility build' }
+  if ($Tree -match '^(wgpu|wgpu-core|wgpu-hal|accesskit_windows|craft-print) v') { throw 'unsupported Windows backend in compatibility build' }
   if (-not ($Tree -match '^windows-link v[^ ]+ \(.*vendor[\\/]windows-link\)')) { throw 'the patched windows-link is not in use' }
   # The ordinary pc-windows-msvc standard library requires Windows 10. Rebuild std for win7.
   [Environment]::SetEnvironmentVariable($FlagName, '-C target-feature=+crt-static')

@@ -53,6 +53,7 @@ pub struct TextField<'a> {
     hint: Option<String>,
     width: Option<f32>,
     select_on_focus: bool,
+    begin_edit: bool,
     frame: bool,
     font: Option<egui::FontId>,
     color: Option<egui::Color32>,
@@ -66,6 +67,12 @@ pub fn id(widget: &str) -> egui::Id {
     egui::Id::new("lc-text-field").with(widget)
 }
 
+/// Whether the field had an unfinished edit on the immediately preceding egui pass.
+pub(crate) fn was_editing(ctx: &egui::Context, widget: &str) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<Memo>(id(widget).with("memo")).is_some_and(|memo| memo.before.is_some() && memo.pass.checked_add(1) == Some(pass)))
+}
+
 impl<'a> TextField<'a> {
     /// A one-line field (Return ends the edit) registered as `widget`.
     pub fn singleline(widget: &'a str, text: &'a mut String) -> Self {
@@ -76,6 +83,7 @@ impl<'a> TextField<'a> {
             hint: None,
             width: None,
             select_on_focus: false,
+            begin_edit: false,
             frame: true,
             font: None,
             color: None,
@@ -139,6 +147,12 @@ impl<'a> TextField<'a> {
         self
     }
 
+    /// Initialize a newly revealed value editor before its first input is processed.
+    pub(crate) fn begin_edit(mut self, on: bool) -> Self {
+        self.begin_edit = on;
+        self
+    }
+
     pub fn show(self, ui: &mut Ui) -> TextFieldResponse {
         let id = id(self.widget);
         let mut memo: Memo = ui.data_mut(|d| d.get_temp(id.with("memo"))).unwrap_or_default();
@@ -149,6 +163,12 @@ impl<'a> TextField<'a> {
             memo = Memo::default();
         }
         memo.pass = pass;
+        if self.begin_edit {
+            memo.before = Some(self.text.clone());
+            memo.select_on_release = false;
+            ui.memory_mut(|m| m.request_focus(id));
+            select_all(ui.ctx(), id, self.text);
+        }
         // a choice from the menu last frame: the field takes the focus back and does it, with
         // egui's own handling of the clipboard events (a password is never copied)
         if let Some(action) = memo.action.take() {
@@ -194,7 +214,9 @@ impl<'a> TextField<'a> {
         let right = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary) || i.pointer.button_released(egui::PointerButton::Secondary));
         let selection = egui::text_edit::TextEditState::load(ui.ctx(), id).and_then(|s| s.cursor.char_range());
         let mut response = ui.add(edit);
-        if right && response.contains_pointer() {
+        // The menu may take focus on a primary-button release. egui collapses a
+        // TextEdit selection when focus leaves; retain the range our own menu acts on.
+        if right && response.contains_pointer() || memo.menu_open && !ui.memory(|m| m.has_focus(id)) {
             let mut state = egui::text_edit::TextEditState::load(ui.ctx(), id).unwrap_or_default();
             state.cursor.set_char_range(selection);
             state.store(ui.ctx(), id);
@@ -203,6 +225,10 @@ impl<'a> TextField<'a> {
         // egui's own focus: `Response::has_focus` is also false while the window is in the
         // background (another app in front), which neither ends nor restarts an edit
         let focused = ui.memory(|m| m.has_focus(id));
+        // The opening press may place a cursor; keep the original selected, never replacement text.
+        if self.begin_edit && focused && !response.changed() {
+            select_all(ui.ctx(), id, self.text);
+        }
 
         // an edit not under way (none, or one cut short when the field went away) is forgotten
         let in_menu = memo.away || memo.menu_open || memo.action.is_some();
@@ -512,6 +538,20 @@ mod tests {
         rig.menu("selectAll");
         rig.type_text("Kyoto");
         assert_eq!(rig.text, "Kyoto");
+    }
+
+    #[test]
+    fn clicking_back_into_field_dismisses_its_menu_and_places_a_new_caret() {
+        let mut rig = Rig::new("Lisbon");
+        rig.select_all_by_keys();
+        rig.click(FIELD, PointerButton::Secondary);
+        let rect = rig.rect(FIELD).unwrap();
+        rig.click_at(egui::pos2(rect.left() + 2.0, rect.center().y), PointerButton::Primary);
+        let range = egui::text_edit::TextEditState::load(&rig.view.ctx, id(FIELD)).unwrap().cursor.char_range().unwrap();
+        assert!(range.is_empty(), "a click back in the field places a caret: {range:?}");
+        rig.type_text("X");
+        assert_eq!(rig.text, "XLisbon");
+        assert!(rig.endings.is_empty(), "dismissing into the field keeps the edit open");
     }
 
     /// With nothing selected, Cut and Copy are greyed out: clicking one does nothing, as in a native

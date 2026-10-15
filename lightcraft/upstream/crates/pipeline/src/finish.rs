@@ -275,12 +275,14 @@ impl FinishParams {
 /// #146) is a new [`Process`] with its own arm here, and V1's arm stays as it is, so photos edited
 /// under V1 keep their look (`docs/process-versions.md`). CPU and GPU both take it from here.
 /// `peak` is the HDR render's peak relative to SDR white ([`lightcraft_develop::Hdr::peak`]); at 1.0 (SDR)
-/// every arm is the SDR tone map. The camera's look is bounded at white, so HDR renders use the HDR tone map.
+/// every arm is the SDR tone map. An HDR render keeps the camera's look through the midtones and
+/// lifts its highlights past white ([`ToneMap::camera_hdr`]), so it matches the SDR render below them.
 pub fn base_tone(s: &DevelopSettings, info: &SourceInfo, peak: f32) -> ToneMap {
     let l = &s.light;
     match s.process.process() {
-        Process::V1 => match info.camera_tone.as_ref().filter(|_| info.raw && peak <= 1.0) {
-            Some(curve) => ToneMap::camera(curve, l.contrast, l.whites, l.blacks),
+        // V2 changes the Highlights/Shadows base (`local::tone_base`), not the tone map
+        Process::V1 | Process::V2 => match info.camera_tone.as_ref().filter(|_| info.raw) {
+            Some(curve) => ToneMap::camera_hdr(curve, l.contrast, l.whites, l.blacks, peak),
             None if info.raw => ToneMap::hdr(l.contrast, l.whites, l.blacks, peak),
             None => ToneMap::display_hdr(l.contrast, l.whites, l.blacks, peak),
         },
@@ -583,6 +585,13 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
             // soft proofing maps into the proof space first and shows that in the output space
             let mut warn = None;
             let mut r = match &fp.proof {
+                Some(pp) if pp.table.is_some() => {
+                    let (q, dist) = pp.table.as_ref().map_or((d, 0.0), |t| t.sample(d));
+                    if pp.dest_warning && dist > crate::output::PROOF_GAMUT_TOLERANCE {
+                        warn = Some(crate::output::PROOF_DEST_WARNING);
+                    }
+                    mul3(to_out, q)
+                }
                 Some(pp) => {
                     let q0 = mul3(&pp.to_proof, d);
                     let (q, t) = gamut_map_to(q0, pp.luma, peak);
@@ -594,7 +603,7 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
                 None => mul3(to_out, d),
             };
             let (mapped, t) = gamut_map_to(r, *out_luma, peak);
-            if fp.proof.is_some_and(|pp| pp.display_warning) && warn.is_none() && out_of_gamut(r, t) {
+            if fp.proof.as_ref().is_some_and(|pp| pp.display_warning) && warn.is_none() && out_of_gamut(r, t) {
                 warn = Some(crate::output::PROOF_DISPLAY_WARNING);
             }
             r = mapped;

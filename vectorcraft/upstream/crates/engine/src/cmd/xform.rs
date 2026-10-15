@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use vectorcraft_color::Paint;
-use vectorcraft_doc::{Node, NodeKind};
+use vectorcraft_doc::{Node, NodeKind, Scaling};
 use vectorcraft_geom::{Affine, Point, Rect, Vec2};
 
 use super::edit::selected_roots;
@@ -45,7 +45,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Move Artboard",
             [],
             None,
-            "{index, dx, dy, moveArt?: bool, copy?: bool} move an artboard (and the art fully inside it; locked and hidden art only with prefs moveLockedWithArtboard); `copy` (Alt-drag) leaves them and moves copies → {index, moved: the art moved or the copies}",
+            "{index | indices: [index…], dx, dy, moveArt?: bool, copy?: bool, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} move artboards (and the art fully inside them; locked and hidden art only with prefs moveLockedWithArtboard), several in one step; `copy` (Alt-drag) leaves them and moves copies → {index (the first), indices: the artboards moved or the copies, moved: the art moved or the copies}",
             has_doc,
             artboard_move
         ),
@@ -366,26 +366,42 @@ fn sample_color(s: &mut Session, p: &Value) -> Result<Value> {
 // ---------- artboards ----------
 
 fn artboard_move(s: &mut Session, p: &Value) -> Result<Value> {
-    let i = p.get("index").and_then(Value::as_u64).ok_or_else(|| bad("artboard.move", "missing index"))? as usize;
+    let indices = super::panelcmds::artboard_indices(&s.doc()?.doc, p, "artboard.move")?;
     let dv = Vec2::new(f64_or(p, "dx", 0.0), f64_or(p, "dy", 0.0));
-    let art = super::panelcmds::artboard_art(s, i, bool_or(p, "moveArt", false))?;
-    let scale_strokes = s.prefs.scale_strokes;
+    let move_art = bool_or(p, "moveArt", false);
+    // Each artboard's art, an object counted once (artboards can overlap).
+    let mut arts: Vec<(usize, Vec<NodeId>)> = vec![];
+    for &i in &indices {
+        let art = super::panelcmds::artboard_art(s, i, move_art)?;
+        let art = art.into_iter().filter(|id| !arts.iter().any(|(_, a)| a.contains(id))).collect();
+        arts.push((i, art));
+    }
+    let ids: Vec<NodeId> = arts.iter().flat_map(|(_, a)| a.iter().copied()).collect();
+    let sc = Scaling { patterns: super::object::transform_patterns(s, p, &ids)?, ..Scaling::default() };
     let copy = bool_or(p, "copy", false);
     let (index, moved) = s.edit(if copy { "Duplicate Artboard" } else { "Move Artboard" }, |d, _| {
-        // A copy keeps the artboard (and its art) where they are and moves duplicates instead.
-        if copy {
-            return super::panelcmds::copy_artboard(d, i, dv, &art, scale_strokes);
-        }
-        let a = d.artboards.get_mut(i).ok_or_else(|| EngineError::Other("no such artboard".into()))?;
-        a.rect = a.rect + dv;
-        let id = a.id;
-        d.move_artboard_guides(id, dv);
-        for id in &art {
-            if let Some(n) = d.node_mut(*id) {
-                n.transform(Affine::translate(dv), scale_strokes);
+        let (mut index, mut moved) = (vec![], vec![]);
+        for (i, art) in &arts {
+            // A copy keeps the artboard (and its art) where they are and moves duplicates instead.
+            if copy {
+                let (at, copies) = super::panelcmds::copy_artboard(d, *i, dv, art, sc)?;
+                index.push(at);
+                moved.extend(copies);
+                continue;
             }
+            let a = d.artboards.get_mut(*i).ok_or_else(|| EngineError::Other("no such artboard".into()))?;
+            a.rect = a.rect + dv;
+            let id = a.id;
+            d.move_artboard_guides(id, dv);
+            for id in art {
+                if let Some(n) = d.node_mut(*id) {
+                    n.transform(Affine::translate(dv), sc);
+                }
+            }
+            index.push(*i);
+            moved.extend(art.iter().copied());
         }
-        Ok((i, art.clone()))
+        Ok((index, moved))
     })?;
-    Ok(json!({ "index": index, "moved": moved.iter().map(|i| i.0).collect::<Vec<_>>() }))
+    Ok(json!({ "index": index.first(), "indices": index, "moved": moved.iter().map(|i| i.0).collect::<Vec<_>>() }))
 }

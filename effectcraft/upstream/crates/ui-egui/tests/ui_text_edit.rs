@@ -160,6 +160,137 @@ fn type_tool_click_type_edit_and_commit() {
     assert!(h.state().session.state.text_edit.is_none());
 }
 
+/// #831: clicking another panel (a solid's row in the Timeline) ends text editing and gives the
+/// keyboard back, whether the edit began with the Type tool (which stays selected) or by command:
+/// typed characters change no text and Space plays. The Character panel keeps the edit, and a
+/// text layer clicked into being and left empty goes away.
+#[test]
+fn clicking_another_panel_stops_typing_into_text() {
+    for type_tool in [false, true] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+        let solid = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        let title =
+            s.execute("layer.newText", json!({"text": "Title", "size": 80, "position": [100, 120], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        h.state_mut().show_panel(PanelKind::Composition);
+        h.run_steps(3);
+        let layers = |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layers.len();
+        // (Its row moves down as text layers are added.)
+        let row = |h: &Harness<'_, EffectcraftApp>| rect(h, &format!("timeline.layer.{solid}.row")).center();
+        if type_tool {
+            h.state_mut().ui.tool = effectcraft_ui_egui::state::Tool::Type;
+            h.run_steps(1);
+            let at = rect(&h, "viewer.comp").center();
+            click(&mut h, at, Modifiers::NONE);
+            assert_eq!(layers(&h), 3, "the Type tool started a text layer");
+            let at_row = row(&h);
+            click(&mut h, at_row, Modifiers::NONE);
+            assert_eq!(layers(&h), 2, "left empty, it is removed");
+            click(&mut h, at, Modifiers::NONE);
+        } else {
+            h.state_mut().session.execute("text.edit", json!({"layer": title})).unwrap();
+            h.run_steps(2);
+        }
+        type_text(&mut h, "Hello");
+        // The Character panel formats the selection and keeps the edit: typing carries on.
+        key(&mut h, Key::ArrowLeft, Modifiers::SHIFT);
+        let range = edited(&h);
+        h.state_mut().show_panel(PanelKind::Character);
+        h.run_steps(3);
+        let bold = rect(&h, "character.fauxBold").center();
+        click(&mut h, bold, Modifiers::NONE);
+        assert_eq!(edited(&h), range, "type_tool {type_tool}: Character keeps the edit and its selection");
+        key(&mut h, Key::End, Modifiers::NONE);
+        type_text(&mut h, "!");
+        let (lid, text, ..) = edited(&h);
+        assert!(text.ends_with("Hello!"), "typing goes into the text: {text:?}");
+        let at_row = row(&h);
+        click(&mut h, at_row, Modifiers::NONE);
+        assert!(h.state().session.state.text_edit.is_none(), "type_tool {type_tool}: clicking the Timeline ends the edit");
+        assert_eq!(h.state().session.state.selected_layers, vec![LayerId(solid)]);
+        assert!(!h.ctx.memory(|m| m.focused().is_some()), "the keyboard is the app's again");
+        type_text(&mut h, "abc");
+        assert!(!h.state().playback.playing);
+        h.input_mut().events.push(Event::Key { key: Key::Space, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+        h.input_mut().events.push(Event::Text(" ".into()));
+        h.input_mut().events.push(Event::Key { key: Key::Space, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::NONE });
+        h.run_steps(2);
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, text, "type_tool {type_tool}: the text is unchanged");
+        assert!(h.state().playback.playing, "type_tool {type_tool}: Space plays");
+        assert_eq!(type_tool, matches!(h.state().ui.tool, effectcraft_ui_egui::state::Tool::Type), "the tool is kept");
+    }
+}
+
+/// #831: opening a formatting panel's tab behind Effects & Presets in its group (Properties, in
+/// Undocked Panels) keeps the edit and its selected characters: the press on the tab used to
+/// focus the shown panel and end the edit, after which Faux Bold styled the whole layer.
+#[test]
+fn opening_a_formatting_tab_keeps_the_text_selection() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+    let lid =
+        s.execute("layer.newText", json!({"text": "Hello world", "size": 80, "position": [60, 200], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let ctx = h.ctx.clone();
+    // Effects & Presets shown, Properties, Character and Paragraph behind it.
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.workspace", json!({"name": "Undocked Panels"})).unwrap();
+    h.state_mut().session.execute("text.edit", json!({"layer": lid})).unwrap();
+    h.state_mut().session.execute("text.setSelection", json!({"anchor": 0, "caret": 5})).unwrap();
+    h.run_steps(3);
+    assert!(h.state().auto.find("properties.text.style").is_none(), "Properties is behind Effects & Presets");
+    let tab = rect(&h, "panel.tab.Properties").center();
+    click(&mut h, tab, Modifiers::NONE);
+    assert!(h.state().auto.find("properties.text.style").is_some(), "the tab opened Properties");
+    assert_eq!(edited(&h), (lid, "Hello world".into(), 0, 5), "the edit and its selection are kept");
+    h.state_mut().show_panel(PanelKind::Character);
+    h.run_steps(3);
+    let bold = rect(&h, "character.fauxBold").center();
+    click(&mut h, bold, Modifiers::NONE);
+    let doc = layer_doc(&h.state().session, LayerId(lid)).unwrap();
+    assert!(doc.style_at(1).faux_bold && !doc.style_at(7).faux_bold, "only \"Hello\" is bold");
+}
+
+/// #831: a click away and keys in one frame's input. The text gets the keys typed before the
+/// click and none after it; those later keys don't run as shortcuts either (Delete would remove a
+/// layer). From the next frame the keys are the app's: Space plays.
+#[test]
+fn keys_after_a_click_away_in_the_same_frame_skip_the_text() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+    let solid = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+    let lid = s.execute("layer.newText", json!({"text": "Hello", "size": 80, "position": [60, 200], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+    h.state_mut().show_panel(PanelKind::Composition);
+    h.run_steps(3);
+    h.state_mut().session.execute("text.edit", json!({"layer": lid, "caret": 5})).unwrap();
+    h.run_steps(2);
+    let row = rect(&h, &format!("timeline.layer.{solid}.row")).center();
+    let key = |key: Key, pressed: bool| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE };
+    h.input_mut().events.extend([
+        Event::Text("A".into()),
+        Event::PointerMoved(row),
+        Event::PointerButton { pos: row, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
+        Event::PointerButton { pos: row, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
+        Event::Text("x".into()),
+        key(Key::Space, true),
+        Event::Text(" ".into()),
+        key(Key::Space, false),
+        key(Key::Delete, true),
+        key(Key::Delete, false),
+    ]);
+    h.run_steps(3);
+    let comp = |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layers.len();
+    assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "HelloA", "only the key before the click");
+    assert!(h.state().session.state.text_edit.is_none(), "the click ended the edit");
+    assert_eq!((comp(&h), h.state().playback.playing), (2, false), "the keys after it ran no shortcut");
+    h.input_mut().events.extend([key(Key::Space, true), Event::Text(" ".into()), key(Key::Space, false)]);
+    h.run_steps(2);
+    assert!(h.state().playback.playing, "Space plays");
+    assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "HelloA");
+}
+
 #[test]
 fn switching_from_type_to_selection_commits_and_moves_text_layer() {
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app());
@@ -276,4 +407,60 @@ fn type_tool_drag_makes_paragraph_text_with_box_handles() {
     let doc2 = layer_doc(&h.state().session, LayerId(lid)).unwrap();
     assert!(doc2.box_size.unwrap()[0] > bs[0] + 20.0, "{:?}", doc2.box_size);
     assert!(h.state().session.state.text_edit.is_some(), "still editing after resizing");
+}
+
+/// #866: Layer ▸ New ▸ Text (menu or its shortcut) puts an insertion point in the comp, as After
+/// Effects does, so typed keys reach Source Text (and the layer name follows) instead of running
+/// shortcuts while the layer keeps the placeholder "Text".
+#[test]
+fn layer_new_text_menu_and_shortcut_start_typing_into_source_text() {
+    for via_shortcut in [false, true] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+        s.execute("layer.newSolid", json!({"color": "#ffffff"})).unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        h.state_mut().show_panel(PanelKind::Composition);
+        h.run_steps(3);
+        if via_shortcut {
+            key(&mut h, Key::T, Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT);
+        } else {
+            let ctx = h.ctx.clone();
+            effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "layer.newText", json!({})).unwrap();
+            h.run_steps(2);
+        }
+        let (lid, text, _, _) = edited(&h);
+        assert_eq!(text, "", "no placeholder to type over (shortcut: {via_shortcut})");
+        type_text(&mut h, "My First Project");
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert!(h.state().session.state.text_edit.is_none(), "Escape commits");
+        let s = &h.state().session;
+        assert_eq!(layer_doc(s, LayerId(lid)).unwrap().text, "My First Project", "typed text is the Source Text");
+        assert_eq!(s.active_comp().unwrap().layer(LayerId(lid)).unwrap().name, "My First Project", "the name follows the text");
+    }
+}
+
+/// Double-clicking a text layer in the Timeline, on its name or on its bar, edits its text in the
+/// Composition viewer with the whole text selected, as in After Effects (Enter renames).
+#[test]
+fn timeline_double_click_on_a_text_layer_edits_its_text() {
+    for target in ["row", "bar"] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+        let lid = s.execute("layer.newText", json!({"text": "alpha beta"})).unwrap()["layer"].as_u64().unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        h.state_mut().show_panel(PanelKind::Composition);
+        h.run_steps(3);
+        let p = rect(&h, &format!("timeline.layer.{lid}.{target}")).center();
+        click(&mut h, p, Modifiers::NONE);
+        click(&mut h, p, Modifiers::NONE);
+        let (layer, text, anchor, caret) = edited(&h);
+        assert_eq!(layer, lid, "{target}");
+        assert_eq!((anchor.min(caret), anchor.max(caret)), (0, 10), "everything selected ({target})");
+        assert!(h.state().auto.find(&format!("timeline.layer.{lid}.nameEdit")).is_none(), "no rename field ({target})");
+        assert_eq!(text, "alpha beta");
+        type_text(&mut h, "gamma");
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert!(h.state().session.state.text_edit.is_none(), "Escape commits ({target})");
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "gamma", "typing replaced the text ({target})");
+    }
 }

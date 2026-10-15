@@ -5,6 +5,7 @@ use hayro_syntax::object::{Dict, Stream};
 use hayro_syntax::page::Page;
 use hayro_syntax::{DecryptionError, LoadPdfError, Pdf};
 use kurbo::{Affine, Rect};
+use vectorcraft_doc::setup::MAX_BLEED;
 
 use crate::{Choice, CropTo, ImportOptions, PdfError};
 
@@ -128,6 +129,15 @@ pub(crate) fn frame(page: &Page<'_>, which: CropTo) -> (Affine, Rect) {
     (init, if b.is_finite() && b.area() > 0.0 { b } else { Rect::new(0.0, 0.0, w as f64, h as f64) })
 }
 
+/// How far `page`'s bleed box reaches past its trim box as the page shows (rotated): the bleed
+/// `[top, bottom, left, right]` in points, kept to 0–[`MAX_BLEED`].
+pub(crate) fn bleed(page: &Page<'_>) -> [f64; 4] {
+    let init = Affine::new(page.initial_transform(true).as_coeffs());
+    let (trim, bleed) = (init.transform_rect_bbox(page_box(page, CropTo::Trim)), init.transform_rect_bbox(page_box(page, CropTo::Bleed)));
+    [trim.y0 - bleed.y0, bleed.y1 - trim.y1, trim.x0 - bleed.x0, bleed.x1 - trim.x1]
+        .map(|b| if b.is_finite() { b.clamp(0.0, MAX_BLEED) } else { 0.0 })
+}
+
 /// The `PieceInfo` key such files keep their private data under.
 const PRIVATE_DATA_OWNER: &[u8] = b"Illustrator"; // brand-ok: the key the files use
 
@@ -135,18 +145,27 @@ const PRIVATE_DATA_OWNER: &[u8] = b"Illustrator"; // brand-ok: the key the files
 const MAX_PRIVATE: usize = 256 << 20;
 
 /// The private data of an Illustrator `.ai` (its first page's `PieceInfo`): the `AIPrivateData`
-/// streams in order, joined. `None` for a PDF without them (or with a stream that can't be read).
+/// streams in order, joined. A PDF saved with the editing data has its streams under
+/// `AIPDFPrivateData1`, `AIPDFPrivateData2`, … instead: those are read when there is no
+/// `AIPrivateData1`. `None` for a PDF without either (or with a stream that can't be read).
 /// What it holds is the editor's own copy of the art (see `vectorcraft_eps::layered_ai`).
 pub fn illustrator_data(bytes: &[u8], password: Option<&str>) -> Option<Vec<u8>> {
     let pdf = open(bytes, password).ok()?;
     let page = pdf.pages().first()?;
     let private = page.raw().get::<Dict<'_>>(b"PieceInfo")?.get::<Dict<'_>>(PRIVATE_DATA_OWNER)?.get::<Dict<'_>>(b"Private")?;
+    let key = if private.contains_key(b"AIPrivateData1") { "AIPrivateData" } else { "AIPDFPrivateData" };
     let mut data = vec![];
     for n in 1..=100_000u32 {
-        let Some(stream) = private.get::<Stream<'_>>(format!("AIPrivateData{n}").as_bytes()) else { break };
+        let Some(stream) = private.get::<Stream<'_>>(format!("{key}{n}").as_bytes()) else { break };
         data.extend_from_slice(&inflated(&stream, MAX_PRIVATE - data.len())?);
     }
     (!data.is_empty()).then_some(data)
+}
+
+/// Does the PDF's first page carry an editor's private data (a PDF-compatible `.ai`)? Without
+/// reading the data.
+pub fn has_illustrator_data(bytes: &[u8], password: Option<&str>) -> bool {
+    open(bytes, password).is_ok_and(|pdf| pdf.pages().first().is_some_and(has_private_data))
 }
 
 /// `stream` decoded, up to `most` bytes: the decoder is run here rather than by the PDF reader's

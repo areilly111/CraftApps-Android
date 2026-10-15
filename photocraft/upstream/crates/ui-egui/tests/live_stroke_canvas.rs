@@ -120,6 +120,7 @@ fn max_diff(a: &[[u8; 4]], b: &[[u8; 4]]) -> u8 {
 
 #[test]
 fn the_canvas_shows_the_committed_stroke_while_it_is_drawn() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     h.run_steps(4);
     let mut cases = Vec::new();

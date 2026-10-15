@@ -7,6 +7,8 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
+mod font_dirs;
 pub mod fonts;
 pub mod layout;
 pub mod path_text;

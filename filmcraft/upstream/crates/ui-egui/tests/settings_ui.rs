@@ -200,6 +200,96 @@ fn checkbox_edits_apply_on_ok_and_not_on_cancel() {
     assert_eq!(d.pref("timeline.snapPlayhead"), false, "on by default (as in Premiere), the click turns it off");
 }
 
+/// #580: Escape while dragging a number in Settings puts it back and keeps the dialog open (the
+/// modal's own Escape close included); Escape with no drag still cancels the dialog.
+#[test]
+fn escape_mid_drag_reverts_a_setting_and_keeps_the_dialog() {
+    let mut d = Driver::demo();
+    d.menu("app.settings.playback");
+    let els = d.ok("ui.elements", json!({"prefix": "settings.playback.stepManyFrames"}));
+    let r: Vec<f32> = els.as_array().unwrap().iter().find(|e| e["id"] == "settings.playback.stepManyFrames").expect("number field")["rect"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap() as f32)
+        .collect();
+    let from = egui::pos2(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+    let drag = |d: &mut Driver, escape: bool| {
+        let mut send = |e: egui::Event| {
+            d.harness.input_mut().events.push(e);
+            d.frames(1);
+        };
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        send(egui::Event::PointerMoved(from));
+        send(button(from, true));
+        for k in 1..=10 {
+            send(egui::Event::PointerMoved(from + egui::vec2(6.0 * k as f32, 0.0)));
+            if escape && k == 5 {
+                send(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+            }
+        }
+        send(button(from + egui::vec2(60.0, 0.0), false));
+        d.frames(3);
+    };
+    let before = d.draft();
+    drag(&mut d, true);
+    assert_eq!(d.draft(), before, "the value it had before the drag, and the dialog is still open");
+    drag(&mut d, false);
+    assert_ne!(d.draft(), before, "without Escape the same drag changes it");
+    d.ok("ui.key", json!({"key": "Escape"}));
+    d.frames(2);
+    assert_eq!(d.draft(), Value::Null, "Escape with no drag closes the dialog");
+}
+
+/// #580: the color pickers in Settings take back a drag on Escape too, as everywhere else.
+#[test]
+fn escape_mid_drag_reverts_a_settings_color() {
+    let mut d = Driver::demo();
+    d.menu("app.settings.appearance");
+    // the areas on top: the Settings modal, and the picker's popup over it when it is open
+    let on_top = |d: &Driver| {
+        d.harness.ctx.memory(|m| {
+            let mut v: Vec<egui::Rect> =
+                m.areas().visible_layer_ids().into_iter().filter(|l| l.order == egui::Order::Foreground).filter_map(|l| m.area_rect(l.id)).collect();
+            v.sort_by(|a, b| a.area().total_cmp(&b.area()));
+            v
+        })
+    };
+    let picker = |d: &mut Driver| {
+        if on_top(d).len() < 2 {
+            d.ok("ui.click", json!({"id": "settings.appearance.highlightColor"}));
+        }
+        let r = *on_top(d).first().expect("the color picker opened");
+        (r.min + egui::vec2(30.0, 90.0), r.min + egui::vec2(70.0, 120.0))
+    };
+    let drag = |d: &mut Driver, from: egui::Pos2, to: egui::Pos2, escape: bool| {
+        let mut send = |e: egui::Event| {
+            d.harness.input_mut().events.push(e);
+            d.frames(1);
+        };
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        send(egui::Event::PointerMoved(from));
+        send(button(from, true));
+        for k in 1..=10 {
+            send(egui::Event::PointerMoved(from.lerp(to, k as f32 / 10.0)));
+            if escape && k == 5 {
+                send(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+            }
+        }
+        send(button(to, false));
+        d.frames(3);
+    };
+    let color = |d: &mut Driver| d.draft()["values"]["appearance"]["highlightColor"].clone();
+    let before = color(&mut d);
+    let (from, to) = picker(&mut d);
+    drag(&mut d, from, to, true);
+    assert_eq!(color(&mut d), before, "the highlight color it had before the drag");
+    assert_ne!(d.draft(), Value::Null, "the dialog is still open");
+    let (from, to) = picker(&mut d);
+    drag(&mut d, from, to, false);
+    assert_ne!(color(&mut d), before, "without Escape the same drag picks a color");
+}
+
 #[test]
 fn dropdowns_numbers_and_reset() {
     let mut d = Driver::demo();
@@ -425,4 +515,166 @@ fn playhead_drag_snaps_to_cuts() {
     d.frames(2);
     let ph = d.harness.state().session.playhead();
     assert!(ph > cut, "moves off the cut freely: {ph:?} vs {cut:?}");
+}
+
+/// #1090: a press on the ruler moves the playhead there at once, before the pointer moves or the
+/// button comes up, as in Premiere Pro.
+#[test]
+fn playhead_jumps_to_a_press_on_the_ruler() {
+    let mut d = Driver::demo();
+    d.frames(2);
+    let seq = d.harness.state().session.active_sequence().unwrap().clone();
+    let v1 = &seq.video_tracks[0];
+    let cut = v1.items[1].start;
+    let id = v1.items[1].id.0;
+    let rect = |d: &mut Driver, id: &str| -> [f64; 4] {
+        let v = d.ok("ui.elements", json!({"prefix": id}));
+        let e = v.as_array().unwrap().iter().find(|e| e["id"] == id).unwrap_or_else(|| panic!("no element {id}")).clone();
+        let r: Vec<f64> = e["rect"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+        [r[0], r[1], r[2], r[3]]
+    };
+    let clip = rect(&mut d, &format!("timeline.clip.{id}"));
+    let ruler = rect(&mut d, "timeline.ruler");
+    d.exec("playhead.set", json!({"time": 0}));
+    d.frames(2);
+    assert_eq!(d.harness.state().session.playhead().0, 0);
+    let p = egui::pos2((clip[0] + 40.0) as f32, (ruler[1] + ruler[3] / 2.0) as f32);
+    let button = |d: &mut Driver, pressed: bool| {
+        d.harness.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        d.frames(2);
+    };
+    d.harness.input_mut().events.push(egui::Event::PointerMoved(p));
+    d.frames(1);
+    button(&mut d, true);
+    let ph = d.harness.state().session.playhead();
+    assert!(ph > cut, "the playhead is under the pressed button: {ph:?} vs {cut:?}");
+    button(&mut d, false);
+    assert_eq!(d.harness.state().session.playhead(), ph, "the release leaves it there");
+}
+
+/// Settings ▸ Labels ▸ Label Color Presets: the dropdown shows "(Modified)" once the labels differ
+/// from the preset and Revert brings them back; Import copies a preset file into the presets folder
+/// beside the preferences and selects it (a bad file only shows an error); Export writes the
+/// dialog's labels; Show Folder opens the folder; Delete removes user presets only. Choosing a
+/// preset applies on OK like the other fields, and Cancel discards it.
+#[test]
+fn label_color_presets() {
+    use std::sync::{Arc, Mutex};
+    let mut d = Driver::demo();
+    let dir = std::env::temp_dir().join(format!("filmcraft-label-presets-ui-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let folder = dir.join("Label Presets");
+    let picked: Arc<Mutex<Option<String>>> = Arc::default();
+    let opened: Arc<Mutex<Vec<String>>> = Arc::default();
+    {
+        let app = d.harness.state_mut();
+        app.session.prefs_path = Some(dir.join("preferences.json"));
+        let p = picked.clone();
+        app.hooks.pick_open_file = Some(Box::new(move |_, _| p.lock().unwrap().clone()));
+        let p = picked.clone();
+        app.hooks.pick_save_as = Some(Box::new(move |_, _, _| p.lock().unwrap().clone()));
+        let o = opened.clone();
+        app.hooks.open_path = Some(Box::new(move |path, _| {
+            o.lock().unwrap().push(path.to_string());
+            Ok(())
+        }));
+    }
+    let label = |d: &mut Driver, id: &str| -> String {
+        let v = d.ok("ui.elements", json!({"prefix": id}));
+        v.as_array().unwrap().iter().find(|e| e["id"] == id).and_then(|e| e["label"].as_str().map(str::to_string)).unwrap_or_default()
+    };
+    let preset = |name: &str, color: &str| {
+        let labels: Vec<Value> = (0..16).map(|i| json!({"name": format!("{name} {i}"), "color": color})).collect();
+        serde_json::to_vec(&json!({"name": name, "labels": labels})).unwrap()
+    };
+
+    d.menu("app.settings.labels");
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Default");
+    d.ok("ui.set", json!({"settings": {"values": {"labels.colors.rose.name": "Hero"}}}));
+    d.frames(2);
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Default (Modified)");
+    d.click("settings.labelPresets.revert");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["rose"]["name"], "Rose");
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Default");
+
+    // the other built-ins come after Default, can be chosen and reverted to, and can't be deleted
+    d.click("settings.labels.preset");
+    let items = d.ok("ui.elements", json!({"prefix": "settings.labels.preset."}));
+    let order: Vec<String> =
+        items.as_array().unwrap().iter().filter_map(|e| e["id"].as_str()?.strip_prefix("settings.labels.preset.").map(str::to_string)).collect();
+    assert_eq!(order, ["Default", "Bright", "Roles"]);
+    d.click("settings.labels.preset.Roles");
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Roles");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["violet"], json!({"name": "B-Roll", "color": "#5b8fd4"}));
+    d.click("settings.labels.preset");
+    d.click("settings.labels.preset.Bright");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["rose"], json!({"name": "Mint", "color": "#2fd69a"}));
+    d.ok("ui.set", json!({"settings": {"values": {"labels.colors.rose.color": "#000000"}}}));
+    d.frames(2);
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Bright (Modified)");
+    d.click("settings.labelPresets.revert");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["rose"]["color"], "#2fd69a");
+    d.click("settings.labelPresets.delete");
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Bright", "built-ins can't be deleted");
+    assert_eq!(d.draft()["preset_message"], "");
+    d.click("settings.labels.preset");
+    d.click("settings.labels.preset.Default");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["rose"], json!({"name": "Rose", "color": d.pref("labels.colors.rose.color")}));
+
+    // a bad file: an error in the dialog, nothing changes
+    let bad = dir.join("bad.json");
+    std::fs::write(&bad, preset("Bad", "#zzzzzz")).unwrap();
+    *picked.lock().unwrap() = Some(bad.to_string_lossy().into());
+    let before = d.draft()["values"]["labels"].clone();
+    d.click("settings.labelPresets.import");
+    assert!(d.draft()["preset_message"].as_str().unwrap().contains("color"), "{}", d.draft()["preset_message"]);
+    assert_eq!(d.draft()["values"]["labels"], before);
+    assert!(!folder.join("Bad.json").exists());
+
+    // a good one is copied into the folder and selected
+    let good = dir.join("from a colleague.json");
+    std::fs::write(&good, preset("Team", "#102030")).unwrap();
+    *picked.lock().unwrap() = Some(good.to_string_lossy().into());
+    d.click("settings.labelPresets.import");
+    assert!(folder.join("Team.json").is_file());
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Team");
+    assert_eq!(d.draft()["values"]["labels"]["colors"]["rose"], json!({"name": "Team 6", "color": "#102030"}));
+    d.ok("ui.set", json!({"settings": {"values": {"labels.colors.rose.name": "Hero"}}}));
+    d.shot("labels-presets");
+    d.click("settings.labelPresets.revert");
+
+    // export writes what the dialog shows
+    d.ok("ui.set", json!({"settings": {"values": {"labels.colors.violet.color": "#abcdef"}}}));
+    let out = dir.join("Shared.json");
+    *picked.lock().unwrap() = Some(out.to_string_lossy().into());
+    d.click("settings.labelPresets.export");
+    let written: Value = serde_json::from_slice(&std::fs::read(&out).unwrap()).unwrap();
+    assert_eq!(written["name"], "Shared");
+    assert_eq!(written["labels"][0], json!({"name": "Team 0", "color": "#abcdef"}));
+
+    d.click("settings.labelPresets.folder");
+    assert_eq!(*opened.lock().unwrap(), [folder.to_string_lossy().to_string()]);
+
+    // Cancel discards the choice; picking it again and OK applies it
+    d.click("settings.cancel");
+    assert_eq!(d.pref("labels.preset"), "Default");
+    assert_eq!(d.pref("labels.colors.rose.name"), "Rose");
+    d.menu("app.settings.labels");
+    d.click("settings.labels.preset");
+    d.click("settings.labels.preset.Team");
+    d.click("settings.ok");
+    assert_eq!(d.pref("labels.preset"), "Team");
+    assert_eq!(d.pref("labels.colors.rose.color"), "#102030");
+
+    // Delete: user presets only
+    d.menu("app.settings.labels");
+    d.click("settings.labelPresets.delete");
+    assert!(!folder.join("Team.json").exists());
+    assert_eq!(label(&mut d, "settings.labels.preset"), "Default (Modified)", "the colours stay until reverted");
+    std::fs::write(folder.join("keep.json"), preset("Keep", "#405060")).unwrap();
+    d.click("settings.labelPresets.delete");
+    assert!(folder.join("keep.json").exists(), "the built-in preset can't be deleted, and nothing else goes");
+    d.click("settings.cancel");
+    let _ = std::fs::remove_dir_all(&dir);
 }

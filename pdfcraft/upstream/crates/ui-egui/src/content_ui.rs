@@ -37,9 +37,22 @@ pub(crate) type UndrawableMemo = std::cell::RefCell<Option<(AddedText, Option<ch
 /// The warning shown for text with `c` in it.
 pub(crate) fn undrawable_message(c: char) -> String {
     crate::i18n::fmt(
-        tl!("The standard fonts can't draw “{c}” ({code}). Only Western European characters can be added as text for now."),
+        tl!("The PDF text fonts can't draw “{c}” ({code}). Choose supported text."),
         &[("c", &c.to_string()), ("code", &format!("U+{:04X}", u32::from(c)))],
     )
+}
+
+/// The warning after an edit that saved text its font can't draw: PdfCraft drew `?` for it (a form
+/// field, which other viewers redraw from its value, or a comment, where the `?` shows everywhere).
+pub(crate) fn undrawn_message(n: &pdfcraft_engine::TextNotice) -> String {
+    let template = if n.redrawn_elsewhere {
+        tl!(
+            "This field's font can't draw “{c}” ({code}), so PdfCraft shows ? in its place. The value is saved, and other PDF viewers redraw the field from it."
+        )
+    } else {
+        tl!("The fonts PdfCraft writes with can't draw “{c}” ({code}), so it shows as ? in every PDF viewer. The text is saved.")
+    };
+    crate::i18n::fmt(template, &[("c", &n.ch.to_string()), ("code", &format!("U+{:04X}", u32::from(n.ch)))])
 }
 
 const SELECT_BLUE: Color32 = Color32::from_rgb(0x14, 0x73, 0xE6);
@@ -337,6 +350,8 @@ pub(crate) fn editor(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, ad
     let memo = &view.content.undrawable;
     egui::Area::new(egui::Id::new(("added-text", view.id.0))).order(egui::Order::Foreground).fixed_pos(r.min).show(ctx, |ui| {
         let Some(t) = view.content.draft.as_mut() else { return };
+        // The box is white in every theme, so the caret must not follow the theme (pale in dark mode) (#655).
+        ui.visuals_mut().text_cursor.stroke.color = crate::edit_text_ui::caret_color_on(Color32::WHITE);
         let [cr, cg, cb] = t.style.color.map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8);
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
@@ -362,8 +377,8 @@ pub(crate) fn editor(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, ad
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
                     ui.horizontal(|ui| {
-                        done = crate::icons::button(ui, "check", 24.0, false, "Done adding text").clicked();
-                        cancel = crate::icons::button(ui, "x", 24.0, false, "Discard this text (Esc)").clicked();
+                        done = crate::icons::button(ui, "check", 24.0, false, tl!("Done adding text")).clicked();
+                        cancel = crate::icons::button(ui, "x", 24.0, false, tl!("Discard this text (Esc)")).clicked();
                     });
                 })
                 .response
@@ -371,7 +386,7 @@ pub(crate) fn editor(ctx: &egui::Context, view: &mut DocView, info: &DocInfo, ad
             // Pressing a button takes the focus from the text: that is not a click away.
             let on_buttons = ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| buttons.contains(p));
             cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
-            commit = done || resp.lost_focus() && !on_buttons;
+            commit = done || resp.lost_focus() && !on_buttons && !view.objects.hold_editor;
         });
         // Page text is drawn with the standard fonts; anything else would be saved as `?` (#125).
         undrawable = self::undrawable(t, memo);
@@ -451,7 +466,7 @@ pub(crate) fn format_panel(ui: &mut egui::Ui, t: &Tokens, style: &AddedText) -> 
     if let Some(picked) = crate::comments::swatch_grid(ui, Some(c)) {
         s.color = picked;
     }
-    ui.label(egui::RichText::new(tl!("Standard fonts; text outside Windows-1252 isn't supported yet.")).small().color(t.text_faint));
+    ui.label(egui::RichText::new(tl!("Thai and Arabic use regular fallback fonts when available.")).small().color(t.text_faint));
     (s != *style).then_some(s)
 }
 
@@ -484,7 +499,7 @@ impl crate::PdfCraftApp {
             Some(p) if p.ends_with(".png") || p.ends_with(".jpg") => read(self, p.into()),
             Some(_) => {}
             None => {
-                let dialog = crate::pickers::FileDialog::new()
+                let dialog = rfd::AsyncFileDialog::new()
                     .add_filter(tl!("Images"), &["png", "jpg", "jpeg", "tif", "tiff", "gif", "bmp", "jp2", "j2k", "jpx"])
                     .set_title(title);
                 let target = self.active_ids().map(|(_, id)| id);
@@ -521,6 +536,9 @@ impl crate::PdfCraftApp {
     /// Edit text & images ▸ Save Image As.
     pub(crate) fn save_page_image(&mut self, page: usize, index: usize) {
         let Some((_, id)) = self.active_ids() else { return };
+        if !self.may_copy(id) {
+            return;
+        }
         let file = self.session.get(id).map(|d| d.page_image_file(page, index));
         match file {
             Some(Ok((ext, bytes))) => {
@@ -528,6 +546,32 @@ impl crate::PdfCraftApp {
             }
             Some(Err(e)) => self.notify_fmt("Couldn't save the image: {e}", &[("e", &e.to_string())]),
             None => {}
+        }
+    }
+
+    /// Copy Image: image `index` on `page`, at its own resolution, to the clipboard.
+    pub(crate) fn copy_page_image(&mut self, page: usize, index: usize) {
+        let Some((_, id)) = self.active_ids() else { return };
+        if !self.may_copy(id) {
+            return;
+        }
+        let Some(pixels) = self.session.get(id).map(|d| d.page_image_rgba(page, index)) else { return };
+        let copied = pixels.and_then(|(w, h, rgba)| {
+            #[cfg(not(target_arch = "wasm32"))]
+            if self.system_clipboard {
+                let img = arboard::ImageData { width: w as usize, height: h as usize, bytes: std::borrow::Cow::Borrowed(&rgba) };
+                arboard::Clipboard::new().and_then(|mut c| c.set_image(img)).map_err(|e| e.to_string())?;
+            }
+            #[cfg(target_arch = "wasm32")]
+            if self.system_clipboard {
+                return Err("the web version can't put images on the clipboard yet; use Save Image As".to_string());
+            }
+            self.last_copied_image = Some((w, h, rgba));
+            Ok((w, h))
+        });
+        match copied {
+            Ok((w, h)) => self.notify_fmt("The image has been copied ({w} × {h} pixels)", &[("w", &w.to_string()), ("h", &h.to_string())]),
+            Err(e) => self.notify_fmt("Couldn't copy the image: {e}", &[("e", &e)]),
         }
     }
 

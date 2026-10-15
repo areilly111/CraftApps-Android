@@ -55,6 +55,19 @@ fn shrink_text_makes_overflowing_text_fit() {
 }
 
 #[test]
+fn scaled_area_shrink_accepts_small_local_sizes_and_uses_document_tenths() {
+    // A 14 pt story represented in a scaled local coordinate system. Its local size is
+    // below 0.1, as happens when setting an exact size after enlarging a text group.
+    let mut t = area(COPY, 0.014, Rect::new(0.0, 0.0, 0.2, 0.09), shrink(30.0));
+    t.xf = Affine::scale(1000.0);
+    assert!(at_size(&t, 0.014).overflow);
+    let l = layout(db(), &t);
+    assert!(l.fit_scale < 1.0 && l.fit_scale >= 0.3, "{}", l.fit_scale);
+    let document_size = 14.0 * l.fit_scale;
+    assert!((document_size * 10.0 - (document_size * 10.0).round()).abs() < 1e-6);
+}
+
+#[test]
 fn shrink_text_respects_its_minimum() {
     let t = area(COPY, 14.0, Rect::new(0.0, 0.0, 120.0, 40.0), shrink(90.0));
     let l = layout(db(), &t);

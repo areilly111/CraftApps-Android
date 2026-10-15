@@ -236,3 +236,21 @@ fn sidecars_cannot_point_at_other_bundles() {
     assert_eq!(entries.iter().map(|e| e.info.key.as_str()).collect::<Vec<_>>(), ["k"]);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// Once the manifest is committed the save has succeeded: an unreferenced object that cannot be
+/// removed (here a folder squatting on a tile name, like a locked or vanished file) must not turn
+/// the directory save (autosave's path) into a reported failure.
+#[test]
+fn failed_cleanup_after_commit_does_not_fail_the_save() {
+    let dir = temp_dir("cleanup-best-effort").join("doc.pcraft");
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    let mut w = PcraftWriter::new();
+    w.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    let stuck = dir.join("tiles").join("0000000000000000000000000000000000000000000000000000000000000000.zst");
+    std::fs::create_dir_all(stuck.join("inner")).unwrap();
+    let stats = w.save_dir(&doc, &dir, &SaveOptions::default()).expect("the committed save reports success");
+    assert_eq!(stats.objects_removed, 0, "nothing was actually removed");
+    assert_eq!(load_path(&dir).unwrap(), doc);
+    std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
+}

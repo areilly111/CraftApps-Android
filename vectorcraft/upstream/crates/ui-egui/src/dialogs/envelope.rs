@@ -238,7 +238,7 @@ fn bar_of(app: &VectorcraftApp) -> Option<(bool, Bar)> {
     let st = app.session.active()?;
     let env = st.selection.objects.first().and_then(|id| vectorcraft_doc::live::envelope_of(&st.doc, *id))?;
     let NodeKind::Envelope { kind, editing, .. } = &env.kind else { return None };
-    let bar = match kind {
+    let bar = match &**kind {
         EnvelopeKind::Warp { style, bend, h, v, horizontal } => {
             Bar::Warp { style: style.clone(), bend: *bend, h: *h, v: *v, horizontal: *horizontal }
         }
@@ -362,7 +362,8 @@ mod tests {
         assert_eq!(app.session.doc().unwrap().history.undo.len(), undo + 1, "one undo step");
         let (_, n) = envelope(&app);
         match &n.kind {
-            NodeKind::Envelope { kind: EnvelopeKind::Warp { style, bend, horizontal, .. }, content, .. } => {
+            NodeKind::Envelope { kind, content, .. } => {
+                let EnvelopeKind::Warp { style, bend, horizontal, .. } = &**kind else { panic!("{kind:?}") };
                 assert_eq!((style.as_str(), *bend, *horizontal), ("flag", -30.0, false));
                 assert_eq!(content[0].id, rect);
             }
@@ -373,7 +374,10 @@ mod tests {
         let d = app.ui.dialog.as_ref().unwrap();
         assert_eq!((d.fields["reset"].clone(), d.fields["style"].clone(), d.fields["bend"].clone()), (json!(true), json!("flag"), json!(-30.0)));
         crate::dialogs::cancel(&mut app);
-        assert!(matches!(envelope(&app).1.kind, NodeKind::Envelope { kind: EnvelopeKind::Warp { .. }, .. }), "cancel rolls back");
+        assert!(
+            matches!(envelope(&app).1.kind, NodeKind::Envelope { ref kind, .. } if matches!(**kind, EnvelopeKind::Warp { .. })),
+            "cancel rolls back"
+        );
     }
 
     #[test]
@@ -404,13 +408,18 @@ mod tests {
         app.run("ui.menuDialog", json!({"command": RESET_MESH})).unwrap();
         assert_eq!(app.ui.dialog.as_ref().map(|d| d.kind.as_str()), Some(MESH));
         frame(&mut app);
-        assert!(matches!(envelope(&app).1.kind, NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows: 4, cols: 4, .. }, .. }), "previewed");
+        assert!(
+            matches!(envelope(&app).1.kind, NodeKind::Envelope { ref kind, .. } if matches!(**kind, EnvelopeKind::Mesh { rows: 4, cols: 4, .. })),
+            "previewed"
+        );
         crate::dialogs::cancel(&mut app);
-        assert!(matches!(envelope(&app).1.kind, NodeKind::Envelope { kind: EnvelopeKind::Warp { .. }, .. }));
+        assert!(matches!(envelope(&app).1.kind, NodeKind::Envelope { ref kind, .. } if matches!(**kind, EnvelopeKind::Warp { .. })));
         app.run("ui.menuDialog", json!({"command": RESET_MESH})).unwrap();
         app.ui.dialog.as_mut().unwrap().fields.insert("rows".into(), json!(2));
         super::super::confirm(&mut app).unwrap();
-        assert!(matches!(envelope(&app).1.kind, NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows: 2, cols: 4, .. }, .. }));
+        assert!(
+            matches!(envelope(&app).1.kind, NodeKind::Envelope { ref kind, .. } if matches!(**kind, EnvelopeKind::Mesh { rows: 2, cols: 4, .. }))
+        );
     }
 
     #[test]

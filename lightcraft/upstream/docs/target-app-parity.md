@@ -1,6 +1,6 @@
 # Target-app parity: LightCraft vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against Lightroom Classic 15.5 and the installed Lightroom 9.6; merged ROADMAP's parity estimate and honest assessment into this file) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (EOS R5 Mark II CR3 verified: RAW decoding 76% → 77%; headline numbers unchanged) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close LightCraft is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -67,7 +67,7 @@ from the checklist sections and the deep-dive documents.
 | Area | Weight | Breadth | Ready | Remaining | Notes |
 |---|---:|---:|---:|---:|---|
 | Import and library (import, folders, albums, smart albums, keywords, metadata, search, faces) | 15% | 90% | 80% | 25–45 h | checklist A–E 83–92%; robust journal; 85k-photo libraries |
-| RAW decoding and camera coverage | 15% | 81% | 76% | 120–220 h | [raw-parity.md](raw-parity.md), measured model by model: 84% of photographers' cameras decode (use-weighted), × 0.9 for per-body bugs; CR3 variants, compressed ORF, HE NEF |
+| RAW decoding and camera coverage | 15% | 81% | 77% | 120–220 h | [raw-parity.md](raw-parity.md), measured model by model: 85% of photographers' cameras decode (use-weighted), × 0.9 for per-body bugs; CR3 variants, compressed ORF, HE NEF |
 | Colour, camera profiles, render fidelity | 10% | 65% | 35% | 80–150 h | 4 bundled profiles vs Adobe's 1,500; per-file fits median ΔE ~5 vs the camera JPEG, ~10% far off; no fidelity suite ([raw-parity.md](raw-parity.md#colour)) |
 | Global develop adjustments (light, colour, curves, grading, effects, detail) | 15% | 93% | 70% | 30–60 h | checklist F 91.7%; character tuned by eye |
 | Optics, lens profiles, crop and geometry | 6% | 80% | 50% | 40–80 h | no lens database; crop / Upright complete |
@@ -129,7 +129,7 @@ valued from the model-by-model measurement in [raw-parity.md](raw-parity.md):
 | Dimension | Weight | Ready |
 |---|---:|---:|
 | Features: the other 11 areas, weighted depth from [Features](#features) | 45% | 60.9% |
-| RAW decoding and camera coverage | 9% | 76% (84% use-weighted × 0.9) |
+| RAW decoding and camera coverage | 9% | 77% (85% use-weighted × 0.9) |
 | Camera colour and default rendering | 6% | 35% |
 | UI/UX fidelity | 8% | 70% |
 | File formats (non-raw) | 6% | 70% |
@@ -139,7 +139,7 @@ valued from the model-by-model measurement in [raw-parity.md](raw-parity.md):
 | Stability | 8% | 60% |
 | Platforms | 4% | 60% |
 | Ecosystem / plug-ins | 2% | 15% |
-| **Weighted sum** | 100% | **60.6% ≈ 61%** (range 56–66%) |
+| **Weighted sum** | 100% | **60.7% ≈ 61%** (range 56–66%) |
 
 Mainstream comes out lower than full: its scope is the raw-develop core, where LightCraft is weakest
 (camera colour, CR3 coverage), and its discounts are multiplicative, while the full sum is lifted by
@@ -171,18 +171,18 @@ than the user's own.
 |---|---:|---:|
 | Import and library | 18% | 80% |
 | Cull: views, compare, zoom, ratings | 12% | 70% |
-| Raw decoding for their camera | 27% | 84% (measured use-weighted share whose camera fully works, [raw-parity.md](raw-parity.md#by-use-estimated)) |
+| Raw decoding for their camera | 27% | 85% (measured use-weighted share whose camera fully works, [raw-parity.md](raw-parity.md#by-use-estimated)) |
 | Global develop adjustments | 15% | 70% |
 | Crop, geometry, lens corrections | 6% | 50% |
 | Masking (manual, subject / sky; no generative) | 8% | 45% |
 | Heal / remove (no generative), denoise | 5% | 40% |
 | Presets, copy / paste / sync | 5% | 85% |
 | Export | 4% | 75% |
-| **Weighted depth** | 100% | **71.8%** |
+| **Weighted depth** | 100% | **72.1%** |
 
 Colour fidelity is a written discount, **×0.85**: most raws start near the camera's own look (median
 ΔE ~5), about 10% far off (ΔE ~18), none calibrated to Adobe Standard, so a working photographer
-corrects colour by hand (33 open colour issues). 71.8% × 0.804 × 0.85 = **~49%** (range 44–54%).
+corrects colour by hand (33 open colour issues). 72.1% × 0.804 × 0.85 = **~49%** (range 44–54%).
 
 ### Essentials user: ~64%
 
@@ -199,11 +199,11 @@ basic sliders, crop, apply a preset, undo, export JPEGs.
 | Crop and straighten | 10% | 80% |
 | Presets and profiles | 8% | 80% |
 | Undo and history | 5% | 90% |
-| Their camera's raws: decode × default look | 10% | 63% (84% whose camera fully works × colour factor 0.75) |
+| Their camera's raws: decode × default look | 10% | 64% (85% whose camera fully works × colour factor 0.75) |
 | Export JPEG | 10% | 85% |
-| **Weighted depth** | 100% | **77.4%** |
+| **Weighted depth** | 100% | **77.5%** |
 
-77.4% × 0.830 = **~64%** (range 59–69%).
+77.5% × 0.830 = **~64%** (range 59–69%).
 
 ### User evidence (GitHub issues, excluding the four maintainers)
 
@@ -297,6 +297,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | EOS R5 Mark II CR3 verified (raw-parity.md): use-weighted share whose camera decodes 84% → 85%, RAW decoding 76% → 77%; full 60.6% → 60.7%, mainstream depth 71.8% → 72.1%, essentials depth 77.4% → 77.5%; the rounded numbers (~61%, ~49%, ~64%) are unchanged |
 | 2026-10-10 | minor | RAW measured model by model (raw-parity.md): RAW decoding (76%) and colour (35%) are explicit rows of the full sum (59% → 61%); mainstream uses the use-weighted 84% plus a ×0.85 colour discount (51% → 49%); essentials uses 84% × colour 0.75 (63% → 64%); beta ~14 points |
 | 2026-10-10 | minor | Full number restored to an additive weighted sum over the dimensions (~59%; method aligned with the standard, no new evidence); hours to ~95% for each of the three audiences; beta distance ~16 points |
 | 2026-10-10 | minor | Added mainstream practitioner (~51%) and essentials user (~63%) numbers; full ready re-derived from written weights × discounts (55% → 46%); user-issue evidence; beta hours 340–600 |

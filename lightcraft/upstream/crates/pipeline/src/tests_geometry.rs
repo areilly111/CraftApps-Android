@@ -140,6 +140,7 @@ fn profile_corrections_use_embedded_lens_only_when_enabled() {
     let lens = EmbeddedLens {
         warp: Some(EmbeddedWarp { planes: [[1.0, -0.08, 0.0, 0.0, 0.0, 0.0]; 3], center: Point::new(0.5, 0.5), radius: 0.6 }),
         vignette: Some(EmbeddedVignette { k: [0.5, 0.0, 0.0, 0.0, 0.0], center: Point::new(0.5, 0.5), radius: 0.6 }),
+        ..Default::default()
     };
     let info = SourceInfo { lens: Some(lens), ..SourceInfo::default() };
     let mut s = DevelopSettings::default();

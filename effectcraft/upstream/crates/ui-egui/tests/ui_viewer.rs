@@ -162,6 +162,56 @@ fn viewer_press_prefers_a_selected_layer_under_the_pointer() {
     assert_eq!(h.state().session.state.selected_layers, vec![front], "nothing selected: the topmost layer");
 }
 
+/// Each composition keeps its Resolution, saved with the project as in After Effects: chosen for
+/// comp A in the viewer's popup, it is still A's after showing comp B, costs no undo step, keeps
+/// A's cached frames and is read back from the saved file (#417).
+#[test]
+fn each_comp_keeps_its_viewer_resolution() {
+    use effectcraft_ui_egui::state::Resolution;
+    let mut h = harness();
+    let a = h.state().session.active_comp_id().unwrap();
+    let content = |h: &Harness<'_, EffectcraftApp>, c| {
+        let s = h.state();
+        s.frames.content_of(&s.session.project, s.session.revision, c)
+    };
+    let (before, steps) = (content(&h, a), h.state().session.history.undo.len());
+    for id in ["viewer.resolution", "viewer.resolutionItem.1"] {
+        let at = rect(&h, id).center();
+        click(&mut h, at);
+    }
+    assert_eq!(h.state().viewer_res(), Resolution::Half);
+    assert_eq!(h.state().session.project.comp(a).unwrap().resolution, Resolution::Half);
+    assert_eq!(h.state().session.history.undo.len(), steps, "no undo step");
+    assert_eq!(content(&h, a), before, "the comp's cached frames stay valid");
+    // Comp B starts at Auto and gets its own (here through the control channel's `ui.set`).
+    h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 320, "height": 180, "duration": 2})).unwrap();
+    h.run_steps(3);
+    let b = h.state().session.active_comp_id().unwrap();
+    assert_ne!(a, b);
+    assert_eq!(h.state().viewer_res(), Resolution::Auto);
+    let (req, _reply) = effectcraft_ui_egui::control::ControlRequest::new("ui.set", json!({"viewer": {"res": "quarter"}}));
+    let ctx = h.ctx.clone();
+    let _ = effectcraft_ui_egui::control::handle(h.state_mut(), &ctx, &req);
+    assert_eq!(h.state().viewer_res(), Resolution::Quarter);
+    let ctx = h.ctx.clone();
+    assert_eq!(effectcraft_ui_egui::control::inspect(h.state(), &ctx)["ui"]["viewer"]["res"], json!("Quarter"));
+    // Back to comp A: its resolution again.
+    h.state_mut().session.open_comp(a);
+    h.run_steps(3);
+    assert_eq!(h.state().viewer_res(), Resolution::Half);
+    assert!(h.state().viewer_scale(1.0, 1.0) == 0.5);
+    // Saved and opened again.
+    let path = std::env::temp_dir().join(format!("ec-viewer-res-{}.ecproj", std::process::id()));
+    h.state_mut().session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
+    let mut s = Session::default();
+    s.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+    let _ = std::fs::remove_file(&path);
+    s.open_comp(b);
+    let app = EffectcraftApp::new(s);
+    assert_eq!(app.viewer_res(), Resolution::Quarter);
+    assert_eq!(app.session.project.comp(a).unwrap().resolution, Resolution::Half);
+}
+
 #[test]
 fn bottom_bar_in_after_effects_order() {
     let h = harness();
@@ -601,6 +651,32 @@ fn fill_options_paint_the_next_shape() {
     assert_eq!(gfill.get("opacity").unwrap().value.as_f64(), 40.0);
 }
 
+/// With a shape layer selected, Fill Options' None switches its fill off and Solid Color turns
+/// it back on, and the Fill swatch shows the layer's kind (#732).
+#[test]
+fn fill_options_change_the_selected_shape_layer() {
+    let mut h = harness();
+    let l = h.state_mut().session.execute("layer.newShape", json!({"kind": "rect", "size": [100, 100], "position": [320, 180]})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    h.run_steps(2);
+    let fill_on = |h: &Harness<'_, EffectcraftApp>| {
+        let layer = h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().clone();
+        layer.props.group("contents/group/contents/fill").unwrap().enabled
+    };
+    assert!(fill_on(&h));
+    for (kind, on) in [("none", false), ("solid", true)] {
+        let at = rect(&h, "header.fillOptions").center();
+        click(&mut h, at);
+        let at = rect(&h, &format!("header.fillOptions.{kind}")).center();
+        click(&mut h, at);
+        h.input_mut().events.push(Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        h.run_steps(3);
+        assert_eq!(fill_on(&h), on, "{kind}");
+        assert_eq!(h.state().session.state.shape_tool.fill.kind.id(), kind);
+    }
+}
+
 #[test]
 fn shape_pen_draws_a_closed_shape_layer() {
     let mut h = harness();
@@ -770,8 +846,8 @@ fn clicking_off_a_mask_deselects_its_points() {
     assert_eq!(h.state().session.state.selected_layers, vec![LayerId(plate)], "the layer stays selected");
 }
 
-/// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
-/// one pulls the path into a curve (#290).
+/// A straight two-key motion path shows Bezier handles at both keys, and dragging one pulls the
+/// path into a curve (#290).
 #[test]
 fn a_straight_motion_path_has_handles_to_curve_it() {
     let mut h = harness();
@@ -785,15 +861,16 @@ fn a_straight_motion_path_has_handles_to_curve_it() {
     h.run_steps(3);
     let (out0, in1) = (format!("viewer.motionPath.{}.0.out", box_id.0), format!("viewer.motionPath.{}.1.in", box_id.0));
     assert!(h.state().auto.find(&in1).is_some(), "the second key has a handle");
-    // The first key's handle lies a third of the way along the path: drag it down 150 px.
+    // The first key's auto-Bezier handle lies a sixth of the way along the path, as After Effects
+    // puts it: drag it down 150 px.
     let from = rect(&h, &out0).center();
-    assert!(from.distance(screen(&h, [200.0, 100.0])) < 2.0, "{from:?}");
-    let to = screen(&h, [200.0, 250.0]);
+    assert!(from.distance(screen(&h, [150.0, 100.0])) < 2.0, "{from:?}");
+    let to = screen(&h, [150.0, 250.0]);
     drag(&mut h, from, to);
     let p = h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().clone();
     assert!(!p.keys[0].spatial_auto);
     let t = p.keys[0].spatial_out;
-    assert!((t[0] - 100.0).abs() < 2.0 && (t[1] - 150.0).abs() < 2.0, "{t:?}");
+    assert!((t[0] - 50.0).abs() < 2.0 && (t[1] - 150.0).abs() < 2.0, "{t:?}");
     let mid = p.value_at(effectcraft_engine::time::Tick::from_seconds_f64(1.0)).as_vec3();
     assert!(mid[1] > 130.0, "the path curves: {mid:?}");
 }
@@ -1707,6 +1784,32 @@ fn handle_drags_scale_about_the_anchor_and_follow_the_pointer() {
     assert!(close(scale(&h), [162.5, 162.5]), "{:?}", scale(&h));
 }
 
+/// #491: with several layers selected, a handle drag scales all of them by the same ratio, each
+/// about its own anchor point, in one undo step.
+#[test]
+fn handle_drags_scale_every_selected_layer() {
+    let mut h = harness();
+    let layers = h.state().session.active_comp().unwrap().layers.iter().map(|l| l.id).collect::<Vec<_>>();
+    let (box_id, plate) = (layers[0], layers[1]);
+    let scale = |h: &Harness<'_, EffectcraftApp>, id: LayerId| {
+        let l = h.state().session.active_comp().unwrap().layer(id).unwrap().clone();
+        l.props.prop("transform/scale").unwrap().value.as_vec3()
+    };
+    h.state_mut().session.execute("prop.set", json!({"layer": plate.0, "path": "transform/scale", "value": [50, 50, 100]})).unwrap();
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_id.0, plate.0]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.run_steps(2);
+    let undo0 = h.state().session.history.undo.len();
+    // The box's bottom-right corner (360, 220) to (400, 260): twice the box's size.
+    let corner = rect(&h, &format!("viewer.handle.{}.2", box_id.0)).center();
+    let to = screen(&h, [400.0, 260.0]);
+    drag_path(&mut h, &[corner, to], Default::default());
+    let (b, p) = (scale(&h, box_id), scale(&h, plate));
+    assert!((b[0] - 200.0).abs() < 1.0 && (b[1] - 200.0).abs() < 1.0, "{b:?}");
+    assert!((p[0] - 100.0).abs() < 1.0 && (p[1] - 100.0).abs() < 1.0, "the other layer doubles too: {p:?}");
+    assert_eq!(h.state().session.history.undo.len(), undo0 + 1, "one undo step");
+}
+
 /// #252: with snapping on, a dragged handle snaps to the comp's corners and edges (and other
 /// layers'), so a layer scales exactly to the comp; Shift keeps the proportions and still lands
 /// on the comp's size.
@@ -1825,7 +1928,7 @@ fn full_resolution_frames_wider_than_the_texture_limit_fit() {
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     // (egui's font atlas needs 1024.)
     h.input_mut().max_texture_side = Some(1024);
-    h.state_mut().ui.viewer.res = effectcraft_ui_egui::state::Resolution::Full;
+    h.state_mut().session.execute("view.res.full", json!({})).unwrap();
     let full = |h: &mut Harness<'_, EffectcraftApp>| h.state_mut().viewer_pixels().is_some_and(|px| px.size == [2400, 400]);
     for _ in 0..400 {
         h.step();
@@ -1834,7 +1937,7 @@ fn full_resolution_frames_wider_than_the_texture_limit_fit() {
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    assert!(full(&mut h), "the full-size frame is shown (and stays readable): {:?}", h.state().ui.viewer.res);
+    assert!(full(&mut h), "the full-size frame is shown (and stays readable): {:?}", h.state().viewer_res());
     assert_eq!(h.state().viewer_texture_size(), Some([800, 134]), "2400×400 averaged by 3");
 }
 
@@ -1873,4 +1976,115 @@ fn roto_brush_ctrl_drag_resizes_the_brush() {
     let s = strokes(&h);
     assert_eq!(s.len(), 1);
     assert!((s[0].radius - dia / 2.0).abs() < 1e-6, "{} vs {dia}", s[0].radius);
+}
+
+/// #553: the Pen slot's tools work on a motion path as in After Effects: Add Vertex (and the
+/// Pen) add a keyframe where the path is clicked, Convert Vertex switches a keyframe between
+/// Linear and Auto Bezier, Delete Vertex removes it; the pointer is the tool's pen.
+#[test]
+fn vertex_tools_edit_motion_path_keyframes() {
+    let mut h = harness();
+    let box_id: LayerId = h.state().session.active_comp().unwrap().layers[0].id;
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 0.0, "value": [100, 100, 0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 2.0, "value": [500, 100, 0]})).unwrap();
+    s.execute("view.snapping", json!({"value": false})).unwrap();
+    s.set_time(effectcraft_engine::time::Tick::from_seconds_f64(3.0));
+    let keys = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().keys.clone()
+    };
+    h.state_mut().ui.tool = Tool::PenAdd;
+    h.run_steps(3);
+    let mid = screen(&h, [300.0, 100.0]);
+    h.input_mut().events.push(Event::PointerMoved(mid));
+    h.step();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "the pen is painted in place of the system pointer");
+    click(&mut h, mid);
+    let k = keys(&h);
+    assert_eq!(k.len(), 3, "Add Vertex adds a keyframe on the path");
+    let v = k[1].value.as_vec3();
+    assert!((v[0] - 300.0).abs() < 10.0 && (v[1] - 100.0).abs() < 1.0, "{v:?}");
+    assert!((k[1].time.seconds() - 1.0).abs() < 0.1, "{:?}", k[1].time);
+    // Convert Vertex: the new key's handles go (Linear), then come back (Auto Bezier).
+    h.state_mut().ui.tool = Tool::PenConvert;
+    let at = screen(&h, [v[0] as f32, v[1] as f32]);
+    click(&mut h, at);
+    let k = keys(&h);
+    assert!(!k[1].spatial_auto && k[1].spatial_in == [0.0; 3] && k[1].spatial_out == [0.0; 3], "Linear");
+    click(&mut h, at);
+    assert!(keys(&h)[1].spatial_auto, "Auto Bezier");
+    // Delete Vertex removes it.
+    h.state_mut().ui.tool = Tool::PenDelete;
+    click(&mut h, at);
+    assert_eq!(keys(&h).len(), 2);
+    // The Pen adds one too.
+    h.state_mut().ui.tool = Tool::Pen;
+    let quarter = screen(&h, [200.0, 100.0]);
+    click(&mut h, quarter);
+    assert_eq!(keys(&h).len(), 3);
+}
+
+/// #882: at 100 % (and 200 %) on a scaled display the frame's corner sits on a physical pixel, so
+/// every comp pixel covers whole screen pixels instead of being blended with its neighbour.
+#[test]
+fn frame_sits_on_the_physical_pixel_grid() {
+    for ppp in [1.0f32, 1.25, 1.5] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Grid", "width": 301, "height": 201, "duration": 1})).unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_pixels_per_point(ppp).build_eframe(move |_| EffectcraftApp::new(s));
+        h.run_steps(3);
+        for (mag, pan) in [(1.0f32, [0.3f32, 0.37]), (2.0, [-0.45, 0.2])] {
+            h.state_mut().ui.viewer.zoom = Some(mag / ppp);
+            h.state_mut().ui.viewer.pan = pan;
+            h.run_steps(2);
+            let c = rect(&h, "viewer.comp");
+            for v in [c.min.x * ppp, c.min.y * ppp] {
+                assert!((v - v.round()).abs() < 1e-3, "ppp {ppp}, {mag}×: corner at {v} physical px");
+            }
+            assert!((c.width() * ppp - 301.0 * mag).abs() < 1e-2, "ppp {ppp}, {mag}×: {} physical px wide", c.width() * ppp);
+        }
+    }
+}
+
+/// Magnification ▸ Fit up to 100% keeps fitting as the panel changes size (Maximize Panel), like
+/// Fit, and never magnifies past 100%.
+#[test]
+fn fit_up_to_100_follows_the_maximized_panel() {
+    use effectcraft_ui_egui::dock::PanelKind;
+    let pick = |h: &mut Harness<'_, EffectcraftApp>| {
+        let at = rect(h, "viewer.magnification").center();
+        click(h, at);
+        let at = rect(h, "viewer.magnification.1").center();
+        click(h, at);
+        assert_eq!(h.state().ui.viewer.zoom, None, "a fit mode, not a fixed magnification");
+        assert!(h.state().ui.viewer.fit_up_to_100);
+        h.run_steps(2);
+    };
+    // A comp larger than the panel: it fills the docked panel, then the maximized one.
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Big", "width": 3840, "height": 2160, "duration": 4})).unwrap();
+        EffectcraftApp::new(s)
+    });
+    h.run_steps(3);
+    pick(&mut h);
+    let docked = rect(&h, "viewer.comp").width();
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    let area = rect(&h, "viewer.area");
+    let maximized = rect(&h, "viewer.comp");
+    assert!(maximized.width() > docked + 100.0, "{docked} -> {}", maximized.width());
+    assert!(area.contains_rect(maximized), "{maximized:?} in {area:?}");
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    assert_eq!(rect(&h, "viewer.comp").width(), docked, "and back when the panel is restored");
+    // A comp smaller than the panel stops at 100%.
+    let mut h = harness();
+    pick(&mut h);
+    let ppp = h.ctx.pixels_per_point();
+    assert!(rect(&h, "viewer.comp").width() <= 640.0 / ppp + 0.01);
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    assert!((rect(&h, "viewer.comp").width() - 640.0 / ppp).abs() < 0.01);
 }

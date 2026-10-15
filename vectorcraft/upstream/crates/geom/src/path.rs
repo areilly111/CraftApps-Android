@@ -252,6 +252,24 @@ impl SubPath {
             _ => a,
         }
     }
+    /// Bend segment `seg` so its point at `t` moves by `dv`: both inner control points move by
+    /// dv / 3t(1-t), since B(t) moves by 3t(1-t) times that. A smooth anchor stays smooth: its other
+    /// handle turns with the moved one. False when there is no such segment.
+    pub fn bend_segment(&mut self, seg: usize, t: f64, dv: kurbo::Vec2) -> bool {
+        let n = self.anchors.len();
+        if seg >= self.segment_count() || n == 0 {
+            return false;
+        }
+        let v = dv / (3.0 * t * (1.0 - t));
+        if let Some(a) = self.anchors.get_mut(seg % n) {
+            a.set_handle(true, a.h_out + v, false);
+        }
+        if let Some(b) = self.anchors.get_mut((seg + 1) % n) {
+            b.set_handle(false, b.h_in + v, false);
+        }
+        true
+    }
+
     /// Split segment `seg` at parameter `t`, inserting a new anchor. Returns the new anchor index.
     pub fn insert_anchor(&mut self, seg: usize, t: f64) -> usize {
         let n = self.anchors.len();

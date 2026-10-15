@@ -4,6 +4,10 @@ File → Import Lightroom Catalog… opens `.lrcat` directly. Lightroom, Python,
 and a C SQLite runtime are not required. The source database is read-only, including committed
 `-wal` pages; a catalog that changes during the read is rejected. LightCraft owns subsequent edits.
 
+File → Open Library… given a Lightroom catalog folder (or an `.lrdata` / `.lrcat-data` folder, or the `.lrcat`)
+doesn't make a LightCraft library there: it offers this import instead, with the catalog found
+(`crates/engine/src/lightroom_folder.rs`, issue #891). `lightcraft-cli --library` refuses those places too.
+
 Equivalent commands:
 
 ```text
@@ -47,7 +51,11 @@ A Custom white balance on a raw LightCraft develops relative to its as-shot look
 RAF, CR3, CR2, PEF, SRW; Lightroom names them all `RAW`) can't be taken as Kelvin: the catalog keeps no
 as-shot white for Custom photos, so the photo stays As Shot and `Temperature, Tint` are reported
 (issue #510; a DNG keeps the Kelvin value, and an XMP packet with `crs:AsShotTemperature` is
-shifted by the same mired difference, see [xmp-interop.md](xmp-interop.md)).
+shifted by the same mired difference, see [xmp-interop.md](xmp-interop.md)). A raw whose camera has
+measured colour matrices (`lightcraft_raw::spectral`: ILCE-7M3, D850, EOS 5D Mark III…) edits in Kelvin
+and keeps the Kelvin value too (issue #730) — when its file was found and probed, since the camera is
+read from the file, not from the Lightroom catalog; a missing file is treated as a relative-scale raw
+until Reload reads it.
 Lightroom's `-999999` deferred-adjustment sentinel is omitted from both catalog and XMP mappings;
 it is reported, included in any saved archive, and never clamped into a real slider value. Deferred Adobe Auto Tone
 is not evaluated by the importer; LightCraft's Auto control remains available after migration.
@@ -62,5 +70,9 @@ Archive version 1 begins with the 12 bytes `LC-LRARCH\0\x01Z`, followed by zlib-
 Recovery readers must cap decompression at 32 MiB. JSON retains source identities, photo paths,
 settings, decoded XMP, keywords, history, snapshots, collection definitions and membership.
 
-The importer uses shared Rust code on macOS, Windows and Linux. If originals move between
-computers or volumes, use LightCraft's missing-photo relinking tools to update their paths.
+The importer uses shared Rust code on macOS, Windows and Linux. When a root folder's recorded
+path isn't a folder on this computer (a catalog copied from another machine), the importer uses
+the path relative to the catalog that Lightroom records for root folders on the catalog's volume
+(`relativePathFromCatalog`), when that is a folder, and reports the remapping as a warning. Copying
+a project folder with its catalog inside it therefore keeps its originals linked. Other moved
+originals stay missing; use LightCraft's missing-photo relinking tools to update their paths.

@@ -30,7 +30,7 @@ fn an_object_slice_follows_its_object_and_numbers_run_by_rows() {
     let mut d = Document::new(300.0, 200.0);
     let a = rect(&mut d, Rect::new(100.0, 50.0, 200.0, 150.0));
     assert!(d.slice_layout().is_empty(), "no slices, no auto slices");
-    d.node_mut(a).unwrap().slice = Some(Box::default());
+    d.node_mut(a).unwrap().extras_mut().slice = Some(Box::default());
     let lay = d.slice_layout();
     let own = lay.iter().find(|s| s.id == Some(a)).unwrap();
     assert_eq!((own.source, own.rect), (SliceSource::Object, Rect::new(100.0, 50.0, 200.0, 150.0)));
@@ -69,14 +69,15 @@ fn clip_to_artboard_clips_slices_and_off_covers_the_art() {
 fn slices_survive_a_native_round_trip_and_old_files_load() {
     let mut d = Document::new(100.0, 100.0);
     let a = rect(&mut d, Rect::new(10.0, 10.0, 20.0, 20.0));
-    d.node_mut(a).unwrap().slice = Some(Box::new(SliceOptions { kind: crate::SliceKind::NoImage, text: "<b>hi</b>".into(), ..Default::default() }));
+    d.node_mut(a).unwrap().extras_mut().slice =
+        Some(Box::new(SliceOptions { kind: crate::SliceKind::NoImage, text: "<b>hi</b>".into(), ..Default::default() }));
     let s = user(&mut d, Rect::new(30.0, 30.0, 60.0, 60.0));
     d.slice_mut(s).unwrap().options.url = "https://example.com".into();
     d.slices_clip_to_artboard = false;
     let json = serde_json::to_string(&d).unwrap();
     let back: Document = serde_json::from_str(&json).unwrap();
     assert_eq!(back.slices, d.slices);
-    assert_eq!(back.node(a).unwrap().slice, d.node(a).unwrap().slice);
+    assert_eq!(back.node(a).unwrap().extras().slice, d.node(a).unwrap().extras().slice);
     assert!(!back.slices_clip_to_artboard);
     // A document without slices writes none of the new keys (older readers see what they knew).
     let plain = serde_json::to_string(&Document::new(10.0, 10.0)).unwrap();

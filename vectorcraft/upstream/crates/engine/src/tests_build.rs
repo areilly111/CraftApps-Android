@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use vectorcraft_color::{Color, Paint};
 use vectorcraft_doc::{AppearanceItem, ImageBlob, ImageObject, LineCap, LineJoin, Node, NodeKind};
 use vectorcraft_geom::{Affine, FillRule, PathData, Rect};
+use vectorcraft_testkit::pdf::{PdfPage, pdf};
 use vectorcraft_tools::{Mods, PointerEvent, PointerKind};
 
 use super::*;
@@ -170,6 +171,47 @@ fn shape_builder_tool_drives_the_command() {
     s.pointer(&PointerEvent::new(PointerKind::Down, 125.0, 50.0).with_mods(alt), v).unwrap();
     s.pointer(&PointerEvent::new(PointerKind::Up, 125.0, 50.0).with_mods(alt), v).unwrap();
     assert_eq!(layer_children(&s), 1);
+}
+
+/// The first and last stop colours of a gradient paint.
+fn gradient_ends(p: &Paint) -> Option<([f32; 3], [f32; 3])> {
+    let Paint::Gradient(g) = p else { return None };
+    Some((g.gradient.stops.first()?.color.to_rgb(), g.gradient.stops.last()?.color.to_rgb()))
+}
+
+#[test]
+fn shape_builder_cuts_gradient_shapes_from_a_pdf_along_their_outlines() {
+    // Two overlapping diamonds (x 100–300 and 200–400, y 40–160), each written as gradient-filled
+    // shapes are in a PDF or a PDF-compatible .ai: the diamond as a clip, then a shading (#1304).
+    let shading = |x0: u32, c0: &str, c1: &str| {
+        format!(
+            "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [{x0} 0 {} 0] /Extend [true true] /Function << /FunctionType 2 /Domain [0 1] /C0 [{c0}] /C1 [{c1}] /N 1 >> >>",
+            x0 + 200
+        )
+    };
+    let diamond = |x0: u32| format!("q {x0} 100 m {} 160 l {} 100 l {} 40 l h W n", x0 + 100, x0 + 200, x0 + 100);
+    let page = PdfPage {
+        resources: format!("/Shading << /Sh0 {} /Sh1 {} >>", shading(100, "1 0 0", "1 1 0"), shading(200, "0 0 1", "0 1 1")),
+        ..PdfPage::new(500.0, 200.0, &format!("{} /Sh0 sh Q {} /Sh1 sh Q", diamond(100), diamond(200)))
+    };
+    let bytes = pdf(&[page], None);
+    let mut s = Session::new();
+    s.execute("document.open", &json!({"name": "diamonds.pdf", "dataBase64": vectorcraft_format::base64_encode(&bytes)})).unwrap();
+    s.execute("select.all", &json!({})).unwrap();
+    let r = s.execute("shapeBuilder.merge", &json!({"points": [[250, 100]]})).unwrap();
+    let mut pieces: Vec<(f64, Rect, Paint)> =
+        ids(&r).into_iter().map(|i| (area(&s, i), node(&s, i).geometric_bounds().unwrap(), node(&s, i).appearance.fill_paint())).collect();
+    pieces.sort_by(|a, b| a.1.x0.total_cmp(&b.1.x0));
+    let near = |a: Rect, b: Rect| [a.x0 - b.x0, a.y0 - b.y0, a.x1 - b.x1, a.y1 - b.y1].iter().all(|v| v.abs() < 0.01);
+    let [(left, lb, lp), (mid, mb, mp), (right, rb, rp)] = pieces.as_slice() else { panic!("three pieces: {pieces:?}") };
+    // What is left of each diamond, and the diamond where they overlap: not their bounding boxes.
+    assert!((left - 9000.0).abs() < 1.0 && (mid - 3000.0).abs() < 1.0 && (right - 9000.0).abs() < 1.0, "{pieces:?}");
+    assert!(near(*lb, Rect::new(100.0, 40.0, 250.0, 160.0)), "{lb:?}");
+    assert!(near(*mb, Rect::new(200.0, 70.0, 300.0, 130.0)), "{mb:?}");
+    assert!(near(*rb, Rect::new(250.0, 40.0, 400.0, 160.0)), "{rb:?}");
+    // Each keeps its gradient; the overlap takes the front diamond's.
+    let (first, second) = (Some(([1.0, 0.0, 0.0], [1.0, 1.0, 0.0])), Some(([0.0, 0.0, 1.0], [0.0, 1.0, 1.0])));
+    assert_eq!((gradient_ends(lp), gradient_ends(mp), gradient_ends(rp)), (first, second, second));
 }
 
 /// A red 100 × 100 square crossed by a stroke-only vertical line at x = 50, both selected.
@@ -592,7 +634,10 @@ fn add_image(s: &mut Session, r: &vectorcraft_trace::Raster, xf: Affine) -> Node
         d.insert(
             l,
             0,
-            Node::new(id, NodeKind::Image(ImageObject { key: "img1".into(), width: w, height: h, xf, link: None, placement: Default::default() })),
+            Node::new(
+                id,
+                NodeKind::Image(Box::new(ImageObject { key: "img1".into(), width: w, height: h, xf, link: None, placement: Default::default() })),
+            ),
         )?;
         sel.set([id]);
         Ok(id)
@@ -687,7 +732,7 @@ fn image_trace_palettes_and_swatch_libraries() {
     let doc = crate::cmd::swatchlib::library_colors(&s, "document").unwrap();
     let got = fills(&s, &r["id"]);
     assert!(!got.is_empty() && got.iter().all(|c| doc.contains(c)), "{got:?}");
-    let t = node(&s, NodeId(r["id"].as_u64().unwrap())).trace.unwrap();
+    let t = node(&s, NodeId(r["id"].as_u64().unwrap())).extras().trace.clone().unwrap();
     assert_eq!((t["params"]["palette"].as_str(), t["params"]["library"].as_str()), (Some("documentLibrary"), Some("document")));
     assert!(t["params"].get("swatches").is_none(), "looked up again at every trace");
     // A swatch library by id: the web-safe colours.
@@ -733,7 +778,7 @@ fn image_trace_create_strokes_makes_stroked_centre_lines() {
     assert!(!sp.closed);
     let (a, b) = (sp.anchors[0].p, sp.anchors[sp.anchors.len() - 1].p);
     assert!((a.y - 201.0).abs() < 1.5 && (b.y - 201.0).abs() < 1.5 && (a.x - b.x).abs() > 140.0, "{a:?} … {b:?}");
-    let t = node(&s, g).trace.unwrap();
+    let t = node(&s, g).extras().trace.clone().unwrap();
     assert_eq!((t["params"]["strokes"].as_bool(), t["params"]["strokeWidth"].as_f64()), (Some(true), Some(5.0)));
     // Expand keeps the stroked line.
     s.execute("imageTrace.expand", &json!({})).unwrap();
@@ -777,7 +822,7 @@ fn image_trace_flat_logo_preset_makes_a_true_circle() {
     assert!(r["anchors"].as_u64().unwrap() <= 6, "a circle is four anchors: {r}");
     let g = NodeId(r["id"].as_u64().unwrap());
     let n = node(&s, g);
-    let t = n.trace.clone().expect("settings stored");
+    let t = n.extras().trace.clone().expect("settings stored");
     assert_eq!((t["preset"].as_str(), t["params"]["mode"].as_str()), (Some("Flat Logo"), Some("logo")));
     let paths = traced_paths(&n);
     let (p, rule) = outline(&paths[0]);
@@ -811,7 +856,7 @@ fn image_trace_object_remembers_its_settings() {
     image_doc(&mut s);
     let r = s.execute("imageTrace.make", &json!({"preset": "6 Colors"})).unwrap();
     let g = NodeId(r["id"].as_u64().unwrap());
-    let t = node(&s, g).trace.clone().expect("settings stored");
+    let t = node(&s, g).extras().trace.clone().expect("settings stored");
     assert_eq!(t["preset"], "6 Colors");
     assert_eq!(t["params"]["colors"], 6);
     // Changing a parameter makes it Custom; the settings survive save/open.
@@ -819,13 +864,13 @@ fn image_trace_object_remembers_its_settings() {
     let g = NodeId(r["id"].as_u64().unwrap());
     let d = s.doc().unwrap().doc.clone();
     let back = vectorcraft_format::load(&vectorcraft_format::save(&d, false)).unwrap();
-    let t = back.node(g).unwrap().trace.clone().unwrap();
+    let t = back.node(g).unwrap().extras().trace.clone().unwrap();
     assert_eq!((t["preset"].as_str(), t["params"]["colors"].as_u64()), (Some("Custom"), Some(9)));
     // Expanded traces are plain groups.
     s.execute("imageTrace.expand", &json!({})).unwrap();
     let st = s.doc().unwrap();
     let id = st.selection.in_paint_order(&st.doc)[0];
-    assert!(st.doc.node(id).unwrap().trace.is_none());
+    assert!(st.doc.node(id).unwrap().extras().trace.is_none());
 }
 
 /// A black disc (r = 30 px) on light blue, 100 × 100 px, placed at 2× from (50, 50): traced in
@@ -852,7 +897,7 @@ fn render_doc(s: &Session, trace_views: bool) -> vectorcraft_render::Rendered {
 fn image_trace_view_is_stored_kept_and_validated() {
     let mut s = session();
     let g = disc_on_blue(&mut s);
-    assert_eq!(node(&s, g).trace.unwrap()["view"], "tracingResult");
+    assert_eq!(node(&s, g).extras().trace.clone().unwrap()["view"], "tracingResult");
     let r = s.execute("imageTrace.setView", &json!({"view": "outlinesWithSourceImage"})).unwrap();
     assert_eq!((ids(&r), r["view"].as_str()), (vec![g], Some("outlinesWithSourceImage")));
     assert_eq!(node(&s, g).trace_view(), vectorcraft_doc::TraceView::OutlinesWithSource);

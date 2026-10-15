@@ -223,7 +223,7 @@ opens the dialog on a page.
 | Auto Save | the auto-save ring and the crash-recovery journal |
 | Color | stored only (display colour management, EDR monitoring, HDR graphics white) |
 | Graphics | new text layers: smart quotes, ligatures, default font |
-| Labels | the 16 label names and colours (timeline, Project panel, Edit ▸ Label), label defaults for imported movies / video / audio / stills and new sequences |
+| Labels | the 16 label names and colours (timeline, Project panel, Edit ▸ Label), label defaults for imported movies / video / audio / stills and new sequences, Label Color Presets: JSON files (`{"name", "labels": [16 × {"name", "color": "#rrggbb"}]}`) in `<data dir>/Label Presets`, built in: "Default" (the labels FilmCraft ships with), "Bright" (16 saturated hues) and "Roles" (B-Roll, Footage, Dialogue… named so the label defaults land on matching roles) (`labels.presets`, `labels.importPreset {path}`, `labels.exportPreset {path}`, `labels.deletePreset {name}`; `labels.preset` is the selected one) |
 | Media | Indeterminate Media Timebase (frame rate of stills), Default Media Scaling (Scale to / Set to frame size when a clip of another size is edited in), Enable proxies |
 | Media Analysis & Transcription | auto-transcribe imported clips (scope "all imported"), speech model, default language / auto-detect, speaker labelling (defaults of `transcript.generate`) |
 | Media Cache | location (`<data dir>/Media Cache` by default; unsaved projects' render previews live there), automatic deletion (older than N days / beyond N GB), Delete… (`mediaCache.clean {all?}`, `mediaCache.info`) |

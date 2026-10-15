@@ -104,7 +104,9 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     action = Some(("layerComp.setOptions", json!({"comp": c.id, *key: !on})));
                 }
                 if hov {
-                    resp.clone().on_hover_text(format!("Apply {tip}: {}", if *on { "on" } else { "off" }));
+                    let template = "Apply {option}: {state}";
+                    let state = if *on { "on" } else { "off" };
+                    resp.clone().on_hover_text(crate::i18n::fmt(tl!(template), &[("option", tip), ("state", tl!(state))]));
                 }
                 x -= 22.0;
             }
@@ -114,7 +116,12 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let r = Rect::from_center_size(pos2(name_x + 7.0, rect.center().y), vec2(14.0, 14.0));
                 crate::icons::paint(ui, r, "triangle-alert", 12.0, t.warning);
                 if ui.rect_contains_pointer(r) {
-                    resp.clone().on_hover_text(format!("{missing} layer(s) recorded by this comp were deleted. Update the comp, or clear the warning."));
+                    resp.clone().on_hover_text(crate::i18n::trn(
+                        crate::i18n::current(),
+                        missing as u64,
+                        "{n} layer recorded by this comp was deleted. Update the comp, or clear the warning.",
+                        "{n} layers recorded by this comp were deleted. Update the comp, or clear the warning.",
+                    ));
                     if resp.clicked() {
                         toggle_hit = true;
                         action = Some(("layerComp.updateWarnings", json!({"clear": true})));

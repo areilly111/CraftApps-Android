@@ -144,7 +144,7 @@ fn compound_evenodd_roundtrip() {
     let i = Node::path(d.alloc_id(), shapes::rectangle(Rect::new(25.0, 25.0, 75.0, 75.0)), Appearance::default());
     let cid = d.alloc_id();
     let mut c = Node::new(cid, NodeKind::Compound { children: vec![Arc::new(o), Arc::new(i)], rule: FillRule::EvenOdd });
-    c.appearance = Appearance::basic(solid("#123456"), Paint::None, 1.0);
+    c.appearance = Appearance::basic(solid("#123456"), Paint::None, 1.0).into();
     let d = doc_with(vec![c]);
     let s = export(&d, &ExportOptions::default());
     assert_eq!(s.matches("<path").count(), 1, "{s}");
@@ -316,7 +316,7 @@ fn stroke_alignment_approximations() {
     assert!(s.contains("<clipPath") && s.contains("<mask") && s.contains("stroke-width=\"8\""), "{s}");
     // The outside stroke's mask comes back as an opacity mask (same pixels, no warning).
     let (r, warnings) = import_with_report(&s).unwrap();
-    assert!(art(&r).iter().any(|n| n.mask.is_some()), "{warnings:?}");
+    assert!(art(&r).iter().any(|n| n.extras().mask.is_some()), "{warnings:?}");
 }
 
 #[test]
@@ -340,14 +340,14 @@ fn image_roundtrip() {
     let id = d.alloc_id();
     let n = Node::new(
         id,
-        NodeKind::Image(ImageObject {
+        NodeKind::Image(Box::new(ImageObject {
             key: "k".into(),
             width: 4,
             height: 2,
             xf: Affine::translate((10.0, 20.0)) * Affine::scale(10.0),
             link: None,
             placement: Default::default(),
-        }),
+        })),
     );
     let mut d = doc_with(vec![n]);
     d.images.insert("k".into(), ImageBlob::new("image/png", png.clone()));
@@ -668,7 +668,7 @@ fn import_clip_mask_and_warnings() {
     let a = art(&d);
     assert!(matches!(a[0].kind, NodeKind::Group { clip: true, .. }));
     assert!(close_rect(a[0].geometric_bounds().unwrap(), Rect::new(25.0, 25.0, 75.0, 75.0), 0.01));
-    assert!(a.iter().any(|n| n.mask.is_some()), "<mask> imports as an opacity mask");
+    assert!(a.iter().any(|n| n.extras().mask.is_some()), "<mask> imports as an opacity mask");
     assert!(!w.iter().any(|w| w.contains("mask")), "{w:?}");
     // <pattern> becomes a pattern swatch.
     assert_eq!(d.patterns.len(), 1, "{w:?}");
@@ -862,7 +862,7 @@ fn masked_doc(clip: bool, invert: bool) -> Document {
     let art = rect_node(&mut d, Rect::new(10.0, 10.0, 50.0, 90.0), white);
     let mut m = vectorcraft_doc::OpacityMask::new(art, clip);
     m.invert = invert;
-    n.mask = Some(Box::new(m));
+    n.extras_mut().mask = Some(Box::new(m));
     let l = d.layers[0].id;
     d.insert(Some(l), 0, n).unwrap();
     d
@@ -875,9 +875,9 @@ fn opacity_mask_exports_as_svg_mask_and_imports_back() {
     assert!(s.contains("<mask id=\"mask-1\""), "{s}");
     assert!(s.contains("mask=\"url(#mask-1)\""), "{s}");
     let back = import(&s).unwrap();
-    let masked: Vec<&Node> = art(&back).into_iter().filter(|n| n.mask.is_some()).collect();
+    let masked: Vec<&Node> = art(&back).into_iter().filter(|n| n.extras().mask.is_some()).collect();
     assert_eq!(masked.len(), 1, "{s}");
-    let m = masked[0].mask.as_deref().unwrap();
+    let m = masked[0].extras().mask.as_deref().unwrap();
     assert!(close_rect(m.art.geometric_bounds().unwrap(), Rect::new(10.0, 10.0, 50.0, 90.0), 1e-6));
     assert!(close_rect(masked[0].geometric_bounds().unwrap(), Rect::new(10.0, 10.0, 90.0, 90.0), 1e-6));
 }
@@ -890,7 +890,7 @@ fn unclipped_inverted_mask_exports_backdrop_and_filter() {
     let disabled = {
         let mut d = masked_doc(true, false);
         let id = d.layers[0].children().unwrap()[0].id;
-        d.node_mut(id).unwrap().mask.as_mut().unwrap().disabled = true;
+        d.node_mut(id).unwrap().extras_mut().mask.as_mut().unwrap().disabled = true;
         export(&d, &ExportOptions::default())
     };
     assert!(!disabled.contains("<mask"), "disabled masks are not exported");

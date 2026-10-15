@@ -32,7 +32,10 @@ fn enveloped(s: &mut Session, cmd: &str, params: Value) -> (NodeId, NodeId) {
 
 fn mesh(s: &Session, e: NodeId) -> (u32, u32, Vec<Point>, Vec<[Vec2; 4]>) {
     match node(s, e).kind {
-        NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows, cols, points, handles }, .. } => (rows, cols, points, handles),
+        NodeKind::Envelope { kind, .. } => match *kind {
+            EnvelopeKind::Mesh { rows, cols, points, handles } => (rows, cols, points, handles),
+            k => panic!("{k:?}"),
+        },
         k => panic!("{k:?}"),
     }
 }
@@ -120,7 +123,7 @@ fn mesh_handles_turn_with_the_envelope_and_round_trip() {
     let mut old = serde_json::to_value(node(&s, e)).unwrap();
     old["kind"]["kind"].as_object_mut().unwrap().remove("handles");
     let n: Node = serde_json::from_value(old).unwrap();
-    assert!(matches!(n.kind, NodeKind::Envelope { kind: EnvelopeKind::Mesh { handles, .. }, .. } if handles.is_empty()));
+    assert!(matches!(n.kind, NodeKind::Envelope { kind, .. } if matches!(&*kind, EnvelopeKind::Mesh { handles, .. } if handles.is_empty())));
 }
 
 #[test]

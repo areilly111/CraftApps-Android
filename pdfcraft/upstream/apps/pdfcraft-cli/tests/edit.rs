@@ -179,3 +179,48 @@ mod one_based_arguments {
         assert_eq!(std::fs::read(dir.0.join("input.pdf")).unwrap(), source);
     }
 }
+
+/// A destination past the end must fail, not silently become an append (#1330).
+#[test]
+fn a_destination_past_the_end_fails_and_writes_nothing() {
+    let input = tmp("past-end", "in.pdf");
+    std::fs::write(&input, fixture()).unwrap();
+    let output = tmp("past-end", "out.pdf");
+    for (option, value, diagnostic) in [
+        ("--insert-blank", "3", "--insert-blank 3 is past the end: it must be between 1 and 2 (the document has 1 pages)"),
+        ("--insert-blank", "99", "--insert-blank 99 is past the end: it must be between 1 and 2 (the document has 1 pages)"),
+        ("--move", "1:3", "--move target 3 is past the end: it must be between 1 and 2 (the document has 1 pages)"),
+        ("--move", "1:99", "--move target 99 is past the end: it must be between 1 and 2 (the document has 1 pages)"),
+    ] {
+        let out = Command::new(BIN).args(["edit", input.to_str().unwrap(), "--out", output.to_str().unwrap(), option, value]).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{option} {value}");
+        assert_eq!(String::from_utf8_lossy(&out.stderr), format!("pdfcraft-cli: {diagnostic}\n"), "{option} {value}");
+        assert!(!output.exists(), "{option} {value}: no output may be written");
+    }
+}
+
+/// One past the last page appends, and each destination is checked against the page count at that point.
+#[test]
+fn the_append_destination_and_counts_grown_by_earlier_edits_are_accepted() {
+    let input = tmp("append", "in.pdf");
+    std::fs::write(&input, fixture()).unwrap();
+    for (name, args) in [
+        ("insert.pdf", vec!["--insert-blank", "2"]),
+        ("move.pdf", vec!["--insert-blank", "1", "--move", "1:3"]),
+        ("grown.pdf", vec!["--insert-blank", "2", "--insert-blank", "3"]),
+    ] {
+        let output = tmp("append", name);
+        let mut all = vec!["edit", input.to_str().unwrap(), "--out", output.to_str().unwrap()];
+        all.extend(args);
+        let out = Command::new(BIN).args(&all).output().unwrap();
+        assert!(out.status.success(), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+        let info = pdfcraft_render::inspect(std::sync::Arc::new(std::fs::read(&output).unwrap()), None).unwrap();
+        let sizes: Vec<_> = info.pages.iter().map(|p| (p.width, p.height)).collect();
+        let expected: &[(f32, f32)] = match name {
+            "insert.pdf" => &[(200.0, 300.0), (612.0, 792.0)],
+            "move.pdf" => &[(200.0, 300.0), (612.0, 792.0)],
+            _ => &[(200.0, 300.0), (612.0, 792.0), (612.0, 792.0)],
+        };
+        assert_eq!(sizes, expected, "{name}");
+    }
+}

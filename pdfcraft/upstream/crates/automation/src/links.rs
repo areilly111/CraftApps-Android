@@ -1,8 +1,10 @@
 //! Link tools: list, add, edit and delete links; create links from URLs in the text; remove
 //! all links. Rectangles are points from the top-left of the displayed page.
 
-use pdfcraft_engine::{Edit, LinkAction, LinkHighlight, LinkStyle};
+use pdfcraft_engine::{Edit, LinkAction, LinkHighlight, LinkStyle, read_remote_document, resolve_remote_document_path};
+use pdfcraft_render::{DestView, LinkTarget, RemoteDestination};
 use serde_json::{Value, json};
+use std::path::Path;
 
 use crate::comments::parse_color;
 use crate::{Args, Automation, Result, ToolError, failed};
@@ -80,6 +82,66 @@ impl Automation {
         Ok(json!({ "count": items.len(), "links": items }))
     }
 
+    pub(crate) fn link_open(&mut self, a: &Args) -> Result<Value> {
+        let page_number = a.int("page")?;
+        let index_number = a.int("index")?;
+        let page = usize::try_from(page_number.checked_sub(1).filter(|n| *n >= 0).ok_or_else(|| bad("page must be 1 or more"))?)
+            .map_err(|_| bad("page is out of range"))?;
+        let index = usize::try_from(index_number.checked_sub(1).filter(|n| *n >= 0).ok_or_else(|| bad("index must be 1 or more"))?)
+            .map_err(|_| bad("index is out of range"))?;
+        let (source_path, file, destination, new_window) = {
+            let source = self.doc(a)?;
+            if page >= source.info.pages.len() {
+                return Err(bad(format!("page {page_number} is out of range: the document has {} pages", source.info.pages.len())));
+            }
+            let link = source
+                .info
+                .links
+                .iter()
+                .find(|link| link.page == page && link.index == index)
+                .ok_or_else(|| failed(format!("page {page_number} has no link {index_number} (see link_list)")))?;
+            let LinkTarget::RemoteGoTo { file, destination, new_window } = &link.target else {
+                return Err(bad("the selected link is not a supported local PDF GoToR link"));
+            };
+            (source.path.clone(), file.clone(), destination.clone(), *new_window)
+        };
+        let path = resolve_remote_document_path(source_path.as_deref().map(Path::new), &file).map_err(failed)?;
+        let path = self.resolve(&path.to_string_lossy(), false)?;
+        let bytes = read_remote_document(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let id =
+            self.session.open(name, Some(path.to_string_lossy().into_owned()), std::sync::Arc::new(bytes), a.opt_str("password")?).map_err(failed)?;
+        let opened = self.session.get(id).ok_or_else(|| failed("the linked document vanished"))?;
+        let (destination_applied, destination_value, warning) = match destination {
+            RemoteDestination::Default => (true, json!({ "kind": "default" }), None),
+            RemoteDestination::Named(name) => {
+                (false, json!({ "kind": "named", "name": name }), Some("The PDF opened, but the named destination was not applied."))
+            }
+            RemoteDestination::Page { page, view } if page < opened.info.pages.len() => {
+                (true, json!({ "kind": "page", "page": page.saturating_add(1), "view": dest_view_value(view) }), None)
+            }
+            RemoteDestination::Page { page, view } => (
+                false,
+                json!({ "kind": "page", "page": page.saturating_add(1), "view": dest_view_value(view) }),
+                Some("The PDF opened, but the link's page destination is out of range."),
+            ),
+        };
+        let mut display_path = path.to_string_lossy().into_owned();
+        if let Some(root) = &self.root
+            && let Ok(relative) = path.strip_prefix(root)
+        {
+            display_path = relative.to_string_lossy().into_owned();
+        }
+        Ok(json!({
+            "document": crate::summary(opened),
+            "path": display_path,
+            "destination_applied": destination_applied,
+            "destination": destination_value,
+            "warning": warning,
+            "new_window_hint": new_window,
+        }))
+    }
+
     pub(crate) fn link_add(&mut self, a: &Args) -> Result<Value> {
         let page = self.page(a)?;
         let rect = self.view_rect(a, page)?.ok_or_else(|| bad("link_add needs rect"))?;
@@ -126,9 +188,27 @@ impl Automation {
     }
 
     pub(crate) fn links_remove(&mut self, a: &Args) -> Result<Value> {
-        let before = self.doc(a)?.links.len();
-        let mut out = self.apply(a, Edit::RemoveLinks { pages: None })?;
+        let pages = match a.opt_ints("pages")? {
+            Some(_) => Some(self.pages(a, "pages")?),
+            None => None,
+        };
+        let before = match &pages {
+            Some(ps) => self.doc(a)?.links.iter().filter(|l| ps.contains(&l.page)).count(),
+            None => self.doc(a)?.links.len(),
+        };
+        let mut out = self.apply(a, Edit::RemoveLinks { pages })?;
         out["removed"] = json!(before);
         Ok(out)
+    }
+}
+
+fn dest_view_value(view: DestView) -> Value {
+    match view {
+        DestView::Top => json!({ "kind": "top" }),
+        DestView::Xyz { left, top, zoom } => json!({ "kind": "xyz", "left": left, "top": top, "zoom": zoom }),
+        DestView::Fit => json!({ "kind": "fit" }),
+        DestView::FitH { top } => json!({ "kind": "fit_h", "top": top }),
+        DestView::FitV { left } => json!({ "kind": "fit_v", "left": left }),
+        DestView::FitR { rect } => json!({ "kind": "fit_r", "rect": rect }),
     }
 }

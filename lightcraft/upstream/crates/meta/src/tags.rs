@@ -170,6 +170,9 @@ fn enumerated(group: &str, tag: u16, v: i64) -> Option<&'static str> {
         (0x0103, 8) => "Deflate",
         (0x0103, 32773) => "PackBits",
         (0x0103, 34892) => "Lossy JPEG",
+        (0x0103, 34713) => "Nikon NEF Compressed",
+        (0x0103, 32767) => "Sony ARW Compressed",
+        (0x0103, 52546) => "JPEG XL",
         (0x0106, 0) => "WhiteIsZero",
         (0x0106, 1) => "BlackIsZero",
         (0x0106, 2) => "RGB",
@@ -269,12 +272,56 @@ fn rows_of(group: &'static str, ifd: &Ifd, out: &mut Vec<TagRow>) {
     }
 }
 
+/// The IFD holding a raw file's sensor data when it is not IFD0 (a colour-filter-array or linear-raw
+/// image in a sub-IFD). IFD0 of such files describes a thumbnail, so its Compression is not the raw's.
+fn raw_image_ifd(ifd0: &Ifd) -> Option<&Ifd> {
+    ifd0.sub_ifds.iter().find(|s| matches!(s.u32(0x0106), Some(32803 | 34892)))
+}
+
+/// Nikon maker note `NEFCompression` (0x0093) spelled out, per the public Nikon tag documentation.
+fn nef_compression(v: u32) -> Option<&'static str> {
+    Some(match v {
+        1 => "Lossy (type 1)",
+        2 => "Uncompressed",
+        3 => "Lossless",
+        4 => "Lossy (type 2)",
+        5 => "Striped packed 12 bits",
+        6 => "Uncompressed (reduced to 12 bit)",
+        7 => "Unpacked 12 bits",
+        8 => "Small",
+        9 => "Packed 12 bits",
+        10 => "Packed 14 bits",
+        13 => "High Efficiency",
+        14 => "High Efficiency*",
+        _ => return None,
+    })
+}
+
+/// Nikon maker note NEFCompression of a raw file, spelled out; `None` for other files or values.
+fn nikon_nef_compression(tiff: &Tiff, bytes: &[u8]) -> Option<&'static str> {
+    let ifd0 = tiff.ifds.first()?;
+    let make = ifd0.string(0x010f)?;
+    if !make.to_ascii_uppercase().starts_with("NIKON") {
+        return None;
+    }
+    let e = ifd0.exif.as_ref()?.get(0x927c)?;
+    let mn = lightcraft_tiff::makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make)?;
+    nef_compression(mn.ifd.u32(0x0093)?)
+}
+
 /// Every tag of a parsed TIFF structure (a TIFF-based raw, a TIFF, or an EXIF block): IFD0,
-/// then the EXIF, GPS and interoperability IFDs.
+/// then the EXIF, GPS and interoperability IFDs. A raw file's Compression row is the sensor
+/// image's, not IFD0's thumbnail's.
 pub fn tag_rows(tiff: &Tiff) -> Vec<TagRow> {
     let mut out = Vec::new();
     if let Some(ifd0) = tiff.ifds.first() {
         rows_of("TIFF", ifd0, &mut out);
+        if let Some(c) = raw_image_ifd(ifd0).and_then(|r| r.value(0x0103))
+            && let Some(row) = out.iter_mut().find(|r| r.tag == 0x0103)
+        {
+            // lossless JPEG (DNG, CR2) on the sensor image; plain "JPEG" would read as lossy
+            row.value = if c.get_u64(0) == Some(7) { "Lossless JPEG".to_string() } else { value_text("TIFF", 0x0103, c) };
+        }
         if let Some(e) = &ifd0.exif {
             rows_of("EXIF", e, &mut out);
             if let Some(i) = &e.interop {
@@ -294,7 +341,13 @@ pub fn file_tag_rows(bytes: &[u8]) -> Vec<TagRow> {
     if Tiff::sniff(bytes).is_some()
         && let Ok(t) = Tiff::parse(bytes)
     {
-        return tag_rows(&t);
+        let mut rows = tag_rows(&t);
+        if let Some(words) = nikon_nef_compression(&t, bytes)
+            && let Some(row) = rows.iter_mut().find(|r| r.group == "TIFF" && r.tag == 0x0103)
+        {
+            row.value = words.to_string();
+        }
+        return rows;
     }
     let Some(exif) = crate::embedded(bytes).exif else { return Vec::new() };
     Tiff::parse(crate::strip_exif_header(&exif)).map(|t| tag_rows(&t)).unwrap_or_default()
@@ -327,5 +380,85 @@ mod tests {
         assert_eq!(get("ISO Speed").as_deref(), Some("400"));
         assert!(rows.iter().any(|r| r.group == "GPS" && r.name == "GPS Latitude"), "{rows:?}");
         assert!(!rows.iter().any(|r| r.tag == 0x8769), "IFD pointers are left out");
+    }
+
+    fn entry(tag: u16, ty: u16, count: u32, val: u32) -> Vec<u8> {
+        let mut e = Vec::new();
+        e.extend(tag.to_le_bytes());
+        e.extend(ty.to_le_bytes());
+        e.extend(count.to_le_bytes());
+        e.extend(val.to_le_bytes());
+        e
+    }
+
+    fn ifd(entries: &[Vec<u8>]) -> Vec<u8> {
+        let mut b = (entries.len() as u16).to_le_bytes().to_vec();
+        entries.iter().for_each(|e| b.extend(e));
+        b.extend(0u32.to_le_bytes());
+        b
+    }
+
+    /// A little-endian raw with a thumbnail IFD0 (`Compression` 1), a CFA sub-IFD (`Compression`
+    /// 34713) and, when `nef` is set, a Nikon maker note whose NEFCompression is that value.
+    fn synthetic_raw(nef: Option<u16>) -> Vec<u8> {
+        let make = b"NIKON CORPORATION ";
+        let mut note = b"Nikon   II*    ".to_vec();
+        note.extend(ifd(&[entry(0x0093, 3, 1, nef.unwrap_or(0) as u32)]));
+        let ifd0_len = 2 + 4 * 12 + 4;
+        let sub_at = 8 + ifd0_len;
+        let sub = ifd(&[entry(0x0103, 3, 1, 34713), entry(0x0106, 3, 1, 32803)]);
+        let exif_at = sub_at + sub.len();
+        let exif_len = 2 + 12 + 4;
+        let make_at = exif_at + exif_len;
+        let note_at = make_at + make.len();
+        let mut b = b"II*    ".to_vec();
+        b.extend(ifd(&[
+            entry(0x0103, 3, 1, 1),
+            entry(0x010f, 2, make.len() as u32, make_at as u32),
+            entry(0x014a, 4, 1, sub_at as u32),
+            entry(0x8769, 4, 1, exif_at as u32),
+        ]));
+        b.extend(sub);
+        b.extend(ifd(&[entry(0x927c, 7, note.len() as u32, if nef.is_some() { note_at as u32 } else { 0 })]));
+        b.extend(make);
+        b.extend(note);
+        b
+    }
+
+    fn compression(rows: &[TagRow]) -> Vec<&str> {
+        rows.iter().filter(|r| r.group == "TIFF" && r.tag == 0x0103).map(|r| r.value.as_str()).collect()
+    }
+
+    #[test]
+    fn raw_compression_is_the_sensor_images_not_the_thumbnails() {
+        let b = synthetic_raw(None);
+        assert_eq!(compression(&file_tag_rows(&b)), ["Nikon NEF Compressed"]);
+    }
+
+    #[test]
+    fn nef_compression_is_spelled_out_from_the_maker_note() {
+        for (v, words) in [(3, "Lossless"), (10, "Packed 14 bits"), (2, "Uncompressed"), (14, "High Efficiency*")] {
+            let b = synthetic_raw(Some(v));
+            assert_eq!(compression(&file_tag_rows(&b)), [words]);
+        }
+    }
+
+    #[test]
+    fn dng_raw_sub_ifd_jpeg_is_lossless_but_a_plain_jpeg_tiff_is_not() {
+        let b = synthetic_raw(None);
+        // switch the sensor sub-IFD's Compression from 34713 to 7
+        let pos = b.windows(12).position(|w| w == entry(0x0103, 3, 1, 34713).as_slice()).unwrap();
+        let mut dng = b.clone();
+        dng[pos + 8] = 7;
+        dng[pos + 9] = 0;
+        assert_eq!(compression(&file_tag_rows(&dng)), ["Lossless JPEG"]);
+        let plain = [b"II*    ".to_vec(), ifd(&[entry(0x0103, 3, 1, 7)])].concat();
+        assert_eq!(compression(&file_tag_rows(&plain)), ["JPEG"]);
+    }
+
+    #[test]
+    fn plain_tiff_keeps_its_own_compression() {
+        let b = [b"II*    ".to_vec(), ifd(&[entry(0x0103, 3, 1, 8)])].concat();
+        assert_eq!(compression(&file_tag_rows(&b)), ["Deflate"]);
     }
 }

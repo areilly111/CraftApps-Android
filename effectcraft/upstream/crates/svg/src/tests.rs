@@ -87,6 +87,39 @@ fn paths_gradients_css_use() {
 }
 
 #[test]
+fn nested_svg_percentages_use_the_nearest_viewport() {
+    let d = parse(
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80" viewBox="0 0 100 80">
+            <svg x="10" y="10" width="40" height="20">
+                <rect id="inner" width="50%" height="50%" fill="red"/>
+                <svg x="50%" width="50%" height="50%">
+                    <rect id="deep" width="50%" height="50%" fill="blue"/>
+                </svg>
+            </svg>
+            <rect id="outer" y="60" width="50%" height="10" fill="green"/>
+            <svg x="60" width="40" height="20" viewBox="0 0 200 100">
+                <rect id="viewbox" width="50%" height="50%"/>
+            </svg>
+        </svg>"#,
+    )
+    .unwrap();
+    let shapes = d.flatten();
+    assert_eq!(shapes.len(), 4);
+    for ((_, _, shape), (name, width, height)) in
+        shapes.iter().zip([("inner", 20.0, 10.0), ("deep", 10.0, 5.0), ("outer", 50.0, 10.0), ("viewbox", 100.0, 50.0)])
+    {
+        assert_eq!(shape.name, name);
+        assert!(matches!(shape.geom, Geom::Rect { w, h, .. } if w == width && h == height), "{name}: {:?}", shape.geom);
+    }
+    let img = rasterize(&d, 100, 80, 1.0);
+    assert_eq!(px(&img, 15, 15), [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(px(&img, 35, 12), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(px(&img, 35, 17)[3], 0.0);
+    assert_eq!(px(&img, 45, 65)[3], 1.0);
+    assert_eq!(px(&img, 55, 65)[3], 0.0);
+}
+
+#[test]
 fn malformed_input() {
     assert!(parse(b"<html/>").is_err());
     assert!(parse(b"not xml").is_err());

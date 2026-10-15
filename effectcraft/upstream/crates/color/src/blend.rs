@@ -159,7 +159,8 @@ impl BlendMode {
 
     /// Modes whose formulas are defined for over-range (HDR, 32 bpc) values. The others clamp
     /// their inputs to 0..1 before blending, as After Effects documents for 32 bpc projects
-    /// (in 8/16 bpc everything is already in range).
+    /// (in 8/16 bpc everything is already in range). Overlay, Exclusion, Luminosity and the
+    /// Color Burns keep their plain formula above 1 in After Effects (#494).
     pub fn supports_hdr(self) -> bool {
         matches!(
             self,
@@ -168,6 +169,8 @@ impl BlendMode {
                 | BlendMode::DancingDissolve
                 | BlendMode::Darken
                 | BlendMode::Multiply
+                | BlendMode::ColorBurn
+                | BlendMode::ClassicColorBurn
                 | BlendMode::LinearBurn
                 | BlendMode::DarkerColor
                 | BlendMode::Add
@@ -177,6 +180,9 @@ impl BlendMode {
                 | BlendMode::LighterColor
                 | BlendMode::Difference
                 | BlendMode::ClassicDifference
+                | BlendMode::Overlay
+                | BlendMode::Exclusion
+                | BlendMode::Luminosity
                 | BlendMode::Subtract
                 | BlendMode::Divide
                 | BlendMode::StencilAlpha
@@ -186,6 +192,17 @@ impl BlendMode {
                 | BlendMode::AlphaAdd
                 | BlendMode::LuminescentPremul
         )
+    }
+
+    /// The source colour a classic mode leaves the backdrop unchanged with. After Effects fades
+    /// the source toward it by the layer's opacity before applying the classic formula at full
+    /// strength, rather than mixing the full-strength result by opacity (#494).
+    fn classic_neutral(self) -> Option<f32> {
+        match self {
+            BlendMode::ClassicColorDodge | BlendMode::ClassicDifference => Some(0.0),
+            BlendMode::ClassicColorBurn => Some(1.0),
+            _ => None,
+        }
     }
 
     pub fn next(self) -> BlendMode {
@@ -242,11 +259,8 @@ fn separable(mode: BlendMode, cb: f32, cs: f32) -> f32 {
         BlendMode::Multiply => cb * cs,
         BlendMode::ColorBurn => burn(cb, cs),
         BlendMode::ClassicColorBurn => {
-            if cs <= 0.0 {
-                0.0
-            } else {
-                (1.0 - (1.0 - cb) / cs).max(0.0)
-            }
+            // (negative results are kept, as in After Effects)
+            if cs <= 0.0 { 0.0 } else { 1.0 - (1.0 - cb) / cs }
         }
         BlendMode::LinearBurn => (cb + cs - 1.0).max(0.0),
         BlendMode::Add | BlendMode::LinearDodge => cb + cs,
@@ -401,11 +415,19 @@ pub fn blend_pixel(mode: BlendMode, dst: [f32; 4], src: [f32; 4], noise: f32) ->
         cs = cs.map(|v| v.clamp(0.0, 1.0));
         cb = cb.map(|v| v.clamp(0.0, 1.0));
     }
-    let b = non_separable(mode, cb, cs);
     let ao = sa + da - sa * da;
     let mut o = [0.0f32; 4];
-    for i in 0..3 {
-        o[i] = (1.0 - da) * src[i] + (1.0 - sa) * dst[i] + sa * da * b[i];
+    if let Some(neutral) = mode.classic_neutral() {
+        // Fade the source toward the neutral colour by its coverage, then apply the formula.
+        let b = non_separable(mode, cb, cs.map(|v| neutral + sa * (v - neutral)));
+        for i in 0..3 {
+            o[i] = (1.0 - da) * src[i] + da * b[i];
+        }
+    } else {
+        let b = non_separable(mode, cb, cs);
+        for i in 0..3 {
+            o[i] = (1.0 - da) * src[i] + (1.0 - sa) * dst[i] + sa * da * b[i];
+        }
     }
     o[3] = ao;
     o
@@ -469,12 +491,41 @@ mod tests {
 
     #[test]
     fn hdr_modes() {
-        // Add and Screen keep over-range values (32 bpc); Overlay clamps its inputs.
+        // Add and Screen keep over-range values (32 bpc); Soft Light clamps its inputs.
         let d = [2.0, 2.0, 2.0, 1.0];
         let s = [0.5, 0.5, 0.5, 1.0];
         assert!((blend_pixel(BlendMode::Add, d, s, 0.5)[0] - 2.5).abs() < 1e-6);
         assert!((blend_pixel(BlendMode::Screen, d, s, 0.5)[0] - 1.5).abs() < 1e-6);
-        assert!(blend_pixel(BlendMode::Overlay, d, s, 0.5)[0] <= 1.0);
+        assert!(blend_pixel(BlendMode::SoftLight, d, s, 0.5)[0] <= 1.0);
+    }
+
+    /// #494: After Effects' 32 bpc formulas, measured by the reporter. b = bottom, o = top,
+    /// k = opacity (premultiplied into the source, as the compositor passes it).
+    #[test]
+    fn after_effects_32bpc_formulas() {
+        let at = |m, b: f32, o: f32, k: f32| blend_pixel(m, opaque(b), [o * k, o * k, o * k, k], 0.5)[0];
+        let close = |a: f32, e: f32| (a - e).abs() < 1e-5;
+        // Classic modes fade the source toward their neutral colour first.
+        for (b, o) in [(0.4, 0.5), (0.8, 0.9), (0.1, 0.3)] {
+            let k = 0.15;
+            assert!(close(at(BlendMode::ClassicColorDodge, b, o, k), (b / (1.0 - k * o)).min(1.0)));
+            assert!(close(at(BlendMode::ClassicDifference, b, o, k), (b - k * o).abs()));
+            assert!(close(at(BlendMode::ClassicColorBurn, b, o, k), 1.0 - (1.0 - b) / (1.0 - k * (1.0 - o))));
+        }
+        // At full opacity the classic formulas are unchanged.
+        assert!(close(at(BlendMode::ClassicDifference, 0.6, 0.3, 1.0), 0.3));
+        // Over-range top layers keep the plain formulas.
+        let (b, o) = (0.7, 3.0);
+        assert!(close(at(BlendMode::Exclusion, b, o, 1.0), b + o - 2.0 * b * o));
+        let s = 2.0 * b - 1.0;
+        assert!(close(at(BlendMode::Overlay, b, o, 1.0), o + s - o * s));
+        assert!(close(at(BlendMode::ColorBurn, 0.0, 1.35, 0.15), 0.15 * (1.0 - 1.0 / 1.35)));
+        assert!(close(at(BlendMode::ClassicColorBurn, 0.0, 0.1, 1.0), -9.0), "negative results are kept");
+        // Luminosity: SetLum + ClipColor on the unclamped top layer.
+        let l = blend_pixel(BlendMode::Luminosity, [0.2, 0.4, 0.6, 1.0], [2.0, 2.0, 2.0, 1.0], 0.5);
+        let e = set_lum([0.2, 0.4, 0.6], 2.0);
+        assert!((0..3).all(|i| close(l[i], e[i])), "{l:?} {e:?}");
+        assert!((l[0] - 1.0).abs() > 0.1, "not the white of a top layer clamped to 1: {l:?}");
     }
 
     #[test]

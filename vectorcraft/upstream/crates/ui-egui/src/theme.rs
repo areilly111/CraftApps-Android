@@ -302,18 +302,11 @@ pub fn apply(ctx: &egui::Context, b: Brightness) {
     v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(if t.dark { 120 } else { 60 }) };
     v.window_shadow = egui::epaint::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_black_alpha(if t.dark { 140 } else { 70 }) };
     let w = &mut v.widgets;
-    for (wv, fill) in [
-        (&mut w.noninteractive, t.panel),
-        (&mut w.inactive, t.button),
-        (&mut w.hovered, t.hover),
-        (&mut w.active, t.tool_active),
-        (&mut w.open, t.hover),
-    ] {
-        wv.bg_fill = fill;
-        wv.weak_bg_fill = fill;
-        wv.corner_radius = t.cr();
-        wv.fg_stroke = Stroke::new(1.0, t.text);
-    }
+    craft_ui::theme::WidgetPalette { noninteractive: t.panel, inactive: t.button, hovered: t.hover, active: t.tool_active, open: t.hover }.apply_to(
+        w,
+        t.cr(),
+        Stroke::new(1.0, t.text),
+    );
     w.noninteractive.bg_stroke = Stroke::new(1.0, t.divider);
     w.inactive.bg_stroke = Stroke::NONE;
     w.hovered.bg_stroke = Stroke::new(1.0, t.input_border);

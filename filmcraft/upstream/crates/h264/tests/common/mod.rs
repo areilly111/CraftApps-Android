@@ -4,6 +4,11 @@
 use filmcraft_h264::{Decoder, Picture};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, PoisonError};
+
+// Tests share fixture names within each binary. Serialize the existence check,
+// generation and publication so a late producer cannot replace a file in use.
+static FIXTURE_GENERATION: Mutex<()> = Mutex::new(());
 
 /// One encoder configuration of the fixture matrix.
 pub struct Fixture {
@@ -334,6 +339,7 @@ fn run(cmd: &mut Command) -> bool {
 /// Returns None (with a message) when ffmpeg is unavailable.
 pub fn ensure(f: &Fixture) -> Option<(PathBuf, PathBuf)> {
     let ff = filmcraft_testkit::ffmpeg_or_skip(f.name)?;
+    let _generation = FIXTURE_GENERATION.lock().unwrap_or_else(PoisonError::into_inner);
     let dir = fixtures_dir();
     let h264 = dir.join(format!("{}.h264", f.name));
     let yuv = dir.join(format!("{}.yuv", f.name));

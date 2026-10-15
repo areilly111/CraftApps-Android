@@ -103,7 +103,7 @@ fn effects_and_fills_apply_to_layers_by_id() {
     // Two undo steps take both off again.
     run(&mut s, "edit.undo", json!({}));
     run(&mut s, "edit.undo", json!({}));
-    assert_eq!(node(&s, layer).appearance, Default::default());
+    assert_eq!(node(&s, layer).appearance, vectorcraft_doc::Appearance::default());
     // Nothing selected and no ids: an error, not a silent no-op.
     assert!(s.execute("appearance.addFill", &json!({})).is_err());
 }

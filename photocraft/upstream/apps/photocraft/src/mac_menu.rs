@@ -5,13 +5,15 @@
 //! - Item ids are command ids; a command in two menus (Keyboard Shortcuts is in Edit and Window)
 //!   gets `id#2` for its second copy, as muda ids must be unique.
 //! - A structure change (a new Open Recent file, a language switch) rebuilds the menu; anything
-//!   else (labels, enabled, checked) is updated in place.
+//!   else (labels, enabled, checked) is updated in place. Opening or closing a document rebuilds
+//!   only the Window menu, whose list of documents changed: AppKit adds its own items to that
+//!   menu (window tiling, the window list), so muda can't insert rows there by position.
 //! - A chosen item is a click or a key equivalent: AppKit's current event says which. Key
 //!   equivalents go back to egui as the key press that was made (the event's modifiers, not the
 //!   item's: AppKit may match ⌘R to a ⇧⌘R item), so PhotoCraft's key rules still apply.
 //! - Hide is a custom item calling `NSApplication hide:`, as the predefined one always takes ⌘H.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, channel};
 
 use muda::accelerator::{Accelerator, Code, Modifiers};
@@ -49,6 +51,8 @@ pub struct MacMenu {
     entries: HashMap<String, Entry>,
     rx: Receiver<Chosen>,
     structure: u64,
+    /// The Window menu, the muda ids of its items, and its [`native_menu::window_key`].
+    window: Option<(Submenu, Vec<String>, u64)>,
 }
 
 impl MacMenu {
@@ -67,7 +71,7 @@ impl MacMenu {
             // Wake egui, so the item runs now rather than on the next mouse move.
             repaint.request_repaint();
         }));
-        MacMenu { menu: None, entries: HashMap::new(), rx, structure: 0 }
+        MacMenu { menu: None, entries: HashMap::new(), rx, structure: 0, window: None }
     }
 
     fn build(&mut self, bar: &MenuBar) {
@@ -75,12 +79,15 @@ impl MacMenu {
             old.remove_for_nsapp();
         }
         self.entries.clear();
+        self.window = None;
         let menu = Menu::new();
         let mut special = Vec::new();
         for m in &bar.menus {
-            let sub = Submenu::new(escape(&m.title), true);
-            self.append(&sub, &m.children);
+            let (sub, ids) = self.submenu(m);
             let _ = menu.append(&sub);
+            if m.role == MenuRole::Window {
+                self.window = Some((sub.clone(), ids, native_menu::window_key(bar)));
+            }
             if matches!(m.role, MenuRole::Window | MenuRole::Help) {
                 special.push((m.role, sub));
             }
@@ -95,6 +102,33 @@ impl MacMenu {
         }
         self.menu = Some(menu);
         self.structure = native_menu::structure_key(bar);
+    }
+
+    /// A top-level menu, and the muda ids of the items it added.
+    fn submenu(&mut self, m: &native_menu::Menu) -> (Submenu, Vec<String>) {
+        let before: HashSet<String> = self.entries.keys().cloned().collect();
+        let sub = Submenu::new(escape(&m.title), true);
+        self.append(&sub, &m.children);
+        let ids = self.entries.keys().filter(|id| !before.contains(*id)).cloned().collect();
+        (sub, ids)
+    }
+
+    /// Replace the Window menu (a document opened or closed), leaving the other menus as they are.
+    fn rebuild_window(&mut self, bar: &MenuBar) {
+        let (Some(menu), Some((old, ids, _))) = (self.menu.clone(), self.window.take()) else { return self.build(bar) };
+        let Some((at, spec)) = bar.menus.iter().enumerate().find(|(_, m)| m.role == MenuRole::Window) else { return self.build(bar) };
+        if menu.remove(&old).is_err() {
+            return self.build(bar);
+        }
+        for id in ids {
+            self.entries.remove(&id);
+        }
+        let (sub, ids) = self.submenu(spec);
+        if menu.insert(&sub, at).is_err() {
+            return self.build(bar);
+        }
+        sub.set_as_windows_menu_for_nsapp();
+        self.window = Some((sub, ids, native_menu::window_key(bar)));
     }
 
     fn append(&mut self, sub: &Submenu, nodes: &[Node]) {
@@ -159,6 +193,9 @@ impl Backend for MacMenu {
         if self.menu.is_none() || native_menu::structure_key(bar) != self.structure {
             self.build(bar);
             return;
+        }
+        if self.window.as_ref().map(|w| w.2) != Some(native_menu::window_key(bar)) {
+            self.rebuild_window(bar);
         }
         let items: HashMap<&str, &native_menu::Item> = bar.items().into_iter().map(|it| (it.id.as_str(), it)).collect();
         for e in self.entries.values_mut() {

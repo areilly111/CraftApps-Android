@@ -47,7 +47,7 @@ fn group_of(n: &DockNode, p: PanelKind) -> Option<Vec<PanelKind>> {
     match n {
         DockNode::Split { a, b, .. } => group_of(a, p).or_else(|| group_of(b, p)),
         DockNode::Tabs { panels, .. } => panels.contains(&p).then(|| panels.clone()),
-        DockNode::Stack { entries } => entries.iter().any(|e| e.panel == p).then(|| entries.iter().map(|e| e.panel).collect()),
+        DockNode::Stack { entries } => entries.iter().find(|e| e.contains(p)).map(|e| e.panels.clone()),
     }
 }
 

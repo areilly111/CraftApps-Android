@@ -171,6 +171,136 @@ fn foreign_crs_sidecar_on_import_and_read_from_file() {
     std::fs::remove_file(src.join("harbour.xmp")).unwrap();
     let r = s.execute("photo.readMetadataFromFile", &json!({})).unwrap();
     assert_eq!(r["failed"].as_array().unwrap().len(), 1);
+    assert!(r.get("warnings").is_none(), "{r}");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Lightroom's default profiles (`Adobe Standard`, `Adobe Color`) are named by nearly every sidecar
+/// and our own starting look stands in for them: importing one gives no camera-profile warning.
+#[test]
+fn default_lightroom_profiles_are_not_reported() {
+    let src = temp_dir("xmp-default-profile");
+    for (i, name) in ["Adobe Standard", "Adobe Color"].into_iter().enumerate() {
+        let photo = src.join(format!("p{i}.png"));
+        write_png(&photo, 6);
+        let xmp = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+        crs:CameraProfile="{name}" crs:Exposure2012="0.5"/>
+    </rdf:RDF></x:xmpmeta>"#
+        );
+        std::fs::write(src.join(format!("p{i}.xmp")), xmp).unwrap();
+        let mut s = Session::new().with_fs();
+        let r = s.execute("library.import", &json!({"paths": [photo.to_string_lossy()]})).unwrap();
+        let none = Vec::new();
+        let warnings = r["warnings"].as_array().unwrap_or(&none);
+        assert!(!warnings.iter().any(|w| w["code"] == "cameraProfile"), "{name}: {r}");
+        assert_eq!(s.catalog.photos().next().unwrap().develop.light.exposure, 0.5, "{name}: the edits still import");
+    }
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Foreign profile names and saved Upright matrices stay visible without pretending their
+/// proprietary colour or coordinate data was imported. Diagnostics are per-photo report data;
+/// importing a file without XMP remains quiet, and the source packet is never rewritten.
+#[test]
+fn foreign_profile_and_upright_import_diagnostics_are_actionable() {
+    let src = temp_dir("xmp-diagnostics");
+    let photo = src.join("faithful.png");
+    write_png(&photo, 6);
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+        crs:CameraProfile="Camera Faithful" crs:Exposure2012="1.68" crs:PerspectiveUpright="1"
+        crs:UprightVersion="151388160" crs:UprightTransformCount="6"
+        crs:UprightCenterNormX="0.554156" crs:UprightCenterNormY="0.529745"
+        crs:UprightTransform_1="0.897233402,-0.013204641,-0.030578613,-0.096087436,0.953621255,0.003270197,-0.157075841,-0.043520282,1.000000000"/>
+    </rdf:RDF></x:xmpmeta>"#;
+    let sidecar = src.join("faithful.xmp");
+    std::fs::write(&sidecar, xmp).unwrap();
+    let before = std::fs::read(&sidecar).unwrap();
+    let photo_path = photo.to_string_lossy().to_string();
+    let mut s = Session::new().with_fs();
+    let r = s.execute("library.import", &json!({"paths": [photo.to_string_lossy()]})).unwrap();
+    let warnings = r["warnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|w| w["code"] == "cameraProfile" && w["profile"] == "Camera Faithful"), "{r}");
+    assert!(warnings.iter().any(|w| w["code"] == "uprightGeometry" && w["mode"] == "auto"), "{r}");
+    assert!(warnings.iter().all(|w| w.get("fields").is_none()), "{r}");
+    let import_warnings: Vec<crate::import::ImportWarning> =
+        warnings.iter().cloned().map(serde_json::from_value).collect::<std::result::Result<_, _>>().unwrap();
+    let import_profile = import_warnings.iter().find(|w| w.code == crate::import::ImportWarningCode::CameraProfile).unwrap();
+    assert_eq!(import_profile.path, photo_path);
+    assert_eq!(import_profile.profile.as_deref(), Some("Camera Faithful"));
+    assert!(import_profile.fields.is_empty());
+    let import_upright = import_warnings.iter().find(|w| w.code == crate::import::ImportWarningCode::UprightGeometry).unwrap();
+    assert_eq!(import_upright.path, photo_path);
+    assert_eq!(import_upright.mode, Some(crate::import::ImportUprightMode::Auto));
+    assert!(import_upright.fields.is_empty());
+    let p = s.catalog.photos().next().unwrap().clone();
+    assert_eq!(p.develop.profile.id, "lc.color");
+    assert_eq!(p.develop.light.exposure, 1.68);
+    assert_eq!(std::fs::read(&sidecar).unwrap(), before, "import never rewrites foreign XMP");
+
+    // Metadata reread carries same structured diagnostics, with each saved Upright mode typed.
+    let reread = s.execute("photo.readMetadataFromFile", &json!({"ids": [p.id.0]})).unwrap();
+    let reread_wires = reread["warnings"].as_array().unwrap();
+    assert!(reread_wires.iter().all(|w| w.get("fields").is_none()), "{reread}");
+    let reread_warnings: Vec<crate::import::ImportWarning> =
+        reread_wires.iter().cloned().map(serde_json::from_value).collect::<std::result::Result<_, _>>().unwrap();
+    let reread_profile = reread_warnings.iter().find(|w| w.code == crate::import::ImportWarningCode::CameraProfile).unwrap();
+    assert_eq!(reread_profile.path, photo_path);
+    assert_eq!(reread_profile.profile.as_deref(), Some("Camera Faithful"));
+    assert!(reread_profile.fields.is_empty());
+    let reread_upright = reread_warnings.iter().find(|w| w.code == crate::import::ImportWarningCode::UprightGeometry).unwrap();
+    assert_eq!(reread_upright.path, photo_path);
+    assert_eq!(reread_upright.mode, Some(crate::import::ImportUprightMode::Auto));
+    assert!(reread_upright.fields.is_empty());
+    assert!(
+        reread["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "cameraProfile" && w["profile"] == "Camera Faithful" && w["path"] == photo_path),
+        "{reread}"
+    );
+    assert!(reread["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "uprightGeometry" && w["mode"] == "auto"), "{reread}");
+    for (source, mode) in [("0", "off"), ("2", "level"), ("3", "vertical"), ("4", "full"), ("5", "guided"), ("9", "unknown")] {
+        let mode_xmp = xmp.replace("crs:PerspectiveUpright=\"1\"", &format!("crs:PerspectiveUpright=\"{source}\""));
+        std::fs::write(&sidecar, mode_xmp).unwrap();
+        let reread = s.execute("photo.readMetadataFromFile", &json!({"ids": [p.id.0]})).unwrap();
+        assert!(reread["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "uprightGeometry" && w["mode"] == mode), "{source}: {reread}");
+    }
+
+    // A foreign name colliding with a built-in profile label remains warning metadata only.
+    let collision = src.join("collision.png");
+    write_png(&collision, 8);
+    std::fs::write(src.join("collision.xmp"), xmp.replace("Camera Faithful", "Color")).unwrap();
+    let collision_report = s.execute("library.import", &json!({"paths": [collision.to_string_lossy()]})).unwrap();
+    assert!(
+        collision_report["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "cameraProfile" && w["profile"] == "Color"),
+        "{collision_report}"
+    );
+    let collision_photo = s.catalog.photos().find(|photo| photo.file_name == "collision.png").unwrap();
+    assert_eq!(collision_photo.develop.profile.id, "lc.color");
+
+    let unmapped = crate::import::ImportWarning {
+        path: photo_path.clone(),
+        code: crate::import::ImportWarningCode::UnmappedXmp,
+        profile: None,
+        mode: None,
+        fields: vec!["Tint".into()],
+    };
+    let unmapped_wire = serde_json::to_value(&unmapped).unwrap();
+    assert_eq!(serde_json::from_value::<crate::import::ImportWarning>(unmapped_wire).unwrap(), unmapped);
+
+    // A second import still diagnoses the untouched foreign packet, while an XMP-free photo does not.
+    drop(s);
+    let clean = src.join("clean.png");
+    write_png(&clean, 7);
+    let mut s = Session::new().with_fs();
+    let clean_report = s.execute("library.import", &json!({"paths": [clean.to_string_lossy()]})).unwrap();
+    assert!(clean_report.get("warnings").is_none(), "{clean_report}");
+    let repeat = s.execute("library.import", &json!({"paths": [photo.to_string_lossy()]})).unwrap();
+    assert_eq!(repeat["warnings"].as_array().unwrap().len(), 2, "{repeat}");
     let _ = std::fs::remove_dir_all(&src);
 }
 
@@ -563,6 +693,84 @@ fn external_edit_copy_is_stacked() {
     assert_eq!((st.top(), st.photos.contains(&orig)), (new, true));
     let r2 = s.execute("photo.editExternal", &json!({"colorSpace": "proPhoto"})).unwrap();
     assert!(r2["path"].as_str().unwrap().ends_with("beach-Edit-Edit.tif") || r2["path"].as_str().unwrap().contains("-2"), "{r2}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Issue #920: with several photos selected, each gets its own `-Edit` copy stacked on its
+/// original, the copies end up selected and are all reported; `ids` picks photos explicitly.
+#[test]
+fn external_edit_copies_every_selected_photo() {
+    let dir = temp_dir("extedit-many");
+    let paths: Vec<String> = ["a", "b", "c"]
+        .iter()
+        .zip(9u8..)
+        .map(|(n, seed)| {
+            let p = dir.join(format!("{n}.png"));
+            // different bytes: the import keeps one of identical files
+            write_png(&p, seed);
+            p.to_string_lossy().into_owned()
+        })
+        .collect();
+    let mut s = Session::new().with_fs();
+    let imported = s.execute("library.import", &json!({"paths": paths})).unwrap();
+    let originals: Vec<u64> = imported["imported"].as_array().unwrap().iter().filter_map(serde_json::Value::as_u64).collect();
+    assert_eq!(originals.len(), 3);
+    s.execute("library.select", &json!({"ids": originals})).unwrap();
+    let r = s.execute("photo.editExternal", &json!({})).unwrap();
+    let copies = r["copies"].as_array().unwrap();
+    assert_eq!(copies.len(), 3, "{r}");
+    for (copy, orig) in copies.iter().zip(&originals) {
+        assert_eq!(copy["original"].as_u64(), Some(*orig));
+        assert!(copy["path"].as_str().unwrap().ends_with("-Edit.tif"), "{copy}");
+        let new = lightcraft_catalog::PhotoId(copy["id"].as_u64().unwrap());
+        let st = s.catalog.stack_of(new).expect("stacked");
+        assert_eq!((st.top(), st.photos.contains(&lightcraft_catalog::PhotoId(*orig))), (new, true));
+        assert!(s.selection.contains(new), "the copies are selected");
+    }
+    assert_eq!(r["path"], copies[0]["path"], "the single-copy fields name the first copy");
+    // an edit since the first copy: identical bytes would be skipped as a duplicate import
+    s.execute("develop.set", &json!({"ids": [originals[1]], "control": "light.exposure", "value": 0.5})).unwrap();
+    let one = s.execute("photo.editExternal", &json!({"ids": [originals[1]]})).unwrap();
+    assert_eq!(one["copies"].as_array().map(Vec::len), Some(1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Edit in PhotoCraft (engine half): a flat 16-bit PSD `-Edit` copy, which PhotoCraft saves back
+/// to in place (it writes a TIFF only through Save As); its saved pixels come back on Reload.
+#[test]
+fn external_edit_copy_as_psd_round_trips() {
+    let dir = temp_dir("extedit-psd");
+    let src = dir.join("pier.png");
+    write_png(&src, 40);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let orig = s.active().unwrap();
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
+    let r = s.execute("photo.editExternal", &json!({"format": "psd", "bitDepth": 16})).unwrap();
+    let path = r["path"].as_str().unwrap().to_string();
+    assert!(path.ends_with("pier-Edit.psd"), "{path}");
+    let d = lightcraft_codecs::decode(&std::fs::read(&path).unwrap(), Default::default()).unwrap();
+    assert_eq!(d.bit_depth, 16);
+    assert!(d.icc.is_some(), "the colour space travels with the file");
+    let new = lightcraft_catalog::PhotoId(r["id"].as_u64().unwrap());
+    assert_eq!(s.catalog.stack_of(new).map(|st| (st.top(), st.photos.contains(&orig))), Some((new, true)));
+    // the editor saves the document back over the same file: Reload shows its pixels
+    let before = s.render_now(new, 16, 16).unwrap().image.data;
+    let (w, h) = (d.width as u32, d.height as u32);
+    let px = vec![1000u16; (w * h * 3) as usize];
+    let saved =
+        lightcraft_codecs::encode_psd(&lightcraft_codecs::EncodeImage::new(w, h, 3, lightcraft_codecs::Samples::U16(&px)), &Default::default())
+            .unwrap();
+    std::fs::write(&path, saved).unwrap();
+    assert_eq!(s.execute("photo.reload", &json!({"ids": [new.0]})).unwrap()["reloaded"], json!([new.0]));
+    assert_ne!(s.render_now(new, 16, 16).unwrap().image.data, before);
+    // 8-bit, and what it can't do
+    s.execute("library.select", &json!({"ids": [orig.0]})).unwrap();
+    let r8 = s.execute("photo.editExternal", &json!({"format": "psd", "bitDepth": 8})).unwrap();
+    let d8 = lightcraft_codecs::decode(&std::fs::read(r8["path"].as_str().unwrap()).unwrap(), Default::default()).unwrap();
+    assert_eq!(d8.bit_depth, 8);
+    assert!(s.execute("photo.editExternal", &json!({"format": "jpeg"})).is_err());
+    assert!(s.execute("photo.editExternal", &json!({"bitDepth": 32})).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

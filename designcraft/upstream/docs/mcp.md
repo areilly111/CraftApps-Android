@@ -51,7 +51,8 @@ claude mcp add designcraft -- designcraft-cli mcp
 | UI-only commands via `execute` (`view.*`, `window.*`, `help.*`, `edit.dynamicSpelling`, and `app.*` except `app.links`) | Error | Work |
 
 In connected mode every tool maps to a control-channel method (`engine.execute`, `ui.render`, `ui.pointer`, …), so
-what the agent does shows up live in the window. The connection is re-established once if the app restarts.
+what the agent does shows up live in the window. A failed request is not resent: the operation may have completed,
+so inspect the document before retrying. The next request re-establishes the connection.
 
 ## Coordinates
 

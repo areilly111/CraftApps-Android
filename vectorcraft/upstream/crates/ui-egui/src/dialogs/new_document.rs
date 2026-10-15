@@ -304,7 +304,9 @@ fn details(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, b: &mut 
             let saving = !d.bool(SAVING);
             d.fields.insert(SAVING.into(), json!(saving));
             if saving && d.str("presetName").is_empty() {
-                d.fields.insert("presetName".into(), json!(format!("Preset {}", app.session.prefs.new_doc_presets.len() + 1)));
+                let template = "Preset {number}";
+                let name = crate::i18n::fmt(tl!(template), &[("number", &(app.session.prefs.new_doc_presets.len() + 1).to_string())]);
+                d.fields.insert("presetName".into(), json!(name));
             }
         }
     });

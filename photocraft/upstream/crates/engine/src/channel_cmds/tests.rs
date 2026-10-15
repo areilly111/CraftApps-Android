@@ -169,6 +169,99 @@ fn channel_management_and_view_state() {
 }
 
 #[test]
+fn deleting_an_earlier_channel_keeps_the_last_channel_targeted() {
+    for depth in [8, 16, 32] {
+        let mut s = session_depth(depth);
+        s.execute("channel.new", json!({"name": "Remove", "fill": "black"})).unwrap();
+        s.execute("channel.new", json!({"name": "Keep", "fill": "white"})).unwrap();
+        let layer_before = px(&s, 5, 5);
+        s.execute("channel.delete", json!({"channel": "Remove"})).unwrap();
+        assert_eq!(doc(&s).channels[0].name, "Keep");
+        let view = &s.active().unwrap().channel_view;
+        assert_eq!(view.target, ChannelTarget::Alpha(0), "the surviving target follows its new index");
+        assert!(view.alpha_shown(0));
+        assert_eq!(view.visible_colors(3), 0, "keep the channel-only view");
+
+        s.execute("image.adjustments.invert", json!({})).unwrap();
+        assert_eq!(chan(&s, 0, 5, 5), 0.0, "implicit pixel edits still target Keep");
+        assert_eq!(px(&s, 5, 5), layer_before, "the layer must not be edited instead");
+        assert!(s.undo());
+        assert_eq!(chan(&s, 0, 5, 5), 1.0);
+        assert_eq!(px(&s, 5, 5), layer_before);
+        assert!(s.redo());
+        assert_eq!(chan(&s, 0, 5, 5), 0.0);
+        assert_eq!(px(&s, 5, 5), layer_before);
+    }
+}
+
+#[test]
+fn deleting_a_channel_remaps_all_surviving_eyes_and_targets() {
+    for target_index in 0..3 {
+        let mut s = session();
+        for name in ["First", "Middle", "Last"] {
+            s.execute("channel.new", json!({"name": name})).unwrap();
+        }
+        s.execute("channel.target", json!({"channel": target_index})).unwrap();
+        for (channel, visible) in [false, false, true].into_iter().enumerate() {
+            s.execute("channel.setVisible", json!({"channel": channel, "visible": visible})).unwrap();
+        }
+        s.execute("channel.delete", json!({"channel": "Middle"})).unwrap();
+        let view = &s.active().unwrap().channel_view;
+        let expected = match target_index {
+            0 => ChannelTarget::Alpha(0),
+            1 => ChannelTarget::Composite,
+            _ => ChannelTarget::Alpha(1),
+        };
+        assert_eq!(view.target, expected, "old target {target_index}");
+        assert!(!view.alpha_shown(0));
+        assert!(view.alpha_shown(1), "Last keeps its eye when Middle is removed");
+    }
+}
+
+#[test]
+fn every_colour_channel_can_hide_while_alpha_stays() {
+    let mut s = session();
+    s.execute("channel.new", json!({"fill": "white", "name": "Alpha"})).unwrap();
+    // A new channel is shown alone. Bring RGB back (the overlay), then turn the RGB eye off.
+    s.execute("channel.setVisible", json!({"channel": "composite", "visible": true})).unwrap();
+    assert!(s.active().unwrap().channel_view.alpha_shown(0));
+    assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 3);
+    s.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+    let st = s.active().unwrap();
+    assert_eq!(st.channel_view.visible_colors(3), 0, "the RGB eye can turn R, G and B off together");
+    assert!(st.channel_view.alpha_shown(0), "Alpha stays on");
+    s.execute("channel.setVisible", json!({"channel": "composite", "visible": true})).unwrap();
+    for name in ["red", "green", "blue"] {
+        s.execute("channel.setVisible", json!({"channel": name, "visible": false})).unwrap();
+    }
+    let st = s.active().unwrap();
+    assert_eq!(st.channel_view.visible_colors(3), 0, "R, G and B can each be turned off");
+    assert!(st.channel_view.alpha_shown(0));
+}
+
+#[test]
+fn quick_mask_and_a_layer_mask_can_be_the_only_visible_channel() {
+    let mut s = session();
+    s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    s.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+    assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 0);
+    assert!(s.active().unwrap().doc.quick_mask.is_some());
+    s.execute("select.editInQuickMaskMode", json!({"on": false})).unwrap();
+    // Nothing else to show: the colour channels come back.
+    s.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+    assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 3);
+
+    s.execute("layer.new.layer", json!({})).unwrap();
+    s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+    s.execute("layer.layerMask.hideAll", json!({})).unwrap();
+    for name in ["red", "green", "blue"] {
+        s.execute("channel.setVisible", json!({"channel": name, "visible": false})).unwrap();
+    }
+    assert_eq!(s.active().unwrap().channel_view.visible_colors(3), 0, "a transparency mask can be shown alone");
+}
+
+#[test]
 fn shortcut_slots_target_channels() {
     let mut s = session();
     s.execute("channel.new", json!({})).unwrap();
@@ -292,6 +385,89 @@ fn quick_mask_without_selection_and_options() {
     assert!(v > 0.0 && v < 1.0, "feathered edge {v}");
     s.execute("select.editInQuickMaskMode", json!({})).unwrap();
     assert!(sel_at(&s, 10, 10) < 0.05 && sel_at(&s, 30, 10) > 0.99, "{} {}", sel_at(&s, 10, 10), sel_at(&s, 30, 10));
+}
+
+/// Overlay coverage of the live Quick Mask at (x, y): how much colour the canvas shows there.
+fn qm_overlay(s: &Session, x: i32, y: i32) -> f32 {
+    let q = doc(s).quick_mask.as_ref().unwrap();
+    q.overlay_coverage(q.surface.sample_channel(x, y, 0))
+}
+
+#[test]
+fn quick_mask_without_selection_starts_empty_in_both_modes() {
+    // #2743 case 1: nothing selected → nothing selected in the mask, whichever way the colour
+    // reads; painting white adds to the selection that comes out.
+    for depth in [8, 16, 32] {
+        // Selected Areas set before entering.
+        let mut s = session_depth(depth);
+        s.execute("channel.options", json!({"channel": "quickMask", "indicates": "selected"})).unwrap();
+        s.execute("select.editInQuickMaskMode", json!({"on": true})).unwrap();
+        assert_eq!((qm_overlay(&s, 5, 5), qm_overlay(&s, 35, 15)), (0.0, 0.0), "depth {depth}: no overlay");
+        s.execute("select.editInQuickMaskMode", json!({"on": false})).unwrap();
+        assert!(doc(&s).selection.is_none(), "depth {depth}: untouched → no selection");
+        s.execute("select.editInQuickMaskMode", json!({"on": true})).unwrap();
+        s.execute("paint.stroke", json!({"points": [[5, 5]], "size": 4, "hardness": 1.0, "color": "#ffffff"})).unwrap();
+        assert!(qm_overlay(&s, 5, 5) > 0.99 && qm_overlay(&s, 30, 10) == 0.0, "depth {depth}");
+        s.execute("select.editInQuickMaskMode", json!({"on": false})).unwrap();
+        assert!(sel_at(&s, 5, 5) > 0.99 && sel_at(&s, 30, 10) == 0.0, "depth {depth}: painted area is the selection");
+
+        // Selected Areas switched on while in Quick Mask (the order in the report).
+        let mut s = session_depth(depth);
+        s.execute("select.editInQuickMaskMode", json!({"on": true})).unwrap();
+        assert_eq!(qm_overlay(&s, 5, 5), 0.0, "depth {depth}: Masked Areas, nothing masked yet");
+        s.execute("channel.options", json!({"channel": "quickMask", "indicates": "selected"})).unwrap();
+        assert_eq!((qm_overlay(&s, 5, 5), qm_overlay(&s, 35, 15)), (0.0, 0.0), "depth {depth}: still no overlay");
+        // …and back again: still the untouched, nothing-selected mask.
+        s.execute("channel.options", json!({"channel": "quickMask", "indicates": "masked"})).unwrap();
+        assert_eq!(qm_overlay(&s, 5, 5), 0.0, "depth {depth}");
+        s.execute("select.editInQuickMaskMode", json!({"on": false})).unwrap();
+        assert!(doc(&s).selection.is_none(), "depth {depth}");
+    }
+}
+
+#[test]
+fn quick_mask_round_trip_keeps_select_all() {
+    // #2743 case 2: a full selection comes back full, in either mode.
+    for depth in [8, 16] {
+        for indicates in ["masked", "selected"] {
+            let mut s = session_depth(depth);
+            s.execute("channel.options", json!({"channel": "quickMask", "indicates": indicates})).unwrap();
+            s.execute("select.all", json!({})).unwrap();
+            s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+            s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+            assert!(doc(&s).selection.is_some(), "depth {depth} {indicates}: Select All survives");
+            assert_eq!((sel_at(&s, 0, 0), sel_at(&s, 39, 19)), (1.0, 1.0), "depth {depth} {indicates}");
+            // Switching the mode in between doesn't change what is selected.
+            s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+            let other = if indicates == "masked" { "selected" } else { "masked" };
+            s.execute("channel.options", json!({"channel": "quickMask", "indicates": other})).unwrap();
+            s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+            assert_eq!((sel_at(&s, 0, 0), sel_at(&s, 39, 19)), (1.0, 1.0), "depth {depth} {indicates}→{other}");
+        }
+    }
+    // A no-selection entry followed by Select All entry: the second one isn't "no selection".
+    let mut s = session();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    s.execute("select.all", json!({})).unwrap();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    assert_eq!(sel_at(&s, 20, 10), 1.0);
+}
+
+#[test]
+fn quick_mask_odd_states_dont_panic() {
+    let mut s = Session::new();
+    assert!(s.execute("select.editInQuickMaskMode", json!({})).is_err(), "no document");
+    let _ = s.execute("channel.options", json!({"channel": "quickMask", "indicates": "selected"}));
+    let mut s = session();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+    s.execute("select.all", json!({})).unwrap();
+    s.execute("select.deselect", json!({})).unwrap();
+    s.execute("channel.options", json!({"channel": "quickMask", "indicates": "selected"})).unwrap();
+    s.undo();
+    s.undo();
+    s.execute("select.editInQuickMaskMode", json!({})).unwrap();
 }
 
 #[test]
@@ -520,4 +696,148 @@ fn apply_image_and_calculations_fail_gracefully_never_panic() {
     }
     // A well-formed self-apply still works.
     assert!(s.execute("image.applyImage", json!({"source": {"channel": "composite"}})).is_ok());
+}
+
+#[test]
+fn channel_target_layer_mask_and_vector_mask() {
+    let mut s = session();
+    // Initially the layer has no mask: targeting mask or vectorMask fails.
+    let err_mask = s.execute("channel.target", json!({"channel": "mask"})).unwrap_err().to_string();
+    assert!(err_mask.contains("no layer mask"), "{err_mask}");
+    let err_vec = s.execute("channel.target", json!({"channel": "vectorMask"})).unwrap_err().to_string();
+    assert!(err_vec.contains("no vector mask"), "{err_vec}");
+
+    // Add a layer mask.
+    s.execute("layer.layerMask.revealAll", json!({})).unwrap();
+    // Target the mask explicitly via channel.target.
+    let j = s.execute("channel.target", json!({"channel": "mask"})).unwrap();
+    assert_eq!(j["target"]["kind"], "layerMask");
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::LayerMask);
+    assert!(s.tools.mask_targeted);
+
+    // Commands that follow target (invert, paint) edit the mask without explicit target.
+    s.execute("image.adjustments.invert", json!({})).unwrap();
+    let l_id = s.active().unwrap().active_layer.unwrap();
+    let mask_sf = &s.active().unwrap().doc.layer(l_id).unwrap().mask.as_ref().unwrap().surface;
+    assert_eq!(mask_sf.pixel(10, 10)[0], 0.0, "inverted mask is black");
+
+    // Target composite again.
+    let j2 = s.execute("channel.target", json!({"channel": "composite"})).unwrap();
+    assert_eq!(j2["target"]["kind"], "composite");
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::Composite);
+    assert!(!s.tools.mask_targeted);
+
+    // Issue #2458 repro: new adjustment layer then channel.target {"channel": "mask"}
+    s.execute("layer.newAdjustmentLayer.curves", json!({})).unwrap();
+    let j_adj = s.execute("channel.target", json!({"channel": "mask"})).unwrap();
+    assert_eq!(j_adj["target"]["kind"], "layerMask");
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::LayerMask);
+
+    // Vector mask targeting.
+    s.execute("layer.new.layer", json!({})).unwrap();
+    s.execute("layer.vectorMask.revealAll", json!({})).unwrap();
+    let j_vec = s.execute("channel.target", json!({"channel": "vectorMask"})).unwrap();
+    assert_eq!(j_vec["target"]["kind"], "vectorMask");
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::VectorMask);
+}
+
+#[test]
+fn clear_with_a_colour_channel_targeted_clears_only_that_channel() {
+    let near = |a: &[f32], b: &[f32]| a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3);
+    // The Background, then a normal layer (Delete there can't make one channel transparent).
+    for duplicate in [false, true] {
+        let mut s = session_depth(16);
+        rect(&mut s, 0, 0, 20, 20, "replace");
+        s.execute("edit.fill", json!({"color": "#336699"})).unwrap();
+        s.execute("select.deselect", json!({})).unwrap();
+        if duplicate {
+            s.execute("layer.duplicate", json!({})).unwrap();
+        }
+        let (left, right) = (px(&s, 5, 5), px(&s, 30, 5));
+        s.tools.background = [0.8, 0.1, 0.9, 1.0];
+        s.execute("channel.target", json!({"channel": "red"})).unwrap();
+        rect(&mut s, 2, 2, 10, 10, "replace");
+        s.execute("edit.clear", json!({})).unwrap();
+        // Red takes the background colour's red; green, blue and transparency stay.
+        assert!(near(&px(&s, 5, 5), &[0.8, left[1], left[2], 1.0]), "duplicate {duplicate}: {:?}", px(&s, 5, 5));
+        assert!(near(&px(&s, 15, 5), &left), "outside the selection");
+        assert!(near(&px(&s, 30, 5), &right));
+        s.undo();
+        assert!(near(&px(&s, 5, 5), &left), "one undoable step");
+    }
+}
+
+#[test]
+fn clear_with_an_alpha_channel_or_quick_mask_targeted_fills_it_not_the_layer() {
+    let mut s = session_depth(16);
+    let layer = px(&s, 5, 5);
+    s.tools.background = [0.0, 0.0, 0.0, 1.0];
+    // A white Alpha 1, targeted.
+    s.execute("channel.new", json!({"fill": "white"})).unwrap();
+    rect(&mut s, 2, 2, 10, 10, "replace");
+    s.execute("edit.clear", json!({})).unwrap();
+    // The selected part of the channel takes the background colour; the layer stays.
+    assert_eq!(chan(&s, 0, 5, 5), 0.0);
+    assert_eq!(chan(&s, 0, 15, 5), 1.0, "outside the selection");
+    assert_eq!(px(&s, 5, 5), layer, "the layer is untouched");
+    s.undo();
+    assert_eq!(chan(&s, 0, 5, 5), 1.0, "one undoable step");
+    // In Quick Mask mode Delete fills the mask (black = masked), not the layer.
+    s.execute("channel.target", json!({"channel": "composite"})).unwrap();
+    s.execute("select.editInQuickMaskMode", json!({"on": true})).unwrap();
+    s.execute("edit.clear", json!({})).unwrap();
+    let q = doc(&s).quick_mask.as_ref().unwrap().surface.sample_channel(5, 5, 0);
+    assert_eq!(q, 0.0);
+    assert_eq!(px(&s, 5, 5), layer, "the layer is untouched in Quick Mask mode");
+}
+
+#[test]
+fn command_backslash_targets_the_layer_mask_and_command_2_the_composite() {
+    let mut s = session();
+    s.execute("layer.new.layer", json!({})).unwrap();
+    assert!(!s.is_enabled("channel.target.layerMask"), "no mask yet");
+    assert!(s.execute("channel.target.layerMask", json!({})).is_err());
+    s.execute("layer.layerMask.revealAll", json!({})).unwrap();
+    s.execute("channel.target.composite", json!({})).unwrap();
+    assert_eq!(crate::commands::find("channel.target.layerMask").and_then(|c| c.shortcut), Some("Cmd+\\"));
+    s.execute("channel.target.layerMask", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::LayerMask);
+    s.execute("channel.target.composite", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().channel_view.target, ChannelTarget::Composite);
+}
+
+#[test]
+fn command_alt_2_loads_the_images_luminosity() {
+    let mut s = session();
+    rect(&mut s, 0, 0, 20, 20, "replace");
+    s.execute("edit.fill", json!({"contents": "black"})).unwrap();
+    s.execute("select.deselect", json!({})).unwrap();
+    assert_eq!(crate::commands::find("select.loadLuminosity").and_then(|c| c.shortcut), Some("Cmd+Alt+2"));
+    s.execute("select.loadLuminosity", json!({})).unwrap();
+    assert!(sel_at(&s, 5, 5) < 0.01, "black: unselected");
+    assert!(sel_at(&s, 30, 5) > 0.99, "white: selected");
+}
+
+#[test]
+fn thumbnail_selection_shape_without_pixel_cache_uses_its_transparency() {
+    for depth in [8, 16, 32] {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width":100,"height":80,"depth":depth,"background":"transparent"})).unwrap();
+        let id = s.execute("shape.create", json!({"kind":"rect","rect":[20,10,40,30],"fill":"#cc3333"})).unwrap()["layer"].as_u64().unwrap();
+        s.edit("Drop render cache", |doc, _| {
+            let l = doc.layer_mut(photocraft_doc::LayerId(id)).unwrap();
+            if let LayerContent::Shape(shape) = &mut l.content {
+                shape.cache = None;
+            }
+            l.visible = false;
+            l.opacity = 0.25;
+            Ok(())
+        })
+        .unwrap();
+        s.execute("select.loadSelection", json!({"channel":"transparency","layer":id})).unwrap();
+        assert!(sel_at(&s, 30, 20) > 0.99);
+        assert!(sel_at(&s, 0, 0) < 0.01, "shape transparency must not select the whole canvas at depth {depth}");
+        let b = s.active().unwrap().doc.selection.as_ref().unwrap().content_bounds();
+        assert_eq!((b.x0, b.y0, b.width(), b.height()), (20, 10, 40, 30));
+    }
 }

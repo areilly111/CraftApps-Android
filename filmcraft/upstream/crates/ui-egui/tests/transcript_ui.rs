@@ -12,6 +12,48 @@ use filmcraft_ui_egui::FilmcraftApp;
 use filmcraft_ui_egui::control::ControlRequest;
 use serde_json::{Value, json};
 
+/// Reproducible redraw cost for a long sequence transcript, with and without many search hits.
+/// Run alone with `--ignored --nocapture`; timings are observations, not CI thresholds.
+#[test]
+#[ignore = "manual transcript performance measurement"]
+fn long_transcript_redraw_benchmark() {
+    let mut d = Driver::demo();
+    let item = d.harness.state().session.active_sequence().unwrap().audio_tracks[0].items[0].item;
+    let words: Vec<Value> = (0..10_000)
+        .map(|i| {
+            json!({"text": "hello", "start": filmcraft_time::Tick::from_seconds_f64(i as f64 * 0.4).0,
+            "end": filmcraft_time::Tick::from_seconds_f64(i as f64 * 0.4 + 0.3).0, "speaker": (i / 40) % 2})
+        })
+        .collect();
+    d.ok(
+        "engine.execute",
+        json!({"command": "transcript.set", "params": {"item": item.0,
+        "transcript": {"language": "en", "speakers": [{"name": "First"}, {"name": "Second"}], "words": words}}}),
+    );
+    d.ok("ui.set", json!({"workspace": "Captions and Graphics"}));
+    d.harness.state_mut().ui.text_tab = "Transcript".into();
+    // Extend only the synthetic fixture clip so all 10,000 words are actually laid out.
+    let session = &mut d.harness.state_mut().session;
+    let id = session.state.active_sequence.unwrap();
+    let seq = std::sync::Arc::make_mut(&mut session.project).sequence_mut(id).unwrap();
+    seq.audio_tracks[0].items.truncate(1);
+    seq.audio_tracks[0].items[0].source_in = filmcraft_time::Tick::ZERO;
+    seq.audio_tracks[0].items[0].duration = filmcraft_time::Tick::from_seconds_f64(4000.0);
+    assert_eq!(filmcraft_engine::transcript::sequence_words(session).len(), 10_000);
+    for query in ["", "hello"] {
+        d.harness.state_mut().ui.transcript_search = query.into();
+        d.frames(5);
+        let mut times = Vec::new();
+        for _ in 0..40 {
+            let start = std::time::Instant::now();
+            d.frames(1);
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        times.sort_by(f64::total_cmp);
+        println!("transcript words=10000 query={query:?} p50_ms={:.3} p95_ms={:.3}", times[20], times[38]);
+    }
+}
+
 struct Driver {
     harness: Harness<'static, FilmcraftApp>,
     tx: Sender<ControlRequest>,

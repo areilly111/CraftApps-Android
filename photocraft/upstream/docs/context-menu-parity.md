@@ -1,5 +1,7 @@
 # Context-menu parity contract
 
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** trivial (status line and revision history added; linked from ui-parity.md) · **Target:** Adobe Photoshop 2026
+
 Status: implementation contract, updated 2026-10-09. Scope: canvas, document tabs, and panels. “Right-click” means a secondary pointer click; macOS Control-click should also open the same menu where the platform sends a context-menu gesture. Photoshop changes a context menu with the active tool, selection, and panel item. Adobe documents that principle but does not publish a complete current menu catalog. **Documented** means an Adobe source explicitly names the gesture or action. **Inferred** means a PhotoCraft design target or an item known from a main menu whose presence in a Photoshop context menu still needs a current-product capture. Do not present inferred rows as exact Photoshop menus. [Adobe: panels and menus](https://helpx.adobe.com/photoshop/using/panels-menus.html), [Adobe: shortcuts and context menus](https://helpx.adobe.com/sa_en/photoshop/using/customizing-keyboard-shortcuts.html).
 
 ## Dispatch contract
@@ -25,8 +27,8 @@ The “PhotoCraft at branch point” column records behavior before this PR. Pic
 | Ruler, Note, Count | Unit / measurement, note edit/delete, count-group operations **(inferred)** | No tool menu | P2 |
 | Brush, Pencil, Eraser, Background Eraser, Spot Healing, Healing, Clone Stamp, History Brush, Blur, Sharpen, Smudge, Dodge, Burn, Sponge | Brush preset, size and hardness where applicable | Picker | P0; [Adobe Brush Settings](https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/brushes-presets/create-brush-set-painting-options.html). Alt+secondary-drag on Windows and Control+Option-drag on macOS adjust size/hardness ([Adobe cursor shortcuts](https://helpx.adobe.com/in/photoshop/desktop/get-started/settings-and-preferences/change-tool-pointers.html)) |
 | Gradient, Paint Bucket | Gradient preset/type/mode or fill source/tolerance **(inferred context placement)** | No tool menu | P1 |
-| Type | In text: cut/copy/paste, spelling suggestions, text formatting; outside text: type-layer action **(inferred context placement)** | No tool menu | P1; separate editing and nonediting states; [Adobe type editing](https://helpx.adobe.com/photoshop/desktop/text-typography/get-started-with-text/edit-text.html) |
-| Hand, Zoom | Fit on Screen, 100%, 200%, Print Size; zoom step choices **(inferred context placement)** | No tool menu | P1; view actions stay out of document history |
+| Type | In text: cut/copy/paste, spelling suggestions, text formatting; outside text: type-layer action **(inferred context placement)** | While editing text (canvas_tool_menu.rs `TYPE_EDIT_MENU`): Undo, Cut, Copy, Paste, Select All (on the text), Check Spelling…, Find and Replace Text…, Faux Bold/Italic (checked), Rasterize Type, Create Work Path, Convert to Shape, Horizontal/Vertical and the anti-alias modes (checked), Convert to Paragraph/Point Text, Warp Text…; Esc closes only the menu. Spelling suggestions for the word under the pointer and the non-editing type-layer menu remain open | P1; separate editing and nonediting states; [Adobe type editing](https://helpx.adobe.com/photoshop/desktop/text-typography/get-started-with-text/edit-text.html) |
+| Hand, Zoom | Fit on Screen, 100%, 200%, Print Size; zoom step choices **(inferred context placement)** | View menu (#3242): Zoom In, Zoom Out, Fit on Screen, Fill Screen, 100%, 200%, Print Size. Zoom In/Out step about the right-clicked point (Preferences › Tools › Zoom Clicked Point to Center centres it). Outside the image the pasteboard menu still wins. | P1; view actions stay out of document history; row order still needs a dated Photoshop capture |
 | Pen, Path Selection | Path/point actions, Make Selection, Fill/Stroke Path, Free Transform Path **(inferred context placement)** | Pen canvas right-click follows the user-provided 20-row Photoshop capture below. Paths rows offer Make Selection, Fill and Stroke. Path Selection's own canvas menu remains open. | P1; distinguish node, segment, path, and blank canvas |
 | Rectangle, Ellipse Shape, Triangle, Polygon, Line, Custom Shape | Shape/path operations, fill/stroke settings, transform **(inferred context placement)** | No tool menu | P2 |
 | Slice, Slice Select | Slice properties, duplicate/delete, divide, guides **(inferred context placement)** | No tool menu | P2 |
@@ -81,7 +83,7 @@ Photoshop's Generative Fill and Delete and Fill Selection rows are left out: Pho
 | Paths, History, Actions, Swatches, Gradients, Patterns, Styles, Libraries, Properties | Target-specific duplicate/delete/rename and panel operations where a panel exists | Paths row menu added in this PR; other panels need audit | **Inferred** catalog; record a Photoshop capture before claiming parity |
 | Document tab | Close, Close Others, Close All, Reveal in file manager, duplicate/move to window where supported | Close, Close Others, Close All, Reveal in Finder, and drag to reorder implemented; duplicate/move to window where supported remains open | **Inferred** exact list; P1 |
 | Empty pasteboard / workspace | Gray, Black, Custom canvas color choices; verify any additional entries in a current Photoshop capture | No menu | Adobe [documents right-clicking outside the image for canvas color](https://helpx.adobe.com/ph_en/photoshop/using/filling-stroking-selections-layers-paths.html); exact current layout still needs a capture |
-| Text field / selected text | Native edit menu and spelling suggestions without routing to active image tool | Missing per docs/scorecard.md UI-217-8 | P1; **inferred** exact spelling list |
+| Text field / selected text | Native edit menu and spelling suggestions without routing to active image tool | Edit menu implemented in text_field_menu.rs for every text field (Undo, Cut, Copy, Paste, Delete, Select All; a right-click inside the selection keeps it; never reaches the canvas or tool menu). Spelling suggestions missing: `edit.checkSpelling` (`suggest`) is not wired into the menu yet (UI-217-8) | P1; **inferred** exact spelling list |
 | Tool icon in Options bar | Reset Tool, Reset All Tools | Audit | Explicitly documented in [Adobe Photoshop reference](https://helpx.adobe.com/archive/en/photoshop/cc/2015/photoshop_reference.pdf); historical source, verify modern label |
 | Adaptive Wide Angle constraint line | Auto, Horizontal, Vertical orientation | Current right-click deletes constraint | P1 behavior mismatch: [Adobe documents orientation choice](https://helpx.adobe.com/photoshop/using/adaptive-wide-angle-filter.html) |
 
@@ -93,3 +95,11 @@ Photoshop's Generative Fill and Delete and Fill Selection rows are left out: Pho
 4. Long tail: shape/path, crop, metadata and specialist tools. Keep a per-tool fixture with no selection, active selection, masked/locked layer, and active operation where applicable.
 
 Each slice needs pure model tests (including every item dispatching a known command), UI pointer tests for secondary click and modifier precedence, command/undo tests, a disabled-state test, and screenshots from PhotoCraft with the menu actually open. Compare labels, order, and state against dated Photoshop screenshots; a screenshot of a different tool or menu bar is insufficient evidence. Maintain a checklist beside each captured reference: Photoshop version/platform, target description, tool, selection/document state, modifiers, and exact items observed.
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-10 | trivial | Status line, revision history |
+| 2026-10-09 | minor | Selection canvas reference and tool matrix updates |
+| 2026-10-07 | minor | Pen canvas reference capture |

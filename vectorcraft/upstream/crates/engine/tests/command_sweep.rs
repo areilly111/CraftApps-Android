@@ -17,10 +17,19 @@ fn safe_path() -> String {
     vectorcraft_testkit::temp_dir("sweep").join("out.bin").to_string_lossy().to_string()
 }
 
+/// `r`, after failing the case if the command panicked. The engine's guard reports a panic as
+/// `EngineError::Internal`.
+fn no_panic(r: Result<Value, vectorcraft_engine::EngineError>) -> Result<Value, vectorcraft_engine::EngineError> {
+    if let Err(vectorcraft_engine::EngineError::Internal { cmd, msg }) = &r {
+        panic!("{cmd} panicked: {msg}");
+    }
+    r
+}
+
 /// Run one call; returns a failure description or None.
 fn probe(fx: Fixture, id: &str, params: &Value) -> Option<String> {
     let mut s = fx.session();
-    let r = catch_quiet(|| s.execute(id, params));
+    let r = catch_quiet(|| no_panic(s.execute(id, params)));
     match r {
         Err(msg) => Some(format!("PANIC {id} {params} [{fx:?}]: {msg}")),
         Ok(_) => {
@@ -68,7 +77,7 @@ fn every_command_without_a_document() {
     let mut failures = vec![];
     for c in command_specs() {
         let mut s = Session::new();
-        match catch_quiet(|| s.execute(c.id, &json!({}))) {
+        match catch_quiet(|| no_panic(s.execute(c.id, &json!({})))) {
             Err(p) => failures.push(format!("PANIC {} with no document: {p}", c.id)),
             // Anything that needs a document must say so via enablement, not fail later.
             Ok(Err(vectorcraft_engine::EngineError::NoDocument)) => failures.push(format!("{}: enabled without a document but needs one", c.id)),
@@ -79,23 +88,6 @@ fn every_command_without_a_document() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-/// Known bugs (see the `#[ignore]` repro tests below): (command, param key) pairs skipped by the
-/// junk sweep so the rest of the sweep stays meaningful.
-const KNOWN_BUGS: &[(&str, &str)] = &[
-    ("object.scale", "sx"),
-    ("object.transformEach", "scaleH"),
-    ("object.transformEach", "scaleV"),
-    ("object.distributeSpacing", "spacing"),
-    ("artboard.setProps", "x"),
-    ("artboard.setProps", "y"),
-    ("artboard.setProps", "width"),
-    ("artboard.setProps", "height"),
-];
-
-fn known_bug(id: &str, p: &Value) -> bool {
-    KNOWN_BUGS.iter().any(|(c, k)| *c == id && p.get(*k).is_some())
 }
 
 /// Regression: huge column counts used to panic with `capacity overflow`; in every layout and
@@ -123,7 +115,7 @@ fn bug_huge_transform_makes_document_unloadable() {
         ("object.distributeSpacing", json!({"spacing": 1e308})),
     ] {
         let mut s = Fixture::Multi.session();
-        if s.execute(id, &p).is_ok() {
+        if no_panic(s.execute(id, &p)).is_ok() {
             vectorcraft_testkit::invariants::check_native_roundtrip(&s.doc().unwrap().doc).unwrap_or_else(|e| panic!("{id} {p}: {e}"));
         }
     }
@@ -134,7 +126,7 @@ fn bug_artboard_huge_props_break_svg() {
     for key in ["x", "y", "width", "height"] {
         let mut s = Fixture::Single.session();
         let p = json!({"index": 0, key: 1e308});
-        if s.execute("artboard.setProps", &p).is_ok() {
+        if no_panic(s.execute("artboard.setProps", &p)).is_ok() {
             vectorcraft_testkit::invariants::check_svg_roundtrip(&s.doc().unwrap().doc).unwrap_or_else(|e| panic!("{p}: {}", &e[..e.len().min(200)]));
         }
     }
@@ -157,9 +149,6 @@ fn every_command_with_junk_params() {
                 cases.truncate(12);
             }
             for p in &cases {
-                if known_bug(c.id, p) {
-                    continue;
-                }
                 calls += 1;
                 if let Some(f) = probe(fx, c.id, p) {
                     failures.push(f);
@@ -341,6 +330,9 @@ fn structured_junk() {
         ("object.setBounds", json!({"width": 0, "height": 0})),
         ("object.setBounds", json!({"width": -10, "height": 1e308, "reference": 99})),
         ("object.distributeSpacing", json!({"axis": "horizontal", "spacing": -1e308})),
+        ("object.distributeSpacing", json!({"axis": "vertical", "spacing": 0})),
+        ("object.align", json!({"horizontal": "center", "vertical": "center", "to": "artboard", "bounds": "preview"})),
+        ("object.distribute", json!({"vertical": "center", "bounds": "geometric"})),
         ("artboard.setProps", json!({"index": 0, "width": -1, "height": 0})),
         ("artboard.setProps", json!({"index": 0, "width": 1e300, "height": 1e-300, "scaleArt": true, "strokes": true, "corners": true})),
         ("artboard.setProps", json!({"index": 0, "x": -1e308, "width": 0, "height": 1, "scaleArt": true, "patterns": true})),
@@ -384,6 +376,7 @@ fn structured_junk() {
         ("object.blend.options", json!({"spacing": "distance", "value": -1e308, "orientation": 5})),
         ("object.blend.spine.moveAnchor", json!({"id": 2, "anchor": u64::MAX, "x": 1e308, "y": -1e308, "handle": "sideways"})),
         ("object.blend.spine.addAnchor", json!({"id": u64::MAX, "x": 0, "y": 0})),
+        ("object.blend.spine.reshapeSegment", json!({"id": 2, "segment": u64::MAX, "t": f64::NAN, "dx": 1e308, "dy": -1e308})),
         ("object.blend.spine.removeAnchor", json!({"anchor": -1})),
         ("object.puppetWarp", json!({"rest": true, "pins": [], "moved": []})),
         ("object.puppetWarp", json!({"rest": true, "pins": [[1e308, 0]], "moved": [[0, 0]], "expand": -5})),
@@ -428,14 +421,14 @@ fn area_options_fit_junk() {
     for (size, (w, h)) in [(12.0, (120.0, 40.0)), (0.1, (1.0, 1.0)), (1296.0, (100_000.0, 1.0))] {
         for p in &cases {
             let mut s = Fixture::Multi.session();
-            let made = s.execute("text.create", &json!({"x": 10, "y": 10, "size": size, "text": story, "area": {"width": w, "height": h}}));
+            let made = no_panic(s.execute("text.create", &json!({"x": 10, "y": 10, "size": size, "text": story, "area": {"width": w, "height": h}})));
             let Ok(made) = made else { continue };
             let id = made["id"].as_u64().unwrap_or(0);
-            let r = catch_quiet(|| s.execute("text.areaOptions", p));
+            let r = catch_quiet(|| no_panic(s.execute("text.areaOptions", p)));
             match r {
                 Err(m) => failures.push(format!("PANIC text.areaOptions {p} [{size} pt, {w}×{h}]: {m}")),
                 Ok(_) => {
-                    let typed = catch_quiet(|| s.execute("text.editRange", &json!({"id": id, "start": 0, "insert": "More words. "})));
+                    let typed = catch_quiet(|| no_panic(s.execute("text.editRange", &json!({"id": id, "start": 0, "insert": "More words. "}))));
                     if typed.is_err() {
                         failures.push(format!("PANIC typing after text.areaOptions {p}"));
                     }
@@ -463,11 +456,13 @@ fn polygon_properties_junk() {
     for scale in [None, Some((300.0, 20.0)), Some((1e-300, 100.0))] {
         for p in &cases {
             let mut s = Fixture::Multi.session();
-            let Ok(_) = s.execute("shape.polygon", &json!({"cx": 100, "cy": 100, "radius": 40, "sides": 7, "rotation": 10})) else { continue };
+            let Ok(_) = no_panic(s.execute("shape.polygon", &json!({"cx": 100, "cy": 100, "radius": 40, "sides": 7, "rotation": 10}))) else {
+                continue;
+            };
             if let Some((sx, sy)) = scale {
-                let _ = s.execute("object.scale", &json!({"sx": sx, "sy": sy}));
+                let _ = no_panic(s.execute("object.scale", &json!({"sx": sx, "sy": sy})));
             }
-            match catch_quiet(|| s.execute("object.setLiveShape", p)) {
+            match catch_quiet(|| no_panic(s.execute("object.setLiveShape", p))) {
                 Err(m) => failures.push(format!("PANIC object.setLiveShape {p} [{scale:?}]: {m}")),
                 Ok(_) => {
                     if let Err(e) = catch_quiet(|| check_all(&mut s)).unwrap_or_else(|m| Err(format!("panic in checks: {m}"))) {
@@ -494,9 +489,6 @@ fn fuzzed_calls_keep_documents_serializable() {
                 let k = if k == "path" { continue } else { k };
                 let mut s = Fixture::Multi.session();
                 let p = json!({ k.clone(): v });
-                if known_bug(c.id, &p) {
-                    continue;
-                }
                 let ok = catch_quiet(|| s.execute(c.id, &p)).map(|r| r.is_ok()).unwrap_or(false);
                 if ok && let Err(e) = catch_quiet(|| check_all(&mut s)).unwrap_or_else(|m| Err(format!("panic in checks: {m}"))) {
                     failures.push(format!("{} {p}: {e}", c.id));
@@ -523,7 +515,7 @@ fn every_command_undoes_exactly() {
         let depth = s.doc().unwrap().history.undo.len();
         let Ok(Ok(_)) = catch_quiet(|| s.execute(c.id, &json!({}))) else { continue };
         if s.doc().unwrap().history.undo.len() > depth {
-            let _ = s.execute("edit.undo", &json!({}));
+            let _ = no_panic(s.execute("edit.undo", &json!({})));
             let after = doc_json(&s.doc().unwrap().doc);
             if after != before {
                 failures.push(format!("{}: {}", c.id, vectorcraft_testkit::invariants::first_diff(&before, &after, "$")));
@@ -562,7 +554,7 @@ fn recovery_commands_with_a_damaged_store_and_junk_params() {
             for p in std::iter::once(json!({})).chain(junk_params(spec.params, &path)) {
                 let mut s = fx.session();
                 s.recovery.set_store(store.clone());
-                let r = catch_quiet(|| s.execute(id, &p));
+                let r = catch_quiet(|| no_panic(s.execute(id, &p)));
                 assert!(r.is_ok(), "PANIC {id} {p} [{fx:?}]");
                 check_session(&s).unwrap_or_else(|e| panic!("{id} {p} [{fx:?}]: {e}"));
             }
@@ -595,9 +587,9 @@ fn envelope_commands_with_junk_params_on_envelopes() {
                         continue;
                     }
                     if editing {
-                        let _ = s.execute("object.envelope.editContents", &json!({"editing": true}));
+                        let _ = no_panic(s.execute("object.envelope.editContents", &json!({"editing": true})));
                     }
-                    let r = catch_quiet(|| s.execute(id, &p));
+                    let r = catch_quiet(|| no_panic(s.execute(id, &p)));
                     if r.is_err() {
                         failures.push(format!("PANIC {id} {p} [{make}, editing {editing}]"));
                     } else if s.in_interaction() {
@@ -665,7 +657,7 @@ fn text_commands_with_junk_params_on_inline_graphics() {
     let mut failures = vec![];
     let mut run = |id: &str, p: &Value| {
         let (mut s, _) = setup();
-        match catch_quiet(|| s.execute(id, p)) {
+        match catch_quiet(|| no_panic(s.execute(id, p))) {
             Err(msg) => failures.push(format!("PANIC {id} {p}: {msg}")),
             Ok(r) => {
                 if s.in_interaction() {

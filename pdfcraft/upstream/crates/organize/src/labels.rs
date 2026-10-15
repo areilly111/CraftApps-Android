@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use pdfcraft_cos::page_labels::{MAX_LABEL_BYTES, MAX_LABEL_TREE_DEPTH, MAX_LABEL_TREE_WORK, MAX_PREFIX_BYTES, alpha, roman};
+use pdfcraft_cos::page_labels::{MAX_LABEL_BYTES, MAX_LABEL_TREE_DEPTH, MAX_LABEL_TREE_WORK, MAX_PREFIX_BYTES, MAX_PREFIX_TOTAL_BYTES, alpha, roman};
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString};
 
 use crate::{OrganizeError, page_count, pages_root};
@@ -146,6 +146,7 @@ fn read_label_node(
     left: &mut usize,
     seen: &mut HashSet<ObjRef>,
     entries: &mut Vec<LabelRange>,
+    prefix_left: &mut usize,
 ) -> Result<(), OrganizeError> {
     label_work(left, 1)?;
     if depth > MAX_LABEL_TREE_DEPTH {
@@ -179,6 +180,9 @@ fn read_label_node(
                         if prefix.len() > MAX_LABEL_BYTES {
                             return Err(invalid_label("a decoded prefix exceeds 1024 UTF-8 bytes"));
                         }
+                        // A prefix object shared by many ranges is copied into each: count every copy.
+                        *prefix_left =
+                            prefix_left.checked_sub(prefix.len()).ok_or_else(|| invalid_label("decoded prefixes exceed 4 MiB in total"))?;
                         let style = spec.name(b"S").map_or(LabelStyle::None, LabelStyle::from_name);
                         let first = spec.int(b"St").unwrap_or(1).max(1);
                         let first = if style == LabelStyle::None {
@@ -203,7 +207,7 @@ fn read_label_node(
                 }
                 // Recursion is bounded before descending, and arrays are borrowed throughout.
                 for kid in kids {
-                    read_label_node(doc, kid, depth + 1, left, seen, entries)?;
+                    read_label_node(doc, kid, depth + 1, left, seen, entries, prefix_left)?;
                 }
                 Ok(())
             })?;
@@ -217,8 +221,8 @@ fn checked_ranges(doc: &Document) -> Result<Vec<LabelRange>, OrganizeError> {
     let catalog = doc.get(root);
     let Some(tree) = catalog.as_dict().and_then(|c| c.get(b"PageLabels")) else { return Ok(Vec::new()) };
     let mut entries = Vec::new();
-    let mut left = MAX_LABEL_TREE_WORK;
-    read_label_node(doc, tree, 0, &mut left, &mut HashSet::new(), &mut entries)?;
+    let (mut left, mut prefix_left) = (MAX_LABEL_TREE_WORK, MAX_PREFIX_TOTAL_BYTES);
+    read_label_node(doc, tree, 0, &mut left, &mut HashSet::new(), &mut entries, &mut prefix_left)?;
     // A start page given twice keeps its later range, as readers that overwrite do (the sort is
     // stable, so the later one is last among equals).
     entries.sort_by_key(|r| r.start);

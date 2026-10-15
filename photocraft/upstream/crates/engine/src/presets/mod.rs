@@ -81,6 +81,8 @@ pub struct PresetState {
     pub tool_presets: Vec<tools::ToolPreset>,
     /// File › New: named snapshots, separate from the name of the document being created.
     pub documents: Vec<crate::document_preset_cmds::DocumentPreset>,
+    /// File › New › Recent: the settings of documents recently created there, newest first.
+    pub recent_documents: Vec<crate::document_preset_cmds::DocumentSettings>,
     pub clone: clone_source::CloneSources,
     /// The user defaults "Make Default" in the Layer Style dialog saves
     /// (effect kind → param set); "Reset to Default" restores them.
@@ -102,6 +104,7 @@ impl Default for PresetState {
             pattern: None,
             tool_presets: tools::builtin(),
             documents: Vec::new(),
+            recent_documents: Vec::new(),
             clone: Default::default(),
             layer_defaults: BTreeMap::new(),
             swatches: swatches::builtin(),
@@ -123,11 +126,14 @@ struct Persisted {
     shapes: Option<Vec<Group<shapes::ShapePreset>>>,
     #[serde(default)]
     pattern_groups: Option<Vec<Group<String>>>,
+    // Read entry by entry (`tools::load`): a bad entry must not discard the rest.
     #[serde(default)]
-    tool_presets: Option<Vec<tools::ToolPreset>>,
+    tool_presets: Option<Value>,
     // Read this set independently: a bad entry must not discard the other preset kinds.
     #[serde(default)]
     documents: Option<Value>,
+    #[serde(default)]
+    recent_documents: Option<Value>,
     #[serde(default)]
     custom_shapes: Option<Vec<crate::edit_menu_cmds::CustomShape>>,
     #[serde(default)]
@@ -144,8 +150,9 @@ impl PresetState {
             styles: Some(self.styles.clone()),
             shapes: Some(self.shapes.clone()),
             pattern_groups: Some(self.pattern_groups.clone()),
-            tool_presets: Some(self.tool_presets.clone()),
+            tool_presets: Some(json!(self.tool_presets)),
             documents: Some(json!(self.documents)),
+            recent_documents: Some(json!(self.recent_documents)),
             custom_shapes: Some(s.edit_state.custom_shapes.clone()),
             layer_defaults: Some(self.layer_defaults.clone()),
             swatches: Some(self.swatches.clone()),
@@ -176,10 +183,13 @@ impl Session {
             st.pattern_groups = g;
         }
         if let Some(t) = p.tool_presets {
-            st.tool_presets = t;
+            st.tool_presets = tools::load(t);
         }
         if let Some(d) = p.documents {
             st.documents = crate::document_preset_cmds::load(d);
+        }
+        if let Some(r) = p.recent_documents {
+            st.recent_documents = crate::document_preset_cmds::load_recent(r);
         }
         if let Some(c) = p.custom_shapes {
             self.edit_state.custom_shapes = c;
@@ -286,9 +296,20 @@ pub(crate) fn edit_groups<T: Named>(groups: &mut Vec<Group<T>>, action: &str, p:
                 Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
                 _ => vec![req_str(p, "preset", cmd)?.to_string()],
             };
+            // All or nothing: a missing name deletes none of the others.
+            if let Some(name) = names.iter().find(|n| find(groups, n, group).is_none()) {
+                return Err(bad(cmd, format!("no preset \"{name}\"")));
+            }
+            let mut names = names;
+            names.sort();
+            names.dedup();
             for name in &names {
-                let (gi, ii) = find(groups, name, group).ok_or_else(|| bad(cmd, format!("no preset \"{name}\"")))?;
-                groups[gi].items.remove(ii);
+                if let Some((gi, ii)) = find(groups, name, group)
+                    && let Some(g) = groups.get_mut(gi)
+                    && ii < g.items.len()
+                {
+                    g.items.remove(ii);
+                }
             }
             Ok(json!({"deleted": names.len()}))
         }

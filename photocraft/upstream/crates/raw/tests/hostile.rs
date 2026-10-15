@@ -39,6 +39,16 @@ fn samples() -> Vec<Vec<u8>> {
     j.jxl_segments = vec![jxl_rgb16(&rgb, w, h)];
     j.profile_gain_table_map = Some(vec![0; 32]);
     out.push(j.build());
+    // Monochrome LinearRaw (one sample, no CFA, no colour matrix), as film scanners write it (#3497).
+    let grey: Vec<u16> = scene(w, h).iter().map(|p| 64 + (p[1] * 3900.0) as u16).collect();
+    let mut m = DngSpec::monochrome(w, h, grey);
+    m.bits = 12;
+    m.white = 4000;
+    m.black = vec![64];
+    m.storage = DngStorage::Lj92Tiles { width: 16, height: 8 };
+    out.push(m.build());
+    m.storage = DngStorage::DeflateStrips { rows: 5, predictor: 2 };
+    out.push(m.build());
     let mut data = vec![600u16; 40 * 10];
     for (i, v) in data.iter_mut().enumerate() {
         *v = 600 + (i as u16 * 7) % 3000;
@@ -77,10 +87,18 @@ fn samples() -> Vec<Vec<u8>> {
 fn exercise(b: &[u8]) {
     let _ = identify(b);
     let _ = embedded_preview(b);
+    let _ = embedded_previews(b);
+    let _ = embedded_preview_color_space(b);
     let opts = DevelopOptions { limits: Limits { max_alloc: 64 << 20, ..Limits::default() }, ..Default::default() };
     if let Ok(s) = decode(b, &opts.limits) {
         for m in [Demosaic::Bilinear, Demosaic::Ahd] {
             let _ = develop_sensor(&s, &DevelopOptions { demosaic: m, ..opts.clone() });
+        }
+        // A colour fit against a gradient of the crop's (capped) shape, then a develop with it.
+        let (w, h) = (s.crop.width.min(256), s.crop.height.min(256));
+        let rgb: Vec<u8> = (0..w * h * 3).map(|i| (i * 7 % 251) as u8).collect();
+        if let Ok(look) = fit_look(&s, &opts, &Reference { width: w as u32, height: h as u32, rgb: &rgb }) {
+            let _ = develop_sensor(&s, &DevelopOptions { camera_look: Some(look), ..opts.clone() });
         }
     }
 }
@@ -142,4 +160,67 @@ fn absurd_dimensions_are_rejected_without_allocating() {
     }
     assert!(patched > 0);
     assert!(matches!(decode(&b, &Limits::default()), Err(RawError::LimitExceeded(_))));
+}
+
+/// An 8×8 CFA image stored as one lossless-JPEG tile that the file declares 512×512: the
+/// reader takes the segment's geometry from the tile tags, not from the image (#2925).
+fn oversized_lj92_tile() -> Vec<u8> {
+    let cfa = mosaic(&scene(8, 8), 8, [0, 1, 1, 2], 64, 4000);
+    let mut d = DngSpec::cfa(8, 8, cfa);
+    d.bits = 12;
+    d.white = 4000;
+    d.black = vec![64];
+    d.storage = DngStorage::Lj92Tiles { width: 512, height: 512 };
+    d.build()
+}
+
+/// Rewrites one inline LONG IFD value; `false` when the tag is not found exactly once.
+fn patch_long(b: &mut [u8], tag: u16, to: u32) -> bool {
+    let mut patched = 0;
+    for i in 0..b.len().saturating_sub(12) {
+        if b[i..i + 2] == tag.to_le_bytes() && b[i + 2..i + 4] == 4u16.to_le_bytes() && b[i + 4..i + 8] == 1u32.to_le_bytes() {
+            b[i + 8..i + 12].copy_from_slice(&to.to_le_bytes());
+            patched += 1;
+        }
+    }
+    patched == 1
+}
+
+/// The lossless-JPEG intermediate is sized from the segment, so the plane check alone
+/// does not bound it: it has to be charged against `max_alloc` too (#2925).
+#[test]
+fn lossless_jpeg_intermediate_is_charged_against_max_alloc() {
+    let b = oversized_lj92_tile();
+    assert!(decode(&b, &Limits::default()).is_ok(), "the file itself is valid");
+    // The image is 8 * 8 * 2 = 128 bytes, so the plane check passes, while the declared
+    // tile's intermediate is 512 * 512 * 2 bytes — far past a 64 KiB budget.
+    let budget = Limits { max_alloc: 64 << 10, ..Limits::default() };
+    assert!(matches!(decode(&b, &budget), Err(RawError::LimitExceeded(_))));
+    // A budget that does hold the intermediate still decodes it unchanged.
+    let roomy = Limits { max_alloc: 4 << 20, ..Limits::default() };
+    assert!(decode(&b, &roomy).is_ok(), "a budget that holds the intermediate still decodes it");
+    // Ordinary geometry stays inside the same budget: the segment check is not stricter
+    // than the image it belongs to.
+    let mut normal = DngSpec::cfa(8, 8, mosaic(&scene(8, 8), 8, [0, 1, 1, 2], 64, 4000));
+    normal.bits = 12;
+    normal.white = 4000;
+    normal.black = vec![64];
+    normal.storage = DngStorage::Lj92Tiles { width: 4, height: 4 };
+    let tight = Limits { max_alloc: 4096, ..Limits::default() };
+    assert!(decode(&normal.build(), &tight).is_ok(), "ordinary geometry stays inside the budget");
+}
+
+/// A frame may declare up to 4× the segment's samples (the headroom the reader passes);
+/// when that does not fit the budget either, the decode is refused rather than allocated.
+#[test]
+fn lossless_jpeg_frame_larger_than_the_budget_is_refused() {
+    let mut b = oversized_lj92_tile();
+    // Shrink the declared tile to 256×256: its geometry then allows exactly 4× its own
+    // samples — the 262144-sample frame this file actually holds (322 = TileWidth,
+    // 323 = TileLength).
+    assert!(patch_long(&mut b, 322, 256), "TileWidth patched once");
+    assert!(patch_long(&mut b, 323, 256), "TileLength patched once");
+    // Holds the image (128 B) and the tile (128 KiB), but not the frame's 512 KiB.
+    let budget = Limits { max_alloc: 256 << 10, ..Limits::default() };
+    assert!(matches!(decode(&b, &budget), Err(RawError::LimitExceeded(_))));
 }

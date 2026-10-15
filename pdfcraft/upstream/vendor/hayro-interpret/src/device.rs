@@ -59,6 +59,11 @@ pub trait Device<'a> {
     /// The tag is the marked content tag (e.g. b"P", b"Span"). The mcid is
     /// the marked content identifier from the properties dict, if present.
     fn begin_marked_content(&mut self, _tag: &[u8], _mcid: Option<i32>) {}
+    /// PdfCraft patch (25): the `/ActualText` of the marked content sequence that just began
+    /// (ISO 32000-2 §14.9.4), as the text string's raw bytes. Called right after
+    /// `begin_marked_content`; the text replaces everything drawn up to the matching
+    /// `end_marked_content`.
+    fn actual_text(&mut self, _text: &[u8]) {}
     /// Called at the end of a marked content sequence (EMC).
     fn end_marked_content(&mut self) {}
 }

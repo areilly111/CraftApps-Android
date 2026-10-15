@@ -313,7 +313,7 @@ impl Tool for FreeTransformTool {
     fn cursor(&self, cx: &ToolContext, p: Point, m: Mods) -> Cursor {
         let Some(r) = selection_bounds(cx) else { return Cursor::Arrow };
         match self.drag.map(|d| d.op).or_else(|| self.classify(cx, r, p, m)) {
-            Some(Op::Rotate) => Cursor::Rotate,
+            Some(Op::Rotate) => Cursor::rotate_about(r.center(), p),
             Some(Op::Move) => Cursor::Move,
             Some(Op::Scale(h) | Op::Shear(h)) => match h {
                 Handle::Top | Handle::Bottom => Cursor::ResizeV,

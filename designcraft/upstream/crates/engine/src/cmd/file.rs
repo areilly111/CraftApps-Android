@@ -18,7 +18,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.newSample", "Sample Document", ["Help"], None, "{} — a multi-page magazine sample", always, file_sample),
         cmd!(query "file.presets", "Document Presets", [], None, "{}", always, |_, _| Ok(serde_json::to_value(PRESETS).unwrap_or_default())),
         cmd!(noundo "file.open", "Open…", ["File"], Some("Cmd+O"),
-            "{path} — .designcraft or .idml; the fonts in a `Document Fonts` folder beside it load first → {index, documentFonts: faces loaded, warnings: font files skipped}",
+            "{path} — .designcraft or .idml; the fonts in a `Document Fonts` folder beside it load first → {index, documentFonts: faces loaded, warnings: font files skipped (and, for .idml, package parts missing)}",
             always, file_open),
         cmd!(noundo "file.openBytes", "Open Bytes", [], None, "{name, base64} — DesignCraft JSON or an IDML package", always, file_open_bytes),
         cmd!(noundo "file.save", "Save", ["File"], Some("Cmd+S"), "{path?}", has_doc, file_save),
@@ -313,8 +313,9 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
             .map(|(w, h)| (w.round().max(1.0) as u32, h.round().max(1.0) as u32))
             .ok_or_else(|| bad("file.place", "can't read that PDF page"))?,
     };
-    // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge.
-    let (nw, nh) = eps_size.unwrap_or((pw as f64, ph as f64));
+    // 72 ppi by default unless the file says otherwise; scale so it fits the page when huge. PDF pages
+    // and SVGs keep their exact size: rounding it to whole points would stretch them unevenly.
+    let (nw, nh) = eps_size.or_else(|| designcraft_render::natural_size(&bytes, pdf_page as usize)).unwrap_or((pw as f64, ph as f64));
     // Image Import Options › Crop to: the frame shows that box of the PDF page.
     let crop_box = match str_param(p, "pdfCrop") {
         Some(k) if designcraft_render::is_pdf(&bytes) => {
@@ -336,9 +337,9 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
     let py = p.get("y").and_then(Value::as_f64);
     let want_w = p.get("width").and_then(Value::as_f64);
     s.edit(|d, sel| {
-        let aid = AssetId(d.alloc());
+        let fresh = AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
-        d.assets.insert(aid, Arc::new(Asset { page: pdf_page, id: aid, name, mime, link, data: Arc::new(bytes), pixels: Some((pw, ph)) }));
+        let aid = d.add_asset(Asset { page: pdf_page, id: fresh, name, mime, link, data: Arc::new(bytes), pixels: Some((pw, ph)) });
         // The width the whole page (or image) gets; the height follows the proportions.
         let w = match want_w {
             Some(w) => w,
@@ -350,14 +351,14 @@ fn file_place(s: &mut Session, p: &Value) -> Result<Value> {
         let id = if let Some(fid) = target_frame {
             let it = d.item_mut(fid).ok_or(designcraft_doc::DocError::NoItem(fid))?;
             let r = it.inner_bounds();
-            // Fill frame proportionally.
+            // Fill the frame proportionally once. Auto-Fit stays off, so resizing the frame crops.
             let k = (r.width() / nw).max(r.height() / nh);
             let (gw, gh) = (nw * k, nh * k);
             it.content = Content::Graphic(Graphic {
                 asset: aid,
                 size: (nw, nh),
                 xf: Affine::translate((r.x0 + (r.width() - gw) / 2.0, r.y0 + (r.height() - gh) / 2.0)) * Affine::scale(k),
-                auto_fit: designcraft_doc::Fitting::FillProportionally,
+                auto_fit: Default::default(),
                 fit_align: 4,
                 crop: [0.0; 4],
             });
@@ -440,16 +441,13 @@ pub(crate) fn read_source(p: &Value) -> Result<(Vec<u8>, String, Option<String>)
 fn place_load(s: &mut Session, p: &Value) -> Result<Value> {
     let (bytes, name, link) = read_source(p)?;
     let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad("place.load", "unsupported or corrupt image"))?;
+    let natural = designcraft_render::natural_size(&bytes, 0).unwrap_or((pw as f64, ph as f64));
     let aid = s.edit(|d, _| {
-        let aid = AssetId(d.alloc());
+        let fresh = AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
-        d.assets.insert(
-            aid,
-            Arc::new(Asset { page: 0, id: aid, name: name.clone(), mime, link: link.clone(), data: Arc::new(bytes), pixels: Some((pw, ph)) }),
-        );
-        Ok(aid)
+        Ok(d.add_asset(Asset { page: 0, id: fresh, name: name.clone(), mime, link: link.clone(), data: Arc::new(bytes), pixels: Some((pw, ph)) }))
     })?;
-    s.loaded = Some((aid, (pw as f64, ph as f64)));
+    s.loaded = Some((aid, natural));
     s.set_tool("placeGun");
     Ok(json!({"asset": aid.0, "name": name, "width": pw, "height": ph}))
 }
@@ -471,7 +469,7 @@ fn place_drop(s: &mut Session, p: &Value) -> Result<Value> {
                     asset: aid,
                     size: (nw, nh),
                     xf: Affine::translate((r.x0 + (r.width() - nw * k) / 2.0, r.y0 + (r.height() - nh * k) / 2.0)) * Affine::scale(k),
-                    auto_fit: designcraft_doc::Fitting::FillProportionally,
+                    auto_fit: Default::default(),
                     fit_align: 4,
                     crop: [0.0; 4],
                 });
@@ -688,6 +686,24 @@ mod pdf_crop_tests {
         assert!((full.width() - 630.0).abs() < 1e-6, "{full:?}");
         assert!((trim.width() - 612.0).abs() < 1e-3 && (trim.height() - 792.0).abs() < 1e-3, "{trim:?}");
         assert!(t.execute("file.place", &json!({"base64": b64, "name": "a.pdf", "pdfCrop": "nope"})).is_err());
+    }
+
+    #[test]
+    fn placed_pdf_keeps_its_exact_page_size() {
+        // A 100.4 x 50.4 pt page placed 100.4 pt wide is 50.4 pt tall, not stretched to whole points.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 100.4, "height": 50.4, "pages": 1})).unwrap();
+        let b64 = s.execute("file.exportPdf", &json!({})).unwrap()["base64"].as_str().unwrap().to_string();
+        let mut t = Session::new();
+        t.execute("file.new", &json!({})).unwrap();
+        let r = t.execute("file.place", &json!({"base64": b64, "name": "a.pdf", "width": 100.4, "x": 0, "y": 0})).unwrap();
+        let id = designcraft_doc::ItemId(r["id"].as_u64().unwrap());
+        let d = &t.doc().unwrap().doc;
+        let it = d.item(id).unwrap();
+        let b = it.bounds();
+        assert!((b.width() - 100.4).abs() < 1e-3 && (b.height() - 50.4).abs() < 1e-3, "{b:?}");
+        let designcraft_doc::Content::Graphic(g) = &it.content else { panic!("not a graphic") };
+        assert!((g.size.0 - 100.4).abs() < 1e-3 && (g.size.1 - 50.4).abs() < 1e-3, "{:?}", g.size);
     }
 }
 

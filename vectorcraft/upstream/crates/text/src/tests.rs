@@ -728,3 +728,58 @@ fn burasagari_leaves_latin_commas_and_full_stops_inside_the_line() {
         }
     }
 }
+
+/// With craft-fonts and no installed fonts (the web), Thai is set in Noto Sans Thai, not as empty
+/// boxes. Skipped when built without craft-fonts or with a checkout that has no Thai font.
+#[test]
+fn thai_without_installed_fonts_takes_the_craft_fonts_thai_font() {
+    if !crate::CRAFT_FONTS.iter().any(|f| f.is_thai()) {
+        eprintln!("skipping: no Thai font in craft-fonts (set CRAFT_FONTS_DIR to a checkout that has one)");
+        return;
+    }
+    let l = layout(db(), &point("ภาษาไทย", style(20.0)));
+    assert!(!l.glyphs.is_empty() && l.glyphs.iter().all(|g| g.gid != 0), "no .notdef");
+    let families: Vec<String> = l.glyphs.iter().filter_map(|g| db().face_by_id(g.font_id)).map(|f| f.family.clone()).collect();
+    assert!(families.iter().all(|f| f == "Noto Sans Thai"), "{families:?}");
+}
+
+/// Thai is written without spaces between words: area type breaks its lines between words (as a
+/// model of Thai words finds them), never inside a word nor before a vowel or tone mark.
+#[test]
+fn thai_lines_break_between_words() {
+    let text = "สวัสดีครับ ภาษาไทยง่ายนิดเดียว";
+    // Narrower than the shortest words: each line holds one word.
+    let l = layout(db(), &area(text, style(12.0), Rect::new(0.0, 0.0, 70.0, 2000.0), Justify::Left));
+    let lines: Vec<&str> = l.lines.iter().map(|ln| &text[ln.start..ln.end]).collect();
+    assert!(lines.len() >= 3, "{lines:?}");
+    // Its words: สวัสดี ครับ, ภาษา ไทย ง่าย นิดเดียว ("hello", "the Thai language is very easy").
+    let words = ["สวัสดี", "ครับ ", "ภาษา", "ไทย", "ง่าย", "นิดเดียว"];
+    let ends: Vec<usize> = words
+        .iter()
+        .scan(0, |at, w| {
+            *at += w.len();
+            Some(*at)
+        })
+        .collect();
+    assert_eq!(ends.last(), Some(&text.len()));
+    for ln in &l.lines {
+        assert!(ends.contains(&ln.end), "a line ends inside a word: {lines:?}");
+    }
+    for w in l.lines.windows(2) {
+        assert_eq!(w[0].end, w[1].start, "lines tile the text");
+    }
+    let mark = |c: char| matches!(c, '\u{0E31}' | '\u{0E34}'..='\u{0E3A}' | '\u{0E47}'..='\u{0E4E}');
+    assert!(lines.iter().all(|s| s.chars().next().is_some_and(|c| !mark(c))), "a line starts with a mark: {lines:?}");
+}
+
+/// The desktop's dictionaries keep loanwords whole that a smaller model splits: โปรแกรม
+/// ("program").
+#[test]
+fn thai_loanwords_stay_whole() {
+    let text = "ยินดีต้อนรับสู่โปรแกรมวาดภาพเวกเตอร์";
+    let l = layout(db(), &area(text, style(12.0), Rect::new(0.0, 0.0, 70.0, 2000.0), Justify::Left));
+    let lines: Vec<&str> = l.lines.iter().map(|ln| &text[ln.start..ln.end]).collect();
+    // No line ends inside the word, whatever the Thai font's widths put beside it.
+    let word = text.find("โปรแกรม").unwrap();
+    assert!(l.lines.iter().all(|ln| ln.end <= word || ln.end >= word + "โปรแกรม".len()), "{lines:?}");
+}

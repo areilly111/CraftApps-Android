@@ -522,14 +522,18 @@ pub enum OutputFormat {
     /// AV1 video (+ AAC audio) in MP4 (`av01`). WebM with AV1: [`OutputFormat::WebM`] with
     /// [`WebmVideoCodec::Av1`].
     Av1,
+    /// Uncompressed 8-bit RGB / ARGB (`raw `) in QuickTime (+ PCM audio), for handing to an
+    /// external encoder.
+    Uncompressed,
 }
 
 impl OutputFormat {
-    pub const ALL: [OutputFormat; 12] = [
+    pub const ALL: [OutputFormat; 13] = [
         OutputFormat::H264,
         OutputFormat::Hevc,
         OutputFormat::Av1,
         OutputFormat::ProRes,
+        OutputFormat::Uncompressed,
         OutputFormat::WebM,
         OutputFormat::PngSequence,
         OutputFormat::JpegSequence,
@@ -554,12 +558,13 @@ impl OutputFormat {
             OutputFormat::Aiff => "AIFF",
             OutputFormat::Hevc => "HEVC (H.265)",
             OutputFormat::Av1 => "AV1",
+            OutputFormat::Uncompressed => "QuickTime (Uncompressed)",
         }
     }
     pub fn extension(self) -> &'static str {
         match self {
             OutputFormat::H264 => "mp4",
-            OutputFormat::ProRes => "mov",
+            OutputFormat::ProRes | OutputFormat::Uncompressed => "mov",
             OutputFormat::PngSequence => "png",
             OutputFormat::JpegSequence => "jpg",
             OutputFormat::TiffSequence => "tif",
@@ -575,7 +580,7 @@ impl OutputFormat {
         matches!(self, OutputFormat::PngSequence | OutputFormat::JpegSequence | OutputFormat::TiffSequence | OutputFormat::ExrSequence)
     }
     pub fn is_movie(self) -> bool {
-        matches!(self, OutputFormat::H264 | OutputFormat::ProRes | OutputFormat::WebM | OutputFormat::Hevc | OutputFormat::Av1)
+        matches!(self, OutputFormat::H264 | OutputFormat::ProRes | OutputFormat::Uncompressed | OutputFormat::WebM | OutputFormat::Hevc | OutputFormat::Av1)
     }
     /// Formats whose video codec options live in [`OutputModule::codec`] (HEVC, AV1).
     pub fn has_codec_options(self) -> bool {
@@ -597,8 +602,8 @@ impl OutputFormat {
         let even = |v: u32| if v < 2 { 2 } else { v & !1 };
         if matches!(self, OutputFormat::H264 | OutputFormat::Hevc) { (even(w), even(h)) } else { (w, h) }
     }
-    /// Parse a format name: `h264`, `mp4`, `prores`, `mov`, `png`, `jpeg`/`jpg`, `tiff`/`tif`,
-    /// `exr`, `gif`, or a label.
+    /// Parse a format name: `h264`, `mp4`, `prores`, `mov`, `uncompressed`, `png`, `jpeg`/`jpg`,
+    /// `tiff`/`tif`, `exr`, `gif`, or a label.
     pub fn from_name(s: &str) -> Option<OutputFormat> {
         let n = s.trim().to_ascii_lowercase().replace([' ', '.', '-', '_'], "");
         Some(match n.as_str() {
@@ -606,6 +611,7 @@ impl OutputFormat {
             "hevc" | "h265" | "hevch265" | "hvc1" | "x265" => OutputFormat::Hevc,
             "av1" | "av01" | "mp4av1" => OutputFormat::Av1,
             "prores" | "mov" | "quicktime" | "quicktimeprores" => OutputFormat::ProRes,
+            "uncompressed" | "quicktimeuncompressed" | "rawvideo" => OutputFormat::Uncompressed,
             "png" | "pngsequence" => OutputFormat::PngSequence,
             "jpg" | "jpeg" | "jpegsequence" => OutputFormat::JpegSequence,
             "tif" | "tiff" | "tiffsequence" => OutputFormat::TiffSequence,
@@ -1635,6 +1641,25 @@ mod tests {
         assert_eq!(s.frame_count(&c), 30);
         assert_eq!(s.first_frame(&c), 30);
         assert!(s.frame_time(&c, 0) >= Tick::from_seconds_f64(1.0));
+    }
+
+    #[test]
+    fn uncompressed_quicktime_format() {
+        let f = OutputFormat::from_name("uncompressed").unwrap();
+        assert_eq!(f, OutputFormat::Uncompressed);
+        assert_eq!(OutputFormat::from_name(&format!("{f:?}")), Some(f));
+        assert!(OutputFormat::ALL.contains(&f));
+        assert!(f.is_movie() && f.supports_alpha() && f.supports_audio());
+        assert_eq!(f.coded_size(3, 5), (3, 5));
+        // `.mov` still guesses ProRes; switching keeps the name.
+        assert_eq!(OutputFormat::from_path("a.mov"), Some(OutputFormat::ProRes));
+        let mut m = OutputModule::for_format(OutputFormat::ProRes);
+        m.output = "/out/Comp 1.mov".into();
+        m.channels = Channels::Rgba;
+        m.set_format(f);
+        assert_eq!((m.output.as_str(), m.channels), ("/out/Comp 1.mov", Channels::Rgba));
+        let json = serde_json::to_string(&m).unwrap();
+        assert_eq!(serde_json::from_str::<OutputModule>(&json).unwrap().format, f);
     }
 
     #[test]

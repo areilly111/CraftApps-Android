@@ -31,7 +31,7 @@ commands:
                   Lightroom parity summary; --write refreshes the summary table in the document
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
   web [--serve [port]] [--dev]
-                  build the browser app (apps/lightcraft-web) into <target>/web/;
+                  build the browser app (apps/lightcraft-web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
   ci              fmt --check, clippy -D warnings, heif, test, parity refs, layers, assets, wasm (stops at first failure)
   corpus [--download]
@@ -371,6 +371,18 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "https://raw.pixls.us/data/Sony/ILCE-7CR/DSC00798.ARW",
         "f5096e8fbccf0842c8a57763cabd2836608f019eb7fd54f7b22260c2f5bc4da5",
     ),
+    // ILCE-7CM2 (33 MP, issue #697): lossless compressed L, and the compressed "M-size" coding, which is Bayer at
+    // 4736×3132 with black 512 (only the lossless M/S codings are YCbCr with the 1024 pedestal)
+    (
+        "arw-sony-a7cm2-lossless-l.arw",
+        "https://raw.pixls.us/data/Sony/ILCE-7CM2/DSC02431.ARW",
+        "342d893bd71fd050c273df181e3039d3f12d88947b0662de5de5325c84cc449b",
+    ),
+    (
+        "arw-sony-a7cm2-compressed-m.arw",
+        "https://raw.pixls.us/data/Sony/ILCE-7CM2/DSC02436.ARW",
+        "002c86d38a16b08a2438780728b4fda8efcc745fa6c26231dad6af67b383b11e",
+    ),
     // a dusk sky clipped in green behind a poplar: the clipped-highlight colour of issue #523
     (
         "arw-sony-a7rm4-14bit-compressed.arw",
@@ -511,6 +523,27 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "cr3-canon-r8-craw.cr3",
         "https://raw.pixls.us/getfile.php/6587/nice/Canon%20-%20EOS%20R8%20-%203:2.CR3",
         "df33cf394573645ce03dea1b2e9f0b5cc2b7734e9e3391ee7114151414cf2812",
+    ),
+    // EOS R5 Mark II, full frame and 1.6x crop mode: odd-height (2825- / 1787-row) Bayer planes.
+    (
+        "cr3-canon-r5m2-raw.cr3",
+        "https://raw.pixls.us/getfile.php/7881/nice/Canon%20-%20EOS%20R5%20Mark%20II%20-%20RAW%20%283:2%29.CR3",
+        "d6e6aa3b493ea8936dff0efb0cc17c87471437e7317bce37c8c82ba08b9cab7b",
+    ),
+    (
+        "cr3-canon-r5m2-craw.cr3",
+        "https://raw.pixls.us/getfile.php/7882/nice/Canon%20-%20EOS%20R5%20Mark%20II%20-%20CRAW%20%283:2%29.CR3",
+        "b3c08a5c7a97299dfd58896a12b939e7b43ec78682761812524825e6e5d087be",
+    ),
+    (
+        "cr3-canon-r5m2-apsc-raw.cr3",
+        "https://raw.pixls.us/getfile.php/7883/nice/Canon%20-%20EOS%20R5%20Mark%20II%20-%20RAW%20%283:2%29.CR3",
+        "9f88c0ff012924193b7f4497559d133dfe626766d600b5d67689156721739ead",
+    ),
+    (
+        "cr3-canon-r5m2-apsc-craw.cr3",
+        "https://raw.pixls.us/getfile.php/7884/nice/Canon%20-%20EOS%20R5%20Mark%20II%20-%20CRAW%20%283:2%29.CR3",
+        "6a597497776a6abbfab8fcf12d0086ac7a3f8afea2879d61accf6bbf48d357d7",
     ),
     (
         "dng-adobe-canon-5d3-linear-lj92.dng",
@@ -774,6 +807,18 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "raf-fuji-xt50-7807.raf",
         "https://raw.pixls.us/getfile.php/7807/nice/Fujifilm%20-%20X-T50%20-%2014bit%20compressed%20%283:2%29.RAF",
         "3a8a9ac6d92274969aaa1f55ea669191b98bb8f588d00ec8ec17afd8b3963dea",
+    ),
+    // Sony ILCE-7RM6 ARW6, CC0 1.0 (RawDB): one full-frame Compressed (RAW-C) and one APS-C Compressed HQ (RAW-C-HD) file;
+    // docs/arw6-compression.md lists the rest of the set.
+    (
+        "arw6-sony-ilce7rm6-apsc-land-hq.arw",
+        "https://rawdb.dnglab.org/api/download/Sony/ILCE-7RM6/arw6/ILCE-7RM6_APSC_land_RAW-C-HD.ARW",
+        "b60a7e752d2a8102ccbe6eebcfdbf533c6b0f2545739090873e9e8eb32cc0637",
+    ),
+    (
+        "arw6-sony-ilce7rm6-ff-land-c.arw",
+        "https://rawdb.dnglab.org/api/download/Sony/ILCE-7RM6/arw6/ILCE-7RM6_FF_land_RAW-C.ARW",
+        "d900d6cbe838be864269ad54de4a33fcac7eb3a3d4f91009739f770b8f85a23b",
     ),
     (
         "rw2-panasonic-g9-b.rw2",

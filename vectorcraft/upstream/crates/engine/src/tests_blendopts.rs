@@ -28,7 +28,7 @@ fn node(s: &Session, id: NodeId) -> Node {
 
 fn spec(s: &Session, id: NodeId) -> (Vec<NodeId>, BlendSpec) {
     match node(s, id).kind {
-        NodeKind::Blend { children, spec } => (children.iter().map(|c| c.id).collect(), spec),
+        NodeKind::Blend { children, spec } => (children.iter().map(|c| c.id).collect(), *spec),
         _ => panic!("not a blend"),
     }
 }

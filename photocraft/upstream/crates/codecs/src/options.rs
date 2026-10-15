@@ -21,8 +21,10 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         // 2^30 pixels (e.g. 32768²) and, on 64-bit targets, 8 GiB: enough for the large
-        // documents Photoshop users open (a 20000² RGBA 16-bit image is 3.2 GB).
-        let max_alloc = if cfg!(target_pointer_width = "64") { 8 << 30 } else { 2 << 30 };
+        // documents Photoshop users open (a 20000² RGBA 16-bit image is 3.2 GB). On 32-bit
+        // targets (wasm32 has a 4 GiB address space shared with the document, history and
+        // the decoder's own buffers) 1 GiB is the most one buffer can safely ask for.
+        let max_alloc = if cfg!(target_pointer_width = "64") { 8 << 30 } else { 1 << 30 };
         Limits { max_width: 1 << 18, max_height: 1 << 18, max_pixels: 1 << 30, max_alloc }
     }
 }
@@ -56,6 +58,19 @@ impl Limits {
         }
         if usize::try_from(bytes).is_err() {
             return Err(CodecError::LimitExceeded(format!("{bytes} bytes do not fit in memory")));
+        }
+        Ok(())
+    }
+
+    /// Decompression-bomb guard for formats that compress: refuse a file too small to hold
+    /// `declared_bytes` of (stored, pre-expansion) image data, given that the compression
+    /// never beats `max_ratio`:1. Called before the output buffer is allocated, so a
+    /// header-only hostile file cannot make the decoder reserve gigabytes. A fixed 1 MiB of
+    /// slack keeps tiny images and headers with large metadata unaffected.
+    pub(crate) fn check_plausible(declared_bytes: u64, file_len: usize, max_ratio: u64) -> Result<(), CodecError> {
+        let capacity = (file_len as u64).saturating_mul(max_ratio).saturating_add(1 << 20);
+        if declared_bytes > capacity {
+            return Err(CodecError::LimitExceeded(format!("a {file_len} byte file cannot hold {declared_bytes} bytes of image data")));
         }
         Ok(())
     }
@@ -148,4 +163,14 @@ impl Default for EncodeOptions {
             embed_metadata: true,
         }
     }
+}
+
+/// A zero-filled buffer of `len` elements, allocated fallibly: an allocation failure becomes
+/// [`CodecError::LimitExceeded`] instead of aborting the process (which `catch_unwind` cannot
+/// stop).
+pub(crate) fn alloc_zeroed<T: Copy + Default>(len: usize) -> Result<Vec<T>, CodecError> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(len).map_err(|_| CodecError::LimitExceeded(format!("cannot allocate {len} elements for the image")))?;
+    v.resize(len, T::default());
+    Ok(v)
 }

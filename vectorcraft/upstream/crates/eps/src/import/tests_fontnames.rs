@@ -56,3 +56,10 @@ fn abbreviated_styles_in_postscript_names_are_spelled_out() {
     // Whole words stay as they were.
     assert_eq!(crate::family_style("Helvetica-BoldOblique").1, "Bold Oblique");
 }
+
+/// A face of that exact PostScript name gives its own family and style, however the name splits
+/// (a family can hold hyphens, as Rounded-X M+ 1c's `rounded-x-mplus-1c-black` does).
+#[test]
+fn an_installed_face_of_the_postscript_name_names_the_font() {
+    assert_eq!(crate::family_style("ABCDEF+SourceSans3-Semibold"), ("Source Sans 3".to_string(), "Semibold".to_string()));
+}

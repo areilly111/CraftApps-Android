@@ -24,6 +24,7 @@ pub fn open(app: &mut PhotocraftApp) -> Result<u64, String> {
     f.insert("transparency".into(), json!(true));
     f.insert("scale".into(), json!(100));
     f.insert("metadata".into(), json!("none"));
+    f.insert("tgaBits".into(), json!("auto"));
     f.insert("__w".into(), json!(st.doc.size.width));
     f.insert("__h".into(), json!(st.doc.size.height));
     Ok(app.ui.open_dialog(DialogKind::Command, f))
@@ -43,6 +44,23 @@ pub fn open_layer(app: &mut PhotocraftApp, layer: photocraft_doc::LayerId) -> Re
     Ok(id)
 }
 
+/// Layer › Export As… with several layers (artboards, say) selected: the same dialog, then one
+/// file per layer with its settings (#3629). The preview shows the first layer.
+pub fn open_layers(app: &mut PhotocraftApp, layers: &[photocraft_doc::LayerId]) -> Result<u64, String> {
+    let (first, n) = match layers {
+        [] => return Err("no selected layers".into()),
+        [one] => return open_layer(app, *one),
+        [first, ..] => (*first, layers.len()),
+    };
+    let id = open_layer(app, first)?;
+    if let Some(d) = app.ui.dialogs.iter_mut().find(|d| d.id == id) {
+        d.fields.insert("__layers".into(), json!(layers.iter().map(|l| l.0).collect::<Vec<_>>()));
+        let template = "Export As: {n} layers";
+        d.fields.insert("__label".into(), json!(crate::i18n::fmt(tl!(template), &[("n", &n.to_string())])));
+    }
+    Ok(id)
+}
+
 /// Layer › Quick Export as PNG.
 pub fn quick_export_layer_png(app: &mut PhotocraftApp, layer: photocraft_doc::LayerId) -> Result<Value, String> {
     let mut f = Map::new();
@@ -51,6 +69,80 @@ pub fn quick_export_layer_png(app: &mut PhotocraftApp, layer: photocraft_doc::La
     f.insert("scale".into(), json!(100));
     f.insert("__layer".into(), json!(layer.0));
     confirm(app, &f)
+}
+
+/// Export each selected layer separately, with one destination prompt for the batch.
+/// The chosen path names the first file; subsequent files have numbered sibling names.
+pub fn quick_export_selected_layers_png(app: &mut PhotocraftApp) -> Result<Value, String> {
+    let st = app.session.active().ok_or("no document")?;
+    let layers = st.selected_layers();
+    if layers.len() == 1 {
+        return quick_export_layer_png(app, layers[0]);
+    }
+    if layers.is_empty() {
+        return Err("no selected layers".into());
+    }
+    // Capture all sources before showing the dialog: changing selection or document while it
+    // is open cannot change which layers get exported.
+    let docs: Vec<_> =
+        layers.into_iter().map(|id| photocraft_engine::layer_menu_cmds::layer_document(&st.doc, id).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
+    let suggested = format!("{}.png", export_name(&st.doc.name));
+    app.pick_save(&suggested, move |app, path| {
+        if !path.to_ascii_lowercase().ends_with(".png") {
+            return Err("Quick Export as PNG writes .png files".into());
+        }
+        let paths = batch_paths(&path, &docs);
+        let mut exported = Vec::new();
+        for (doc, path) in docs.iter().zip(paths) {
+            let export = app.services.export.as_ref().ok_or("no exporter configured")?;
+            let (bytes, warnings) = export(doc, &path, &ExportSettings { xmp_all: false, ..Default::default() })?;
+            let write = app.services.write.as_mut().ok_or("no writer configured")?;
+            write(&path, &bytes)?;
+            crate::notices::io_warnings(app, &format!("Exported {}", crate::file_open::display_name(&path)), &warnings);
+            exported.push(json!({"path": path, "bytes": bytes.len(), "warnings": warnings}));
+        }
+        app.ui.status = format!("Exported {} PNG files", exported.len());
+        app.ui.status_error = false;
+        Ok(json!({"files": exported}))
+    })
+}
+
+fn export_name(name: &str) -> String {
+    let name: String = name.chars().take(80).map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
+    let name = name.trim().trim_matches('.');
+    if name.is_empty() { "layer".into() } else { name.into() }
+}
+
+/// The files a multi-layer export writes: the chosen path, then numbered siblings named after
+/// each layer, in the chosen path's format.
+fn batch_paths(path: &str, docs: &[Document]) -> Vec<String> {
+    let first = std::path::Path::new(path);
+    let parent = first.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let stem = first.file_stem().and_then(|s| s.to_str()).unwrap_or("layers");
+    let ext = first.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    docs.iter()
+        .enumerate()
+        .map(|(i, doc)| {
+            if i == 0 {
+                return path.to_string();
+            }
+            let name = export_name(&doc.name);
+            let candidate = parent.join(format!("{stem}-{}-{name}.{ext}", i + 1));
+            // The first file's overwrite is handled by the Save dialog; never overwrite sibling
+            // files silently on desktop. Downloads on the web are named by the browser.
+            #[cfg(not(target_arch = "wasm32"))]
+            let candidate = {
+                let mut candidate = candidate;
+                let mut suffix = 1u64;
+                while candidate.exists() {
+                    candidate = parent.join(format!("{stem}-{}-{name}-{suffix}.{ext}", i + 1));
+                    suffix = suffix.saturating_add(1);
+                }
+                candidate
+            };
+            candidate.to_string_lossy().into_owned()
+        })
+        .collect()
 }
 
 /// The document a dialog exports: the whole image, or one layer (`__layer`).
@@ -126,6 +218,12 @@ fn lossless(f: &Map<String, Value>) -> bool {
     f.get("lossless").and_then(Value::as_bool).unwrap_or(false)
 }
 
+/// TGA bits per pixel: `"24"` or `"32"`; `"auto"` (the default) is 32 with an alpha channel or
+/// transparency, else 24, as Export As wrote before it offered the choice.
+fn tga_bits(f: &Map<String, Value>) -> Option<photocraft_io::TgaBits> {
+    s(f, "tgaBits").parse().ok().and_then(photocraft_io::TgaBits::from_bits)
+}
+
 fn settings(f: &Map<String, Value>) -> ExportSettings {
     let fmt = s_fmt(f);
     let quality = n(f, "quality", 85.0).clamp(1.0, 100.0) as u8;
@@ -134,6 +232,7 @@ fn settings(f: &Map<String, Value>) -> ExportSettings {
         webp_lossless: fmt != "webp" || lossless(f),
         webp_quality: (fmt == "webp" && !lossless(f)).then_some(quality),
         xmp_all: s(f, "metadata") == "all",
+        tga_bits: if fmt == "tga" { tga_bits(f) } else { None },
         ..Default::default()
     }
 }
@@ -176,6 +275,17 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 crate::widgets::slider_row(ui, tl!("Quality"), &mut q, 1.0..=100.0, "%", None);
                 f.insert("quality".into(), json!(q.round()));
             }
+            if fmt == "tga" {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(tl!("Resolution")).color(t.text_dim));
+                    let mut bits = s(f, "tgaBits");
+                    let opts: Vec<(String, &str)> =
+                        vec![("auto".into(), tl!("Auto")), ("24".into(), tl!("24 bits/pixel")), ("32".into(), tl!("32 bits/pixel"))];
+                    if crate::widgets::dropdown(ui, "export-tga-bits", &mut bits, &opts, 130.0) {
+                        f.insert("tgaBits".into(), json!(bits));
+                    }
+                });
+            }
             if fmt != "jpg" {
                 let mut tr = f.get("transparency").and_then(Value::as_bool).unwrap_or(true);
                 crate::widgets::checkbox(ui, &mut tr, tl!("Transparency"));
@@ -207,13 +317,14 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             let layer = f.get("__layer").and_then(Value::as_u64);
             let key = egui::Id::new(("export-preview", doc.id.0, app.session.active().map_or(0, |s| s.revision), layer));
             let sig = format!(
-                "{}{}{}{}{}{}",
+                "{}{}{}{}{}{}{}",
                 s_fmt(f),
                 n(f, "quality", 85.0),
                 lossless(f),
                 f.get("transparency").map(|v| v.to_string()).unwrap_or_default(),
                 n(f, "scale", 100.0),
-                s(f, "metadata")
+                s(f, "metadata"),
+                s(f, "tgaBits")
             );
             let cached: Option<(String, Option<u64>, Arc<egui::TextureHandle>)> = ui.data(|d| d.get_temp(key));
             let (size, tex) = match cached.filter(|c| c.0 == sig) {
@@ -244,6 +355,10 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
 
 /// Export with the dialog's settings: choose a path, render, encode, write.
 pub fn confirm(app: &mut PhotocraftApp, f: &Map<String, Value>) -> Result<Value, String> {
+    if let Some(layers) = f.get("__layers").and_then(Value::as_array) {
+        let ids: Vec<_> = layers.iter().filter_map(Value::as_u64).map(photocraft_doc::LayerId).collect();
+        return confirm_layers(app, f, &ids);
+    }
     let doc = source_document(app, f)?;
     let stem = doc.name.rsplit_once('.').map_or(doc.name.as_str(), |(a, _)| a).to_string();
     let ext = s_fmt(f);
@@ -255,10 +370,46 @@ pub fn confirm(app: &mut PhotocraftApp, f: &Map<String, Value>) -> Result<Value,
         let (bytes, warnings) = export(&out, &path, &settings)?;
         let write = app.services.write.as_mut().ok_or("no writer configured")?;
         write(&path, &bytes)?;
-        app.ui.status = format!("Exported {path} ({})", crate::sizing::human_bytes(bytes.len() as f64));
+        let template = "Exported {path} ({size})";
+        app.ui.status = crate::i18n::fmt(tl!(template), &[("path", &path), ("size", &crate::sizing::human_bytes(bytes.len() as f64))]);
         app.ui.status_error = false;
-        crate::notices::io_warnings(app, &format!("Exported {}", crate::file_open::display_name(&path)), &warnings);
+        let template = "Exported {path}";
+        let what = crate::i18n::fmt(tl!(template), &[("path", &crate::file_open::display_name(&path))]);
+        crate::notices::io_warnings(app, &what, &warnings);
         Ok(json!({"path": path, "bytes": bytes.len(), "warnings": warnings}))
+    })
+}
+
+/// [`confirm`] for several layers: one destination prompt, then each layer exported with the
+/// dialog's settings and named as Quick Export names a selection's files. The layers are captured
+/// when asked, so changing the selection or document meanwhile can't change what is exported.
+fn confirm_layers(app: &mut PhotocraftApp, f: &Map<String, Value>, ids: &[photocraft_doc::LayerId]) -> Result<Value, String> {
+    let st = app.session.active().ok_or("no document")?;
+    let docs: Vec<Document> =
+        ids.iter().map(|id| photocraft_engine::layer_menu_cmds::layer_document(&st.doc, *id).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
+    if docs.is_empty() {
+        return Err("no selected layers".into());
+    }
+    let stem = st.doc.name.rsplit_once('.').map_or(st.doc.name.as_str(), |(a, _)| a);
+    let suggested = format!("{}.{}", export_name(stem), s_fmt(f));
+    let (f, settings) = (f.clone(), settings(f));
+    app.pick_save(&suggested, move |app, path| {
+        let mut exported = Vec::new();
+        for (doc, path) in docs.iter().zip(batch_paths(&path, &docs)) {
+            let out = export_document(doc, &f, None)?;
+            let export = app.services.export.as_ref().ok_or("no exporter configured")?;
+            let (bytes, warnings) = export(&out, &path, &settings)?;
+            let write = app.services.write.as_mut().ok_or("no writer configured")?;
+            write(&path, &bytes)?;
+            let template = "Exported {path}";
+            let what = crate::i18n::fmt(tl!(template), &[("path", &crate::file_open::display_name(&path))]);
+            crate::notices::io_warnings(app, &what, &warnings);
+            exported.push(json!({"path": path, "bytes": bytes.len(), "warnings": warnings}));
+        }
+        let template = "Exported {n} files";
+        app.ui.status = crate::i18n::fmt(tl!(template), &[("n", &exported.len().to_string())]);
+        app.ui.status_error = false;
+        Ok(json!({"files": exported}))
     })
 }
 
@@ -292,7 +443,8 @@ pub fn quick_export_png(app: &mut PhotocraftApp) -> Result<Value, String> {
 /// Runs Quick Export with `p` (an explicit `path`, or none for the document's folder).
 fn quick_export(app: &mut PhotocraftApp, p: Value) -> Result<Value, String> {
     let r = app.run("file.export.quickExport", p)?;
-    app.ui.status = format!("Exported {}", r["path"].as_str().unwrap_or_default());
+    let template = "Exported {path}";
+    app.ui.status = crate::i18n::fmt(tl!(template), &[("path", r["path"].as_str().unwrap_or_default())]);
     Ok(r)
 }
 
@@ -429,5 +581,21 @@ mod tests {
         assert_eq!(s.webp_quality, None);
         f.insert("format".into(), json!("png"));
         assert!(settings(&f).webp_lossless, "other formats leave the WebP default alone");
+    }
+
+    /// TGA's Resolution (bits per pixel): Auto leaves the choice to the export; 24 and 32 force it, and only
+    /// for TGA.
+    #[test]
+    fn tga_settings_follow_the_bits_per_pixel() {
+        use photocraft_io::TgaBits;
+        let mut f = Map::new();
+        f.insert("format".into(), json!("tga"));
+        assert_eq!(settings(&f).tga_bits, None, "no choice made");
+        for (v, want) in [("auto", None), ("24", Some(TgaBits::Bits24)), ("32", Some(TgaBits::Bits32)), ("16", None)] {
+            f.insert("tgaBits".into(), json!(v));
+            assert_eq!(settings(&f).tga_bits, want, "{v}");
+        }
+        f.insert("format".into(), json!("png"));
+        assert_eq!(settings(&f).tga_bits, None, "only TGA has bits per pixel");
     }
 }

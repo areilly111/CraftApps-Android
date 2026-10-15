@@ -1,6 +1,9 @@
 //! The pixel grid of the CPU canvas path, matching the GPU canvas shader (`gpu_canvas.rs`):
 //! shown above 500% zoom, one device pixel wide, lightening a dark pixel by about a quarter
 //! (darkening a light one), and only over pixels that have content, never over empty checker.
+//! The line colour fades from white to black across a luma band ([`light_share`]) instead of
+//! switching at one cut, so an image whose tones sit near the middle gets an even grid rather
+//! than cells that flip between bright and dark lines.
 //!
 //! The shader reads each pixel's alpha as it draws. Here the same rule runs on the composite of
 //! the part of the document in view, turned into merged line segments. Both the composite and
@@ -22,8 +25,12 @@ pub const STRENGTH: f32 = 0.25;
 /// Light pixels get a black line this much weaker than the white one on dark pixels. The WGSL
 /// in `gpu_canvas.rs` spells the same number.
 pub const LIGHT_SCALE: f32 = 0.64;
-/// Luminance above which a pixel counts as light (same cut as the shader).
-const LIGHT_LUMA: f32 = 0.55;
+/// The line is fully white at or below the first luma and fully black (at `LIGHT_SCALE`
+/// strength) at or above the second; between them the two blend. The WGSL spells the same band.
+const FADE_LUMA: [f32; 2] = [0.35, 0.75];
+/// The share of black in the line is kept to this many steps, so noisy mid-tone pixels fall into
+/// a few colours and equal-colour runs still merge into long segments.
+const FADE_STEPS: f32 = 8.0;
 /// Luminance of the checker under a see-through pixel when deciding light or dark; between the
 /// default checker's two greys.
 const CHECKER_LUMA: f32 = 0.9;
@@ -37,6 +44,14 @@ const MAX_SEGMENTS: usize = 60_000;
 /// canvas view zoom on the CPU path, the shader's point scale times `pixels_per_point` on the GPU.
 pub fn shows_at(zoom: f32) -> bool {
     zoom > MIN_ZOOM
+}
+
+/// How light the line should be for a pixel showing `luma`: 0 is a white line, 1 a black one.
+/// Smoothstep across [`FADE_LUMA`], rounded to [`FADE_STEPS`]. Non-finite luma reads as dark.
+pub fn light_share(luma: f32) -> f32 {
+    let luma = if luma.is_finite() { luma } else { 0.0 };
+    let x = ((luma - FADE_LUMA[0]) / (FADE_LUMA[1] - FADE_LUMA[0])).clamp(0.0, 1.0);
+    (x * x * (3.0 - 2.0 * x) * FADE_STEPS).round() / FADE_STEPS
 }
 
 /// One grid line piece in document pixels, axis-aligned, with its colour.
@@ -65,13 +80,16 @@ pub fn cell_color(rgba: [f32; 4]) -> Option<Color32> {
     let a = a.min(1.0);
     let luma = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2];
     let shown = luma * a + CHECKER_LUMA * (1.0 - a);
-    let light = shown > LIGHT_LUMA;
-    let strength = STRENGTH * a * if light { LIGHT_SCALE } else { 1.0 };
-    let alpha = (strength * 255.0).round() as u8;
+    let t = light_share(shown);
+    // A white layer and a black layer over the pixel, as one grey with the combined alpha.
+    let (white, black) = (STRENGTH * a * (1.0 - t), STRENGTH * a * LIGHT_SCALE * t);
+    let total = white + black;
+    let alpha = (total * 255.0).round() as u8;
     if alpha == 0 {
         return None;
     }
-    Some(if light { Color32::from_black_alpha(alpha) } else { Color32::from_white_alpha(alpha) })
+    let grey = (white / total * 255.0).round() as u8;
+    Some(Color32::from_rgba_unmultiplied(grey, grey, grey, alpha))
 }
 
 /// Merge consecutive cells of equal colour along one line into `emit(start, end, colour)` runs.
@@ -196,12 +214,16 @@ mod tests {
 
     #[test]
     fn line_strength_follows_alpha_like_the_shader() {
-        // Half-clear black over the checker reads dark (0.45): a white line at half strength.
-        assert_eq!(cell_color([0.0, 0.0, 0.0, 0.5]), Some(Color32::from_white_alpha(32)));
+        // Half-clear black over the checker reads dark (0.45): mostly a white line at about half
+        // strength (a little black is already blended in).
+        let half = cell_color([0.0, 0.0, 0.0, 0.5]).unwrap();
+        assert!((28..=32).contains(&half.a()) && half.r() as f32 > 0.8 * half.a() as f32, "{half:?}");
         // Half-clear white reads light (0.95): a black line at half the light-pixel strength.
         assert_eq!(cell_color([1.0, 1.0, 1.0, 0.5]), Some(Color32::from_black_alpha(20)));
         let full = cell_color([0.0, 0.0, 0.0, 1.0]);
         assert_eq!(full, Some(Color32::from_white_alpha(64)));
+        // Opaque white keeps a full-strength black line: the grid never vanishes on a blank page.
+        assert_eq!(cell_color([1.0, 1.0, 1.0, 1.0]), Some(Color32::from_black_alpha(41)));
     }
 
     #[test]
@@ -209,6 +231,45 @@ mod tests {
         // NaN colour with a valid alpha reads as dark; alpha past 1 is clamped.
         assert_eq!(cell_color([f32::INFINITY, f32::NEG_INFINITY, f32::NAN, 5.0]), Some(Color32::from_white_alpha(64)));
         assert_eq!(cell_color([0.0; 4]), None);
+    }
+
+    #[test]
+    fn line_colour_fades_across_mid_tones_instead_of_flipping() {
+        // Walk the whole luma range: the line's net effect on a pixel of that luma (white pulls
+        // up, black pulls down) must change by only a little between neighbouring tones, and the
+        // band edges keep the pure white and pure black lines.
+        assert_eq!(light_share(0.2), 0.0);
+        assert_eq!(light_share(0.9), 1.0);
+        assert_eq!(light_share(f32::NAN), 0.0);
+        let mut prev: Option<f32> = None;
+        for i in 0..=100 {
+            let l = i as f32 / 100.0;
+            let c = cell_color([l, l, l, 1.0]).unwrap_or(Color32::TRANSPARENT);
+            // Un-premultiply to the over colour and its alpha, then the change it makes.
+            let a = c.a() as f32 / 255.0;
+            let over = if a > 0.0 { c.r() as f32 / 255.0 / a } else { 0.0 };
+            let delta = a * (over - l);
+            if let Some(p) = prev {
+                assert!((delta - p).abs() < 0.06, "luma {l}: line effect jumps from {p} to {delta}");
+            }
+            prev = Some(delta);
+        }
+    }
+
+    #[test]
+    fn mid_tone_noise_gets_near_identical_lines() {
+        // Luma 0.51 to 0.59 straddles the old 0.55 cut: it gave a span of about 0.2 here.
+        let strengths: Vec<f32> = (51..=59)
+            .map(|i| {
+                let l = i as f32 / 100.0;
+                let c = cell_color([l, l, l, 1.0]).unwrap();
+                let a = c.a() as f32 / 255.0;
+                a * (c.r() as f32 / 255.0 / a - l)
+            })
+            .collect();
+        let (lo, hi) = strengths.iter().fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+        assert!(hi - lo < 0.08, "line effect over mid tones spans {lo}..{hi}");
+        assert!(hi.abs() < 0.06 && lo.abs() < 0.06, "mid-tone lines should nearly vanish: {strengths:?}");
     }
 
     fn grid(w: u32, h: u32, f: impl Fn(u32, u32) -> [f32; 4]) -> Vec<[f32; 4]> {

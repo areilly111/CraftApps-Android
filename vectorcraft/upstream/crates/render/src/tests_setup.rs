@@ -11,7 +11,7 @@ fn doc_with_red_image() -> Document {
     d.images.insert("red".into(), ImageBlob::new("image/png", png));
     let (id, layer) = (d.alloc_id(), d.layers[0].id);
     let im = ImageObject { key: "red".into(), width: 40, height: 40, xf: Affine::IDENTITY, link: None, placement: Default::default() };
-    d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(im))).unwrap();
+    d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(Box::new(im)))).unwrap();
     d
 }
 

@@ -37,6 +37,11 @@
 	Em Box Top/Right	仮想ボディの上 / 右
 	ICF Top/Right	平均字面の上 / 右
 	ICF Bottom/Left	平均字面の下 / 左
+	Proportional Metrics	プロポーショナルメトリクス
+	Digits	数字
+	Arabic	アラビア数字
+	Hindi	ヒンディー数字
+	Farsi	ペルシャ数字
 	Favorites	お気に入り
 	Flip	反転
 	Japanese	日本語
@@ -47,6 +52,7 @@
 	Hard	強い禁則
 	Soft	弱い禁則
 	Latin	欧文
+	Thai	タイ文字
 	Monospaced	等幅
 	Roman Baseline	欧文ベースライン
 	Rounded	丸ゴシック
@@ -100,6 +106,9 @@
 	Edit	編集
 	Undo	取り消し
 	Redo	やり直し
+	List Folder	フォルダーの内容を一覧表示
+	Begin Undo Group	取り消しグループを開始
+	End Undo Group	取り消しグループを終了
 	Cut	切り取り
 	Copy	コピー
 	Paste	貼り付け
@@ -164,6 +173,7 @@
 	Horizontal Align Right	水平方向右に整列
 	Vertical Align Top	垂直方向上に整列
 	Vertical Align Center	垂直方向中央に整列
+	Horizontal & Vertical Align Center	水平方向および垂直方向中央に整列
 	Vertical Align Bottom	垂直方向下に整列
 	Group	グループ
 	Ungroup	グループ解除
@@ -1696,6 +1706,7 @@
 	Move Rows	行を移動
 	Move Slices	スライスを移動
 	Move Spine Point	スパインポイントを移動
+	Reshape Spine Segment	スパインセグメントをシェイプ変形
 	Move Swatch	スウォッチを移動
 	Move Up	上へ移動
 	Move in Perspective	遠近で移動
@@ -2141,6 +2152,9 @@
 	Rectangle Properties:	長方形のプロパティ:
 	Rectangle Tool	長方形ツール
 	Rectangular Grid	長方形グリッド
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	水平方向の分割線:
+	Vertical Dividers:	垂直方向の分割線:
 	Rectangular Grid Tool	長方形グリッドツール
 	Red	レッド
 	Redefine Character Style	文字スタイルを再定義
@@ -2187,6 +2201,13 @@
 	Relink	再リンク
 	Relink to Folder…	フォルダーに再リンク…
 	Relink…	再リンク…
+	Find Linked Files	リンクファイルを検索
+	Find Linked Files in Folder…	フォルダー内のリンクファイルを検索…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	リンクファイルごとに、再リンク先のファイルを選んでください。リンクに保存されたサイズと内容が同じファイルが先頭に表示されます。
+	Same file	同じファイル
+	Same size	同じサイズ
+	Don't Relink	再リンクしない
+	Copy into the document's folder	ドキュメントのフォルダーにコピー
 	Remove	削除
 	Remove Asset	アセットを削除
 	Remove Brush Stroke	ブラシストロークを削除
@@ -2345,6 +2366,7 @@
 	Select All Instances	すべてのインスタンスを選択
 	Select All Unused	未使用項目をすべて選択
 	Select Anchors	アンカーを選択
+	Select Segments	パスのセグメントを選択
 	Select Appearance Item	アピアランス項目を選択
 	Select Freeform Point	フリーフォームポイントを選択
 	Select Gradient Stop	グラデーションの分岐点を選択
@@ -2382,7 +2404,6 @@
 	Set Anchors	アンカーポイントを設定
 	Set Bounds	境界を設定
 	Set Current Layer	現在のレイヤーを設定
-	Set Key Object	キーオブジェクトを設定
 	Set Keyboard Shortcut	キーボードショートカットを設定
 	Set Mesh Point Color	メッシュポイントのカラーを設定
 	Set Preference	環境設定を設定
@@ -2455,6 +2476,7 @@
 	Size Tile to Art	タイルをアートワークのサイズに合わせる
 	Size/Leading	サイズ/行送り
 	Size:	サイズ:
+	Ridges per segment:	セグメントごとの山数:
 	Size: {size}  Tracking: {tracking}	サイズ：{size}  トラッキング：{tracking}
 	Skip Blank Artboards	空白のアートボードをスキップ
 	Slice Options	スライスオプション
@@ -2639,6 +2661,9 @@
 	Tool Options…	ツールオプション…
 	Toolbar: Advanced / Basic	ツールバー: 詳細／基本
 	Toolbar: Single/Double Column	ツールバー: 1 列／2 列
+	Toolbar: Add Tool	ツールバー: ツールを追加
+	Toolbar: Remove Tool	ツールバー: ツールを削除
+	Toolbar: Reset	ツールバー: リセット
 	Top:	上:
 	Total Width:	合計幅:
 	Touch Type Tool	文字タッチツール
@@ -2968,6 +2993,23 @@
 	Gradient (.)	グラデーション (.)
 	Graph Data	グラフデータ
 	Graph Type	グラフの種類
+	Graph Design	グラフのデザイン
+	Graph Marker	グラフのマーカー
+	New Design	新規デザイン
+	Delete Design	デザインを削除
+	Paste Design	デザインをペースト
+	Select Unused	未使用を選択
+	Import Data…	データを読み込み…
+	Transpose	行と列を入れ替え
+	Switch x/y	X/Y を入れ替え
+	Number of Decimals:	小数点以下の桁数:
+	Column Width:	列の幅:
+	No Legend	凡例なし
+	Standard Legend	標準の凡例
+	Legends in Wedges	くさび形内に凡例
+	Ratio	比率
+	Even	均等
+	Stacked	積み重ね
 	Graphic Style Libraries Menu	グラフィックスタイルライブラリメニュー
 	Graphics	グラフィックス
 	Greek & Cyrillic	ギリシャ文字とキリル文字
@@ -3265,6 +3307,7 @@ axis	Horizontal	水平方向
 axis	Vertical	垂直方向
 axis	Both	両方
 	Drag to move	移動するにはドラッグ
+	Drag to move out of the set	ドラッグしてセットから出す
 	Drag to float as a toolbar	ドラッグしてツールバーとして浮かせる
 	Put back in the toolbar	ツールバーに戻す
 	Float Panel	パネルをフローティング
@@ -3288,6 +3331,8 @@ theme	Appearance	外観
 	Images: link to the file instead of only embedding it.	画像：埋め込むだけでなく、ファイルにリンクします。
 	VectorCraft documents: one locked object, updated when the file changes.	VectorCraft ドキュメント：ロックされた 1 つのオブジェクト。ファイルの変更時に更新されます。
 	A file dialog is open: choose there first	ファイルダイアログが開いています。先にそちらで選択してください
+	The document was closed while its file dialog was open	ファイルダイアログが開いている間にドキュメントが閉じられました
+	The dialog was closed before its file dialog answered	ファイルダイアログが応答する前にダイアログが閉じられました
 	Shaper	Shaper
 	Expand Shaper Group	Shaper グループを拡張
 	Release Shaper Group	Shaper グループを解除
@@ -3432,6 +3477,7 @@ theme	Appearance	外観
 @msg	no such segment	指定されたセグメントが見つかりません
 @msg	no such subpath	指定されたサブパスが見つかりません
 @msg	object {id} is not a path	オブジェクト {id} はパスではありません
+@msg	object {id} is not a selected top-level object	オブジェクト {id} は選択されている最上位のオブジェクトではありません
 @msg	nothing to redo	やり直す操作がありません
 @msg	nothing to undo	取り消す操作がありません
 @msg	Expand Appearance: the selection has a basic appearance	アピアランスを分割: 選択範囲は基本アピアランスです
@@ -3469,9 +3515,11 @@ theme	Appearance	外観
 @msg	`at` must be [x, y]	`at` は [x, y] の形式で指定してください
 @msg	`color` must be a colour	`color` にはカラーを指定してください
 @msg	`freeform.points` must be an array	`freeform.points` には配列を指定してください
+@msg	`freeform.lines` must be an array	`freeform.lines` には配列を指定してください
 @msg	`{key}` must be a number	`{key}` には数値を指定してください
 @msg	a freeform gradient keeps at least one point	フリーフォームグラデーションには少なくとも 1 つのポイントが必要です
 @msg	freeform point {i} needs `at` [x, y] and a valid `color`	フリーフォームのポイント {i} には `at` [x, y] と有効な `color` が必要です
+@msg	freeform line {i} must be an array of point indices	フリーフォームのライン {i} にはポイントのインデックスの配列を指定してください
 @msg	no point {i} (the gradient has {_1})	ポイント {i} はありません (このグラデーションのポイントは {_1} 個です)
 @msg	no segment {segment} on line {line}	ライン {line} にセグメント {segment} はありません
 @msg	unknown freeform mode `{m}` (points, lines)	`{m}` は不明なフリーフォームのモードです (points、lines)
@@ -3497,6 +3545,7 @@ theme	Appearance	外観
 @msg	no selection bounds	選択範囲に境界がありません
 @msg	the layer has no objects to clip by	レイヤーにクリッピングマスクとして使えるオブジェクトがありません
 @msg	the layer or group is locked	レイヤーまたはグループがロックされています
+@msg	the guide is on a hidden or locked layer	ガイドが非表示またはロックされたレイヤー上にあります
 @msg	the target layer is locked or hidden	ターゲットレイヤーがロックされているか非表示です
 @msg	the layer to flatten into is hidden	統合先のレイヤーが非表示になっています
 @msg	there are no objects to release	レイヤーに分配するオブジェクトがありません
@@ -3523,6 +3572,8 @@ theme	Appearance	外観
 @msg	nothing to align	整列するものがありません
 @msg	select a clip group	クリップグループを選択してください
 @msg	select two or more objects to distribute	分布させるオブジェクトを 2 つ以上選択してください
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	axis には "vertical"、"horizontal"、度単位の角度のいずれかを指定してください (`{v}` は指定できません)
+@msg	give horizontal or vertical	horizontal または vertical を指定してください
 @msg	selection has no bounds	選択範囲に境界がありません
 @msg	the top object must be a path, compound path or text object to use as a clipping mask	クリッピングマスクとして使うには、最前面のオブジェクトがパス、複合パス、テキストオブジェクトのいずれかである必要があります
 @msg	no target object has an opacity mask: select one or give `id`	不透明マスクのあるターゲットオブジェクトがありません: 該当するオブジェクトを選択するか、`id` を指定してください
@@ -3634,7 +3685,7 @@ theme	Appearance	外観
 @msg	shadings of an unknown type were left out	種類が不明なシェーディングは除外されました
 @msg	shadings whose functions are of an unknown type are filled with their middle colour	関数の種類が不明なシェーディングは中間の色で塗りつぶされています
 @msg	the file's preview header points outside the file	ファイルのプレビューヘッダーがファイルの範囲外を指しています
-@msg	this PostScript file can't be read ({_1}): save it as PDF or SVG in the app that made it	この PostScript ファイルは読み込めません ({_1}): 作成したアプリで PDF または SVG として保存してください
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	この PostScript ファイルは読み込めません ({why}): 作成したアプリで PDF または SVG として保存してください
 @msg	this is not a PostScript file	PostScript ファイルではありません
 @msg	a PostScript error ({name} in `{op}`)	PostScript エラー (`{op}` での {name})
 @msg	a PostScript error ({name} in `{op}`), in {procs}	{procs} 内の PostScript エラー (`{op}` での {name})
@@ -3733,7 +3784,7 @@ theme	Appearance	外観
 @msg	no blend options	ブレンドオプションがありません
 @msg	bad color {v}	カラー {v} が正しくありません
 @msg	Corners edits the corners of a path	「コーナー」で編集できるのはパスの角だけです
-@msg	give corners of the path: anchors between two straight sides	パスの角 (2 本の直線の辺に挟まれたアンカーポイント) を指定してください
+@msg	give corners of the path: anchors where its sides meet at an angle	パスの角 (辺が角度をなして交わるアンカーポイント) を指定してください
 @msg	select one path, or give its `id`	パスを 1 つ選択するか、その `id` を指定してください
 @msg	the drawing is no longer loaded	図面はもう読み込まれていません
 @msg	No saved selections (Select → Save Selection…)	保存した選択範囲はありません (選択 → 選択範囲を保存…)
@@ -3796,6 +3847,9 @@ theme	Appearance	外観
 @msg	give the path `id` and the width point `index`	パスの `id` と幅ポイントの `index` を指定してください
 @msg	no such width point	指定された幅ポイントが見つかりません
 @msg	onto must name a panel floating in another group	onto には、別のグループでフローティングしているパネルを指定してください
+@msg	below and above must name a panel floating in another group	below と above には別のグループでフローティングしているパネルを指定してください
+@msg	give only one of onto, below and above	onto、below、above のうち 1 つだけを指定してください
+@msg	column must be true or a number from 1	column には true または 1 以上の数値を指定してください
 @msg	unknown panel `{raw}`	`{raw}` は不明なパネルです
 @msg	x and y must both be numbers	x と y はどちらも数値で指定してください
 @msg	Downloaded {what}	{what} をダウンロードしました
@@ -3924,8 +3978,12 @@ theme	Appearance	外観
 @msg	larger than 256 MB	256 MB を超えています
 @msg	the files come to more than 1 GB: add fewer at a time	ファイルの合計が 1 GB を超えています: 一度に追加するファイルを減らしてください
 @msg	every numbered name for it is taken in the Fonts folder	Fonts フォルダーでは、このファイルの番号付きの名前がすべて使われています
+@msg	every numbered name for {name} is taken in the document's folder	ドキュメントのフォルダーでは、{name} の番号付きの名前がすべて使われています
+@msg	No linked files to look for	検索するリンクファイルがありません
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	画像を {n} 枚再リンクしましたが、{name} は再リンクできませんでした: {reason}
 @msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` はステップ参照 {r} です。ステップ参照を解決できるのは `run` と `command_batch` だけです
 @msg	`ids` must be an array of object ids, not {v}	`ids` はオブジェクト ID の配列にしてください ({v} は使えません)
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` はアンカーポイントのインデックスの配列にしてください ({v} は使えません)
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: ステップ {i} の結果にその値はありません ($ そのものを書くには $$ と入力してください)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: この前にステップ {i} はありません (ステップは 0 から数えます。$ そのものを書くには $$ と入力してください)
 @msg	object ids are non-negative integers, not {v}	オブジェクト ID は 0 以上の整数です ({v} は使えません)
@@ -4033,6 +4091,32 @@ effect	Vertical	垂直
 	Define a variable first	先に変数を定義してください
 	Text	テキスト
 	Visibility	表示状態
+# tested). Left in English on purpose (`MENU_KEEP_AS_IS` in the tests): the product name, language
+# Shared panel docking
+	Activate Panel	パネルをアクティブにする
+	Change Panel Layout	パネルの配置を変更
+	Close Panel	パネルを閉じる
+	Move Panel	パネルを移動
+	Group with	グループ化先
+	Resize panels	パネルのサイズを変更
+	Resize panel window	パネルウィンドウのサイズを変更
+@msg	invalid restored panel group	復元されたパネルグループが無効です
+@msg	Invalid panel layout; restored the default dock	パネル配置が無効です。既定のドックを復元しました
+@msg	action is required	action を指定してください
+@msg	anchor must name a registered panel	anchor に登録済みパネルを指定してください
+@msg	before must name a panel	before にパネルを指定してください
+@msg	docking action contains an unknown panel or an excessive split path	ドッキング操作に不明なパネルまたは長すぎる分割パスが含まれています
+@msg	group must be true or false	group は true または false にしてください
+@msg	move requires a destination panel	移動先のパネルを指定してください
+@msg	move requires an existing destination panel	移動先には既存のパネルを指定してください
+@msg	onto must name a floating panel	onto にフローティングパネルを指定してください
+@msg	panel group is empty	パネルグループが空です
+@msg	panel must name a registered panel	panel に登録済みパネルを指定してください
+@msg	saved panel layout is invalid; reset the workspace first	保存されたパネル配置が無効です。先にワークスペースをリセットしてください
+@msg	x and y must be provided together	x と y は両方指定してください
+@msg	zone must be a string	zone は文字列にしてください
+@msg	zone must be tab, center, left, right, top or bottom	zone は tab、center、left、right、top、bottom のいずれかにしてください
+@msg	{key} must be a finite coordinate	{key} は有限の座標にしてください
 
 # Revolve profile guidance.
 
@@ -4088,3 +4172,21 @@ lighting	Light	ライト
 	Stroke Pressure	ストロークの筆圧
 	Right Diagonal	右斜め
 	Left Diagonal	左斜め
+	Vertical Guide	垂直ガイド
+	Horizontal Guide	水平ガイド
+	Move Guide to Layer	ガイドをレイヤーへ移動
+@msg	invalid native panel set	ネイティブパネルセットが無効です
+@msg	missing panel layout	パネル配置がありません
+@msg	unsupported native docking operation	ネイティブドッキング操作は未対応です
+	Linux Display Server	Linux ディスプレイサーバー
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	定規の原点
+	Reset Ruler Origin	定規の原点をリセット
+	Artistic	アーティスティック
+	Film Grain…	フィルム粒子…
+	Highlight Area	ハイライト領域
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	圧縮ファイルを展開すると VectorCraft が読み込める量を超えます (ドキュメント {_1} MB、画像 1 枚あたり {_2} MB)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	ドキュメントが大きすぎて圧縮保存できません ({0}): 「圧縮を使用」をオフにして保存してください
+@msg	the file stopped being read (please report this bug)	ファイルの読み込みが中断されました (このバグを報告してください)
+	Concentric Dividers:	同心円の分割線:
+	Radial Dividers:	放射状の分割線:

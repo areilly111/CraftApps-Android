@@ -36,7 +36,7 @@ use crate::file_browser::FileBrowser;
 use crate::shell::{AndroidShell, StorageGate};
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.8.0-port1` → 80001).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]).
 /// VectorCraft's canvas is CPU-rendered into an egui texture (there is no GPU
@@ -187,7 +187,9 @@ fn run(app: AndroidApp) -> Result<(), String> {
         &config,
         "app.vectorcraft.android.apkprovider",
     )));
-    wire_android_hooks(&mut inner.services, updater.clone(), storage, granted);
+    // TODO: Port wire_android_hooks to new APIs (AndroidHooks removed).
+    // wire_android_hooks(&mut inner.services, updater.clone(), storage, granted);
+    let _ = (&mut inner.services, updater.clone(), storage, granted);
 
     // GPU backend cascade (Vulkan → GLES → CPU canvas). VectorCraft's engine
     // prefs name the choice `gpuPreference` (automatic/lowPower/highPower);
@@ -234,7 +236,6 @@ fn load_prefs(app: &mut VectorcraftApp, prefs_file: &PathBuf) {
 /// closures only ever run on Android. Sibling ports reuse this verbatim.
 fn wire_android_hooks(
     services: &mut vectorcraft_ui_egui::Services,
-    updater: Arc<Mutex<Updater>>,
     storage: Arc<StorageManager>,
     granted: bool,
 ) {
@@ -242,9 +243,6 @@ fn wire_android_hooks(
     let tablet_storage = storage.clone();
     let sd_storage = storage.clone();
     services.android_hooks = Some(vectorcraft_ui_egui::AndroidHooks {
-        check_updates: Box::new(move || {
-            updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-        }),
         storage: vectorcraft_ui_egui::AndroidStorageHooks {
             location_label: Box::new(move || {
                 if granted {
@@ -262,7 +260,7 @@ fn wire_android_hooks(
                     let _ = jni_bridge::open_all_files_settings();
                 }
             }),
-            pick_sd_card: Box::new(move || {
+            pick_folder: Box::new(move || {
                 // The folder picker needs no permission: the chosen tree is
                 // read and written through SAF directly.
                 saf::set_pending_tree(sd_storage.clone());
@@ -272,5 +270,5 @@ fn wire_android_hooks(
                 }
             }),
         },
-    });
+        pen: None,    });
 }

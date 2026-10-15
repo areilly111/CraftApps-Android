@@ -16,9 +16,13 @@ fn fresh() -> Session {
     s
 }
 
-/// Run `id` with `p` on a fresh session, on a worker thread. Returns `Err` with a reason on panic
-/// or timeout, `Ok` otherwise (whether the command returned Ok or a graceful Err).
-fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
+/// Wall-clock budget for one command on the 24×16 test document. Every command needs well under
+/// 0.3 s even on a heavily loaded machine, so this only catches real hangs.
+const DEADLINE: Duration = Duration::from_secs(4);
+
+/// Run `id` with `p` on a fresh session, on a worker thread. `None` if it timed out, else whether
+/// it finished without panicking (returning Ok or a graceful Err both count).
+fn run_once(id: &str, p: &Value) -> Option<bool> {
     let (tx, rx) = mpsc::channel();
     let (id, p) = (id.to_string(), p.clone());
     std::thread::spawn(move || {
@@ -28,10 +32,20 @@ fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
         }));
         let _ = tx.send(r.is_ok());
     });
-    match rx.recv_timeout(Duration::from_secs(4)) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err("panicked".into()),
-        Err(_) => Err("hung (>4s)".into()),
+    rx.recv_timeout(DEADLINE).ok()
+}
+
+/// `Err` with a reason on panic or hang, `Ok` otherwise.
+///
+/// The first command to touch process-wide lazy state pays for it: the first `type.create`
+/// starts the shared text engine, which scans every system font (3.5–5 s under load; #2994). A
+/// real hang reproduces and one-time setup doesn't, so a timeout counts only if a rerun on a
+/// fresh session times out too.
+fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
+    match run_once(id, p).or_else(|| run_once(id, p)) {
+        Some(true) => Ok(()),
+        Some(false) => Err("panicked".into()),
+        None => Err(format!("hung (>{}s, twice)", DEADLINE.as_secs())),
     }
 }
 

@@ -19,9 +19,19 @@ pub(crate) fn surfaces(doc: &Document, mut visit: impl FnMut(&Surface)) {
         if let Some(mask) = &layer.mask {
             visit(&mask.surface);
         }
+        if let Some(video) = &layer.video {
+            // Undo retains the whole clip, not only the displayed frame. Visit aliases too:
+            // Tiles tracks every owner and counts their shared allocations only once.
+            for frame in video.frames.iter().chain(video.original_frames.iter().flatten()) {
+                visit(frame);
+            }
+        }
     }
     for channel in doc.channels.iter().chain(&doc.quick_mask) {
         visit(&channel.surface);
+    }
+    if let Some(selection) = &doc.selection {
+        visit(selection);
     }
 }
 

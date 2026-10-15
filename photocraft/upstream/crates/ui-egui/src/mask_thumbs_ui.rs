@@ -119,7 +119,14 @@ pub fn paint(
         }
         let (verb, what, name) = (if linked { "Unlink" } else { "Link" }, kind.label(), l.name.clone());
         let resp = resp.on_hover_text(if linked { tl!("Unlink the mask from the layer") } else { tl!("Link the mask to the layer") });
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{verb} {what} {name}")));
+        let template = "{verb} {mask} {layer}";
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                crate::i18n::fmt(tl!(template), &[("verb", tl!(verb)), ("mask", tl!(what)), ("layer", &name)]),
+            )
+        });
         if resp.clicked() {
             out.clicked = true;
             actions.push((format!("{}.linked", kind.command()), json!({"layer": l.id.0, "linked": !linked})));
@@ -202,6 +209,18 @@ pub fn load_params(l: &Layer, kind: MaskKind, m: egui::Modifiers) -> Value {
         MaskKind::Vector => "vectorMask",
     };
     json!({"channel": channel, "layer": l.id.0, "operation": crate::channels_panel::load_operation(m)})
+}
+
+/// What double-clicking a mask thumbnail does: pixel mask launches Select and Mask if preference is enabled.
+pub fn double_click_command(app: &PhotocraftApp, kind: MaskKind) -> Option<(&'static str, Value)> {
+    if kind == MaskKind::Pixel
+        && app.session.prefs().tools.double_click_layer_mask_launches_select_and_mask
+        && crate::menus::is_enabled(app, "select.selectAndMask")
+    {
+        Some(("select.selectAndMask", Value::Null))
+    } else {
+        None
+    }
 }
 
 /// The active layer of `st` has a vector mask (shape layers' paths are content, not masks).

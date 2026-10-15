@@ -126,6 +126,44 @@ fn names(h: &Harness<'static, PdfCraftApp>) -> Vec<String> {
     h.state().combine_draft.iter().map(|f| f.name.clone()).collect()
 }
 
+fn check_duplicate_warnings(view: &str) {
+    let first = fixture_sized(1, 200.0, 300.0);
+    let other = fixture_sized(1, 300.0, 200.0);
+    assert_eq!(first.len(), other.len());
+    assert_ne!(first, other);
+    let mut h = grid_of(vec![("report.pdf", first.clone()), ("report.pdf", other)], vec2(1400.0, 900.0));
+    h.state_mut().set_option("combine-view", view).unwrap();
+    h.run_steps(2);
+    let warning_count = |h: &mut Harness<'static, PdfCraftApp>| {
+        if view == "grid" {
+            let at = h.get_all_by_label("report.pdf").next().unwrap().rect().center();
+            h.hover_at(at);
+            h.run_steps(60);
+        }
+        h.query_all_by_label_contains("Added more than once").count()
+    };
+    assert_eq!(warning_count(&mut h), 0, "different equal-sized PDFs are not duplicates in {view}");
+    h.state_mut().use_files(FilePurpose::Combine, vec![("report.pdf".into(), first)]);
+    h.run_steps(3);
+    assert_eq!(warning_count(&mut h), if view == "grid" { 1 } else { 2 }, "only the two identical files are warned");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(3);
+    assert_eq!(warning_count(&mut h), 0, "undo removes the duplicate warning");
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    h.run_steps(3);
+    assert_eq!(warning_count(&mut h), if view == "grid" { 1 } else { 2 }, "redo restores the duplicate warning");
+}
+
+#[test]
+fn list_duplicate_warnings_compare_contents_and_follow_undo() {
+    check_duplicate_warnings("list");
+}
+
+#[test]
+fn grid_duplicate_warnings_compare_contents_and_follow_undo() {
+    check_duplicate_warnings("grid");
+}
+
 /// Run frames until `done`, giving render threads time; whether it happened.
 fn settle(h: &mut Harness<'static, PdfCraftApp>, done: impl Fn(&PdfCraftApp) -> bool) -> bool {
     for _ in 0..400 {

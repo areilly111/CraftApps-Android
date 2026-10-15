@@ -420,3 +420,19 @@ fn camera_focus_commands_undo_and_serde() {
     assert!(s.execute("camera.linkFocusToLayer", json!({})).is_err());
     assert!(s.execute("camera.linkFocusToPoi", json!({})).is_ok());
 }
+
+/// An id sent as a string (`"98"`, as MCP clients often do) resolves as an id when no name matches.
+#[test]
+fn numeric_string_resolves_as_id() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "T", "width": 320, "height": 180, "duration": 2.0, "frameRate": 30})).unwrap();
+    let l = s.execute("layer.newSolid", json!({"color": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+    let cid = s.active_comp_id().unwrap();
+    assert_eq!(s.resolve_comp(Some(&json!(cid.0.to_string()))).unwrap(), cid);
+    assert!(s.resolve_comp(Some(&json!("999999"))).is_err());
+    let comp = s.project.comp(cid).unwrap();
+    assert_eq!(crate::commands::resolve_layer(comp, &json!(l.to_string())), Some(LayerId(l)));
+    assert_eq!(crate::commands::resolve_layer(comp, &json!("999999")), None);
+    let r = s.execute("layer.tree", json!({"layer": l.to_string(), "comp": cid.0.to_string()})).unwrap();
+    assert_eq!(r["id"].as_u64(), Some(l), "{r}");
+}

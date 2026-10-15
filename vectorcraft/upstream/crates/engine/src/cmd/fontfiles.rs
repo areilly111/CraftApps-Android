@@ -45,9 +45,6 @@ const MAX_ADD_FILES: usize = 1_000;
 pub(crate) const MAX_FONT_FILE: u64 = 256 << 20;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_ADD_BYTES: u64 = 1 << 30;
-/// The highest number a copy's name gets (`Name 99.otf`).
-#[cfg(not(target_arch = "wasm32"))]
-const MAX_NUMBER: u32 = 99;
 /// The extensions of the font files `text.addFontFiles` copies (in any case), besides suitcase
 /// fonts.
 #[cfg(not(target_arch = "wasm32"))]
@@ -88,7 +85,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add Font Files",
             [],
             None,
-            "{files: [paths the last text.findFontFiles search found] (1 to 1000)} copy the font files into VectorCraft's own Fonts folder (next to the preferences; the desktop app and vectorcraft-cli read it), never replacing a file there: a file with the same contents is kept, and when another file has that name, the copy gets a number (Name 2.otf); then scan the fonts again, as text.rescanFonts does, and type set in them redraws. Only regular .ttf, .otf, .ttc, .otc, .woff and .woff2 files and suitcase fonts (with their resource fork) are copied, at most 256 MB a file and 1 GB in all; any other file is skipped. Add only fonts you own or are licensed to install; none on the web → {folder, copied: [{from, to}], kept: [{from, to}], skipped: [{file, reason}], families?, faces?}",
+            "{files: [paths the last text.findFontFiles search found] (1 to 1000)} copy the font files into VectorCraft's own Fonts folder (next to the preferences; the desktop app and vectorcraft-cli read it), never replacing a file there: the names Name.otf, Name 2.otf … Name 99.otf are tried in turn until one is free, which gets the copy, or is a file with the same contents, which is kept; then scan the fonts again, as text.rescanFonts does, and type set in them redraws. Only regular .ttf, .otf, .ttc, .otc, .woff and .woff2 files and suitcase fonts (with their resource fork) are copied, at most 256 MB a file and 1 GB in all; any other file is skipped. Add only fonts you own or are licensed to install; none on the web → {folder, copied: [{from, to}], kept: [{from, to}], skipped: [{file, reason}], families?, faces?}",
             always,
             add
         ),
@@ -367,18 +364,13 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(out)
 }
 
-/// Where [`copy_one`] put a file: copied to, or kept as, the file in the folder.
-#[cfg(not(target_arch = "wasm32"))]
-enum Placed {
-    Copied(PathBuf),
-    Kept(PathBuf),
-}
-
-/// Copy `files` into `dir`, never replacing a file there: a file with the same contents is kept,
-/// and when another file has the name, the copy gets the first free name from `Name 2.otf` to
-/// `Name 99.otf`. At most [`MAX_FONT_FILE`] bytes a file and 1 GB in all.
+/// Copy `files` into `dir`, never replacing a file there ([`super::fileio::copy_new`]): the names
+/// `Name.otf`, `Name 2.otf` up to `Name 99.otf` are tried in turn until one is free, which gets
+/// the copy, or is a file with the same contents, which is kept. At most [`MAX_FONT_FILE`] bytes a
+/// file and 1 GB in all.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn copy_into(files: &[PathBuf], dir: &Path) -> CopyReport {
+    use super::fileio::Placed;
     let mut report = CopyReport::default();
     let mut total = 0;
     for from in files {
@@ -398,10 +390,10 @@ pub(crate) fn copy_into(files: &[PathBuf], _: &Path) -> CopyReport {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn copy_one(from: &Path, dir: &Path, total: &mut u64) -> std::result::Result<Placed, String> {
-    use std::io::ErrorKind;
+fn copy_one(from: &Path, dir: &Path, total: &mut u64) -> std::result::Result<super::fileio::Placed, String> {
+    use super::fileio::Placed;
     let meta = std::fs::symlink_metadata(from).map_err(|e| e.to_string())?;
-    if !meta.is_file() {
+    if !meta.is_file() || from.file_name().is_none() {
         return Err(NOT_A_FILE.into());
     }
     let font = from.extension().and_then(|e| e.to_str()).is_some_and(|e| FONT_EXTENSIONS.iter().any(|x| e.eq_ignore_ascii_case(x)));
@@ -418,25 +410,16 @@ fn copy_one(from: &Path, dir: &Path, total: &mut u64) -> std::result::Result<Pla
     if total.saturating_add(len) > MAX_ADD_BYTES {
         return Err(TOO_MUCH.into());
     }
-    let (Some(name), Some(stem)) = (from.file_name(), from.file_stem()) else { return Err(NOT_A_FILE.into()) };
-    let ext = from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-    for n in 1..=MAX_NUMBER {
-        let to = if n == 1 { dir.join(name) } else { dir.join(format!("{} {n}{ext}", stem.to_string_lossy())) };
-        match std::fs::symlink_metadata(&to) {
-            Err(e) if e.kind() == ErrorKind::NotFound => match create_copy(from, &to, fork.as_deref()) {
-                Ok(()) => {
-                    *total += len;
-                    return Ok(Placed::Copied(to));
-                }
-                // Taken meanwhile: the next name.
-                Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(e.to_string()),
-            },
-            Ok(m) if m.is_file() && same_file(from, &to, m.len(), len, fork.as_deref()) => return Ok(Placed::Kept(to)),
-            _ => {}
+    let create = |to: &Path| create_copy(from, to, fork.as_deref());
+    match super::fileio::copy_new(from, dir, create, |to, m| same_file(from, to, m.len(), len, fork.as_deref())) {
+        Ok(Some(Placed::Copied(to))) => {
+            *total += len;
+            Ok(Placed::Copied(to))
         }
+        Ok(Some(kept)) => Ok(kept),
+        Ok(None) => Err(NO_NAME.into()),
+        Err(e) => Err(e.to_string()),
     }
-    Err(NO_NAME.into())
 }
 
 /// Create `to` as a copy of the font file `from`, or for a suitcase font, as an empty file whose

@@ -1114,6 +1114,23 @@
 	Graph	Діаграма
 	Graph Data	Дані діаграми
 	Graph Type	Тип діаграми
+	Graph Design	Дизайн діаграми
+	Graph Marker	Маркер діаграми
+	New Design	Новий дизайн
+	Delete Design	Видалити дизайн
+	Paste Design	Вставити дизайн
+	Select Unused	Вибрати невикористані
+	Import Data…	Імпорт даних…
+	Transpose	Транспонувати
+	Switch x/y	Поміняти x/y
+	Number of Decimals:	Кількість десяткових знаків:
+	Column Width:	Ширина стовпця:
+	No Legend	Без легенди
+	Standard Legend	Стандартна легенда
+	Legends in Wedges	Легенди в секторах
+	Ratio	Пропорційно
+	Even	Однаково
+	Stacked	Стосом
 	Graphic Style	Графічний стиль
 	Graphic Style Libraries	Бібліотеки графічних стилів
 	Graphic Style Libraries Menu	Меню "Бібліотеки графічних стилів"
@@ -1335,6 +1352,7 @@
 	Last Effect…	Останній ефект…
 	Last Page	Остання сторінка
 	Latin	Латиниця
+	Thai	Тайська
 	Latin Extended	Розширена латиниця
 	Latin-1 Supplement	Додаток Latin-1
 	Layer	Шар
@@ -1557,6 +1575,7 @@
 	Move Rows	Перемістити рядки
 	Move Slices	Перемістити фрагменти
 	Move Spine Point	Перемістити точку осі
+	Reshape Spine Segment	Змінити форму сегмента осі
 	Move Swatch	Перемістити зразок
 	Move Up	Перемістити вгору
 	Move…	Перемістити…
@@ -2043,6 +2062,11 @@
 	Proof Colors	Пробні кольори
 	Proof Setup	Налаштування кольоропроби
 	Properties	Властивості
+	Proportional Metrics	Пропорційні метрики
+	Digits	Цифри
+	Arabic	Арабські
+	Hindi	Гінді
+	Farsi	Фарсі
 	Proportional Oldstyle	Пропорційні цифри старого стилю
 	Pucker & Bloat…	Зморщування та роздування …
 	Pucker Tool	Інструмент «Зморщування»
@@ -2133,6 +2157,9 @@
 	Rectangle: Sunshine	Прямокутник: Сонце
 	Rectangle…	Прямокутник…
 	Rectangular Grid	Прямокутна сітка
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	Горизонтальні розділювачі:
+	Vertical Dividers:	Вертикальні розділювачі:
 	Rectangular Grid Tool	Інструмент «Прямокутна сітка»
 	Red	Червоний
 	Redefine Character Style	Перевизначити стиль символу
@@ -2142,6 +2169,9 @@
 	Redefine Symbol	Перевизначити символ
 	Redefine {kind} Style	Перевизначити стиль {kind}
 	Redo	Повторити
+	List Folder	Показати вміст теки
+	Begin Undo Group	Почати групу скасування
+	End Undo Group	Завершити групу скасування
 	Redo {name}	Повторити {name}
 	Redo {}	Повторити {}
 	Reduce Colors	Скоротити кількість кольорів
@@ -2194,6 +2224,13 @@
 	Relinked {n} image(s); not in that folder: {}	Відновлено зв’язок із зображеннями: {n}; немає в цій папці: {}
 	Relinked {} image(s)	Відновлено зв’язок із зображеннями: {}
 	Relink…	Відновити зв’язок…
+	Find Linked Files	Знайти пов’язані файли
+	Find Linked Files in Folder…	Знайти пов’язані файли в папці…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	Виберіть для кожного пов’язаного файлу файл, з яким потрібно відновити зв’язок. Спершу йдуть файли з розміром і вмістом, збереженими разом зі зв’язком.
+	Same file	Той самий файл
+	Same size	Той самий розмір
+	Don't Relink	Не відновлювати зв’язок
+	Copy into the document's folder	Копіювати в папку документа
 	Reload Plug-ins	Перезавантажити модулі
 	Remove	Прибрати
 	Remove Anchor Points	Забрати опорні точки
@@ -2462,6 +2499,7 @@
 	Select an image to see its Link Info.	Виберіть зображення, щоб побачити зв’язок.
 	Select an image to trace	Виберіть зображення для трасування
 	Select Anchors	Виділити опорні точки
+	Select Segments	Виділити сегменти
 	Select Appearance Item	Виділити елемент оформлення
 	Select Art	Виділити малюнок
 	Select art and choose Object › Pattern › Make.	Виділіть малюнок та виберіть «Об’єкт › Візерунок › Створити».
@@ -2507,7 +2545,6 @@
 	Set base color to the current color	Зробити поточний колір базовим
 	Set Bounds	Задати межі
 	Set Current Layer	Зробити шар поточним
-	Set Key Object	Задати ключовий об’єкт
 	Set Keyboard Shortcut	Задати клавіші
 	Set Mesh Point Color	Задати колір точки сітки
 	Set Preference	Задати налаштування
@@ -2625,6 +2662,8 @@
 	Size Tile to Art	Підігнати плитку за малюнком
 	Size/Leading	Розмір/інтерліньяж
 	Size:	Розмір:
+	Ridges per segment:	Гребенів на сегмент:
+effect	Points	Точки
 	Size: {size}  Tracking: {tracking}	Розмір: {size} Трекінг: {tracking}
 	Skew	Скіс
 	Skin Tone Ramps	Шкали тонів шкіри
@@ -2894,6 +2933,9 @@
 	Tool Options…	Параметри інструменту…
 	Toolbar: Advanced / Basic	Панель інструментів: розширена/основна
 	Toolbar: Single/Double Column	Панель інструментів: один/два стовпці
+	Toolbar: Add Tool	Панель інструментів: додати інструмент
+	Toolbar: Remove Tool	Панель інструментів: вилучити інструмент
+	Toolbar: Reset	Панель інструментів: скинути
 	Toolbars	Панелі інструментів
 	Tools	Інструменти
 	Top	Вгорі
@@ -3096,6 +3138,7 @@
 	Vertical %	По вертикалі, %
 	Vertical Align Bottom	Вирівняти по нижньому краю по вертикалі
 	Vertical Align Center	Вирівняти по центру по вертикалі
+	Horizontal & Vertical Align Center	Вирівняти по центру по горизонталі й вертикалі
 	Vertical Align Top	Вирівняти по верхньому краю по вертикалі
 	Vertical Area Type Tool	Інструмент «Вертикальний текст в області»
 	Vertical Distribute Bottom	Розподілити по нижньому краю по вертикалі
@@ -3305,6 +3348,7 @@ axis	Horizontal	Горизонтальна
 axis	Vertical	Вертикальна
 axis	Both	Обидві
 	Drag to move	Перетягніть для переміщення
+	Drag to move out of the set	Перетягніть, щоб винести з набору
 	Drag to float as a toolbar	Перетягніть, щоб від’єднати панель інструментів
 	Put back in the toolbar	Повернути на панель інструментів
 	Float Panel	Від’єднати панель
@@ -3403,6 +3447,7 @@ axis	Both	Обидві
 @msg	`color` must be a colour	`color` має бути кольором
 @msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` має бути командою, пункт меню якої відкриває діалогове вікно (див. ui.menuDialog)
 @msg	`freeform.points` must be an array	`freeform.points` має бути масивом
+@msg	`freeform.lines` must be an array	`freeform.lines` має бути масивом
 @msg	`gradient` must be an object	`gradient` має бути об’єктом
 @msg	`library` is a library id or name (see {list})	`library` — це ідентифікатор або ім’я бібліотеки (див. {list})
 @msg	`mode` applies to freeform gradients	`mode` застосовується до довільних градієнтів
@@ -3465,6 +3510,7 @@ axis	Both	Обидві
 @msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art або type
 @msg	artboard {0} does not exist	монтажна область {0} не існує
 @msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	при цьому масштабі малюнок має розмір {w} × {h} пт, що більше полотна: виберіть менший масштаб або впишіть його в монтажну область
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	axis має бути "vertical", "horizontal" або кутом у градусах, а не `{v}`
 @msg	background {other}: transparent, white, black or a colour such as "#ff8800"	фон {other}: transparent, white, black або колір, наприклад "#ff8800"
 @msg	bad color {v}	неприпустимий колір {v}
 @msg	bad colour `{hex}` (#rrggbb)	неприпустимий колір `{hex}` (#rrggbb)
@@ -3504,8 +3550,10 @@ axis	Both	Обидві
 @msg	empty path	порожній контур
 @msg	file version {0} is newer than this VectorCraft supports ({VERSION})	версія файлу {0} новіша, ніж підтримує цей VectorCraft ({VERSION})
 @msg	freeform point {i} needs `at` [x, y] and a valid `color`	довільній точці {i} потрібні `at` [x, y] та допустимий `color`
+@msg	freeform line {i} must be an array of point indices	довільна лінія {i} має бути масивом індексів точок
 @msg	give both `start` and `end` [x, y] (or neither)	вкажіть `start`, `end` [x, y] (або жодного)
-@msg	give corners of the path: anchors between two straight sides	вкажіть кути контуру: опорні точки між двома прямими сторонами
+@msg	give corners of the path: anchors where its sides meet at an angle	вкажіть кути контуру: опорні точки, у яких його сторони сходяться під кутом
+@msg	give horizontal or vertical	вкажіть horizontal або vertical
 @msg	give the path `id` and the width point `index`	вкажіть `id` контуру та `index` точки ширини
 @msg	guides are locked	напрямні заблоковані
 @msg	image '{key}' has no pixels and was left out	зображення '{key}' не має пікселів і було пропущено
@@ -3646,6 +3694,7 @@ axis	Both	Обидві
 @msg	nothing to wrap	нічого обтікати
 @msg	object {0} cannot have children	об’єкт {0} не може мати нащадків
 @msg	object {id} is not a path	об’єкт {id} не є контуром
+@msg	object {id} is not a selected top-level object	об’єкт {id} не є виділеним об’єктом верхнього рівня
 @msg	page size {w} × {h}	розмір сторінки {w} × {h}
 @msg	page {0} does not exist (the PDF has {1})	сторінка {0} не існує (в PDF{1})
 @msg	paste unavailable	вставка недоступна
@@ -3742,6 +3791,7 @@ axis	Both	Обидві
 @msg	the image's pixels don't match its size	пікселі зображення не відповідають його розміру
 @msg	the layer has no objects to clip by	у шарі немає об’єктів для обрізки
 @msg	the layer or group is locked	шар чи група заблоковані
+@msg	the guide is on a hidden or locked layer	напрямна розташована на прихованому або заблокованому шарі
 @msg	the target layer is locked or hidden	цільовий шар заблокований або прихований
 @msg	the layer to flatten into is hidden	шар для об’єднання прихований
 @msg	the object already has an opacity mask	об’єкт вже має маску непрозорості.
@@ -3767,7 +3817,7 @@ axis	Both	Обидві
 @msg	the {tool} tool has no options	інструмент {tool} не має параметрів
 @msg	there are no objects to release	немає об’єктів для звільнення
 @msg	there are no printer settings to open here	тут немає налаштувань принтера для відкриття
-@msg	this PostScript file can't be read ({_1}): save it as PDF or SVG in the app that made it	цей файл PostScript неможливо прочитати ({_1}): збережіть його як PDF або SVG у додатку, який його створив
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	цей файл PostScript неможливо прочитати ({why}): збережіть його як PDF або SVG у додатку, який його створив
 @msg	this file's PostScript couldn't be read ({why}): {what}	PostScript цього файлу неможливо прочитати ({why}): {what}
 @msg	this format holds one artboard: export several as PDF or with document.exportForScreens	цей формат містить одну монтажну область: експортуйте кілька як PDF або за допомогою document.exportForScreens
 @msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	це креслення DWG, яке неможливо прочитати: збережіть його з CAD як ASCII DXF і відкрийте його
@@ -3856,6 +3906,9 @@ axis	Both	Обидві
 @msg	tool (a tool id) is required	потрібно tool (ідентифікатор інструменту)
 @msg	{tool} isn't in a toolbar group of several tools	{tool} не входить до групи панелі інструментів з кількох інструментів
 @msg	onto must name a panel floating in another group	onto має називати панель, що плаває в іншій групі
+@msg	below and above must name a panel floating in another group	below і above мають називати панель, що плаває в іншій групі
+@msg	give only one of onto, below and above	вкажіть лише один із onto, below і above
+@msg	column must be true or a number from 1	column має бути true або числом від 1
 @msg	x and y must both be numbers	x і y мають бути числами
 @msg	"{0}" is not a colour: write it as #rrggbb	"{0}" не є кольором: запишіть його як #rrggbb
 @msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	це не логотип із плоских кольорів ({_1}% його суцільних областей збігається з кількома плоскими кольорами), тому режим «Плоский логотип» перетворив би градієнти на плями: використовуйте режим «Колір»
@@ -3894,6 +3947,9 @@ axis	Both	Обидві
 @msg	larger than 256 MB	більше 256 МБ
 @msg	the files come to more than 1 GB: add fewer at a time	файли займають понад 1 ГБ: додавайте менше за раз
 @msg	every numbered name for it is taken in the Fonts folder	усі нумеровані імена для нього вже зайняті в папці Fonts
+@msg	every numbered name for {name} is taken in the document's folder	усі нумеровані імена для {name} уже зайняті в папці документа
+@msg	No linked files to look for	Немає пов’язаних файлів для пошуку
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	Відновлено зв’язок із зображеннями: {n}; не вдалося відновити зв’язок із {name}: {reason}
 	Services	Служби
 	Hide VectorCraft	Приховати VectorCraft
 	Zoom	Масштаб
@@ -3905,6 +3961,8 @@ axis	Both	Обидві
 	Images: link to the file instead of only embedding it.	Зображення: пов’язувати із файлом замість простого впровадження.
 	VectorCraft documents: one locked object, updated when the file changes.	Документи VectorCraft: один заблокований об’єкт, який оновлюється під час зміни файлу.
 	A file dialog is open: choose there first	Відкрито вікно вибору файлу: спочатку зробіть вибір у ньому
+	The document was closed while its file dialog was open	Документ було закрито, поки було відкрито його вікно вибору файлу
+	The dialog was closed before its file dialog answered	Діалогове вікно було закрито раніше, ніж відповіло його вікно вибору файлу
 	Shaper	Формоутворення
 	Expand Shaper Group	Розібрати групу формоутворення
 	Release Shaper Group	Звільнити групу формоутворення
@@ -3916,6 +3974,7 @@ axis	Both	Обидві
 	Exit	Вийти
 @msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` — це посилання на крок {r}, яке розв’язують лише `run` і `command_batch`
 @msg	`ids` must be an array of object ids, not {v}	`ids` має бути масивом ідентифікаторів об’єктів, а не {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` має бути масивом індексів опорних точок, а не {v}
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: у результаті кроку {i} немає такого значення (щоб написати сам $, введіть $$)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: перед цим кроком немає кроку {i} (кроки рахуються з 0; щоб написати сам $, введіть $$)
 @msg	object ids are non-negative integers, not {v}	ідентифікатори об’єктів — невід’ємні цілі числа, а не {v}
@@ -4021,6 +4080,31 @@ axis	Both	Обидві
 	Define a variable first	Спочатку визначте змінну
 	Text	Текст
 	Visibility	Видимість
+# Shared panel docking
+	Activate Panel	Активувати панель
+	Change Panel Layout	Змінити розташування панелей
+	Close Panel	Закрити панель
+	Move Panel	Перемістити панель
+	Group with	Згрупувати з
+	Resize panels	Змінити розмір панелей
+	Resize panel window	Змінити розмір вікна панелі
+@msg	Invalid panel layout; restored the default dock	Неприпустиме розташування панелей; відновлено типове розташування
+@msg	action is required	Потрібно вказати action
+@msg	anchor must name a registered panel	anchor має вказувати зареєстровану панель
+@msg	before must name a panel	before має вказувати панель
+@msg	docking action contains an unknown panel or an excessive split path	Дія прикріплення містить невідому панель або надто довгий шлях поділів
+@msg	group must be true or false	group має мати значення true або false
+@msg	move requires a destination panel	Для переміщення потрібна цільова панель
+@msg	move requires an existing destination panel	Для переміщення потрібна наявна цільова панель
+@msg	onto must name a floating panel	onto має вказувати плаваючу панель
+@msg	panel group is empty	Група панелей порожня
+@msg	panel must name a registered panel	panel має вказувати зареєстровану панель
+@msg	saved panel layout is invalid; reset the workspace first	Збережене розташування панелей неприпустиме; спочатку скиньте робоче середовище
+@msg	zone must be a string	zone має бути рядком
+@msg	zone must be tab, center, left, right, top or bottom	zone має мати значення tab, center, left, right, top або bottom
+@msg	{key} must be a finite coordinate	{key} має бути скінченною координатою
+@msg	x and y must be provided together	x та y потрібно вказувати разом
+@msg	invalid restored panel group	Відновлена група панелей неприпустима
 
 # Interactive Revolve controls.
 	Lighting	Освітлення
@@ -4074,3 +4158,21 @@ lighting	Light	Світло
 	Stroke Pressure	Натиск мазка
 	Right Diagonal	Діагональ праворуч
 	Left Diagonal	Діагональ ліворуч
+	Vertical Guide	Вертикальна напрямна
+	Horizontal Guide	Горизонтальна напрямна
+	Move Guide to Layer	Перемістити напрямну на шар
+@msg	invalid native panel set	Неприпустимий власний набір панелей
+@msg	missing panel layout	Відсутнє розташування панелей
+@msg	unsupported native docking operation	Непідтримувана власна операція прикріплення
+	Linux Display Server	Дисплейний сервер Linux
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	Початок координат лінійок
+	Reset Ruler Origin	Скинути початок координат лінійок
+	Artistic	Художні
+	Film Grain…	Зернистість плівки…
+	Highlight Area	Область світлих тонів
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	стислий файл розпаковується в обсяг більший, ніж читає VectorCraft ({_1} МБ документа, {_2} МБ на зображення)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	документ завеликий для збереження зі стиском ({0}): збережіть його з вимкненим параметром «Використовувати стиск»
+@msg	the file stopped being read (please report this bug)	читання файлу перервалося (будь ласка, повідомте про цю помилку)
+	Concentric Dividers:	Концентричні розділювачі:
+	Radial Dividers:	Радіальні розділювачі:

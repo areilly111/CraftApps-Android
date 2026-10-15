@@ -2,7 +2,7 @@
 //! Character/Paragraph attributes.
 
 use serde_json::{Value, json};
-use vectorcraft_doc::{Composer, NodeKind};
+use vectorcraft_doc::{Composer, NodeKind, Scaling};
 use vectorcraft_geom::{Rect, Vec2};
 
 use super::*;
@@ -16,7 +16,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Duplicate Artboard",
             ["Window", "Artboards"],
             None,
-            "{index?: n (default: the Artboard tool's artboard), art?: bool (default: the Artboard tool's moveArt option)} copy placed right of the last artboard, with copies of the art fully inside it when `art` (locked and hidden art only with prefs moveLockedWithArtboard) → {index, ids: the art's copies}",
+            "{index?: n (default: the Artboard tool's artboard), art?: bool (default: the Artboard tool's moveArt option), patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} copy placed right of the last artboard, with copies of the art fully inside it when `art` (locked and hidden art only with prefs moveLockedWithArtboard) → {index, ids: the art's copies}",
             has_doc,
             artboard_duplicate
         ),
@@ -43,7 +43,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Character / Paragraph",
             [],
             None,
-            "{ids?|id?, kerning?: 1/1000 em|\"auto\", baselineShift?: pt, hScale?: %, vScale?: %, rotation?: deg, underline?, strikethrough?, allCaps?, smallCaps?: bool, position?: \"normal\"|\"superscript\"|\"subscript\" (sizes from Document Setup), leftIndent?, rightIndent?, firstLineIndent?, spaceBefore?, spaceAfter?: pt (±1296), hyphenate?: bool, mojikumi?: \"none\"|\"lineEndHalf\" (Japanese punctuation spacing), kinsoku?: \"none\"|\"hard\"|\"soft\" (Kinsoku Set: Soft lets 々, ー and small kana start a line), direction?: \"auto\"|\"leftToRight\"|\"rightToLeft\" (paragraph direction; auto: from each paragraph's first strong character), leadingModel?: \"romanBaseline\"|\"emBoxTop\" (leading measured baseline to baseline, or em box top to top), charAlign?: \"romanBaseline\"|\"emBoxTop\"|\"emBoxCenter\"|\"emBoxBottom\"|\"icfTop\"|\"icfBottom\" (where characters smaller than the largest on their line line up with it), burasagari?: \"none\"|\"standard\"|\"forced\" (Paragraph panel menu › Burasagari None/Regular/Force: an East Asian comma or full stop ending an area type line hangs outside it: when it doesn't fit, or always; new type: \"standard\"), composer?: \"singleLine\"|\"everyLine\" (line breaking, Every-line by default), start?: byte, end?: byte} (with a range: the character attributes style that range and the paragraph attributes apply to the paragraphs it touches; without: all the text)",
+            "{ids?|id?, kerning?: 1/1000 em|\"auto\", baselineShift?: pt, hScale?: %, vScale?: %, rotation?: deg, underline?, strikethrough?, allCaps?, smallCaps?: bool, position?: \"normal\"|\"superscript\"|\"subscript\" (sizes from Document Setup), leftIndent?, rightIndent?, firstLineIndent?, spaceBefore?, spaceAfter?: pt (±1296), hyphenate?: bool, mojikumi?: \"none\"|\"lineEndHalf\" (Japanese punctuation spacing), kinsoku?: \"none\"|\"hard\"|\"soft\" (Kinsoku Set: Soft lets 々, ー and small kana start a line), direction?: \"auto\"|\"leftToRight\"|\"rightToLeft\" (paragraph direction; auto: from each paragraph's first strong character), leadingModel?: \"romanBaseline\"|\"emBoxTop\" (leading measured baseline to baseline, or em box top to top), charAlign?: \"romanBaseline\"|\"emBoxTop\"|\"emBoxCenter\"|\"emBoxBottom\"|\"icfTop\"|\"icfBottom\" (where characters smaller than the largest on their line line up with it), proportionalMetrics?: bool (full-width glyphs on the font's proportional widths: `palt` in horizontal type, `vpal` in vertical type), digits?: \"default\"|\"arabic\"|\"hindi\"|\"farsi\" (Character panel menu › Digits: the numeral system every digit is drawn in, whatever was typed), burasagari?: \"none\"|\"standard\"|\"forced\" (Paragraph panel menu › Burasagari None/Regular/Force: an East Asian comma or full stop ending an area type line hangs outside it: when it doesn't fit, or always; new type: \"standard\"), composer?: \"singleLine\"|\"everyLine\" (line breaking, Every-line by default), start?: byte, end?: byte} (baselineShift is in document points and hScale includes the object transform; groups include their text descendants; with a range: the character attributes style that range and the paragraph attributes apply to the paragraphs it touches; without: all the text)",
             has_doc,
             set_format
         ),
@@ -78,6 +78,21 @@ fn board_and_art(s: &Session, p: &Value) -> (usize, bool) {
 
 /// The art that goes with artboard `i` when `art`: the objects fully inside it (locked and hidden
 /// ones only with prefs moveLockedWithArtboard), in paint order.
+/// The artboards `cmd` acts on: `indices` (several), else `index` (one), each an artboard of `d`,
+/// in order and once each.
+pub(crate) fn artboard_indices(d: &vectorcraft_doc::Document, p: &Value, cmd: &str) -> Result<Vec<usize>> {
+    let listed = match (p.get("indices"), p.get("index")) {
+        (Some(v), _) => point_indices(v),
+        (None, Some(i)) => point_indices(&json!([i])),
+        (None, None) => return Err(bad(cmd, "missing index")),
+    };
+    let mut indices =
+        listed.filter(|v| !v.is_empty() && v.iter().all(|i| *i < d.artboards.len())).ok_or_else(|| EngineError::Other("no such artboard".into()))?;
+    indices.sort_unstable();
+    indices.dedup();
+    Ok(indices)
+}
+
 pub(crate) fn artboard_art(s: &Session, i: usize, art: bool) -> Result<Vec<NodeId>> {
     let d = &s.doc()?.doc;
     let rect = d.artboards.get(i).map(|a| a.rect).ok_or_else(|| EngineError::Other("no such artboard".into()))?;
@@ -93,10 +108,10 @@ pub(crate) fn beside_artboards(d: &vectorcraft_doc::Document, rect: Rect) -> Vec
 fn artboard_duplicate(s: &mut Session, p: &Value) -> Result<Value> {
     let (i, art) = board_and_art(s, p);
     let art = artboard_art(s, i, art)?;
-    let scale_strokes = s.prefs.scale_strokes;
+    let sc = Scaling { patterns: super::object::transform_patterns(s, p, &art)?, ..Scaling::default() };
     let (index, ids) = s.edit("Duplicate Artboard", |d, _| {
         let dv = d.artboards.get(i).map(|a| beside_artboards(d, a.rect)).unwrap_or_default();
-        copy_artboard(d, i, dv, &art, scale_strokes)
+        copy_artboard(d, i, dv, &art, sc)
     })?;
     Ok(json!({"index": index, "ids": ids.iter().map(|i| i.0).collect::<Vec<_>>()}))
 }
@@ -137,15 +152,9 @@ pub(crate) fn artboard_copy(s: &mut Session, p: &Value, cut: bool) -> Result<Val
 }
 
 /// Add a copy of artboard `i` moved by `dv`, with copies of its guides and of its `art` (each just
-/// above its original) moved along → (the copy's index, the art's copies). Duplicate Artboards and
-/// Alt-drag.
-pub(crate) fn copy_artboard(
-    d: &mut vectorcraft_doc::Document,
-    i: usize,
-    dv: Vec2,
-    art: &[NodeId],
-    scale_strokes: bool,
-) -> Result<(usize, Vec<NodeId>)> {
+/// above its original) moved along → (the copy's index, the art's copies). When `sc.patterns`, the
+/// pattern tiles of the art's copies move with them. Duplicate Artboards and Alt-drag.
+pub(crate) fn copy_artboard(d: &mut vectorcraft_doc::Document, i: usize, dv: Vec2, art: &[NodeId], sc: Scaling) -> Result<(usize, Vec<NodeId>)> {
     let src = d.artboards.get(i).cloned().ok_or_else(|| EngineError::Other("no such artboard".into()))?;
     let index = push_artboard_copy(d, &src, src.rect + dv);
     // Its guides come along.
@@ -156,7 +165,7 @@ pub(crate) fn copy_artboard(
     for id in art {
         let (Some((parent, at, _)), Some(n)) = (d.position(*id), d.node(*id).cloned()) else { continue };
         let mut c = d.reid(&n);
-        c.transform(Affine::translate(dv), scale_strokes);
+        c.transform(Affine::translate(dv), sc);
         copies.push(d.insert(parent, at + 1, c)?);
     }
     Ok((index, copies))
@@ -185,14 +194,7 @@ const MAX_PARA: f64 = 1296.0;
 
 fn set_format(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "text.setFormat";
-    let ids: Vec<NodeId> = {
-        let ids = targets(s, p)?;
-        let d = &s.doc()?.doc;
-        ids.into_iter().filter(|id| matches!(d.node(*id).map(|n| &n.kind), Some(NodeKind::Text(_)))).collect()
-    };
-    if ids.is_empty() {
-        return Err(bad(C, "no text objects selected"));
-    }
+    let ids = super::typecmd::text_targets(s, p, C)?;
     let num = |k: &str| p.get(k).and_then(Value::as_f64);
     let flag = |k: &str| p.get(k).and_then(Value::as_bool);
     let kerning = match p.get("kerning") {
@@ -222,6 +224,8 @@ fn set_format(s: &mut Session, p: &Value) -> Result<Value> {
         "direction",
         "leadingModel",
         "charAlign",
+        "proportionalMetrics",
+        "digits",
         "burasagari",
         "composer",
     ];
@@ -238,6 +242,7 @@ fn set_format(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let (position, small_caps) = super::docsetup::script_params(p, &s.doc()?.doc.setup, C)?;
     let char_align = super::textedit::char_align_param(p, C)?;
+    let digits = super::textedit::digits_param(p, C)?;
     let mojikumi = match p.get("mojikumi") {
         None => None,
         Some(v) => Some(match v.as_str() {
@@ -282,44 +287,54 @@ fn set_format(s: &mut Session, p: &Value) -> Result<Value> {
         }),
     };
     let range = super::typecmd::TextRange::parse(p, C)?;
+    // The character attributes, given the baseline shift and horizontal scale in the type's own units.
+    let chars = |st: &mut vectorcraft_doc::CharStyle, baseline_shift: Option<f64>, h_scale: Option<f64>| {
+        if let Some(k) = kerning {
+            st.kerning = k;
+        }
+        if let Some(v) = baseline_shift {
+            st.baseline_shift = v;
+        }
+        if let Some(v) = h_scale {
+            st.h_scale = v;
+        }
+        if let Some(v) = num("vScale") {
+            st.v_scale = v.clamp(1.0, 10000.0);
+        }
+        if let Some(v) = num("rotation") {
+            st.rotation = ((v + 180.0).rem_euclid(360.0)) - 180.0;
+        }
+        if let Some(v) = flag("underline") {
+            st.underline = v;
+        }
+        if let Some(v) = flag("strikethrough") {
+            st.strikethrough = v;
+        }
+        if let Some(v) = flag("allCaps") {
+            st.all_caps = v;
+        }
+        if let Some(v) = position {
+            st.position = v;
+        }
+        if let Some(v) = small_caps {
+            st.small_caps = v;
+        }
+        if let Some(v) = char_align {
+            st.char_align = v;
+        }
+        if let Some(v) = digits {
+            st.digits = v;
+        }
+        if let Some(v) = flag("proportionalMetrics") {
+            st.proportional_metrics = v;
+        }
+    };
     s.edit("Character", |d, _| {
         for id in &ids {
             let Some(NodeKind::Text(t)) = d.node_mut(*id).map(|n| &mut n.kind) else { continue };
-            super::typecmd::style_chars(t, range, |st| {
-                if let Some(k) = kerning {
-                    st.kerning = k;
-                }
-                if let Some(v) = num("baselineShift") {
-                    st.baseline_shift = v.clamp(-1296.0, 1296.0);
-                }
-                if let Some(v) = num("hScale") {
-                    st.h_scale = v.clamp(1.0, 10000.0);
-                }
-                if let Some(v) = num("vScale") {
-                    st.v_scale = v.clamp(1.0, 10000.0);
-                }
-                if let Some(v) = num("rotation") {
-                    st.rotation = ((v + 180.0).rem_euclid(360.0)) - 180.0;
-                }
-                if let Some(v) = flag("underline") {
-                    st.underline = v;
-                }
-                if let Some(v) = flag("strikethrough") {
-                    st.strikethrough = v;
-                }
-                if let Some(v) = flag("allCaps") {
-                    st.all_caps = v;
-                }
-                if let Some(v) = position {
-                    st.position = v;
-                }
-                if let Some(v) = small_caps {
-                    st.small_caps = v;
-                }
-                if let Some(v) = char_align {
-                    st.char_align = v;
-                }
-            });
+            let baseline_shift = num("baselineShift").map(|v| super::typecmd::local_type_value(t, v, (-1296.0, 1296.0), false, C)).transpose()?;
+            let h_scale = num("hScale").map(|v| super::typecmd::local_type_value(t, v, (1.0, 10000.0), true, C)).transpose()?;
+            super::typecmd::style_chars(t, range, |st| chars(st, baseline_shift, h_scale));
             let span = super::typecmd::para_span(range, t);
             t.edit_paras(span, |para| {
                 if let Some(v) = num("leftIndent") {
@@ -360,6 +375,12 @@ fn set_format(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             });
             super::typecmd::refresh_bounds(t);
+        }
+        // Graph labels keep a change made to all of their text through the graph being drawn again.
+        if range.is_none() {
+            let shift = num("baselineShift").map(|v| v.clamp(-1296.0, 1296.0));
+            let scale = num("hScale").map(|v| v.clamp(1.0, 10000.0));
+            super::graph::capture_label_styles(d, &ids, &|st| chars(st, shift, scale));
         }
         Ok(())
     })?;

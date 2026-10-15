@@ -82,7 +82,7 @@ fn collect(n: &Node, region: Rect, scale: f64, out: &mut Vec<Area>) {
     if !n.visible || matches!(n.kind, NodeKind::Layer { template: true, .. }) {
         return;
     }
-    let shape = n.attrs.as_deref().filter(|a| !a.url.is_empty()).map(|a| a.image_map).unwrap_or_default();
+    let shape = n.extras().attrs.as_deref().filter(|a| !a.url.is_empty()).map(|a| a.image_map).unwrap_or_default();
     let px = |x: f64, y: f64| [((x - region.x0) * scale).round() as i64, ((y - region.y0) * scale).round() as i64];
     if let (Some(href), Some(b)) = (n.url(), n.visual_bounds().filter(|b| b.overlaps(region)))
         && shape != ImageMap::None

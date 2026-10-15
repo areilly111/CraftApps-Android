@@ -138,7 +138,9 @@ pub(crate) fn decode(t: &Tiff, limits: &Limits) -> Result<Sensor> {
     if is_cfa && samples != 1 {
         return Err(RawError::unsupported(format!("CFA data with {samples} samples per pixel")));
     }
-    if !is_cfa && samples != 3 {
+    // LinearRaw: three colour samples, or one for a monochrome camera or scanner (DNG 1.7,
+    // ColorPlanes 1: Leica Monochrom, VueScan film scans).
+    if !is_cfa && samples != 1 && samples != 3 {
         return Err(RawError::unsupported(format!("LinearRaw data with {samples} samples per pixel")));
     }
     let active = rect_from(t, &raw, plane.width, plane.height);
@@ -242,7 +244,8 @@ pub(crate) fn decode(t: &Tiff, limits: &Limits) -> Result<Sensor> {
     }
 
     let color = color_info(t, &ifd0);
-    if color.calibrations.is_empty() {
+    // A monochrome image has no colour to calibrate: it develops as neutral grey.
+    if color.calibrations.is_empty() && (is_cfa || samples != 1) {
         warnings.push("the DNG has no colour matrix; colours are approximate".to_string());
     }
     let baseline_exposure = t.tag_floats(&ifd0, tag::BASELINE_EXPOSURE).first().copied().unwrap_or(0.0)
@@ -268,6 +271,7 @@ pub(crate) fn decode(t: &Tiff, limits: &Limits) -> Result<Sensor> {
         baseline_exposure: if baseline_exposure.is_finite() { baseline_exposure.clamp(-10.0, 10.0) } else { 0.0 },
         gain_maps,
         tone_curve: Vec::new(),
+        black_point: 0.0,
         warnings,
     })
 }

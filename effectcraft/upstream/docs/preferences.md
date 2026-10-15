@@ -57,10 +57,12 @@ Commands (CLI, MCP, control channel):
 - `appearance.appearanceMode`: Appearance Mode (`auto` / `dark` / `light`). `auto` (Sync with System) follows the operating system's light or dark appearance while the app runs: on Linux the desktop app reads the XDG desktop portal (`org.freedesktop.appearance` `color-scheme`) once and then listens for its `SettingChanged` signal on a worker thread, repainting only when the value changes (nothing polls); `gsettings` runs at most once at start-up, by absolute path, when the portal gives no answer. Elsewhere it uses what the window system reports. With no answer it shows the dark theme. New installs stay `dark`; Sync with System is opt-in. The Tools bar's appearance button (a monitor, sun or moon) cycles Sync with System, Light and Dark (`view.theme.toggle`, Next Appearance Mode).
 - `appearance.darkTheme`: Dark Theme (`dark` / `darker`), shown in dark appearance
 - `appearance.lightTheme`: Light Theme (`light`), shown in light appearance. Settings ▸ Appearance shows the mode above a light and a dark theme card, each with a preview of the EffectCraft window in that theme.
+- `appearance.favoriteThemes`: a list of unique theme ids (`dark`, `darker`, `light`), empty by default. Hover a theme row to star it; saved favorites keep an accent-colored star. Right-click the appearance button for Appearance Settings and favorites grouped light first, then dark. Selecting a favorite fixes its appearance family and preserves the opposite family choice; left-click still cycles modes. Settings OK saves favorites and Cancel restores them. Unknown or duplicate ids are rejected by `prefs.set` and removed when loading old settings.
 - `appearance.theme`: the single theme from before appearance modes, kept for older settings files and automation. A saved file with only `theme` loads as a fixed Dark or Light mode showing it; setting it (`prefs.set`, `ui.set {"theme": …}`, `view.theme.dark|darker|light`) selects that theme and fixes the mode to its family. While the mode is Dark or Light it mirrors the theme in use.
 - `appearance.brightness`: Brightness
-- `appearance.uiScale`: UI Scale, the size of the whole interface (75–200 %, on top of the
-  display's own scaling), applied as soon as it is chosen
+- `appearance.uiScale`: UI Scale, the size of the whole interface (any whole percentage from
+  75 to 200, on top of the display's own scaling), dragged or typed; it applies as soon as it is
+  dragged or entered
 - `appearance.useLabelColorForHandles`: Use Label Color for Layer Handles and Paths
 - `grids.gridColor`: Color
 - `grids.gridSpacing`: Gridline Every
@@ -94,7 +96,9 @@ Commands (CLI, MCP, control channel):
   how much of a position motion path the viewer draws (all, none, N seconds or N keyframes
   around the current time)
 - `previews.showInternalWireframes`: outlines of the layers inside a selected collapsed precomp
-- `previews.zoomQuality`: Faster = nearest-neighbour viewer scaling, More Accurate = bilinear
+- `previews.zoomQuality`: Faster = nearest-neighbour viewer scaling, More Accurate = averaged
+  (bilinear, mipmapped) when the frame is shown below 100 %; magnified frames show their pixels as
+  blocks in both modes, and the frame sits on the physical pixel grid, so 100 % is exact
 - `previews.displayProfile`: the monitor's colour space for View ▸ Use Display Color Management
 - `appearance.useLabelColorForTabs`: Composition / Timeline tabs show the comp's label colour,
   Effect Controls / Properties the layer's
@@ -223,3 +227,17 @@ checkpoint after a client restart.
 
 Commands: `file.autoSave` (now), `file.recoveryInfo`, `file.openRecent {index? | path?}`,
 `file.clearRecent`, `file.revert`, `file.incrementAndSave`.
+
+## Logs
+
+The desktop app writes its log records to standard error and to `Logs/effectcraft.log` in the
+config directory. Each launch moves the previous log to `effectcraft.1.log` (and that one to
+`effectcraft.2.log`), so the log of a run that crashed survives the next start; a log stops
+growing at 16 MiB. A launch from the Dock, the Start menu or a launcher has no terminal, so
+attach these files to a bug report. Help ▸ Reveal Logging File shows this run's log (or Help ▸
+Enable Logging's `EffectCraft Log.txt` while that is on, which keeps every EffectCraft record
+across launches).
+
+By default the log has `info` records from EffectCraft and warnings and errors from everything
+else. `RUST_LOG` replaces that with env_logger-style directives: `debug`,
+`warn,effectcraft_render=trace`, `wgpu_core=info`. The control-channel token is never logged.

@@ -2,7 +2,9 @@
 //!
 //! Drag draws (Shift constrains to square/circle/45°, Alt draws from the centre, Space held moves
 //! the shape being drawn); a click without a drag asks the UI for the size dialog (like
-//! Illustrator). ↑/↓ during a polygon/star drag change the side/point count. The start point and
+//! Illustrator). ↑/↓ during a polygon/star drag change the side/point count; during a star drag,
+//! Ctrl/Cmd keeps the inner radius where it is while the outer one follows the pointer, and Alt
+//! keeps the star's shoulders straight (#812). The start point and
 //! the dragged corner snap to Smart Guides ([`DrawSnap`]), hovering before the press too.
 
 use serde_json::{Value, json};
@@ -22,7 +24,17 @@ pub struct ShapeTool {
     pub corner_radius: f64,
     /// Star inner radius as a fraction of the outer radius.
     pub star_ratio: f64,
+    /// The star's inner radius held while Ctrl/Cmd is down in a drag.
+    inner: Option<f64>,
     snap: DrawSnap,
+}
+
+/// The inner-to-outer radius ratio that keeps a star of `points` points' shoulders straight (each
+/// point's sides in line with the next points' sides: a regular star polygon {n/2}); none for
+/// fewer than five points, whose shoulders can't line up.
+fn straight_ratio(points: u32) -> Option<f64> {
+    let n = f64::from(points);
+    (points >= 5).then(|| (2.0 * std::f64::consts::PI / n).cos() / (std::f64::consts::PI / n).cos())
 }
 
 impl ShapeTool {
@@ -45,7 +57,25 @@ impl ShapeTool {
             points: 5,
             corner_radius: 12.0,
             star_ratio: 0.5,
+            inner: None,
             snap: DrawSnap::default(),
+        }
+    }
+
+    /// Ctrl/Cmd in a star drag from `start` to `p`: the inner radius stays as it was when the key
+    /// went down, so the ratio follows the outer radius (and stays so once the key is let go).
+    fn hold_inner(&mut self, start: Point, p: Point, m: Mods) {
+        let outer = (p - start).hypot();
+        match (m.cmd, self.inner) {
+            (true, None) => self.inner = Some(outer * self.star_ratio),
+            (false, Some(_)) => self.inner = None,
+            _ => {}
+        }
+        if let Some(inner) = self.inner
+            && outer > 0.0
+            && (inner / outer).is_finite()
+        {
+            self.star_ratio = (inner / outer).clamp(0.01, 1.0);
         }
     }
 
@@ -81,9 +111,10 @@ impl ShapeTool {
                 if self.id == "polygon" {
                     ("shape.polygon".into(), json!({ "cx": start.x, "cy": start.y, "radius": r, "sides": self.sides, "rotation": rot }))
                 } else {
+                    let ratio = if m.alt { straight_ratio(self.points).unwrap_or(self.star_ratio) } else { self.star_ratio };
                     (
                         "shape.star".into(),
-                        json!({ "cx": start.x, "cy": start.y, "radius1": r, "radius2": r * self.star_ratio, "points": self.points, "rotation": rot }),
+                        json!({ "cx": start.x, "cy": start.y, "radius1": r, "radius2": r * ratio, "points": self.points, "rotation": rot }),
                     )
                 }
             }
@@ -147,6 +178,9 @@ impl Tool for ShapeTool {
                 space_moves(&mut s, &mut self.last, ev, self.began);
                 self.start = Some(s);
                 self.mods = ev.mods;
+                if self.id == "star" {
+                    self.hold_inner(s, ev.pos, ev.mods);
+                }
                 let mut out = vec![];
                 if !self.began {
                     if ev.pos.distance(s) < cx.tol(2.0) {
@@ -162,6 +196,7 @@ impl Tool for ShapeTool {
             PointerKind::Up => {
                 let Some(s) = self.start.take() else { return vec![] };
                 self.snap.clear();
+                self.inner = None;
                 if self.began {
                     self.began = false;
                     vec![Action::Commit]
@@ -288,6 +323,38 @@ mod tests {
         t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 80.0, 50.0));
         let a = t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 90.0, 60.0).with_mods(space));
         assert!(matches!(a.last(), Some(Action::Preview(_, v)) if v["cx"] == 60.0 && v["cy"] == 60.0), "{a:?}");
+    }
+
+    /// During a star drag, Ctrl/Cmd keeps the inner radius while the outer one follows the pointer
+    /// (the new ratio stays once the key is let go), and Alt keeps the shoulders straight (#812).
+    #[test]
+    fn a_star_drag_holds_its_inner_radius_with_ctrl_and_straightens_with_alt() {
+        let (d, _) = doc_with_rect();
+        let s = Selection::default();
+        let p = paint();
+        let cx = cx(&d, &s, &p);
+        let radii = |a: &[Action]| match a.last() {
+            Some(Action::Preview(_, v)) => (v["radius1"].as_f64().unwrap(), v["radius2"].as_f64().unwrap()),
+            other => panic!("{other:?}"),
+        };
+        let ctrl = Mods { cmd: true, ..Default::default() };
+        let mut t = ShapeTool::new("star");
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 50.0, 50.0));
+        let (r1, r2) = radii(&t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 90.0, 50.0)));
+        assert_eq!((r1, r2), (40.0, 20.0));
+        // Ctrl: the inner radius stays 20 as the outer one grows to 80.
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 90.0, 50.0).with_mods(ctrl));
+        let (r1, r2) = radii(&t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 130.0, 50.0).with_mods(ctrl)));
+        assert!((r1 - 80.0).abs() < 1e-9 && (r2 - 20.0).abs() < 1e-9, "{r1} {r2}");
+        // Let go: the ratio (a quarter) stays.
+        let (r1, r2) = radii(&t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 150.0, 50.0)));
+        assert!((r2 / r1 - 0.25).abs() < 1e-9, "{r1} {r2}");
+        // Alt: straight shoulders, about 0.382 for five points.
+        let alt = Mods { alt: true, ..Default::default() };
+        let (r1, r2) = radii(&t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 150.0, 50.0).with_mods(alt)));
+        assert!((r2 / r1 - 0.381_966).abs() < 1e-5, "{}", r2 / r1);
+        assert_eq!(straight_ratio(4), None, "four points can't line up");
+        assert_eq!(t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 150.0, 50.0)), vec![Action::Commit]);
     }
 
     #[test]

@@ -8,7 +8,8 @@
 //!   the click); click inside a mesh or a mesh envelope → `object.mesh.addLine` (a gradient mesh's
 //!   new point takes the current fill colour unless Shift); drag a mesh point, or a handle of the
 //!   point last clicked → `object.mesh.movePoint` previews ([`MeshEdit`]); Alt-click a mesh point →
-//!   `object.mesh.deletePoint`.
+//!   `object.mesh.deletePoint`. Clicking a gradient mesh's point selects the mesh, and the next
+//!   solid fill colour recolours just that point.
 
 use serde_json::json;
 use vectorcraft_color::Paint;
@@ -183,7 +184,14 @@ impl Tool for MeshTool {
                         self.edit.unfocus();
                         return vec![Action::Exec("object.mesh.deletePoint".into(), json!({"id": g.id.0, "index": g.index}))];
                     }
-                    return self.edit.press(g);
+                    // A gradient mesh's point is picked for the next fill colour, so its mesh is
+                    // what gets selected.
+                    let mut out = vec![];
+                    if cx.selection.objects != [g.id] && cx.doc.node(g.id).is_some_and(|n| matches!(n.kind, NodeKind::Mesh(_))) {
+                        out.push(Action::Exec("select.set".into(), json!({"ids": [g.id.0]})));
+                    }
+                    out.extend(self.edit.press(g));
+                    return out;
                 }
                 self.edit.unfocus();
                 let Some((top, leaf)) = hit_top(cx, p) else { return vec![] };
@@ -235,6 +243,9 @@ impl Tool for MeshTool {
             Some(_) => Cursor::Move,
             None => Cursor::PenAdd,
         }
+    }
+    fn options(&self) -> serde_json::Value {
+        self.edit.options()
     }
     fn busy(&self) -> bool {
         self.edit.dragging()

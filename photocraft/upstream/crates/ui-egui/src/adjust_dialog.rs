@@ -28,30 +28,33 @@ fn picker(value: Option<&Value>) -> Option<photocraft_engine::adjust_params::Cur
     }
 }
 
-fn picker_supported(mode: photocraft_doc::ColorMode, eyedropper: photocraft_engine::adjust_params::CurvesEyedropper) -> bool {
+pub(crate) fn picker_supported(mode: photocraft_doc::ColorMode, eyedropper: photocraft_engine::adjust_params::CurvesEyedropper) -> bool {
     use photocraft_engine::adjust_params::CurvesEyedropper;
     mode == photocraft_doc::ColorMode::Rgb || (mode == photocraft_doc::ColorMode::Grayscale && eyedropper != CurvesEyedropper::NeutralGray)
 }
 
-fn is_curves(fields: &Map<String, Value>) -> bool {
-    fields.get("__adjust").and_then(Value::as_str) == Some("curves")
+/// The kind of an adjustment dialog with Set Black/Neutral Gray/White Point eyedroppers (Levels,
+/// Curves), if `fields` are one.
+fn picker_kind(fields: &Map<String, Value>) -> Option<&str> {
+    fields.get("__adjust").and_then(Value::as_str).filter(|k| matches!(*k, "levels" | "curves"))
 }
 
-/// Whether the top modal has a supported Curves eyedropper armed.
+/// Whether the top modal has a supported Levels or Curves eyedropper armed.
 pub fn picker_armed(app: &PhotocraftApp) -> bool {
-    let Some(dialog) = app.ui.dialogs.last().filter(|d| is_curves(&d.fields)) else { return false };
+    let Some(dialog) = app.ui.dialogs.last().filter(|d| picker_kind(&d.fields).is_some()) else { return false };
     let Some(eyedropper) = picker(dialog.fields.get(CURVE_PICKER)) else { return false };
     app.session.active().is_some_and(|s| picker_supported(s.doc.mode, eyedropper))
 }
 
 /// Sample the committed merged document through the regular canvas sampler and update only the
-/// open Curves dialog. Returns true when an armed Curves picker consumed the pointer event, even
-/// if the point was outside the image or transparent.
+/// open Levels or Curves dialog. Returns true when an armed picker consumed the pointer event,
+/// even if the point was outside the image or transparent.
 pub fn sample_at(app: &mut PhotocraftApp, x: f64, y: f64) -> bool {
-    let Some((id, eyedropper, base)) = app.ui.dialogs.last().and_then(|dialog| {
-        let eyedropper = is_curves(&dialog.fields).then(|| picker(dialog.fields.get(CURVE_PICKER))).flatten()?;
+    let Some((id, kind, eyedropper, base)) = app.ui.dialogs.last().and_then(|dialog| {
+        let kind = picker_kind(&dialog.fields)?.to_string();
+        let eyedropper = picker(dialog.fields.get(CURVE_PICKER))?;
         let base = dialog.fields.get(CURVE_PICKER_BASE).cloned().unwrap_or_else(|| crate::filter_dialog::params_of(&dialog.fields));
-        Some((dialog.id, eyedropper, base))
+        Some((dialog.id, kind, eyedropper, base))
     }) else {
         return false;
     };
@@ -60,7 +63,7 @@ pub fn sample_at(app: &mut PhotocraftApp, x: f64, y: f64) -> bool {
         return true;
     }
     let Some(sample) = crate::canvas::composite_color(app, x, y) else { return true };
-    let params = match photocraft_engine::adjust_params::curves_eyedropper(&base, eyedropper, sample, mode) {
+    let params = match photocraft_engine::adjust_params::adjustment_eyedropper(&kind, &base, eyedropper, sample, mode) {
         Ok(adjustment) => photocraft_engine::adjust_params::to_params(&adjustment),
         Err(error) => {
             app.ui.status = error.to_string();
@@ -76,7 +79,7 @@ pub fn sample_at(app: &mut PhotocraftApp, x: f64, y: f64) -> bool {
     true
 }
 
-fn picker_button(ui: &mut egui::Ui, selected: bool, enabled: bool, tooltip: &str, color: egui::Color32) -> egui::Response {
+pub(crate) fn picker_button(ui: &mut egui::Ui, selected: bool, enabled: bool, tooltip: &str, color: egui::Color32) -> egui::Response {
     let response = ui.add_enabled_ui(enabled, |ui| crate::icons::button(ui, "pipette", 28.0, selected, tooltip)).inner;
     let tokens = crate::theme::Tokens::get(ui.ctx());
     ui.painter().circle_filled(response.rect.right_bottom() - egui::vec2(5.5, 5.5), 3.5, color);
@@ -85,7 +88,7 @@ fn picker_button(ui: &mut egui::Ui, selected: bool, enabled: bool, tooltip: &str
     response
 }
 
-fn curves_picker_controls(ui: &mut egui::Ui, fields: &mut Map<String, Value>, mode: photocraft_doc::ColorMode) {
+fn picker_controls(ui: &mut egui::Ui, fields: &mut Map<String, Value>, mode: photocraft_doc::ColorMode) {
     use photocraft_engine::adjust_params::CurvesEyedropper;
     let current = picker(fields.get(CURVE_PICKER));
     let mut chosen = None;
@@ -131,19 +134,33 @@ fn dialog_mem(kind: &str) -> egui::Id {
     egui::Id::new(("adjust-dialog", kind))
 }
 
-/// Whether holding Alt turns the dialog's Cancel into Reset. Measured in Photoshop 25.4 for Color
-/// Balance; other kinds keep Cancel until checked against Photoshop.
+/// Whether holding Alt turns Cancel into Reset for this adjustment dialog (every kind).
 pub fn resets(fields: &Map<String, Value>) -> bool {
-    fields.get("__adjust").and_then(Value::as_str) == Some("colorBalance")
+    owns(fields)
 }
 
-/// Alt+Cancel (Reset): back to the defaults Photoshop's Reset restores, dialog stays open.
-pub fn reset(ctx: &egui::Context, fields: &mut Map<String, Value>) {
-    if !resets(fields) {
+/// Alt+Cancel (Reset): engine defaults for the kind; Color Balance keeps Preserve Luminosity and
+/// shows Midtones (Photoshop 25.4). Dialog stays open.
+pub fn reset(app: &PhotocraftApp, ctx: &egui::Context, fields: &mut Map<String, Value>) {
+    if !owns(fields) {
         return;
     }
+    let kind = fields.get("__adjust").and_then(Value::as_str).unwrap_or_default().to_string();
+    let mode = app.session.active().map_or(photocraft_doc::ColorMode::Rgb, |s| s.doc.mode);
+    // Color Balance: Photoshop keeps the user's Preserve Luminosity across Reset.
+    let preserve = if kind == "colorBalance" { fields.get("preserveLuminosity").cloned() } else { None };
+    let Ok(defaults) = photocraft_engine::adjust_params::default_for(&kind, mode) else { return };
+    let values = photocraft_engine::adjust_params::to_params(&defaults);
+    // Replace parameter keys; keep private `__` chrome (preview, command, …).
+    fields.retain(|k, _| k.starts_with("__"));
+    if let Value::Object(v) = values {
+        fields.extend(v);
+    }
+    if let Some(p) = preserve {
+        fields.insert("preserveLuminosity".into(), p);
+    }
     let mut values = crate::filter_dialog::params_of(fields);
-    adjust_editors::reset_color_balance(ctx, dialog_mem("colorBalance"), &mut values);
+    adjust_editors::reset_adjustment_editor(ctx, &kind, dialog_mem(&kind), &mut values);
     if let Value::Object(v) = values {
         fields.extend(v);
     }
@@ -171,8 +188,8 @@ pub fn open(app: &mut PhotocraftApp, command: &str) -> Option<u64> {
 pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, fields: &mut Map<String, Value>) {
     let kind = fields.get("__adjust").and_then(Value::as_str).unwrap_or_default().to_string();
     let mode = app.session.active().map_or(photocraft_doc::ColorMode::Rgb, |s| s.doc.mode);
-    if kind == "curves" {
-        curves_picker_controls(ui, fields, mode);
+    if matches!(kind.as_str(), "levels" | "curves") {
+        picker_controls(ui, fields, mode);
         ui.add_space(4.0);
     }
     let mut values = crate::filter_dialog::params_of(fields);
@@ -189,6 +206,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, fields: &mut Map<String,
         swatches: adjust_editors::swatches(app),
         gradients: adjust_editors::gradient_presets(app, &kind),
         dialog: true,
+        dynamic_color_sliders: app.session.prefs().interface.dynamic_color_sliders,
     };
     let e = adjust_editors::editor(ui, &kind, &mut values, &cx);
     if e.changed
@@ -386,16 +404,29 @@ mod tests {
         assert!(h.state().ui.dialogs.is_empty(), "Cancel closes");
     }
 
-    /// Alt+Cancel is Reset only where it was checked against Photoshop.
+    /// Every adjustment kind opts into Alt+Reset; Levels restores engine defaults and stays open.
     #[test]
-    fn other_adjustment_dialogs_keep_cancel_under_alt() {
+    fn levels_alt_reset_restores_defaults() {
         use egui_kittest::kittest::Queryable;
         let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(|ui, app| crate::dialogs::show(app, ui.ctx()), app_with_image());
         PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
-        open(h.state_mut(), "image.adjustments.levels").unwrap();
-        h.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
-        h.run_steps(3);
+        let id = open(h.state_mut(), "image.adjustments.levels").unwrap();
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.insert("inBlack".into(), json!(30));
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.insert("gamma".into(), json!(1.3));
+        h.run_steps(2);
         assert!(h.query_by_label("Cancel").is_some() && h.query_by_label("Reset").is_none());
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
+        h.run_steps(2);
+        let reset = h.get_by_label("Reset").rect();
+        assert!(h.query_by_label("Cancel").is_none());
+        let click =
+            |pressed| egui::Event::PointerButton { pos: reset.center(), button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::ALT };
+        input(&mut h, egui::Modifiers::ALT, &[egui::Event::PointerMoved(reset.center()), click(true), click(false)]);
+        assert!(h.state().ui.dialogs.iter().any(|d| d.id == id), "Reset keeps the dialog open");
+        let defaults =
+            photocraft_engine::adjust_params::to_params(&photocraft_engine::adjust_params::default_for("levels", photocraft_doc::ColorMode::Rgb).unwrap());
+        assert_eq!(field(&h, id, "inBlack"), defaults["inBlack"]);
+        assert_eq!(field(&h, id, "gamma"), defaults["gamma"]);
     }
 
     fn sample_params(kind: &str) -> Value {
@@ -433,6 +464,67 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&before, &after));
         assert!(harness.state().ui.dialogs.is_empty());
     }
+
+    #[test]
+    fn gradient_map_dialog_handles_preview_without_committing_until_ok() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(|ui, app| crate::dialogs::show(app, ui.ctx()), app_with_image());
+        PhotocraftApp::setup_context(&h.ctx, Default::default());
+        let id = open(h.state_mut(), "image.adjustments.gradientMap").unwrap();
+        h.run_steps(4);
+        let doc = h.state().session.active().unwrap().doc.clone();
+        let steps = h.state().session.active().unwrap().history.past_len();
+        let strip = h.get_by_label("Gradient stops").rect();
+        let start = egui::pos2(strip.left() + 8.0, strip.top() + 36.0);
+        let to = start + egui::vec2((strip.width() - 16.0) * 0.3, 0.0);
+        h.hover_at(start);
+        h.run_steps(1);
+        h.drag_at(start);
+        h.run_steps(1);
+        h.hover_at(to);
+        h.run_steps(1);
+        h.drop_at(to);
+        h.run_steps(3);
+        let stops = h.state().ui.dialogs[0].fields["stops"].as_array().unwrap();
+        assert!((stops[0][0].as_f64().unwrap() - 0.3).abs() < 0.001);
+        assert!(std::sync::Arc::ptr_eq(&doc, &h.state().session.active().unwrap().doc), "dialog edits are previews");
+        assert_eq!(h.state().session.active().unwrap().history.past_len(), steps);
+        crate::dialogs::confirm(h.state_mut(), id).unwrap();
+        h.run_steps(2);
+        assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1);
+        h.state_mut().run("edit.undo", json!({})).unwrap();
+        assert_eq!(*h.state().session.active().unwrap().doc, *doc);
+    }
+    #[test]
+    fn curves_pencil_drag_draws_the_map_and_confirm_applies_it() {
+        let mut h = Harness::builder().with_size(egui::vec2(1200.0, 900.0)).build_ui_state(|ui, app| crate::dialogs::show(app, ui.ctx()), app_with_image());
+        PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+        let steps = h.state().session.active().unwrap().history.past_len();
+        let id = open(h.state_mut(), "image.adjustments.curves").unwrap();
+        let fields = &mut h.state_mut().ui.dialog_mut(id).unwrap().fields;
+        fields.insert("pencil".into(), json!(true));
+        fields.insert("points".into(), json!((0..256).collect::<Vec<_>>()));
+        h.run_steps(4);
+        let graph = h.ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(("adjust-dialog", "curves")).with("curves-graph"))).unwrap();
+        let at = |i: f32, o: f32| egui::pos2(graph.left() + i / 255.0 * graph.width(), graph.bottom() - o / 255.0 * graph.height());
+        h.hover_at(at(64.0, 200.0));
+        h.run_steps(1);
+        h.drag_at(at(64.0, 200.0));
+        h.run_steps(1);
+        for i in [100.0, 150.0, 192.0] {
+            h.hover_at(at(i, 200.0));
+            h.run_steps(1);
+        }
+        h.drop_at(at(192.0, 200.0));
+        h.run_steps(3);
+        let map = h.state().ui.dialogs[0].fields["points"].as_array().unwrap().clone();
+        assert_eq!(map.len(), 256);
+        assert!((70..185).all(|k| (map[k].as_f64().unwrap() - 200.0).abs() < 3.0), "{map:?}");
+        assert_eq!(map[20].as_f64(), Some(20.0), "outside the stroke the map is untouched");
+        crate::dialogs::confirm(h.state_mut(), id).unwrap();
+        assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1);
+    }
+
     #[test]
     fn curves_pointer_drag_previews_until_confirm_and_cancel_preserves_document() {
         for confirm in [false, true] {
@@ -493,6 +585,21 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&st.doc, &original));
         assert_eq!(st.revision, revision);
         assert_eq!(st.history.past_len(), steps);
+    }
+
+    /// #3116: the Levels dialog's Set White Point moves each channel's input white to the sample
+    /// (#b04020) and leaves the document alone until OK.
+    #[test]
+    fn levels_white_point_eyedropper_sets_the_channel_input_whites() {
+        let mut app = app_with_image();
+        let original = app.session.active().unwrap().doc.clone();
+        let id = open(&mut app, "image.adjustments.levels").unwrap();
+        arm(&mut app, id, "white");
+        assert!(picker_armed(&app));
+        assert!(sample_at(&mut app, 8.0, 8.0));
+        let in_white = |key: &str| app.ui.dialogs.last().and_then(|d| d.fields.get(key)).and_then(|c| c.get("inWhite")).and_then(Value::as_f64);
+        assert_eq!([in_white("red"), in_white("green"), in_white("blue")], [Some(176.0), Some(64.0), Some(32.0)]);
+        assert!(std::sync::Arc::ptr_eq(&app.session.active().unwrap().doc, &original));
     }
 
     #[test]

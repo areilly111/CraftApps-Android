@@ -17,6 +17,54 @@ pub fn is_identity_curve(points: &[CurvePoint]) -> bool {
     }
 }
 
+/// Entries in a pencil-drawn Curves map (one per 8-bit level, as in PSD `curv` maps).
+pub const CURVE_MAP_LEN: usize = 256;
+
+/// A pencil-mode curve from its map: `outputs[k]` (0..=1) is the output at input `k / 255`.
+/// Missing entries repeat the last one; extra entries are ignored.
+pub fn curve_map(outputs: &[f32]) -> Vec<CurvePoint> {
+    let last = (CURVE_MAP_LEN - 1) as f32;
+    let mut prev = 0.0;
+    (0..CURVE_MAP_LEN)
+        .map(|k| {
+            let out = outputs.get(k).copied().filter(|v| v.is_finite()).map_or(prev, |v| v.clamp(0.0, 1.0));
+            prev = out;
+            CurvePoint { input: k as f32 / last, output: out }
+        })
+        .collect()
+}
+
+/// The [`CURVE_MAP_LEN`] outputs (0..=1) of `points` read as a pencil-mode curve: straight
+/// segments between the points, constant outside the first/last (identity without two points).
+pub fn curve_map_outputs(points: &[CurvePoint]) -> Vec<f32> {
+    let mut pts: Vec<(f32, f32)> = points.iter().filter(|p| p.input.is_finite() && p.output.is_finite()).map(|p| (p.input, p.output)).collect();
+    pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let last = (CURVE_MAP_LEN - 1) as f32;
+    (0..CURVE_MAP_LEN)
+        .map(|k| {
+            let x = k as f32 / last;
+            let y = match (pts.first(), pts.last()) {
+                (Some(a), Some(b)) if pts.len() >= 2 => {
+                    if x <= a.0 {
+                        a.1
+                    } else if x >= b.0 {
+                        b.1
+                    } else {
+                        let i = pts.partition_point(|p| p.0 < x);
+                        match (pts.get(i.wrapping_sub(1)), pts.get(i)) {
+                            (Some(p0), Some(p1)) if p1.0 > p0.0 => p0.1 + (p1.1 - p0.1) * (x - p0.0) / (p1.0 - p0.0),
+                            (_, Some(p1)) => p1.1,
+                            _ => b.1,
+                        }
+                    }
+                }
+                _ => x,
+            };
+            y.clamp(0.0, 1.0)
+        })
+        .collect()
+}
+
 /// Number of values in the table of a `size`³ Color Lookup (`size³ × 3`). `None` for a size
 /// below 2 or one whose table length overflows: a stored document's size is untrusted.
 pub fn lut3d_len(size: u32) -> Option<usize> {
@@ -136,7 +184,8 @@ pub enum Adjustment {
         contrast: f32,
         legacy: bool,
     },
-    /// Composite channel first, then R, G, B (or the channels `space` names).
+    /// R, G, B (or the channels `space` names) first, then the master (composite) record.
+    /// In CMYK this also applies to `black`; in Lab the master is ignored.
     Levels {
         master: LevelsChannel,
         per_channel: [LevelsChannel; 3],
@@ -146,7 +195,8 @@ pub enum Adjustment {
         #[serde(default)]
         black: LevelsChannel,
     },
-    /// Master curve then R, G, B curves (or the channels `space` names).
+    /// R, G, B curves (or the channels `space` names) first, then the master (composite) curve.
+    /// In CMYK this also applies to `black`; in Lab the master is ignored.
     Curves {
         master: Vec<CurvePoint>,
         per_channel: [Vec<CurvePoint>; 3],
@@ -155,6 +205,11 @@ pub enum Adjustment {
         /// The black ink curve when `space` is [`ToneSpace::Cmyk`] (empty = identity).
         #[serde(default)]
         black: Vec<CurvePoint>,
+        /// Drawn with the pencil (Photoshop's "Draw to modify the curve", PSD `curv` map form):
+        /// every curve is a [`CURVE_MAP_LEN`]-entry map (see [`curve_map`]) evaluated
+        /// piecewise-linearly instead of a spline through its points.
+        #[serde(default)]
+        pencil: bool,
     },
     Exposure {
         exposure: f32,
@@ -262,7 +317,7 @@ impl Adjustment {
 
     pub fn identity_curves() -> Self {
         let line = || vec![CurvePoint { input: 0.0, output: 0.0 }, CurvePoint { input: 1.0, output: 1.0 }];
-        Adjustment::Curves { master: line(), per_channel: [line(), line(), line()], space: ToneSpace::Rgb, black: Vec::new() }
+        Adjustment::Curves { master: line(), per_channel: [line(), line(), line()], space: ToneSpace::Rgb, black: Vec::new(), pencil: false }
     }
 
     pub fn identity_levels() -> Self {
@@ -298,7 +353,7 @@ mod tests {
         let a: Adjustment = serde_json::from_str(r#"{"HueSaturation":{"hue":1.0,"saturation":2.0,"lightness":3.0,"colorize":false}}"#).unwrap();
         assert!(matches!(a, Adjustment::HueSaturation { ranges, .. } if ranges == HueRange::defaults()));
         let c: Adjustment = serde_json::from_str(r#"{"Curves":{"master":[],"per_channel":[[],[],[]]}}"#).unwrap();
-        assert!(matches!(c, Adjustment::Curves { space: ToneSpace::Rgb, .. }));
+        assert!(matches!(c, Adjustment::Curves { space: ToneSpace::Rgb, pencil: false, .. }));
         let g: Adjustment = serde_json::from_str(r#"{"GradientMap":{"stops":[],"reverse":true}}"#).unwrap();
         assert!(matches!(g, Adjustment::GradientMap { dither: false, .. }));
     }

@@ -40,7 +40,7 @@ fn enveloped(s: &mut Session, cmd: &str, params: Value) -> (NodeId, NodeId) {
 
 fn kind(s: &Session, id: NodeId) -> EnvelopeKind {
     match node(s, id).kind {
-        NodeKind::Envelope { kind, .. } => kind,
+        NodeKind::Envelope { kind, .. } => *kind,
         k => panic!("{k:?}"),
     }
 }
@@ -50,6 +50,14 @@ fn options(s: &Session, id: NodeId) -> (EnvelopeOptions, f64) {
         NodeKind::Envelope { options, fidelity, .. } => (options, fidelity),
         k => panic!("{k:?}"),
     }
+}
+
+/// `bytes` without the lines that depend on when the file was written: the EPS and PDF dates, and
+/// a PDF's XMP packet (one line, with its dates and IDs) and trailer `/ID`.
+fn undated(bytes: &[u8]) -> Vec<u8> {
+    let stamps: [&[u8]; 5] = [b"CreationDate", b"ModDate", b"xmp:CreateDate", b"xmp:ModifyDate", b"/ID["];
+    let dated = |line: &&[u8]| stamps.iter().any(|s| line.windows(s.len()).any(|w| w == *s));
+    bytes.split(|b| *b == b'\n').filter(|l| !dated(l)).flat_map(|l| l.iter().copied().chain(*b"\n")).collect()
 }
 
 #[test]
@@ -122,7 +130,7 @@ fn release_gives_back_the_warp_shape_as_a_mesh_and_keeps_the_transparency() {
     s.execute("transparency.set", &json!({"opacity": 40, "blend": "multiply"})).unwrap();
     let mask = Node::path(NodeId(0), vectorcraft_geom::shapes::rectangle(Rect::new(0.0, 0.0, 50.0, 50.0)), Default::default());
     s.edit("mask", |d, _| {
-        d.node_mut(e).unwrap().mask = Some(Box::new(OpacityMask::new(mask, true)));
+        d.node_mut(e).unwrap().extras_mut().mask = Some(Box::new(OpacityMask::new(mask, true)));
         Ok(())
     })
     .unwrap();
@@ -131,7 +139,7 @@ fn release_gives_back_the_warp_shape_as_a_mesh_and_keeps_the_transparency() {
     assert_eq!(ids.len(), 2);
     assert_eq!(ids[0], a);
     let content = node(&s, a);
-    assert_eq!((content.opacity, content.blend, content.mask.is_some()), (0.4, BlendMode::Multiply, true), "the content keeps the look");
+    assert_eq!((content.opacity, content.blend, content.extras().mask.is_some()), (0.4, BlendMode::Multiply, true), "the content keeps the look");
     let NodeKind::Mesh(m) = node(&s, ids[1]).kind else { panic!("the warp's shape comes back as a mesh") };
     // The mesh follows the arc: its outline reaches below the content's bottom edge at the sides.
     let b = m.outline().bounds().unwrap();
@@ -164,14 +172,14 @@ fn expand_keeps_name_transparency_knockout_and_mask() {
     s.edit("name and mask", |d, _| {
         let n = d.node_mut(e).unwrap();
         n.name = Some("Banner".into());
-        n.mask = Some(Box::new(OpacityMask::new(mask, true)));
+        n.extras_mut().mask = Some(Box::new(OpacityMask::new(mask, true)));
         Ok(())
     })
     .unwrap();
     s.execute("object.envelope.expand", &json!({})).unwrap();
     let g = node(&s, e);
     assert!(matches!(g.kind, NodeKind::Group { .. }));
-    assert_eq!((g.name.as_deref(), g.opacity, g.isolate, g.knockout, g.mask.is_some()), (Some("Banner"), 0.7, true, Knockout::On, true));
+    assert_eq!((g.name.as_deref(), g.opacity, g.isolate, g.knockout, g.extras().mask.is_some()), (Some("Banner"), 0.7, true, Knockout::On, true));
 }
 
 #[test]
@@ -221,13 +229,19 @@ fn enveloped_type_exports_distorted_in_every_format() {
     let t = id_of(&s.execute("text.create", &json!({"x": 100, "y": 200, "text": "Envelope", "size": 48})).unwrap());
     sel(&mut s, &[t]);
     s.execute("object.envelope.makeWithWarp", &json!({"style": "arch", "bend": 0})).unwrap();
-    // The export's bytes without its time stamps (EPS and PDF date their files to the second).
+    // The export's bytes without its dates and file ID (EPS and PDF date their files to the second).
     let export = |s: &mut Session, format: &str| -> Vec<u8> {
         let data = s.execute("document.export", &json!({"format": format})).unwrap()["dataBase64"].as_str().unwrap().to_string();
-        let bytes = vectorcraft_format::base64_decode(&data).unwrap();
-        let dated = |line: &&[u8]| line.windows(12).any(|w| w == b"CreationDate") || line.windows(7).any(|w| w == b"ModDate");
-        bytes.split(|b| *b == b'\n').filter(|l| !dated(l)).flat_map(|l| l.iter().copied().chain(*b"\n")).collect()
+        undated(&vectorcraft_format::base64_decode(&data).unwrap())
     };
+    // Two PDFs dated a second apart, with the options and editing data that document.export
+    // passes the writer, differ only in lines that `undated` drops.
+    let d = &s.doc().unwrap().doc;
+    let pdf = |at: i64| {
+        let o = cmd::fileio::pdf::options("document.export", d, &json!({})).unwrap();
+        undated(&export_pdf(d, &vectorcraft_pdf::PdfOptions { created: Some(at), native: Some(vectorcraft_format::save(d, false)), ..o }).unwrap())
+    };
+    assert_eq!(pdf(0), pdf(1), "a PDF dated a second later differs only in its dates and file ID");
     for format in ["svg", "pdf", "eps", "emf", "dxf"] {
         s.execute("object.envelope.options", &json!({"bend": 0})).unwrap();
         let flat = export(&mut s, format);

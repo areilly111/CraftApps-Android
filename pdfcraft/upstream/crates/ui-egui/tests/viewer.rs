@@ -39,7 +39,8 @@ fn harness() -> Harness<'static, PdfCraftApp> {
         app.open_bytes("b.pdf", None, fixture(2)).unwrap();
         app
     });
-    for _ in 0..40 {
+    // Background rendering and text extraction can take seconds on a loaded CI runner (FreeBSD VM).
+    for _ in 0..3000 {
         h.run_steps(2);
         if !h.state().render_pending() {
             break;
@@ -91,7 +92,8 @@ fn view_history_select_all_and_find_options() {
     assert!(h.state_mut().views[0].view_history(true));
     assert_eq!(h.state().views[0].current, 3, "next view");
     // Select all on the current page (once its text is known).
-    for _ in 0..40 {
+    // Background rendering and text extraction can take seconds on a loaded CI runner (FreeBSD VM).
+    for _ in 0..3000 {
         h.run_steps(2);
         if h.state_mut().views[0].select_all() {
             break;
@@ -108,12 +110,12 @@ fn view_history_select_all_and_find_options() {
     h.state_mut().views[0].open_find();
     h.state_mut().views[0].find.as_mut().unwrap().query = "page".into();
     h.state_mut().views[0].rerun_find();
-    for _ in 0..60 {
+    // Find runs in the background: wait for it by a deadline, not a frame count, which a loaded
+    // machine (the whole workspace testing at once) can use up before the last page is searched.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline && h.state().views[0].find.as_ref().unwrap().matches.len() < 15 {
         h.run_steps(2);
         std::thread::sleep(std::time::Duration::from_millis(5));
-        if h.state().views[0].find.as_ref().unwrap().matches.len() >= 15 {
-            break;
-        }
     }
     assert_eq!(h.state().views[0].find.as_ref().unwrap().matches.len(), 15);
     {
@@ -167,6 +169,89 @@ fn find_shortcuts_advance_and_retreat_matches() {
     h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::G);
     h.run_steps(2);
     assert_eq!(h.state().views[0].find.as_ref().unwrap().current, Some((start + n - 1) % n));
+}
+
+#[test]
+fn marking_while_searching_does_not_jitter_or_reset_search_state() {
+    let mut h = harness();
+    h.state_mut().active = Some(0);
+    h.run_steps(2);
+    h.state_mut().views[0].open_find();
+    h.state_mut().views[0].find.as_mut().unwrap().query = "page".into();
+    h.state_mut().views[0].rerun_find();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        h.run_steps(2);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        if h.state().views[0].find.as_ref().unwrap().matches.len() >= 15 {
+            break;
+        }
+    }
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().matches.len(), 15);
+    let current_before = h.state().views[0].find.as_ref().unwrap().current;
+    assert!(current_before.is_some());
+    // Clear any pending goto from initial find
+    h.run_steps(2);
+    assert!(h.state().views[0].goto.is_none());
+
+    // User draws or marks an annotation on page 0
+    let shape = pdfcraft_engine::Shape::Ink { strokes: vec![vec![[10.0, 10.0], [20.0, 20.0]]] };
+    let stroke = pdfcraft_engine::Edit::AddAnnotation(pdfcraft_engine::NewAnnotation {
+        page: 0,
+        style: pdfcraft_engine::Style::default_for(&shape),
+        shape,
+        contents: String::new(),
+        author: "tester".into(),
+    });
+    h.state_mut().apply_edit(stroke);
+
+    // Right after applying the edit, search matches and current match must still be valid
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().current, current_before, "applying an annotation must not wipe current search match");
+
+    // Let the canvas process the reload
+    let reload_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < reload_deadline {
+        h.run_steps(2);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(h.state().views[0].goto.is_none(), "page reload after annotation must not set goto / trigger display jitter");
+        if h.state().views[0].glyph_screen_pos(0, 0).is_some() {
+            break;
+        }
+    }
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().current, current_before);
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().matches.len(), 15);
+
+    // If user is viewing page 3 and reruns find, the selected match must be on page 3 (index 9), not page 0
+    h.state_mut().views[0].current = 3;
+    h.state_mut().views[0].rerun_find();
+    let current_p3 = h.state().views[0].find.as_ref().unwrap().current;
+    assert_eq!(current_p3, Some(9), "rerun_find must select the first match at or after the viewed page (page 3), but selected {:?}", current_p3);
+
+    // Continuous drawing across multiple pages must never trigger viewport jumps or wipe search state
+    h.run_steps(2);
+    h.state_mut().views[0].goto = None;
+    for p in 1..=4 {
+        let shape = pdfcraft_engine::Shape::Ink { strokes: vec![vec![[15.0 * p as f64, 20.0], [30.0 * p as f64, 40.0]]] };
+        let stroke = pdfcraft_engine::Edit::AddAnnotation(pdfcraft_engine::NewAnnotation {
+            page: p,
+            style: pdfcraft_engine::Style::default_for(&shape),
+            shape,
+            contents: String::new(),
+            author: "tester".into(),
+        });
+        h.state_mut().apply_edit(stroke);
+        h.run_steps(2);
+        assert!(h.state().views[0].goto.is_none(), "drawing on page {p} must not set goto");
+        assert_eq!(h.state().views[0].find.as_ref().unwrap().current, Some(9));
+    }
+    let multi_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < multi_deadline {
+        h.run_steps(2);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(h.state().views[0].goto.is_none(), "multi-page reload after annotations must not set goto");
+    }
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().current, Some(9));
+    assert_eq!(h.state().views[0].find.as_ref().unwrap().matches.len(), 15);
 }
 
 #[test]
@@ -280,6 +365,8 @@ fn initial_view_is_edited_and_honoured_on_open() {
         v.page = 1;
         v.language = Some("de-DE".into());
     }
+    h.run_steps(2);
+    // The dialog's height settles a frame after it opens; egui centers from the previous size.
     h.run_steps(2);
     h.get_by_label("OK").click();
     h.run_steps(3);
@@ -404,6 +491,8 @@ fn an_earlier_revision_opens_from_document_properties() {
     h.state_mut().dialog = Some(Dialog::Properties(pdfcraft_ui_egui::PropsTab::Advanced));
     h.run_steps(2);
     h.run_steps(2);
+    // Let the dialog finish centering before the revision button is clicked.
+    h.run_steps(2);
     h.get_by_label("View revision 1").click();
     h.run_steps(3);
     let s = h.state();
@@ -421,7 +510,8 @@ fn advanced_search_lists_results_with_context() {
     h.run_steps(2);
     h.get_by_label("What word or phrase would you like to search for?");
     h.state_mut().views[i].find.as_mut().unwrap().query = "pages".into();
-    for _ in 0..40 {
+    // Background rendering and text extraction can take seconds on a loaded CI runner (FreeBSD VM).
+    for _ in 0..3000 {
         h.run_steps(2);
         if h.state().views[i].find.as_ref().is_some_and(|f| f.matches.len() == 2) {
             break;
@@ -548,7 +638,8 @@ fn arrow_and_page_keys_move_through_a_scrolling_document() {
     h.state_mut().active = Some(0);
     h.state_mut().views[0].fit = Fit::Width;
     h.run_steps(4);
-    assert_eq!(h.state().views[0].layout, PageLayout::Continuous);
+    assert_eq!(h.state().views[0].layout, PageLayout::Single);
+    assert!(h.state().views[0].continuous(), "the default view scrolls continuously");
     let press = |h: &mut Harness<'static, PdfCraftApp>, key, times: usize| {
         for _ in 0..times {
             h.key_press(key);
@@ -582,6 +673,7 @@ fn arrow_and_page_keys_move_through_a_scrolling_document() {
     assert_eq!(press(&mut h, Key::ArrowRight, 1), 2);
     // single-page view keeps Page Down for the next page
     h.state_mut().views[0].layout = PageLayout::Single;
+    h.state_mut().views[0].continuous = false;
     h.run_steps(4);
     assert_eq!(press(&mut h, Key::PageDown, 1), 3);
 }
@@ -595,6 +687,7 @@ fn up_and_down_turn_pages_in_single_page_view() {
     let mut h = harness();
     h.state_mut().active = Some(0);
     h.state_mut().views[0].layout = PageLayout::Single;
+    h.state_mut().views[0].continuous = false;
     h.state_mut().views[0].fit = Fit::Page;
     h.run_steps(4);
     let press = |h: &mut Harness<'static, PdfCraftApp>, key, times: usize| {
@@ -793,4 +886,161 @@ fn pages_panel_thumbnails_have_a_context_menu() {
     h.get_by_label("Copy").click();
     h.run_steps(3);
     assert_eq!(h.state().page_clipboard.as_ref().map(|c| c.pages.clone()), Some(vec![2]));
+}
+
+/// #444, #186: a mouse-wheel notch scrolls as far as the scroll speed preference says;
+/// trackpad (point) scrolling keeps its own speed. The choice is saved.
+#[test]
+fn the_scroll_speed_preference_scales_mouse_wheel_notches() {
+    use pdfcraft_ui_egui::scroll_speed::ScrollSpeed;
+    let scrolled = |speed: ScrollSpeed, unit: egui::MouseWheelUnit, dy: f32| -> f32 {
+        let mut h = harness();
+        h.state_mut().scroll_speed = speed;
+        h.run_steps(2);
+        let i = h.state().active.expect("a document is shown");
+        let top = |h: &Harness<'static, PdfCraftApp>| h.state().views[i].page_screen_rect(0).expect("page 1 on screen").min.y;
+        let before = top(&h);
+        h.event(egui::Event::PointerMoved(h.state().views[i].viewport_rect().center()));
+        h.event(egui::Event::MouseWheel { unit, delta: egui::vec2(0.0, -dy), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE });
+        // egui spreads a wheel notch over a few frames.
+        h.run_steps(30);
+        before - top(&h)
+    };
+    let line = egui::MouseWheelUnit::Line;
+    let normal = scrolled(ScrollSpeed::Normal, line, 1.0);
+    assert!((normal - ScrollSpeed::Normal.line_points()).abs() < 1.0, "one notch at Normal scrolled {normal}");
+    let (slow, fast) = (scrolled(ScrollSpeed::Slow, line, 1.0), scrolled(ScrollSpeed::Fast, line, 1.0));
+    assert!((slow * 2.0 - normal).abs() < 1.0 && (fast - normal * 2.0).abs() < 1.0, "slow {slow}, normal {normal}, fast {fast}");
+    let point = egui::MouseWheelUnit::Point;
+    let (normal_points, fast_points) = (scrolled(ScrollSpeed::Normal, point, 30.0), scrolled(ScrollSpeed::Fast, point, 30.0));
+    assert!(normal_points > 0.0 && (normal_points - fast_points).abs() < 1.0, "trackpad: {normal_points} vs {fast_points}");
+    let mut app = PdfCraftApp::new();
+    app.set_option("scroll_speed", "fast").unwrap();
+    assert!(app.set_option("scroll_speed", "warp").unwrap_err().contains("slow, normal, or fast"));
+    let mut again = PdfCraftApp::new();
+    again.restore(&app.persist());
+    assert_eq!(again.scroll_speed, ScrollSpeed::Fast);
+}
+
+/// A 40 × 30 picture (one red corner) and a harness showing a PDF of it.
+fn picture_harness() -> (image::RgbaImage, Harness<'static, PdfCraftApp>) {
+    let mut px = image::RgbaImage::from_pixel(40, 30, image::Rgba([10, 200, 30, 255]));
+    px.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(px.clone()).write_to(&mut png, image::ImageFormat::Png).unwrap();
+    let pdf = pdfcraft_engine::Session::new().create_from_images(&[("p.png".into(), png.into_inner())]).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("pic.pdf", None, pdf.to_vec()).unwrap();
+        app
+    });
+    h.run_steps(4);
+    h.state_mut().system_clipboard = false;
+    (px, h)
+}
+
+#[test]
+fn a_clicked_picture_is_selected_and_copied_in_its_original_format() {
+    let (px, mut h) = picture_harness();
+    let i = h.state().active.unwrap();
+    let at = h.state().views[i].page_screen_rect(0).expect("on screen").center();
+    h.hover_at(at);
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    assert_eq!(h.state().views[i].picked_image.map(|p| (p.page, p.index)), Some((0, 0)));
+    h.event(egui::Event::Copy);
+    h.run_steps(2);
+    let (name, bytes) = h.state().last_copied_file.clone().expect("the image was copied as a file");
+    assert_eq!(name, "pic p1 img1.png");
+    let decoded = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().into_rgba8();
+    assert_eq!(decoded.into_raw(), px.into_raw(), "lossless, at full size");
+    // Escape deselects.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(1);
+    assert_eq!(h.state().views[i].picked_image, None);
+}
+
+#[test]
+fn right_click_on_a_picture_copies_it_at_full_size() {
+    let (px, mut h) = picture_harness();
+    let i = h.state().active.unwrap();
+    let at = h.state().views[i].page_screen_rect(0).expect("on screen").center();
+    h.hover_at(at);
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    h.get_by_label("Copy Image").click();
+    h.run_steps(2);
+    let (w, hgt, rgba) = h.state().last_copied_image.clone().expect("the image was copied");
+    assert_eq!((w, hgt), (40, 30));
+    assert_eq!(rgba, px.into_raw(), "the image's own pixels, not a rendering of the page");
+}
+
+/// A picture drawn through grouped Form artwork with a caption over it (as Word, InDesign and
+/// scanners with OCR write them): one click still selects it, and ⌘C copies the picture.
+#[test]
+fn a_picture_inside_form_artwork_under_text_is_selected_and_copied() {
+    let stream = |dict: &str, data: &[u8]| {
+        let mut o = format!("<< {dict} /Length {} >>\nstream\n", data.len()).into_bytes();
+        o.extend_from_slice(data);
+        o.extend_from_slice(b"\nendstream");
+        o
+    };
+    let objs: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [4 0 R] /Count 1 /MediaBox [0 0 200 300] >>".to_vec(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> /XObject << /Fm1 6 0 R >> >> >>".to_vec(),
+        stream("", b"q 180 0 0 280 10 10 cm /Fm1 Do Q BT /F1 40 Tf 15 130 Td (WWWWWWW) Tj ET"),
+        stream("/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /Im1 7 0 R >> >>", b"/Im1 Do"),
+        stream("/Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8", &[255, 0, 0, 0, 0, 255]),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        pdf.extend_from_slice(o);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("scan.pdf", None, pdf).unwrap();
+        app
+    });
+    for _ in 0..40 {
+        h.run_steps(2);
+        if !h.state().render_pending() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    h.state_mut().system_clipboard = false;
+    let i = h.state().active.unwrap();
+    let r = h.state().views[i].page_screen_rect(0).expect("on screen");
+    // On the caption ("WWWWWWW" at y 130–170 of 300, from x 15).
+    let at = egui::pos2(r.left() + 60.0 / 200.0 * r.width(), r.top() + (300.0 - 145.0) / 300.0 * r.height());
+    h.hover_at(at);
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    assert_eq!(h.state().views[i].picked_image.map(|p| (p.page, p.index)), Some((0, 0)));
+    h.event(egui::Event::Copy);
+    h.run_steps(2);
+    let (name, bytes) = h.state().last_copied_file.clone().expect("the picture was copied");
+    assert_eq!(name, "scan p1 img1.png");
+    let png = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().into_rgba8();
+    assert_eq!(png.into_raw(), vec![255, 0, 0, 255, 0, 0, 255, 255]);
 }

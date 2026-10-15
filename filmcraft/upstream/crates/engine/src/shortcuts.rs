@@ -737,7 +737,7 @@ impl Shortcuts {
         let nb = Binding { command: command.into(), keys: chord.canonical(), panel: panel.map(str::to_string) };
         let before = self.snapshot();
         if !add {
-            self.bindings.retain(|b| !(b.command == command && b.context() == nb.context()));
+            self.bindings.retain(|b| !(same_shortcut_command(&b.command, command) && b.context() == nb.context()));
         }
         let mut reassigned = Vec::new();
         if !keep_conflicts {
@@ -768,9 +768,19 @@ impl Shortcuts {
         };
         let before = self.snapshot();
         let n0 = self.bindings.len();
+        let twins = shortcut_twins(command);
         self.bindings.retain(|b| {
-            let hit = b.command == command && chord.as_ref().is_none_or(|c| b.chord().as_ref() == Some(c)) && panel.as_ref().is_none_or(|p| &b.panel == p);
-            !hit
+            let cmd = same_shortcut_command(&b.command, command);
+            let key_ok = chord.as_ref().is_none_or(|c| b.chord().as_ref() == Some(c));
+            // File ▸ Close and Close Sequence share Cmd+W (app + Timeline). The editor's Clear
+            // always sends panel Application; treating that as every context for this pair is
+            // what actually frees the chord (#773).
+            let panel_ok = match &panel {
+                None => true,
+                Some(p) if p.is_none() && twins => true,
+                Some(p) => &b.panel == p,
+            };
+            !(cmd && key_ok && panel_ok)
         });
         let n = n0 - self.bindings.len();
         if n > 0 {
@@ -909,12 +919,12 @@ impl Shortcuts {
     // ---------------------------------------------------------------- queries
 
     pub fn for_command(&self, id: &str) -> Vec<&Binding> {
-        self.bindings.iter().filter(|b| b.command == id).collect()
+        self.bindings.iter().filter(|b| same_shortcut_command(&b.command, id)).collect()
     }
 
     /// The shortcut menus show: the first application-wide one.
     pub fn primary(&self, id: &str) -> Option<String> {
-        self.bindings.iter().find(|b| b.command == id && b.panel.is_none()).map(|b| b.keys.clone())
+        self.bindings.iter().find(|b| same_shortcut_command(&b.command, id) && b.panel.is_none()).map(|b| b.keys.clone())
     }
 
     /// The command a chord runs with `panel` focused (panel shortcuts first).
@@ -996,6 +1006,15 @@ impl Shortcuts {
 
 fn panel_opt(p: &str) -> Option<&str> {
     if p.is_empty() { None } else { Some(p) }
+}
+
+/// `file.close` is File ▸ Close: the same action as `sequence.close` (Close Sequence).
+fn shortcut_twins(id: &str) -> bool {
+    id == "file.close" || id == "sequence.close"
+}
+
+fn same_shortcut_command(bound: &str, target: &str) -> bool {
+    bound == target || (shortcut_twins(bound) && shortcut_twins(target))
 }
 
 fn check_panel(panel: Option<&str>) -> std::result::Result<Option<&'static str>, String> {

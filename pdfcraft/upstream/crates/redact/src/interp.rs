@@ -17,13 +17,13 @@
 //! In verify mode nothing changes; glyphs and inline images that still overlap a region are
 //! counted.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use pdfcraft_content::{Matrix, Op, Pieces, contains, num, overlaps, serialize_ops, string};
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, Stream};
 
-use crate::{Report, image};
+use crate::{Report, image, tags};
 use pdfcraft_fonts::pdf::Metrics;
 
 const MAX_DEPTH: usize = 12;
@@ -38,6 +38,10 @@ pub(crate) enum Mode {
 struct Gs {
     ctm: Matrix,
     font: Rc<Metrics>,
+    /// The current font writes vertically (a Type0 font with an `-V` encoding or a CMap whose
+    /// `/WMode` is 1). Glyph layout here is horizontal, so such text cannot be placed under a
+    /// region; apply fails closed when it meets any (see `show`).
+    vertical: bool,
     size: f64,
     char_spacing: f64,
     word_spacing: f64,
@@ -54,8 +58,16 @@ pub(crate) struct Output {
     pub streams: Vec<Option<Vec<u8>>>,
     /// New XObjects the rewritten content refers to: (resource name, object).
     pub xobjects: Vec<(Vec<u8>, ObjRef)>,
+    /// Resource names whose `Do` this scope dropped or pointed at a cleaned copy, so the caller
+    /// can unlink the original from the resource dictionary (a full save keeps whatever is still
+    /// referenced, which would otherwise retain the removed image or form bytes).
+    pub replaced: Vec<Vec<u8>>,
     /// Glyphs / inline images still overlapping a region (verify mode).
     pub residue: usize,
+    /// Apply mode met vertical-writing text (which it cannot remove) while a redaction region was
+    /// in force: the operation must fail closed rather than leave that text under the mark.
+    pub vertical: bool,
+    pub tag_changes: Vec<(ObjRef, ObjRef, HashSet<i64>, HashSet<i64>)>,
 }
 
 pub(crate) struct Scope<'a> {
@@ -148,6 +160,20 @@ fn res_dict(doc: &Document, res: &Dict, key: &[u8]) -> Dict {
     res.get(key).map(|o| doc.resolve(o)).and_then(|o| o.as_dict().cloned()).unwrap_or_default()
 }
 
+/// Does this font write vertically? Only a Type0 (composite) font can: its `/Encoding` is a
+/// predefined CMap name ending in `-V` (Identity-V and the like), or an embedded CMap stream
+/// whose `/WMode` is 1 (ISO 32000-2 §9.7.5).
+fn is_vertical(doc: &Document, font: &Dict) -> bool {
+    if font.name(b"Subtype") != Some(b"Type0".as_slice()) {
+        return false;
+    }
+    match font.get(b"Encoding").map(|e| doc.resolve(e)).as_deref() {
+        Some(Object::Name(n)) => n.ends_with(b"-V"),
+        Some(Object::Stream(s)) => s.dict.int(b"WMode") == Some(1),
+        _ => false,
+    }
+}
+
 fn fresh_name(scope: &mut Scope<'_>, xobjects: &Dict) -> Vec<u8> {
     let mut i = scope.used_names.len() + 1;
     loop {
@@ -157,6 +183,23 @@ fn fresh_name(scope: &mut Scope<'_>, xobjects: &Dict) -> Vec<u8> {
             return n;
         }
         i += 1;
+    }
+}
+
+/// Drop every `replaced` resource name whose `Do` no longer appears in the rewritten `content`,
+/// so a full-rewrite save stops reaching the original image or form it named. A name that some
+/// surviving `Do` still draws (the same image shown again outside a mark) is kept.
+pub(crate) fn prune(xo: &mut Dict, replaced: &[Vec<u8>], content: &[Vec<u8>]) {
+    if replaced.is_empty() {
+        return;
+    }
+    let joined = Pieces::join(content);
+    let ops = joined.parse().ops;
+    let still_drawn = |n: &[u8]| ops.iter().any(|op| op.is("Do") && op.name(0) == Some(n));
+    for n in replaced {
+        if !still_drawn(n) {
+            xo.remove(n);
+        }
     }
 }
 
@@ -195,8 +238,18 @@ struct Glyph {
 pub(crate) fn process(doc: &mut Document, scope: &mut Scope<'_>, streams: &[Vec<u8>], resources: &Dict, ctm: Matrix) -> Output {
     let mut out = Output::default();
     let fallback = Rc::new(Metrics::fallback());
-    let mut gs =
-        Gs { ctm, font: fallback.clone(), size: 0.0, char_spacing: 0.0, word_spacing: 0.0, render_mode: 0, scale: 1.0, leading: 0.0, rise: 0.0 };
+    let mut gs = Gs {
+        ctm,
+        font: fallback.clone(),
+        vertical: false,
+        size: 0.0,
+        char_spacing: 0.0,
+        word_spacing: 0.0,
+        render_mode: 0,
+        scale: 1.0,
+        leading: 0.0,
+        rise: 0.0,
+    };
     let mut stack: Vec<Gs> = Vec::new();
     let (mut tm, mut tlm) = (Matrix::IDENTITY, Matrix::IDENTITY);
     let fonts_res = res_dict(doc, resources, b"Font");
@@ -329,14 +382,12 @@ pub(crate) fn process(doc: &mut Document, scope: &mut Scope<'_>, streams: &[Vec<
                 b"Tf" => {
                     gs.size = op.num(1).unwrap_or(gs.size);
                     if let Some(name) = op.name(0) {
+                        let font_dict = fonts_res.get(name).and_then(|f| doc.resolve(f).as_dict().cloned());
+                        gs.vertical = font_dict.as_ref().is_some_and(|d| is_vertical(doc, d));
                         gs.font = match scope.fonts.get(name) {
                             Some(f) => f.clone(),
                             None => {
-                                let m = fonts_res
-                                    .get(name)
-                                    .and_then(|f| doc.resolve(f).as_dict().cloned())
-                                    .map(|d| Rc::new(Metrics::from_dict(doc, &d)))
-                                    .unwrap_or_else(|| fallback.clone());
+                                let m = font_dict.as_ref().map(|d| Rc::new(Metrics::from_dict(doc, d))).unwrap_or_else(|| fallback.clone());
                                 scope.fonts.insert(name.to_vec(), m.clone());
                                 m
                             }
@@ -381,6 +432,18 @@ pub(crate) fn process(doc: &mut Document, scope: &mut Scope<'_>, streams: &[Vec<
                         b"TJ" => op.operands.first().and_then(Object::as_array).cloned().unwrap_or_default(),
                         _ => op.operands.last().cloned().into_iter().collect(),
                     };
+                    // Vertical-writing text is laid out horizontally by `show`, so its glyphs are
+                    // never matched against a region. Rather than ship a document whose vertical
+                    // text was silently left under a mark, record it so apply can fail closed.
+                    // (Full vertical-text removal is a future enhancement.)
+                    if gs.vertical
+                        && scope.mode == Mode::Apply
+                        && scope.hidden_text.is_none()
+                        && !scope.rects.is_empty()
+                        && items.iter().any(|o| matches!(o, Object::String(s) if !s.bytes.is_empty()))
+                    {
+                        out.vertical = true;
+                    }
                     let (new_items, removed) = show(scope, &gs, &mut tm, &items);
                     if removed == 0 {
                         ops.push(op);
@@ -543,6 +606,7 @@ fn xobject(
                 return None;
             }
             scope.layer_blocks += 1;
+            out.replaced.push(name);
             Some(None)
         }
         Some(b"Image") => {
@@ -552,6 +616,7 @@ fn xobject(
             }
             if scope.covered(b) {
                 scope.report.images_removed += 1;
+                out.replaced.push(name);
                 return Some(None);
             }
             match image::clear(doc, s, &gs.ctm, scope.rects) {
@@ -561,11 +626,13 @@ fn xobject(
                     let n = fresh_name(scope, xobjects);
                     xobjects.set(n.clone(), Object::Ref(nr));
                     out.xobjects.push((n.clone(), nr));
+                    out.replaced.push(name);
                     scope.report.images_cleared += 1;
                     Some(Some(Op::new("Do", vec![Object::Name(n)])))
                 }
                 Err(()) => {
                     scope.report.images_removed += 1;
+                    out.replaced.push(name);
                     Some(None)
                 }
             }
@@ -588,12 +655,14 @@ fn xobject(
                     return None;
                 }
                 scope.report.forms_removed += 1;
+                out.replaced.push(name);
                 return Some(None);
             }
             let data = match s.decoded() {
                 Ok(d) => d,
                 Err(_) if scope.mode == Mode::Apply => {
                     scope.report.forms_removed += 1;
+                    out.replaced.push(name);
                     return Some(None);
                 }
                 Err(_) => return None,
@@ -602,36 +671,46 @@ fn xobject(
             let res = own.clone().unwrap_or_else(|| resources.clone());
             let saved_fonts = std::mem::take(&mut scope.fonts);
             scope.depth += 1;
-            let inner = process(doc, scope, &[data], &res, fctm);
+            let inner = process(doc, scope, std::slice::from_ref(&data), &res, fctm);
             scope.depth -= 1;
             scope.fonts = saved_fonts;
             out.residue += inner.residue;
+            out.vertical |= inner.vertical;
+            out.tag_changes.extend(inner.tag_changes);
             if scope.mode == Mode::Verify {
                 return None;
             }
             let new_data = inner.streams.into_iter().next().flatten();
-            if new_data.is_none() && inner.xobjects.is_empty() {
+            if new_data.is_none() && inner.xobjects.is_empty() && inner.replaced.is_empty() {
                 return None;
             }
             let mut dict = s.dict.clone();
             dict.remove(b"Length");
-            if !inner.xobjects.is_empty() {
-                let mut res = res;
+            // Rebuild the copy's /Resources whenever inner content gained or lost an XObject, so a
+            // `Do` the copy no longer makes stops keeping the original image or form reachable.
+            if !inner.xobjects.is_empty() || !inner.replaced.is_empty() {
+                let mut res = res.clone();
                 let mut xo = res_dict(doc, &res, b"XObject");
+                if let Some(d) = &new_data {
+                    prune(&mut xo, &inner.replaced, std::slice::from_ref(d));
+                }
                 for (n, r) in &inner.xobjects {
                     xo.set(n.clone(), Object::Ref(*r));
                 }
                 res.set(b"XObject".to_vec(), Object::Dict(xo));
                 dict.set(b"Resources".to_vec(), Object::Dict(res));
             }
+            let (changed, empty) = tags::touched(doc, &res, &data, new_data.as_deref().unwrap_or(&data));
             let stream = match new_data {
                 Some(d) => Stream::flate(dict, &d),
                 None => Stream { dict, raw: s.raw.clone() },
             };
             let nr = doc.add(Object::Stream(stream));
+            out.tag_changes.push((r, nr, changed, empty));
             let n = fresh_name(scope, xobjects);
             xobjects.set(n.clone(), Object::Ref(nr));
             out.xobjects.push((n.clone(), nr));
+            out.replaced.push(name);
             scope.report.forms_rewritten += 1;
             Some(Some(Op::new("Do", vec![Object::Name(n)])))
         }

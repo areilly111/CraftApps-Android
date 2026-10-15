@@ -175,7 +175,7 @@ pub(crate) fn in_sync(n: &Node, g: &GraphicStyle) -> bool {
 
 /// The style `n` is linked to (and still looks like).
 pub(crate) fn linked_style<'a>(d: &'a Document, n: &Node) -> Option<&'a GraphicStyle> {
-    d.graphic_style_by_id(n.graphic_style?).filter(|g| in_sync(n, g))
+    d.graphic_style_by_id(n.extras().graphic_style?).filter(|g| in_sync(n, g))
 }
 
 /// Objects anywhere in the art that `f` accepts.
@@ -217,7 +217,7 @@ fn unitized(mut ap: Appearance, from: Option<Rect>) -> Appearance {
 /// and stroke. Placed gradients come relative to the unit box (from the bounds of the object
 /// they're on). The pen pressure of strokes stays with their own path.
 pub(crate) fn captured(n: &Node) -> Appearance {
-    let mut ap = n.appearance.clone().without_pressure();
+    let mut ap = (*n.appearance).clone().without_pressure();
     if !ap.items.is_empty() {
         return unitized(ap, n.geometric_bounds());
     }
@@ -261,7 +261,7 @@ fn override_chars(n: &mut Node, ap: &Appearance) {
 /// Give `n` style `g`: its appearance (a group or layer too: its own, above its contents; type its
 /// characters' colour too with `chars`, Override Character Color) and transparency.
 fn style_node(n: &mut Node, g: &GraphicStyle, chars: bool) {
-    n.appearance = g.appearance_on(n).into_owned();
+    n.appearance = g.appearance_on(n).into_owned().into();
     if chars {
         override_chars(n, &g.appearance);
     }
@@ -272,14 +272,14 @@ fn style_node(n: &mut Node, g: &GraphicStyle, chars: bool) {
 fn apply_style(d: &mut Document, id: NodeId, g: &GraphicStyle, chars: bool) {
     if let Some(n) = d.node_mut(id) {
         style_node(n, g, chars);
-        n.graphic_style = Some(g.id);
+        n.extras_mut().graphic_style = Some(g.id);
     }
 }
 
 fn set_link(d: &mut Document, ids: &[NodeId], link: Option<u32>) {
     for id in ids {
         if let Some(n) = d.node_mut(*id) {
-            n.graphic_style = link;
+            n.extras_mut().graphic_style = link;
         }
     }
 }
@@ -303,7 +303,7 @@ impl Session {
     pub fn selection_graphic_style(&self) -> Option<(&GraphicStyle, bool)> {
         let st = self.active()?;
         let n = st.doc.node(*st.selection.subjects().first()?)?;
-        let g = st.doc.graphic_style_by_id(n.graphic_style?)?;
+        let g = st.doc.graphic_style_by_id(n.extras().graphic_style?)?;
         Some((g, in_sync(n, g)))
     }
 
@@ -341,7 +341,7 @@ fn style_apply(s: &mut Session, p: &Value) -> Result<Value> {
                     let ap = g.appearance_on(n).into_owned();
                     n.appearance.items.extend(ap.items);
                     n.appearance.effects.extend(ap.effects);
-                    n.graphic_style = None;
+                    n.extras_mut().graphic_style = None;
                 }
             }
         } else {
@@ -383,7 +383,7 @@ fn style_delete(s: &mut Session, p: &Value) -> Result<Value> {
             let i = style_index(d, name)?;
             let id = d.graphic_styles.remove(i).id;
             if id != 0 {
-                let ids = objects_where(d, |n| n.graphic_style == Some(id));
+                let ids = objects_where(d, |n| n.extras().graphic_style == Some(id));
                 set_link(d, &ids, None);
             }
         }
@@ -447,6 +447,7 @@ fn style_redefine(s: &mut Session, p: &Value) -> Result<Value> {
     let i = match str_param(p, "name") {
         Some(name) => style_index(d, name)?,
         None => n
+            .extras()
             .graphic_style
             .and_then(|id| d.graphic_style_by_id(id))
             .and_then(|g| d.graphic_style_index(&g.name))
@@ -460,7 +461,7 @@ fn style_redefine(s: &mut Session, p: &Value) -> Result<Value> {
         let old = std::mem::replace(&mut d.graphic_styles[i], GraphicStyle { name: name.clone(), id, ..look });
         // Objects still linked follow the new definition; edited ones are unlinked (they keep
         // their look), and the source keeps its own.
-        let linked = objects_where(d, |n| n.graphic_style == Some(id) && n.id != src);
+        let linked = objects_where(d, |n| n.extras().graphic_style == Some(id) && n.id != src);
         let (follow, edited): (Vec<NodeId>, Vec<NodeId>) = linked.into_iter().partition(|nid| d.node(*nid).is_some_and(|n| in_sync(n, &old)));
         set_link(d, &edited, None);
         let g = d.graphic_styles[i].clone();

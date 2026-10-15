@@ -2,13 +2,17 @@
 //! aligning to a key object) and Align To (selection / key object / artboard).
 
 use egui::Ui;
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{pstate, selection_len, set_pstate};
 use crate::VectorcraftApp;
 use crate::widgets::{self, menu_item};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// What Align aligns to. The Align To choice kept with the UI state ([`crate::UiState::align_to`])
+/// is Selection or Artboard: Align to Key Object stores no choice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AlignTo {
     #[default]
     Selection,
@@ -26,12 +30,32 @@ impl AlignTo {
     }
 }
 
+/// Serde reader for the saved Align To choice ([`crate::UiState::align_to`]): `"artboard"` is
+/// Artboard, and any other value, `"key"` included, is Selection.
+pub fn deserialize_align_to<'de, D: serde::Deserializer<'de>>(d: D) -> Result<AlignTo, D::Error> {
+    let v = <Value as serde::Deserialize>::deserialize(d)?;
+    Ok(if v == "artboard" { AlignTo::Artboard } else { AlignTo::Selection })
+}
+
+/// What Align aligns to with `n_selected` objects selected: the artboard for a single object, else
+/// `to`.
+fn aligns_to(to: AlignTo, n_selected: usize) -> AlignTo {
+    if n_selected == 1 { AlignTo::Artboard } else { to }
+}
+
 /// `object.align` params: a single object aligns to the artboard (Illustrator does the same).
 pub fn align_params(base: Value, to: AlignTo, n_selected: usize) -> Value {
     let mut p = base;
-    let to = if n_selected == 1 && to == AlignTo::Selection { AlignTo::Artboard } else { to };
-    p["to"] = json!(to.param());
+    p["to"] = json!(aligns_to(to, n_selected).param());
     p
+}
+
+/// `object.align` params `base` with the `to` that the align buttons of the Align panel, the Control
+/// bar and the Properties panel send: the artboard for a single selected object, else the key object
+/// while there is one, else the Align To choice. Object → Align sends it too while every selected
+/// object is selected whole ([`crate::menus::invoke`]).
+pub fn with_align_to(app: &VectorcraftApp, base: Value) -> Value {
+    align_params(base, align_to(app), selection_len(app))
 }
 
 pub const ALIGN: [(&str, &str, &str, &str); 6] = [
@@ -56,18 +80,22 @@ pub const DISTRIBUTE: [(&str, &str, &str, &str); 6] = [
 /// They align to what the Align panel's Align To says (the key object while there is one), as
 /// its own buttons do (#789).
 pub fn align_buttons(app: &mut VectorcraftApp, ui: &mut Ui, size: f32) {
-    let n = selection_len(app);
-    let to = align_to(app, ui.ctx());
-    for (icon, tip, axis, v) in [
+    for (i, (icon, tip, axis, v)) in [
         ("align-start-vertical", "Horizontal Align Left", "horizontal", "left"),
         ("align-center-vertical", "Horizontal Align Center", "horizontal", "center"),
         ("align-end-vertical", "Horizontal Align Right", "horizontal", "right"),
         ("align-start-horizontal", "Vertical Align Top", "vertical", "top"),
         ("align-center-horizontal", "Vertical Align Center", "vertical", "center"),
         ("align-end-horizontal", "Vertical Align Bottom", "vertical", "bottom"),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if i == 3 && widgets::icon_button(ui, "dc-al-center", tl!("Horizontal & Vertical Align Center"), false, size).clicked() {
+            app.run("object.align", with_align_to(app, json!({"horizontal": "center", "vertical": "center"}))).ok();
+        }
         if widgets::icon_button(ui, icon, tl!(tip), false, size).clicked() {
-            app.run("object.align", align_params(json!({axis: v}), to, n)).ok();
+            app.run("object.align", with_align_to(app, json!({axis: v}))).ok();
         }
     }
 }
@@ -77,24 +105,34 @@ fn has_key(app: &VectorcraftApp) -> bool {
     app.session.active().is_some_and(|st| st.selection.key.is_some())
 }
 
+/// The topmost selected object, the last in paint order.
+fn topmost(app: &VectorcraftApp) -> Option<vectorcraft_doc::NodeId> {
+    app.session.active().and_then(|st| st.selection.in_paint_order(&st.doc).last().copied())
+}
+
 /// What Align aligns to: the key object while there is one (a click on an object of the
-/// selection makes it the key), else the Align To choice.
-fn align_to(app: &VectorcraftApp, ctx: &egui::Context) -> AlignTo {
-    if has_key(app) { AlignTo::Key } else { pstate(ctx, "align-to") }
+/// selection makes it the key, and Align to Key Object makes the topmost one the key), else the
+/// stored Align To choice, Selection or Artboard.
+fn align_to(app: &VectorcraftApp) -> AlignTo {
+    if has_key(app) { AlignTo::Key } else { app.ui.align_to }
 }
 
 pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
     let n = selection_len(app);
-    let to = align_to(app, ui.ctx());
+    let to = align_to(app);
     widgets::subheader(ui, tl!("Align Objects:"));
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
         for (i, (icon, tip, axis, v)) in ALIGN.iter().enumerate() {
             if i == 3 {
                 ui.add_space(6.0);
+                if widgets::icon_button_enabled(ui, "dc-al-center", tl!("Horizontal & Vertical Align Center"), false, n >= 1, 32.0).clicked() {
+                    app.run("object.align", with_align_to(app, json!({"horizontal": "center", "vertical": "center"}))).ok();
+                }
+                ui.add_space(6.0);
             }
             if widgets::icon_button_enabled(ui, icon, tl!(tip), false, n >= 1, 32.0).clicked() {
-                app.run("object.align", align_params(json!({*axis: v}), to, n)).ok();
+                app.run("object.align", with_align_to(app, json!({*axis: v}))).ok();
             }
         }
     });
@@ -139,17 +177,32 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         ui.separator();
         ui.vertical(|ui| {
             widgets::subheader(ui, tl!("Align To:"));
+            // With one object selected the buttons align it to the artboard, and Align To shows Artboard.
+            let shown = aligns_to(to, n);
             ui.horizontal(|ui| {
                 for (v, icon, tip) in [
                     (AlignTo::Selection, "dc-alignto-selection", tl!("Align to Selection")),
                     (AlignTo::Key, "dc-alignto-key", tl!("Align to Key Object")),
                     (AlignTo::Artboard, "dc-alignto-artboard", tl!("Align to Artboard")),
                 ] {
-                    if widgets::icon_button(ui, icon, tl!(tip), to == v, 28.0).clicked() {
-                        set_pstate(ui.ctx(), "align-to", v);
-                        // Aligning to the selection or the artboard lets go of the key object.
-                        if v != AlignTo::Key && has_key(app) {
-                            app.run("select.key", json!({})).ok();
+                    // A key object is one of two or more selected objects.
+                    let on = v != AlignTo::Key || n >= 2;
+                    if widgets::icon_button_enabled(ui, icon, tl!(tip), shown == v, on, 28.0).clicked() {
+                        if v == AlignTo::Key {
+                            // The topmost selected object becomes the key object, unless
+                            // there is one already. The Align To choice stays as it was, and
+                            // Align To shows it again once the key is cleared.
+                            if !has_key(app)
+                                && let Some(id) = topmost(app)
+                            {
+                                app.run("select.key", json!({"id": id.0})).ok();
+                            }
+                        } else {
+                            app.ui.align_to = v;
+                            // Aligning to the selection or the artboard lets go of the key object.
+                            if has_key(app) {
+                                app.run("select.key", json!({})).ok();
+                            }
                         }
                     }
                 }
@@ -167,8 +220,8 @@ pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui) {
     if menu_item(ui, tl!("Use Preview Bounds"), true, pb) {
         super::transform::set_pref(app, "usePreviewBounds", !pb);
     }
-    if menu_item(ui, tl!("Cancel Key Object"), align_to(app, ui.ctx()) == AlignTo::Key, false) {
-        set_pstate(ui.ctx(), "align-to", AlignTo::Selection);
+    // Cancel Key Object clears the key, and Align To shows its stored choice again.
+    if menu_item(ui, tl!("Cancel Key Object"), align_to(app) == AlignTo::Key, false) {
         app.run("select.key", json!({})).ok();
     }
     menu_item(ui, tl!("Align to Glyph Bounds"), false, false);
@@ -176,7 +229,9 @@ pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests_appearance::{click, frame_events, text_rect};
     use super::*;
+    use crate::toolbar::tests::widget_rects;
 
     #[test]
     fn single_object_aligns_to_artboard() {
@@ -184,7 +239,54 @@ mod tests {
         assert_eq!(p["to"], "artboard");
         let p = align_params(json!({"vertical": "top"}), AlignTo::Selection, 3);
         assert_eq!(p["to"], "selection");
-        assert_eq!(align_params(json!({}), AlignTo::Key, 1)["to"], "key");
+        assert_eq!(align_params(json!({}), AlignTo::Key, 1)["to"], "artboard");
+    }
+
+    /// A Shift-click that leaves the key object selected on its own lets the key go, and the align
+    /// buttons of the Control bar and the Properties panel, and then the Align panel's, align that
+    /// object to the artboard.
+    #[test]
+    fn a_lone_object_aligns_to_the_artboard() {
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        let a = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap()["id"].clone();
+        let b = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
+        let ctx = egui::Context::default();
+        app.run("select.set", json!({"ids": [a, b]})).unwrap();
+        app.run("select.key", json!({"id": b})).unwrap();
+        app.run("select.toggle", json!({"id": a})).unwrap();
+        let id = vectorcraft_doc::NodeId(b.as_u64().unwrap());
+        let bounds = |app: &VectorcraftApp| app.session.active().unwrap().doc.node(id).unwrap().geometric_bounds().unwrap();
+        // `align_buttons` (the Control bar and the Properties panel): one frame finds the first
+        // button, and the next clicks Horizontal Align Right, the third.
+        let at = std::cell::Cell::new(egui::Pos2::ZERO);
+        let frame = |app: &mut VectorcraftApp, events: Vec<egui::Event>| {
+            let mut out = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                ui.horizontal(|ui| {
+                    at.set(ui.cursor().min);
+                    align_buttons(app, ui, 24.0);
+                });
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app, vec![]);
+        let right = at.get() + egui::vec2(2.0 * (24.0 + ctx.global_style().spacing.item_spacing.x) + 12.0, 12.0);
+        let press = |pressed| egui::Event::PointerButton { pos: right, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(right), press(true)]);
+        frame(&mut app, vec![press(false)]);
+        assert_eq!(bounds(&app).x1, 200.0, "the artboard's right edge");
+        // The Align panel's Horizontal Align Left.
+        let p = with_align_to(&app, json!({"horizontal": "left", "bounds": "geometric"}));
+        app.run("object.align", p).unwrap();
+        assert_eq!(bounds(&app).x0, 0.0, "the artboard's left edge");
+    }
+
+    #[test]
+    fn align_both_centers_params() {
+        let p = align_params(json!({"horizontal": "center", "vertical": "center"}), AlignTo::Selection, 2);
+        assert_eq!(p["horizontal"], "center");
+        assert_eq!(p["vertical"], "center");
+        assert_eq!(p["to"], "selection");
     }
 
     /// #541: while the selection has a key object Align aligns to it, whatever Align To says;
@@ -196,12 +298,151 @@ mod tests {
         let a = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap()["id"].clone();
         let b = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
         app.run("select.set", json!({"ids": [a, b]})).unwrap();
-        let ctx = egui::Context::default();
-        assert_eq!(align_to(&app, &ctx), AlignTo::Selection);
+        assert_eq!(align_to(&app), AlignTo::Selection);
         app.run("select.key", json!({"id": b})).unwrap();
-        assert_eq!(align_to(&app, &ctx), AlignTo::Key);
+        assert_eq!(align_to(&app), AlignTo::Key);
         app.run("select.key", json!({})).unwrap();
-        assert_eq!(align_to(&app, &ctx), AlignTo::Selection, "no key: the choice again");
+        assert_eq!(align_to(&app), AlignTo::Selection, "no key: the choice again");
+    }
+
+    /// Two rectangles, the back one at x 10 and the front one at x 80, selected front first →
+    /// (the app, the back one's id, the front one's id).
+    fn back_and_front() -> (VectorcraftApp, Value, Value) {
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        let back = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap()["id"].clone();
+        let front = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
+        app.run("select.set", json!({"ids": [front, back]})).unwrap();
+        (app, back, front)
+    }
+
+    /// One frame of the Align panel → its Align To buttons (Selection, Key Object, Artboard) and
+    /// its Horizontal Align Left button.
+    fn panel_buttons(app: &mut VectorcraftApp, ctx: &egui::Context) -> ([egui::Rect; 3], egui::Rect) {
+        frame_events(ctx, app, vec![], show);
+        // The 28-point buttons are Distribute Spacing's two and then Align To's three.
+        let mut small = widget_rects(ctx, egui::vec2(28.0, 28.0));
+        small.sort_by(|a, b| a.left().total_cmp(&b.left()));
+        let [.., selection, key, artboard] = small[..] else { panic!("no Align To buttons in {small:?}") };
+        let objects = widget_rects(ctx, egui::vec2(32.0, 32.0));
+        let left = objects.iter().copied().filter(|r| r.top() == objects[0].top()).min_by(|a, b| a.left().total_cmp(&b.left())).unwrap();
+        ([selection, key, artboard], left)
+    }
+
+    /// The left edge of object `id`.
+    fn left_edge(app: &VectorcraftApp, id: &Value) -> f64 {
+        let id = vectorcraft_doc::NodeId(id.as_u64().unwrap());
+        app.session.active().unwrap().doc.node(id).unwrap().geometric_bounds().unwrap().x0
+    }
+
+    /// With two objects selected and no key object, Align to Key Object makes the topmost one the
+    /// key, whatever order they were selected in, and Align then aligns to it. A key already set
+    /// stays the key.
+    #[test]
+    fn align_to_key_object_makes_the_topmost_object_the_key() {
+        let (mut app, back, front) = back_and_front();
+        let ctx = egui::Context::default();
+        let ([_, key, _], left) = panel_buttons(&mut app, &ctx);
+        click(&ctx, &mut app, key.center(), show);
+        let key_object = |app: &VectorcraftApp| app.session.active().unwrap().selection.key.map(|k| k.0);
+        assert_eq!(key_object(&app), front.as_u64(), "the front rectangle, selected first");
+        app.run("select.set", json!({"ids": [back, front]})).unwrap();
+        click(&ctx, &mut app, key.center(), show);
+        assert_eq!(key_object(&app), front.as_u64(), "the front rectangle, selected last");
+        assert_eq!(align_to(&app), AlignTo::Key);
+        click(&ctx, &mut app, left.center(), show);
+        assert_eq!((left_edge(&app, &back), left_edge(&app, &front)), (80.0, 80.0), "to the key's left edge: {}", app.ui.status);
+        app.run("select.key", json!({"id": back})).unwrap();
+        click(&ctx, &mut app, key.center(), show);
+        assert_eq!(key_object(&app), back.as_u64(), "a key already set");
+    }
+
+    /// Align to Key Object stores no Align To choice: once the key object is cleared, by Cancel
+    /// Key Object, by a click on the key or by another selection, Align To shows the stored
+    /// choice again.
+    #[test]
+    fn align_to_shows_its_choice_again_once_the_key_is_cleared() {
+        let (mut app, back, front) = back_and_front();
+        let ctx = egui::Context::default();
+        let ([_, key, artboard], _) = panel_buttons(&mut app, &ctx);
+        click(&ctx, &mut app, artboard.center(), show);
+        click(&ctx, &mut app, key.center(), show);
+        assert_eq!(align_to(&app), AlignTo::Key);
+        let cancel = text_rect(&frame_events(&ctx, &mut app, vec![], menu), "   Cancel Key Object");
+        click(&ctx, &mut app, cancel.center(), menu);
+        assert!(!has_key(&app));
+        assert_eq!(align_to(&app), AlignTo::Artboard, "Cancel Key Object");
+        // The Selection tool's click on the key object runs `select.key {}`.
+        click(&ctx, &mut app, key.center(), show);
+        assert!(has_key(&app));
+        app.run("select.key", json!({})).unwrap();
+        assert_eq!(align_to(&app), AlignTo::Artboard, "a click on the key");
+        click(&ctx, &mut app, key.center(), show);
+        assert!(has_key(&app));
+        app.run("select.set", json!({"ids": [back, front]})).unwrap();
+        assert_eq!(align_to(&app), AlignTo::Artboard, "another selection");
+    }
+
+    /// The Align To choice is kept with the UI state, which the app saves with its preferences and
+    /// `ui.inspect` reports. A saved value other than "artboard" reads as Selection, and the rest of
+    /// the state still loads.
+    #[test]
+    fn the_align_to_choice_is_kept_with_the_ui_state() {
+        let (mut app, _, _) = back_and_front();
+        let ctx = egui::Context::default();
+        let ([_, _, artboard], _) = panel_buttons(&mut app, &ctx);
+        click(&ctx, &mut app, artboard.center(), show);
+        assert_eq!(crate::control::inspect(&app, &ctx)["ui"]["align_to"], "artboard");
+        let back: crate::UiState = serde_json::from_value(serde_json::to_value(&app.ui).unwrap()).unwrap();
+        assert_eq!(back.align_to, AlignTo::Artboard);
+        for v in [json!("key"), json!("Artboard"), json!(3), Value::Null] {
+            let ui: crate::UiState = serde_json::from_value(json!({"align_to": v, "place_link": false})).unwrap();
+            assert_eq!((ui.align_to, ui.place_link), (AlignTo::Selection, false), "{v}");
+        }
+        let old: crate::UiState = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(old.align_to, AlignTo::Selection, "preferences saved without it");
+    }
+
+    /// With one object selected, Align to Key Object is disabled: a click sets no key and keeps the
+    /// Align To choice, and Horizontal Align Left moves the object to the artboard's left edge.
+    #[test]
+    fn align_to_key_object_needs_two_selected_objects() {
+        let (mut app, _, front) = back_and_front();
+        app.run("select.set", json!({"ids": [front]})).unwrap();
+        let ctx = egui::Context::default();
+        let ([_, key, _], left) = panel_buttons(&mut app, &ctx);
+        let clickable = ctx.viewport(|vp| vp.prev_pass.widgets.layers().flat_map(|(_, w)| w.iter()).any(|w| w.rect == key && w.sense.senses_click()));
+        assert!(!clickable, "disabled");
+        click(&ctx, &mut app, key.center(), show);
+        assert_eq!(app.session.active().unwrap().selection.key, None);
+        assert_eq!(align_to(&app), AlignTo::Selection);
+        click(&ctx, &mut app, left.center(), show);
+        assert_eq!(left_edge(&app, &front), 0.0, "the artboard's left edge");
+    }
+
+    /// One frame of the Align panel → the rects of the Align To buttons drawn as chosen.
+    fn chosen_align_to(app: &mut VectorcraftApp, ctx: &egui::Context) -> Vec<egui::Rect> {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| show(app, ui));
+        out.textures_delta.clear();
+        let fill = crate::theme::Tokens::get(ctx).tool_active;
+        let chosen = |s: &egui::Shape| match s {
+            egui::Shape::Rect(r) if r.fill == fill && r.rect.size() == egui::vec2(28.0, 28.0) => Some(r.rect),
+            _ => None,
+        };
+        out.shapes.iter().filter_map(|c| chosen(&c.shape)).collect()
+    }
+
+    /// With one object selected the align buttons align it to the artboard, and Align To shows
+    /// Artboard; with two, it shows the stored choice.
+    #[test]
+    fn align_to_shows_artboard_while_one_object_is_selected() {
+        let (mut app, _, front) = back_and_front();
+        let ctx = egui::Context::default();
+        let ([selection, _, artboard], _) = panel_buttons(&mut app, &ctx);
+        assert_eq!(chosen_align_to(&mut app, &ctx), [selection], "two objects");
+        app.run("select.set", json!({"ids": [front]})).unwrap();
+        assert_eq!(chosen_align_to(&mut app, &ctx), [artboard], "one object");
+        assert_eq!(align_to(&app), AlignTo::Selection, "the stored choice");
     }
 
     /// #789: the Control bar's and the Properties panel's align buttons follow Align To too.
@@ -213,7 +454,7 @@ mod tests {
         let b = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
         app.run("select.set", json!({"ids": [a, b]})).unwrap();
         let ctx = egui::Context::default();
-        set_pstate(&ctx, "align-to", AlignTo::Artboard);
+        app.ui.align_to = AlignTo::Artboard;
         // One frame finds the first button (Horizontal Align Right is third); the next clicks it.
         let at = std::cell::Cell::new(egui::Pos2::ZERO);
         let frame = |app: &mut VectorcraftApp, events: Vec<egui::Event>| {
@@ -233,5 +474,56 @@ mod tests {
         let st = app.session.active().unwrap();
         let x1 = |id: &serde_json::Value| st.doc.bounds_of(&[vectorcraft_doc::NodeId(id.as_u64().unwrap())], false).unwrap().x1;
         assert_eq!((x1(&a), x1(&b)), (200.0, 200.0), "both to the artboard's right edge");
+    }
+
+    /// Runs the Object → Align item `label` as a click on it does.
+    fn object_align(app: &mut VectorcraftApp, label: &str) {
+        let entry = crate::menus::menu_entries(app).into_iter().find(|e| e.path == ["Object", "Align"] && e.label == label).expect("menu item");
+        let (id, p) = crate::menus::click_target(&entry.label, entry.command.as_deref().unwrap(), &entry.params);
+        crate::menus::invoke(app, &id, p);
+    }
+
+    /// Object → Align aligns as the align buttons do: it aligns one object to the active artboard
+    /// whatever Align To says, and with Align to Artboard chosen it aligns two objects to the active
+    /// artboard too.
+    #[test]
+    fn object_align_follows_align_to() {
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200, "artboards": 2})).unwrap();
+        let boards: Vec<_> = app.session.active().unwrap().doc.artboards.iter().map(|a| a.rect).collect();
+        let a = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap()["id"].clone();
+        let b = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
+        let bounds = |app: &VectorcraftApp, id: &Value| {
+            app.session.active().unwrap().doc.node(vectorcraft_doc::NodeId(id.as_u64().unwrap())).unwrap().geometric_bounds().unwrap()
+        };
+        app.run("select.set", json!({"ids": [b]})).unwrap();
+        object_align(&mut app, "Horizontal Align Left");
+        assert_eq!(bounds(&app, &b).x0, 0.0, "one object, Align to Selection: the artboard's left edge");
+        app.ui.align_to = AlignTo::Artboard;
+        app.view_mut().unwrap().artboard = 1;
+        app.run("select.set", json!({"ids": [a, b]})).unwrap();
+        object_align(&mut app, "Horizontal Align Right");
+        assert_eq!((bounds(&app, &a).x1, bounds(&app, &b).x1), (boards[1].x1, boards[1].x1), "the active artboard's right edge");
+    }
+
+    /// With anchor points selected, Object → Align sends its params unchanged: two anchor points of
+    /// one path align to their own bounds with Align to Selection and with Align to Artboard chosen.
+    #[test]
+    fn object_align_aligns_anchor_points_to_each_other() {
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        let id = app.run("path.create", json!({"d": "M100 40 L200 60 L150 160 Z"})).unwrap()["id"].as_u64().unwrap();
+        let anchors = |app: &VectorcraftApp| -> Vec<(f64, f64)> {
+            let node = app.session.active().unwrap().doc.node(vectorcraft_doc::NodeId(id)).unwrap();
+            node.path_data().unwrap().anchors().map(|(_, _, a)| (a.p.x, a.p.y)).collect()
+        };
+        for to in [AlignTo::Selection, AlignTo::Artboard] {
+            app.ui.align_to = to;
+            app.run("select.anchors", json!({"id": id, "anchors": [[0, 0], [0, 1]], "mode": "set"})).unwrap();
+            object_align(&mut app, "Horizontal Align Left");
+            assert_eq!(anchors(&app), [(100.0, 40.0), (100.0, 60.0), (150.0, 160.0)], "{to:?}: {}", app.ui.status);
+            app.run("edit.undo", json!({})).unwrap();
+            assert_eq!(anchors(&app)[1], (200.0, 60.0), "undone");
+        }
     }
 }

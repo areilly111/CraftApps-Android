@@ -205,3 +205,27 @@ fn replacing_a_file_that_opening_left_things_out_of_asks_first() {
     assert!(!app.session.active().unwrap().is_dirty());
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn native_saves_stream_into_the_file() {
+    let d = dir("stream");
+    let streamed = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let log = streamed.clone();
+    let mut app = app();
+    app.services.stream_shared = Some(std::sync::Arc::new(move |p: &str, fill: &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>| {
+        log.lock().unwrap().push(p.to_string());
+        let mut f = std::fs::File::create(p).map_err(|e| e.to_string())?;
+        fill(&mut f).map_err(|e| e.to_string())
+    }));
+    app.run("file.new", json!({"width": 100, "height": 100})).unwrap();
+    rect(&mut app);
+    let native = d.join("a.vectorcraft").to_string_lossy().to_string();
+    let r = app.run("file.saveAs", json!({"path": native, "compress": true})).unwrap();
+    let bytes = std::fs::read(&native).unwrap();
+    assert_eq!(r["bytes"], bytes.len(), "{r}");
+    assert!(vectorcraft_format::is_compressed(&bytes));
+    assert_eq!(vectorcraft_format::load(&bytes).unwrap().node_count(), objects(&app));
+    assert!(!app.session.doc().unwrap().is_dirty(), "the file is the document's own");
+    assert_eq!(*streamed.lock().unwrap(), [native]);
+    let _ = std::fs::remove_dir_all(&d);
+}

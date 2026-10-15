@@ -8,6 +8,7 @@ use vectorcraft_color::{Color, Paint};
 use vectorcraft_doc::{Appearance, Document, Node, OpacityMask};
 use vectorcraft_geom::{Rect, shapes};
 use vectorcraft_svg::{ExportOptions, export, import_with_report};
+use vectorcraft_testkit::raster::{Image, render_artboard};
 
 /// A red square masked by white art over its left half.
 fn masked(clip: bool, invert: bool) -> Document {
@@ -18,7 +19,7 @@ fn masked(clip: bool, invert: bool) -> Document {
     let art = Node::path(d.alloc_id(), shapes::rectangle(Rect::new(10.0, 10.0, 50.0, 90.0)), white);
     let mut m = OpacityMask::new(art, clip);
     m.invert = invert;
-    n.mask = Some(Box::new(m));
+    n.extras_mut().mask = Some(Box::new(m));
     let l = d.layers[0].id;
     d.insert(Some(l), 0, n).unwrap();
     d
@@ -26,7 +27,7 @@ fn masked(clip: bool, invert: bool) -> Document {
 
 fn masks(d: &Document) -> Vec<OpacityMask> {
     let mut v = vec![];
-    d.walk(|n| v.extend(n.mask.as_deref().cloned()));
+    d.walk(|n| v.extend(n.extras().mask.as_deref().cloned()));
     v
 }
 
@@ -66,4 +67,38 @@ fn foreign_masks_keep_their_art() {
     let [m] = &masks(&d)[..] else { panic!("one mask") };
     assert!(m.clip && !m.invert);
     assert_eq!(m.art.children().map(|c| c.len()), Some(2));
+}
+
+/// `svg` drawn by resvg, `w`×`h` on white.
+fn resvg_render(svg: &str, w: u32, h: u32) -> Image {
+    let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default()).expect("parse");
+    let mut pm = resvg::tiny_skia::Pixmap::new(w, h).unwrap();
+    pm.fill(resvg::tiny_skia::Color::WHITE);
+    resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pm.as_mut());
+    Image { width: w, height: h, rgba: pm.data().to_vec() }
+}
+
+#[test]
+fn a_mask_whose_art_is_all_hidden_hides_its_object() {
+    // Hidden mask art draws nothing: the mask is black all over and the red square doesn't show,
+    // as resvg draws the file. The square keeps its (empty) mask, so it can still be edited.
+    for art in [
+        r#"<rect width="100" height="100" fill="white" visibility="hidden"/>"#,
+        r#"<g visibility="hidden"><rect width="100" height="100" fill="white"/></g>"#,
+    ] {
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">{art}</mask>
+              <g mask="url(#m)"><rect width="100" height="100" fill="red"/></g></svg>"#
+        );
+        let (d, _) = import_with_report(&svg).unwrap();
+        let [m] = &masks(&d)[..] else { panic!("the square keeps its mask: {svg}") };
+        assert!(m.clip && !m.invert);
+        assert!(m.art.geometric_bounds().is_none(), "no visible art: {:?}", m.art.kind);
+        let (canvas, reference) = (render_artboard(&d), resvg_render(&svg, 100, 100));
+        for (x, y) in [(10, 10), (50, 50), (90, 90)] {
+            assert_eq!(reference.over_white(x, y), [255, 255, 255], "resvg ({x},{y}): {svg}");
+            assert_eq!(canvas.over_white(x, y), [255, 255, 255], "canvas ({x},{y}): {svg}");
+        }
+    }
 }

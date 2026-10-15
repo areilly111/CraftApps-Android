@@ -1,6 +1,7 @@
 //! Prepare for accessibility ▸ Check for accessibility in the real shell (egui_kittest): the
 //! options dialog, the results panel, Fix, Skip Rule and the report.
 
+use egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use pdfcraft_engine::a11y::{Rule, Status};
@@ -61,10 +62,13 @@ fn checking_fixing_skipping_and_reporting() {
     h.get_by_label("Fix").click();
     h.run_steps(3);
     assert_eq!(status(&h, Rule::Title), Status::Passed);
+    assert_eq!(h.state().a11y.previous.as_ref().unwrap().1.result(Rule::Title).unwrap().status, Status::Failed);
     assert!(matches!(h.state().dialog, Some(Dialog::Properties(_))));
     assert_eq!(h.state().window_title, "notes — PdfCraft");
     h.state_mut().dialog = None;
     h.run_steps(2);
+    h.get_by_label("Compare");
+    h.get_by_label_contains("Title: Failed (2) → Passed (0)");
     // Skip a rule; it stays skipped when checking again.
     right_click(&mut h, "Tagged PDF - Failed");
     h.get_by_label("Skip Rule").click();
@@ -88,6 +92,31 @@ fn checking_fixing_skipping_and_reporting() {
     assert!(html.contains("Accessibility Report") && html.contains("Skipped"));
 }
 
+#[test]
+fn checker_summary_does_not_hide_manual_review() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("notes.pdf", None, FIXTURE.to_vec()).unwrap();
+        app
+    });
+    h.run_steps(3);
+    h.state_mut().run_accessibility_check();
+    let report = &mut h.state_mut().a11y.report.as_mut().unwrap().1;
+    for result in &mut report.results {
+        result.status = Status::Passed;
+        result.findings.clear();
+    }
+    report.results[0].status = Status::Manual;
+    h.run_steps(2);
+    h.get_by_label("Needs manual check: 1");
+    assert!(h.query_by_label("No issues found").is_none());
+    // Every rule passing keeps the plain success wording.
+    h.state_mut().a11y.report.as_mut().unwrap().1.results[0].status = Status::Passed;
+    h.run_steps(2);
+    h.get_by_label("No issues found");
+}
+
 /// Two tagged figures: an image without alternate text and a bar (role-mapped Photo) with.
 const FIGURES: &[u8] = b"%PDF-1.7
 1 0 obj << /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot 5 0 R >> endobj
@@ -106,6 +135,25 @@ endstream endobj
 endstream endobj
 trailer << /Root 1 0 R >>
 %%EOF";
+
+#[test]
+fn checker_shows_a_figure_finding_on_its_page() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("figures.pdf", None, FIGURES.to_vec()).unwrap();
+        app
+    });
+    h.run_steps(4);
+    h.state_mut().run_accessibility_check();
+    h.run_steps(3);
+    h.get_by_label("Figures alternate text - Failed").click();
+    h.run_steps(2);
+    h.get_by_label_contains("Figure element on page 1: no alternate text").click();
+    h.run_steps(1);
+    let flash = h.state().views[0].flash.map(|(page, rect, _)| (page, rect));
+    assert_eq!(flash, Some((0, [10.0, 150.0, 50.0, 170.0])));
+}
 
 #[test]
 fn setting_alternate_text_figure_by_figure() {
@@ -135,4 +183,71 @@ fn setting_alternate_text_figure_by_figure() {
     let f = doc.figures();
     assert_eq!(f.len(), 1, "the decorative one left the tags");
     assert_eq!(f[0].alt.as_deref(), Some("A grey square"));
+}
+
+#[test]
+fn tags_panel_edits_a_tag_property_and_undoes_it() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("figures.pdf", None, FIGURES.to_vec()).unwrap();
+        app
+    });
+    h.run_steps(4);
+    assert!(h.state_mut().execute("a11y.tags"));
+    h.run_steps(2);
+    assert_eq!(h.state().right, Some(RightPanel::Tags));
+    h.get_by_label("Collapse tag").click();
+    h.run_steps(2);
+    assert!(h.query_by_label("Figure · 7").is_none());
+    h.get_by_label("Expand tag").click();
+    h.run_steps(2);
+    h.get_by_label("Figure · 7").click();
+    h.run_steps(2);
+    let title = h.get_by_role_and_label(Role::TextInput, "Title");
+    title.focus();
+    title.type_text("First figure");
+    h.run_steps(1);
+    h.get_by_label("Save tag properties").click();
+    h.run_steps(3);
+    let s = h.state();
+    let doc = s.session.get(s.views[0].id).unwrap();
+    assert_eq!(doc.tags()[1].title.as_deref(), Some("First figure"));
+    assert_eq!(doc.can_undo(), Some("Change tag properties"));
+    let search = h.get_by_role_and_label(Role::TextInput, "Find a tag");
+    search.focus();
+    search.type_text("Photo");
+    h.run_steps(2);
+    h.get_by_label("Document · 6");
+    h.get_by_label("Photo · 8");
+    assert!(h.query_by_label("First figure · 7").is_none());
+}
+
+#[test]
+fn checker_finding_opens_its_structure_tag() {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("figures.pdf", None, FIGURES.to_vec()).unwrap();
+        app
+    });
+    h.run_steps(4);
+    h.state_mut().run_accessibility_check();
+    h.state_mut().a11y.expanded.insert(Rule::FiguresAltText);
+    h.run_steps(3);
+    let finding = h.state().a11y.report.as_ref().unwrap().1.result(Rule::FiguresAltText).unwrap().findings[0].clone();
+    assert_eq!(finding.object.map(|o| o.num), Some(7));
+    h.get_by_label(&finding.message).click();
+    h.run_steps(3);
+    assert_eq!(h.state().right, Some(RightPanel::Tags));
+    h.get_by_label("7 0 R");
+    let title = h.get_by_role_and_label(Role::TextInput, "Title");
+    title.focus();
+    title.type_text("Unsaved title");
+    h.run_steps(1);
+    h.state_mut().right = Some(RightPanel::Accessibility);
+    h.run_steps(2);
+    h.get_by_label(&finding.message).click();
+    h.run_steps(2);
+    assert_eq!(h.state().right, Some(RightPanel::Accessibility), "an unfinished tag edit is preserved");
 }

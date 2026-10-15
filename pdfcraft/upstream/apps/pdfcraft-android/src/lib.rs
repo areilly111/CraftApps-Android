@@ -37,7 +37,7 @@ use crate::shell::{AndroidShell, StorageGate};
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.5.0-port1` → 50001).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]).
 /// PdfCraft renders pages on the CPU into egui textures (there is no GPU
@@ -185,7 +185,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
         &config,
         "app.pdfcraft.android.apkprovider",
     )));
-    wire_android_hooks(&mut inner, updater.clone());
+    wire_android_hooks(&mut inner);
 
     // GPU backend cascade (Vulkan → GLES → CPU canvas).
     let gpu_plan = gpu::plan(
@@ -224,10 +224,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
 /// Connect the Android-only shell hooks: Help ▸ Check for updates…, links in
 /// the system browser, and the SAF read/write hooks for `content://` answers.
 /// Sibling ports reuse this verbatim; only the app type and the hook fields differ.
-fn wire_android_hooks(app: &mut PdfCraftApp, updater: Arc<Mutex<Updater>>) {
-    app.android_update_hook = Some(std::sync::Arc::new(move || {
-        updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-    }));
+fn wire_android_hooks(app: &mut PdfCraftApp) {
     app.android_open_url = Some(std::sync::Arc::new(|url: &str| {
         let _ = jni_bridge::open_url(url);
     }));

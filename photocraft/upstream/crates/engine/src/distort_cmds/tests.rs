@@ -181,6 +181,42 @@ fn puppet_two_pins_bend_the_block() {
 }
 
 #[test]
+fn puppet_mesh_follows_the_outline_so_separate_shapes_move_separately() {
+    // #3105: the mesh was every grid cell touching opaque pixels, so two bars 24 px apart (more
+    // than a mesh cell at Fewer Points) shared cells and a pin on one dragged the other along.
+    // The mesh now follows the outline grown by the expansion: two meshes, and the unpinned one
+    // stays put.
+    for depth in [8u64, 16, 32] {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 260, "height": 140, "depth": depth})).unwrap();
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.edit("paint", |doc, active| {
+            let surf = doc.layer_mut(active.unwrap()).unwrap().surface_mut().unwrap();
+            for (y0, y1) in [(20, 60), (84, 120)] {
+                for y in y0..y1 {
+                    for x in 10..250 {
+                        let v = ((x / 4 + y / 4) % 2) as f32;
+                        surf.write_pixel(x, y, &[v, 1.0 - v, (y as f32) / 140.0, 1.0]);
+                    }
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+        let before = active_surface(&s);
+        s.execute(PUPPET, json!({"pins": [{"src": [130, 40], "dst": [130, 30]}], "density": "fewer", "expansion": 2, "interpolation": "bilinear"})).unwrap();
+        let after = active_surface(&s).convert(before.format());
+        let lower = Rect::new(0, 70, 260, 140);
+        let still = worst(&after, &before, lower);
+        assert!(still <= 1.0 / 255.0, "{depth}: the unpinned bar stays ({still})");
+        assert!(
+            worst(&after, &photocraft_algo::resample::translate_surface(&before, 0, -10), Rect::new(0, 0, 260, 60)) <= 1.0 / 255.0,
+            "{depth}: the pinned bar moves"
+        );
+    }
+}
+
+#[test]
 fn perspective_identity_known_homography_and_mask() {
     for depth in [8u64, 16, 32] {
         let mut s = session(depth);
@@ -213,6 +249,42 @@ fn perspective_identity_known_homography_and_mask() {
     assert!(s.execute(PERSPECTIVE, json!({})).is_err());
     assert!(s.execute(PERSPECTIVE, json!({"planes": [{"src": [[0, 0], [0, 0], [0, 0], [0, 0]], "dst": [[0, 0], [0, 0], [0, 0], [0, 0]]}]})).is_err());
     assert!(s.execute(PERSPECTIVE, json!({"planes": [{"src": q, "dst": d}], "straighten": "sideways"})).is_err());
+}
+
+#[test]
+fn perspective_with_a_selection_moves_only_the_selected_part_of_a_linked_mask() {
+    // #3083: the mask hides a stripe inside the selection (x 12..16) and one outside it (x 40..44).
+    let mask_at = |s: &Session, x, y| {
+        let st = s.active().unwrap();
+        st.doc.layer(st.active_layer.unwrap()).unwrap().mask.as_ref().unwrap().surface.sample_channel(x, y, 0)
+    };
+    for selected in [true, false] {
+        let mut s = session(8);
+        s.execute("layer.layerMask.revealAll", json!({})).unwrap();
+        s.edit("mask", |doc, active| {
+            let m = doc.layer_mut(active.unwrap()).unwrap().mask.as_mut().unwrap();
+            m.surface.fill_rect(Rect::new(12, 10, 16, 40), &[0.0]);
+            m.surface.fill_rect(Rect::new(40, 10, 44, 40), &[0.0]);
+            Ok(())
+        })
+        .unwrap();
+        if selected {
+            s.execute("select.rect", json!({"x": 0, "y": 0, "width": 30, "height": 60})).unwrap();
+        }
+        let q = [[0.0, 0.0], [30.0, 0.0], [30.0, 60.0], [0.0, 60.0]];
+        let d = q.map(|p| [p[0] + 4.0, p[1]]);
+        s.execute(PERSPECTIVE, json!({"planes": [{"src": q, "dst": d}], "interpolation": "bilinear"})).unwrap();
+        // The selected stripe moves with the pixels either way.
+        assert!(mask_at(&s, 17, 25) < 0.01 && mask_at(&s, 13, 25) > 0.99, "selected={selected}");
+        if selected {
+            // The unselected stripe stays over the unselected pixels.
+            assert!(mask_at(&s, 43, 25) < 0.01 && mask_at(&s, 47, 25) > 0.99);
+            assert_eq!(active_surface(&s).pixel(43, 25)[3], 1.0);
+        } else {
+            // Without a selection the whole mask moves with the layer.
+            assert!(mask_at(&s, 47, 25) < 0.01 && mask_at(&s, 43, 25) > 0.99);
+        }
+    }
 }
 
 #[test]

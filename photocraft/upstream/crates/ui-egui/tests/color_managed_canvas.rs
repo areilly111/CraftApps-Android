@@ -110,6 +110,7 @@ fn close(a: [u8; 3], b: [f32; 3], tol: f32) -> bool {
 
 #[test]
 fn display_p3_is_converted_on_gpu_and_cpu_canvases() {
+    let _gpu = photocraft_testkit::gpu_lock();
     // P3 (0.8, 0.5, 0.3) → sRGB (216.7, 122.9, 64.3) (see engine display_color_tests); raw would be (204, 128, 77).
     let Some((gpu, cpu)) = render("display-p3", [0.8, 0.5, 0.3], true) else { return };
     assert!(close(cpu, [216.7, 122.9, 64.3], 2.0), "CPU canvas {cpu:?}");
@@ -118,6 +119,7 @@ fn display_p3_is_converted_on_gpu_and_cpu_canvases() {
 
 #[test]
 fn srgb_documents_are_unchanged() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some((gpu, cpu)) = render("srgb", [0.8, 0.5, 0.3], false) else { return };
     assert!(close(cpu, [204.0, 128.0, 77.0], 1.0), "CPU canvas {cpu:?}");
     assert!(close(gpu, [204.0, 128.0, 77.0], 1.0), "GPU canvas {gpu:?}");

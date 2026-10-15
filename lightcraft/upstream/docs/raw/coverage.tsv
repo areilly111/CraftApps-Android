@@ -188,7 +188,7 @@ Canon	EOS R1	CR3	2023	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 s
 Canon	EOS R3	CR3	2021	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R5	CR3	2019	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R5 C	CR3	2021	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
-Canon	EOS R5 Mark II	CR3	2023	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
+Canon	EOS R5 Mark II	CR3	2023	verified	corpus: crates/raw/tests/cr3_corpus.rs (pinned sensor hashes, docs/cr3.md); bulk: QP maps of 33,665 C-RAW files
 Canon	EOS R6	CR3	2019	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R6 V	CR3	2025	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R6 Mark II	CR3	2022	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview

@@ -65,13 +65,6 @@ pub(crate) struct Updates {
 impl PdfCraftApp {
     /// Help ▸ Check for updates: ask for the latest release and show the outcome.
     pub fn check_for_updates(&mut self) {
-        // Android: the port's own updater (the shared suite updater with its APK download and
-        // install flow), not the desktop's release-page dialog.
-        #[cfg(target_os = "android")]
-        if let Some(hook) = self.android_update_hook.clone() {
-            hook();
-            return;
-        }
         let Some(source) = self.update_source.clone() else {
             self.open_url(RELEASES_PAGE);
             return;
@@ -123,7 +116,7 @@ pub(crate) fn dialog(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let current = env!("CARGO_PKG_VERSION");
     let mut close = false;
     let mut download: Option<String> = None;
-    let modal = egui::Modal::new(egui::Id::new("updates")).show(ctx, |ui| {
+    let modal = crate::widgets::show_modal(ctx, "updates", |ui| {
         ui.set_width(420.0);
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("cloud", 22.0, t.accent));

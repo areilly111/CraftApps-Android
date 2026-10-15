@@ -11,13 +11,14 @@
 //! dimensionless scales), so a 400 px preview and a full-size export are warped identically.
 //!
 //! Also here: automatic lateral chromatic aberration estimation ([`estimate_lateral_ca`]) and [`defringe`].
-//! Profile corrections use only lens data embedded in the files: DNG `WarpRectilinear` / `FixVignetteRadial`, and the
-//! raw readers' equivalent of a camera's own correction (Panasonic / Leica RW2 distortion).
+//! Profile corrections use lens data embedded in the files (DNG `WarpRectilinear` / `WarpRectilinear2` /
+//! `FixVignetteRadial`, and the raw readers' equivalent of a camera's own correction, e.g. Panasonic / Leica RW2
+//! distortion), or a lens database profile in the same form (`lightcraft_lensdb`).
 
 use std::sync::Mutex;
 
 use lightcraft_color::perceptual::{oklab_from_2020, oklab_to_2020};
-use lightcraft_develop::{DevelopSettings, EmbeddedLens, EmbeddedVignette, EmbeddedWarp};
+use lightcraft_develop::{DevelopSettings, EmbeddedLens, EmbeddedVignette, EmbeddedWarp, EmbeddedWarpStage};
 use lightcraft_geom::{Affine, Homography, Interval, Orientation, Point, Real};
 use lightcraft_raster::{Plane, Rgb32f};
 
@@ -103,7 +104,13 @@ impl Warp {
         self.persp != Homography::IDENTITY
             || self.k1 != 0.0
             || self.ca.iter().any(|c| *c != 0.0)
-            || (self.lens_dist != 0.0 && self.lens.is_some_and(|l| l.warp.is_some()))
+            || (self.lens_dist != 0.0 && self.lens.is_some_and(|l| l.warp.is_some() || l.has_stages()))
+    }
+
+    /// Whether the embedded lens warp is a `WarpRectilinear2` chain, whose degree-14 polynomials are ill-conditioned
+    /// in `f32` (terms of 1e5 cancelling to 1): a renderer that works in `f32` must sample on the CPU.
+    pub fn needs_f64(&self) -> bool {
+        self.lens_dist != 0.0 && self.lens.is_some_and(|l| l.has_stages())
     }
 
     /// Whether the colour planes are sampled at different positions.
@@ -111,6 +118,8 @@ impl Warp {
         self.ca[0] != self.ca[1]
             || self.ca[1] != self.ca[2]
             || (self.lens_dist != 0.0 && self.lens.and_then(|l| l.warp).is_some_and(|w| w.planes[0] != w.planes[1] || w.planes[1] != w.planes[2]))
+            || (self.lens_dist != 0.0
+                && self.lens.is_some_and(|l| l.stages.iter().flatten().any(|s| s.planes[0] != s.planes[1] || s.planes[1] != s.planes[2])))
     }
 
     pub fn has_gain(&self) -> bool {
@@ -168,6 +177,16 @@ impl Warp {
             && let Some(wp) = self.lens.and_then(|l| l.warp)
         {
             let (sx, sy) = embedded_warp_real(&wp, qx, qy, ch, self.w, self.h);
+            (qx, qy) = (qx + (sx - qx) * self.lens_dist, qy + (sy - qy) * self.lens_dist);
+        }
+        if self.lens_dist != 0.0
+            && let Some(l) = self.lens.filter(|l| l.has_stages())
+        {
+            // each opcode warps the image the one before it made, so the last one maps the output position first
+            let (mut sx, mut sy) = (qx, qy);
+            for st in l.stages.iter().rev().flatten() {
+                (sx, sy) = embedded_stage_real(st, sx, sy, ch, self.w, self.h);
+            }
             (qx, qy) = (qx + (sx - qx) * self.lens_dist, qy + (sy - qy) * self.lens_dist);
         }
         let k = self.ca[ch];
@@ -280,6 +299,33 @@ fn embedded_warp_real<T: Real>(wp: &EmbeddedWarp, x: T, y: T, ch: usize, w: f64,
     (sx * m + cx, sy * m + cy)
 }
 
+/// DNG `WarpRectilinear2` source position for corrected position `p` (px) and plane `ch`.
+pub fn embedded_stage(st: &EmbeddedWarpStage, p: Point, ch: usize, w: f64, h: f64) -> Point {
+    let (x, y) = embedded_stage_real(st, p.x, p.y, ch, w, h);
+    Point::new(x, y)
+}
+
+/// [`embedded_stage`] for any [`Real`]: DNG specification 1.6.0.0, "WarpRectilinear2" — the radial term is
+/// `f(clamp(r, min_valid_radius, max_valid_radius))` with `f(r) = Σ krₚ rᵖ` (p = 0..14), used as `d·f` or, with
+/// `reciprocalRadial`, `d/f`; the tangential terms are those of `WarpRectilinear` (with the unclamped `r`).
+fn embedded_stage_real<T: Real>(st: &EmbeddedWarpStage, x: T, y: T, ch: usize, w: f64, h: f64) -> (T, T) {
+    let (cx, cy) = (st.center.x * w, st.center.y * h);
+    let m = (st.radius * w.max(h)).max(1e-9);
+    let k = &st.planes[ch.min(2)];
+    let dx = (x - cx) / m;
+    let dy = (y - cy) / m;
+    let r2 = dx * dx + dy * dy;
+    let r = r2.sqrt_nonneg().clamp_range(k[17], k[18]);
+    let mut f = r * k[14] + k[13];
+    for &c in k[..13].iter().rev() {
+        f = f * r + c;
+    }
+    let (rx, ry) = if st.reciprocal { (dx / f, dy / f) } else { (dx * f, dy * f) };
+    let sx = rx + dx * (k[15] * 2.0) * dy + (r2 + dx * 2.0 * dx) * k[16];
+    let sy = ry + dx * (k[16] * 2.0) * dy + (r2 + dy * 2.0 * dy) * k[15];
+    (sx * m + cx, sy * m + cy)
+}
+
 /// DNG `FixVignetteRadial` gain at source position `p` (px).
 pub fn embedded_vignette_gain(v: &EmbeddedVignette, p: Point, w: f64, h: f64) -> f64 {
     let (cx, cy) = (v.center.x * w, v.center.y * h);
@@ -316,7 +362,20 @@ pub fn reorient_lens(lens: &EmbeddedLens, o: Orientation, w: f64, h: f64) -> Emb
         EmbeddedWarp { planes, center: map_pt(wp.center), radius: wp.radius * long_ratio }
     });
     let vignette = lens.vignette.map(|v| EmbeddedVignette { k: v.k, center: map_pt(v.center), radius: v.radius * long_ratio });
-    EmbeddedLens { warp, vignette }
+    let stages = lens.stages.map(|st| {
+        st.map(|st| {
+            let c = Point::new(st.center.x * w, st.center.y * h);
+            let c2 = o.map(c.x, c.y, w, h);
+            let planes = st.planes.map(|mut k| {
+                // same rotation of the tangential vector as for `WarpRectilinear`
+                let e = o.map(c.x + k[16], c.y + k[15], w, h);
+                (k[15], k[16]) = (e.1 - c2.1, e.0 - c2.0);
+                k
+            });
+            EmbeddedWarpStage { planes, center: map_pt(st.center), radius: st.radius * long_ratio, reciprocal: st.reciprocal }
+        })
+    });
+    EmbeddedLens { warp, vignette, stages }
 }
 
 // ------------------------------------------------------------------------------------------ lateral CA
@@ -646,7 +705,7 @@ mod tests {
             };
             let planes = [plane(), plane(), plane()];
             let warp = EmbeddedWarp { planes, center: Point::new(r.range(0.4, 0.6), r.range(0.4, 0.6)), radius: r.range(0.5, 0.8) };
-            wp.lens = Some(EmbeddedLens { warp: Some(warp), vignette: None });
+            wp.lens = Some(EmbeddedLens { warp: Some(warp), vignette: None, ..Default::default() });
             wp.lens_dist = r.maybe(0.0, 2.0);
         }
         wp
@@ -758,6 +817,7 @@ mod tests {
                 radius: 0.6,
             }),
             vignette: None,
+            ..Default::default()
         };
         let mut cases: Vec<DevelopSettings> = Vec::new();
         let mut s = DevelopSettings::default();
@@ -863,6 +923,7 @@ mod tests {
         let lens = EmbeddedLens {
             warp: Some(EmbeddedWarp { planes: [[1.0, 0.01, 0.0, 0.0, 0.001, 0.002]; 3], center: Point::new(0.4, 0.5), radius: 0.6 }),
             vignette: Some(EmbeddedVignette { k: [0.2, 0.0, 0.0, 0.0, 0.0], center: Point::new(0.4, 0.5), radius: 0.6 }),
+            ..Default::default()
         };
         let r = reorient_lens(&lens, Orientation::Rotate90, 300.0, 200.0);
         // rotate 90° cw: (x, y) → (h − y, x)
@@ -877,6 +938,140 @@ mod tests {
         };
         let s1 = embedded_warp(&r.warp.unwrap(), m(p), 0, 200.0, 300.0);
         assert!(s1.dist(m(s0)) < 1e-6, "{s1:?} vs {:?}", m(s0));
+    }
+
+    /// A `WarpRectilinear2` stage with the same coefficients on every plane.
+    fn stage(kr: &[(usize, f64)], center: Point, radius: f64, reciprocal: bool) -> EmbeddedWarpStage {
+        let mut k = [0.0; 19];
+        for &(i, v) in kr {
+            k[i] = v;
+        }
+        k[18] = 1.0;
+        EmbeddedWarpStage { planes: [k; 3], center, radius, reciprocal }
+    }
+
+    fn chain(stages: &[EmbeddedWarpStage]) -> Warp {
+        let mut wp = Warp::identity(300.0, 200.0);
+        let mut lens = EmbeddedLens::default();
+        for (slot, st) in lens.stages.iter_mut().zip(stages) {
+            *slot = Some(*st);
+        }
+        wp.lens = Some(lens);
+        wp.lens_dist = 1.0;
+        wp
+    }
+
+    #[test]
+    fn warp_rectilinear2_stages_identity_chain_order_and_reciprocal() {
+        let c = Point::new(0.5, 0.5);
+        let p = Point::new(40.0, 25.0);
+        // identity coefficients (kr0 = 1), plain and reciprocal, leave positions alone and don't move pixels
+        for reciprocal in [false, true] {
+            let wp = chain(&[stage(&[(0, 1.0)], c, 0.6, reciprocal)]);
+            assert!(wp.moves_pixels() && !wp.per_channel());
+            assert!(wp.corrected_to_source(p, 1).dist(p) < 1e-9);
+        }
+        // the radial factor at r is f(r); with kr0 = 1, kr1 = 0.5: s = d·(1 + 0.5 r) (and d / (1 + 0.5 r) reciprocal)
+        let m = 0.6 * 300.0;
+        let d = Point::new((p.x - 150.0) / m, (p.y - 100.0) / m);
+        let r = d.x.hypot(d.y);
+        let fwd = chain(&[stage(&[(0, 1.0), (1, 0.5)], c, 0.6, false)]).corrected_to_source(p, 0);
+        assert!((fwd.x - (150.0 + m * d.x * (1.0 + 0.5 * r))).abs() < 1e-9);
+        let rec = chain(&[stage(&[(0, 1.0), (1, 0.5)], c, 0.6, true)]).corrected_to_source(p, 0);
+        assert!((rec.y - (100.0 + m * d.y / (1.0 + 0.5 * r))).abs() < 1e-9);
+        // list order: [A, B] maps an output position through B first, then A
+        let a = stage(&[(0, 1.0), (2, -0.3)], c, 0.6, false);
+        let b = stage(&[(0, 1.1), (1, 0.2)], Point::new(0.45, 0.5), 0.6, false);
+        let ab = chain(&[a, b]);
+        let by_hand = chain(&[a]).corrected_to_source(chain(&[b]).corrected_to_source(p, 1), 1);
+        assert!(ab.corrected_to_source(p, 1).dist(by_hand) < 1e-9);
+        assert!(ab.corrected_to_source(p, 1).dist(chain(&[b, a]).corrected_to_source(p, 1)) > 1e-3, "order matters");
+        // strength scales the correction; a lens without a chain or warp does not move pixels
+        let mut half = ab.clone();
+        half.lens_dist = 0.5;
+        let (full, mid) = (ab.corrected_to_source(p, 1), half.corrected_to_source(p, 1));
+        assert!(mid.dist(Point::new((p.x + full.x) / 2.0, (p.y + full.y) / 2.0)) < 1e-9);
+        assert!(ab.needs_f64() && !chain(&[]).moves_pixels() && !Warp::identity(3.0, 3.0).needs_f64());
+        // planes that differ (lateral CA) are sampled separately
+        let mut st = stage(&[(0, 1.0)], c, 0.6, false);
+        st.planes[0][0] = 1.01;
+        assert!(chain(&[st]).per_channel());
+    }
+
+    #[test]
+    fn warp_rectilinear2_valid_radius_clamps_the_polynomial() {
+        let c = Point::new(0.5, 0.5);
+        let mut st = stage(&[(0, 1.0), (1, 1.0)], c, 0.5, false);
+        st.planes.iter_mut().for_each(|k| (k[17], k[18]) = (0.2, 0.4));
+        let wp = chain(&[st]);
+        let m = 0.5 * 300.0;
+        // far out (r > 0.4): f stays f(0.4) = 1.4
+        let p = Point::new(10.0, 100.0);
+        let d = (p.x - 150.0) / m;
+        assert!(d.abs() > 0.4);
+        assert!((wp.corrected_to_source(p, 0).x - (150.0 + m * d * 1.4)).abs() < 1e-9);
+        // near the centre (r < 0.2): f stays f(0.2) = 1.2
+        let p = Point::new(150.0 + 0.1 * m, 100.0);
+        assert!((wp.corrected_to_source(p, 0).x - (150.0 + 0.1 * m * 1.2)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn warp_rectilinear2_interval_framing_encloses_every_f64_result() {
+        let mut r = Rng(11);
+        for _ in 0..200 {
+            let mut stages = Vec::new();
+            for _ in 0..2 {
+                let mut st = stage(&[], Point::new(r.range(0.4, 0.6), r.range(0.4, 0.6)), r.range(0.5, 0.8), r.next().is_multiple_of(3));
+                for k in st.planes.iter_mut() {
+                    k[0] = 1.0 + r.range(-0.05, 0.05);
+                    for v in k[1..15].iter_mut() {
+                        *v = r.maybe(-0.5, 0.5);
+                    }
+                    (k[15], k[16]) = (r.range(-0.003, 0.003), r.range(-0.003, 0.003));
+                    (k[17], k[18]) = (r.maybe(0.0, 0.3), r.range(0.5, 1.0));
+                }
+                stages.push(st);
+            }
+            let wp = chain(&stages);
+            let a = lightcraft_geom::Affine([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+            for _ in 0..20 {
+                let (x0, y0) = (r.range(0.0, 1.0) * wp.w, r.range(0.0, 1.0) * wp.h);
+                let (bw, bh) = (r.range(0.0, 20.0), r.range(0.0, 20.0));
+                let (ix, iy) = (Interval::new(x0, x0 + bw), Interval::new(y0, y0 + bh));
+                let (_, (sx, sy)) = wp.framing(&a, ix, iy);
+                if !(sx.is_decided() && sy.is_decided()) {
+                    continue;
+                }
+                for i in 0..=4 {
+                    for j in 0..=4 {
+                        let (x, y) = ((x0 + bw * i as f64 / 4.0).clamp(ix.lo(), ix.hi()), (y0 + bh * j as f64 / 4.0).clamp(iy.lo(), iy.hi()));
+                        let (_, (fx, fy)) = wp.framing(&a, x, y);
+                        assert!(
+                            sx.lo() <= fx && fx <= sx.hi() && sy.lo() <= fy && fy <= sy.hi(),
+                            "({x}, {y}) → ({fx}, {fy}) outside {sx:?} × {sy:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reorient_rotates_a_warp_rectilinear2_stage_like_the_point() {
+        let mut st = stage(&[(0, 1.0), (1, 0.05), (2, -0.1)], Point::new(0.4, 0.5), 0.6, false);
+        st.planes.iter_mut().for_each(|k| (k[15], k[16]) = (0.001, 0.002));
+        let mut lens = EmbeddedLens::default();
+        lens.stages[0] = Some(st);
+        let p = Point::new(50.0, 30.0);
+        let m = |q: Point| {
+            let (x, y) = Orientation::Rotate90.map(q.x, q.y, 300.0, 200.0);
+            Point::new(x, y)
+        };
+        let r = reorient_lens(&lens, Orientation::Rotate90, 300.0, 200.0);
+        let s0 = embedded_stage(&st, p, 0, 300.0, 200.0);
+        let s1 = embedded_stage(&r.stages[0].unwrap(), m(p), 0, 200.0, 300.0);
+        assert!(s1.dist(m(s0)) < 1e-6, "{s1:?} vs {:?}", m(s0));
+        assert_eq!(reorient_lens(&lens, Orientation::Normal, 300.0, 200.0), lens);
     }
 
     #[test]

@@ -108,6 +108,38 @@ fn new_art_is_refused_when_no_layer_is_shown_and_unlocked() {
     }
 }
 
+/// Send to Current Layer fails with the error that new art gets (#1002) when the current layer is
+/// hidden or locked, or is inside a hidden or locked layer: the objects stay where they were and stay
+/// selected, and no undo step is recorded. Once the layer is shown and unlocked again, the command
+/// moves them.
+#[test]
+fn send_to_current_layer_refuses_a_hidden_or_locked_current_layer() {
+    for prop in ["visible", "locked"] {
+        let mut s = session();
+        let layer = s.doc().unwrap().doc.layers[0].id;
+        let a = rect(&mut s, 0.0);
+        let other = id(&run(&mut s, "layer.new", json!({})));
+        let sub = id(&run(&mut s, "layer.newSublayer", json!({})));
+        assert_eq!(parent(&s, sub), Some(other), "the sublayer is in the new layer");
+        run(&mut s, "layer.setProps", json!({"ids": [other.0], prop: prop == "locked"}));
+        run(&mut s, "select.set", json!({"ids": [a.0]}));
+        for current in [other, sub] {
+            // A click on the layer's row makes that layer current and keeps the selection.
+            run(&mut s, "layer.setCurrent", json!({"id": current.0}));
+            let (before, undo) = (s.doc().unwrap().doc.clone(), undos(&s));
+            let e = s.execute("object.arrange.sendToCurrentLayer", &json!({})).unwrap_err();
+            assert_eq!(e.to_string(), "the target layer is locked or hidden", "{prop} {current:?}");
+            assert_eq!(s.doc().unwrap().doc.layers, before.layers, "{prop} {current:?}: nothing moved");
+            assert_eq!(parent(&s, a), Some(layer), "{prop} {current:?}");
+            assert_eq!(undos(&s), undo, "{prop} {current:?}: no undo step");
+            assert_eq!(s.doc().unwrap().selection.objects, vec![a], "{prop} {current:?}");
+        }
+        run(&mut s, "layer.setProps", json!({"ids": [other.0], prop: prop != "locked"}));
+        run(&mut s, "object.arrange.sendToCurrentLayer", json!({}));
+        assert_eq!(parent(&s, a), Some(sub), "{prop}");
+    }
+}
+
 #[test]
 fn clicking_rows_at_any_depth_highlights_them_and_sets_the_current_layer() {
     let mut s = session();
@@ -204,6 +236,89 @@ fn visibility_and_lock_per_row_are_undoable() {
     assert_eq!(node(&s, a).display_name(), "<Rectangle>", "an empty name goes back to the generated one");
     run(&mut s, "layer.setProps", json!({"id": sub.0, "name": ""}));
     assert_eq!(node(&s, sub).display_name(), "Sub", "a layer keeps its name");
+}
+
+#[test]
+fn object_set_props_deselects_the_objects_it_hides_or_locks() {
+    let mut s = session();
+    let (a, b) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+    for (prop, value) in [("visible", false), ("locked", true)] {
+        run(&mut s, "select.set", json!({"ids": [a.0, b.0]}));
+        run(&mut s, "select.key", json!({"id": b.0}));
+        let mut p = json!({"ids": [b.0]});
+        p[prop] = json!(value);
+        run(&mut s, "object.setProps", p);
+        assert!(!s.doc().unwrap().doc.is_editable(b));
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![a], None), "{prop}: {value} deselects the key object");
+        run(&mut s, "edit.undo", json!({}));
+        assert!(s.doc().unwrap().doc.is_editable(b));
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![a, b], Some(b)), "undoing {prop}: {value} selects it again as the key");
+    }
+}
+
+#[test]
+fn object_set_props_deselects_the_objects_inside_a_group_or_layer_it_hides_or_locks() {
+    let mut s = session();
+    let (_, sub, a, g, b, c) = tree(&mut s);
+    run(&mut s, "select.set", json!({"ids": [a.0, b.0, c.0]}));
+    run(&mut s, "object.setProps", json!({"ids": [g.0], "locked": true}));
+    assert_eq!(s.doc().unwrap().selection.objects, vec![a, c], "b is in the locked group");
+    run(&mut s, "select.key", json!({"id": a.0}));
+    assert_eq!(s.doc().unwrap().selection.key, Some(a));
+    run(&mut s, "object.setProps", json!({"ids": [sub.0], "visible": false}));
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![c], None), "a, the key object, is in the hidden sublayer");
+}
+
+#[test]
+fn object_set_props_that_hides_or_locks_nothing_keeps_the_selection() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let x = rect(&mut s, 0.0);
+    run(&mut s, "select.set", json!({"ids": [x.0]}));
+    run(&mut s, "object.lock", json!({}));
+    run(&mut s, "layer.setProps", json!({"id": layer.0, "locked": true}));
+    run(&mut s, "object.unlockAll", json!({}));
+    let st = s.doc().unwrap();
+    assert!(st.selection.objects == vec![x] && !st.doc.is_editable(x), "Unlock All selects x, and its layer still locks it");
+    for p in [json!({"opacity": 50}), json!({"visible": true, "locked": false})] {
+        run(&mut s, "object.setProps", p.clone());
+        assert_eq!(s.doc().unwrap().selection.objects, vec![x], "{p} keeps x selected");
+    }
+    assert_eq!(node(&s, x).opacity, 0.5);
+}
+
+#[test]
+fn object_set_props_that_hides_or_locks_deselects_objects_hidden_or_locked_before() {
+    let mut s = session();
+    let (x, y, z) = (rect(&mut s, 0.0), rect(&mut s, 100.0), rect(&mut s, 200.0));
+    run(&mut s, "object.setProps", json!({"ids": [x.0], "visible": false}));
+    run(&mut s, "select.set", json!({"ids": [x.0, y.0, z.0]}));
+    assert_eq!(s.doc().unwrap().selection.objects, vec![x, y, z], "select.set selects the hidden x");
+    run(&mut s, "object.setProps", json!({"ids": [y.0], "locked": true}));
+    assert_eq!(s.doc().unwrap().selection.objects, vec![z], "locking y deselects x, hidden before the call, too");
+}
+
+#[test]
+fn object_set_props_that_changes_nothing_deselects_what_it_leaves_hidden_or_locked() {
+    let mut s = session();
+    let (x, y) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+    for (prop, value) in [("visible", false), ("locked", true)] {
+        let mut p = json!({"ids": [x.0]});
+        p[prop] = json!(value);
+        run(&mut s, "object.setProps", p.clone());
+        run(&mut s, "select.set", json!({"ids": [x.0, y.0]}));
+        run(&mut s, "select.key", json!({"id": x.0}));
+        let before = undos(&s);
+        run(&mut s, "object.setProps", p);
+        assert_eq!(undos(&s), before, "{prop}: {value} again records no undo step");
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![y], None), "{prop}: {value} again deselects x, the key object");
+        run(&mut s, "edit.undo", json!({}));
+        assert!(s.doc().unwrap().doc.is_editable(x));
+    }
 }
 
 #[test]
@@ -336,6 +451,29 @@ fn moves_are_validated() {
     assert_eq!(parent(&s, sub), None);
 }
 
+/// `node.move` into a hidden or locked layer deselects the object it moves, here the key object.
+/// Undo puts the object back and selects it again as the key object.
+#[test]
+fn node_move_into_a_hidden_or_locked_layer_deselects_the_object() {
+    for prop in ["visible", "locked"] {
+        let mut s = session();
+        let layer = s.doc().unwrap().doc.layers[0].id;
+        let (a, b) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+        let other = id(&run(&mut s, "layer.new", json!({})));
+        run(&mut s, "layer.setProps", json!({"ids": [other.0], prop: prop == "locked"}));
+        run(&mut s, "select.set", json!({"ids": [a.0, b.0]}));
+        run(&mut s, "select.key", json!({"id": b.0}));
+        run(&mut s, "node.move", json!({"id": b.0, "parent": other.0, "index": 0}));
+        assert_eq!(parent(&s, b), Some(other), "{prop}");
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![a], None), "{prop}: b, the key object, is deselected");
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(parent(&s, b), Some(layer), "{prop}");
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![a, b], Some(b)), "{prop}: undo selects b again as the key object");
+    }
+}
+
 #[test]
 fn alt_drag_copies_rows_and_the_selected_art_moves_between_layers() {
     let mut s = session();
@@ -350,6 +488,33 @@ fn alt_drag_copies_rows_and_the_selected_art_moves_between_layers() {
     run(&mut s, "layer.move", json!({"ids": [a.0, g.0], "target": layer.0}));
     assert_eq!(children(&s, layer), vec![c, sub, a, g]);
     assert_eq!(s.doc().unwrap().selection.objects, vec![a, g], "it stays selected");
+}
+
+/// The selected art in rows dragged into a hidden layer or group is deselected, the key object
+/// included. Undo puts the rows back and selects the art again.
+#[test]
+fn rows_dragged_into_a_hidden_layer_or_group_deselect_their_art() {
+    let mut s = session();
+    let (layer, sub, a, g, b, c) = tree(&mut s);
+    let hidden = id(&run(&mut s, "layer.new", json!({"visible": false})));
+    run(&mut s, "select.set", json!({"ids": [a.0, b.0, c.0]}));
+    run(&mut s, "select.key", json!({"id": a.0}));
+    // The sublayer, holding a and the group of b, goes into the hidden layer.
+    run(&mut s, "layer.move", json!({"ids": [sub.0], "target": hidden.0}));
+    assert_eq!(parent(&s, sub), Some(hidden));
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![c], None), "a, the key object, and b are hidden");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(parent(&s, sub), Some(layer));
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![a, b, c], Some(a)), "undo selects them again");
+    // c goes into the group once the group is hidden.
+    run(&mut s, "object.setProps", json!({"ids": [g.0], "visible": false}));
+    assert_eq!(s.doc().unwrap().selection.objects, vec![a, c], "b is in the hidden group");
+    run(&mut s, "layer.move", json!({"ids": [c.0], "target": g.0, "place": "inside"}));
+    assert_eq!(parent(&s, c), Some(g));
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![a], None), "c is hidden, and a single selected object has no key object");
 }
 
 #[test]
@@ -411,6 +576,72 @@ fn collect_merge_flatten_and_reverse() {
     assert_eq!(undos(&s), before + 1);
 }
 
+/// Collect in New Layer puts the new layer beside the topmost row when that row is directly in a
+/// layer, and on top of the layer holding its group when it is in a group. When that row is in a
+/// hidden or locked layer, the selected art it collects from another layer is deselected, the key
+/// object included, and undo selects it again.
+#[test]
+fn collect_in_new_layer_inside_a_hidden_or_locked_layer_deselects_the_art_it_moves() {
+    for prop in ["visible", "locked"] {
+        let mut s = session();
+        let (x, z) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+        let top = id(&run(&mut s, "layer.new", json!({})));
+        let y = rect(&mut s, 200.0);
+        run(&mut s, "layer.setProps", json!({"ids": [top.0], prop: prop == "locked"}));
+        run(&mut s, "select.set", json!({"ids": [x.0, z.0]}));
+        run(&mut s, "select.key", json!({"id": x.0}));
+        let col = id(&run(&mut s, "layer.collectInNew", json!({"ids": [x.0, y.0]})));
+        assert_eq!((parent(&s, col), children(&s, col)), (Some(top), vec![x, y]), "{prop}");
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![z], None), "{prop}: x, the key object, is deselected");
+        run(&mut s, "edit.undo", json!({}));
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![x, z], Some(x)), "{prop}: undo selects x again as the key object");
+    }
+}
+
+/// Merge Selected into a hidden or locked layer deselects the selected art it moves there, the key
+/// object included, and undo selects it again.
+#[test]
+fn merge_selected_into_a_hidden_or_locked_layer_deselects_the_art_it_moves() {
+    for prop in ["visible", "locked"] {
+        let mut s = session();
+        let layer = s.doc().unwrap().doc.layers[0].id;
+        let (x, z) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+        let into = id(&run(&mut s, "layer.new", json!({})));
+        run(&mut s, "layer.setProps", json!({"ids": [into.0], prop: prop == "locked"}));
+        run(&mut s, "select.set", json!({"ids": [x.0, z.0]}));
+        run(&mut s, "select.key", json!({"id": x.0}));
+        run(&mut s, "layer.merge", json!({"ids": [x.0, into.0]}));
+        assert_eq!((parent(&s, x), parent(&s, z)), (Some(into), Some(layer)), "{prop}");
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![z], None), "{prop}: x, the key object, is deselected");
+        run(&mut s, "edit.undo", json!({}));
+        let sel = s.doc().unwrap().selection.clone();
+        assert_eq!((sel.objects, sel.key), (vec![x, z], Some(x)), "{prop}: undo selects x again as the key object");
+    }
+}
+
+/// Flatten Artwork into a locked layer deselects the selected art it moves there, the key object
+/// included, and undo selects it again.
+#[test]
+fn flatten_artwork_into_a_locked_layer_deselects_the_art_it_moves() {
+    let mut s = session();
+    let layer = s.doc().unwrap().doc.layers[0].id;
+    let (x, z) = (rect(&mut s, 0.0), rect(&mut s, 100.0));
+    let into = id(&run(&mut s, "layer.new", json!({"locked": true})));
+    run(&mut s, "select.set", json!({"ids": [x.0, z.0]}));
+    run(&mut s, "select.key", json!({"id": x.0}));
+    run(&mut s, "layer.flatten", json!({"id": into.0}));
+    assert_eq!((parent(&s, x), parent(&s, z)), (Some(into), Some(into)));
+    assert!(s.doc().unwrap().doc.node(layer).is_none(), "Layer 1 was merged into the locked layer");
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![], None), "x and z are locked");
+    run(&mut s, "edit.undo", json!({}));
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![x, z], Some(x)), "undo selects them again with the key object");
+}
+
 #[test]
 fn release_to_layers_sequence_and_build() {
     let mut s = session();
@@ -460,6 +691,23 @@ fn hide_lock_and_outline_others_and_their_all_counterparts() {
     assert_eq!(run(&mut s, "layer.previewAll", json!({}))["count"], 0, "nothing to do: no undo step");
 }
 
+/// #1158: Alt-click on a hidden (locked) layer's eye (lock) isolates it: it shows (unlocks) as the
+/// others hide (lock), in one undo step.
+#[test]
+fn hide_and_lock_others_show_and_unlock_the_layer_kept() {
+    let mut s = session();
+    let l1 = s.doc().unwrap().doc.layers[0].id;
+    let l2 = id(&run(&mut s, "layer.new", json!({})));
+    let flags = |s: &Session, f: fn(&Node) -> bool| [l1, l2].map(|l| f(&node(s, l)));
+    run(&mut s, "layer.setProps", json!({"ids": [l2.0], "visible": false, "locked": true}));
+    assert_eq!(run(&mut s, "layer.hideOthers", json!({"ids": [l2.0]}))["count"], 2);
+    assert_eq!(flags(&s, |n| n.visible), [false, true]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(flags(&s, |n| n.visible), [true, false], "one undo step");
+    run(&mut s, "layer.lockOthers", json!({"ids": [l2.0]}));
+    assert_eq!(flags(&s, |n| n.locked), [true, false]);
+}
+
 #[test]
 fn locate_object_highlights_its_row() {
     let mut s = session();
@@ -481,4 +729,161 @@ fn the_clipping_mask_button_acts_on_the_highlighted_group() {
     run(&mut s, "layer.setCurrent", json!({"id": g.0}));
     assert_eq!(run(&mut s, "layer.clippingMask.toggle", json!({}))["clip"], true);
     assert!(node(&s, g).clips());
+}
+
+/// #785: explicit malformed layer targets must never become the current-layer default.
+#[test]
+fn layer_delete_rejects_invalid_explicit_targets() {
+    let mut unexpected = vec![];
+    for params in [json!({"id": "1"}), json!({"ids": [1, "2"]}), json!({"id": "$1.id"})] {
+        let mut s = session();
+        run(&mut s, "layer.new", json!({}));
+        run(&mut s, "layer.new", json!({}));
+        let before = layer_target_snapshot(&s);
+        let result = s.execute("layer.delete", &params);
+        if result.is_ok() {
+            let names: Vec<_> = s.doc().unwrap().doc.layers.iter().map(|l| l.display_name()).collect();
+            unexpected.push(format!("{params}: {result:?}; remaining layers {names:?}"));
+        } else {
+            assert_eq!(layer_target_snapshot(&s), before, "{params}");
+        }
+    }
+    assert!(unexpected.is_empty(), "malformed requests succeeded: {}", unexpected.join("; "));
+}
+
+fn layer_target_snapshot(s: &Session) -> Value {
+    let st = s.doc().unwrap();
+    let history =
+        |entries: &[HistoryEntry]| entries.iter().map(|e| json!({"label": e.label, "doc": e.doc, "selection": e.selection})).collect::<Vec<_>>();
+    json!({"doc": st.doc, "selection": st.selection, "revision": st.revision, "activeLayer": st.active_layer,
+        "rows": st.layer_rows, "undo": history(&st.history.undo), "redo": history(&st.history.redo)})
+}
+
+fn layer_target_fixture() -> (Session, Vec<NodeId>) {
+    let mut s = session();
+    let first = s.doc().unwrap().doc.layers[0].id;
+    rect(&mut s, 0.0);
+    let second = id(&run(&mut s, "layer.new", json!({})));
+    rect(&mut s, 40.0);
+    let third = id(&run(&mut s, "layer.new", json!({})));
+    rect(&mut s, 80.0);
+    run(&mut s, "layer.highlight", json!({"ids": [first.0, second.0]}));
+    (s, vec![first, second, third])
+}
+
+fn malformed_layer_targets(first: NodeId, second: NodeId) -> Vec<Value> {
+    let mut params = vec![];
+    for bad in [json!("1"), json!("$1.id"), json!(1.0), json!(1.5), json!(-1), Value::Null, json!(true), json!({}), json!([])] {
+        params.push(json!({"id": bad}));
+        params.push(json!({"ids": [first.0, bad]}));
+    }
+    for bad in [Value::Null, json!("1"), json!(1), json!(false), json!({})] {
+        params.push(json!({"ids": bad, "id": first.0}));
+    }
+    for missing in [0, u64::MAX] {
+        params.push(json!({"id": missing}));
+        params.push(json!({"ids": [first.0, second.0, missing]}));
+    }
+    params
+}
+
+fn assert_layer_target_error(s: &mut Session, command: &str, params: Value) {
+    let before = layer_target_snapshot(s);
+    let error = s.execute(command, &params).unwrap_err();
+    assert!(error.to_string().contains(command), "{command} {params}: {error}");
+    assert_eq!(layer_target_snapshot(s), before, "{command} {params}: rejected targets must leave all state unchanged");
+}
+
+/// #785: shared row commands reject malformed or unknown targets before any partial edits.
+#[test]
+fn layer_target_validation_keeps_document_selection_revision_and_history_unchanged() {
+    let (_, rows) = layer_target_fixture();
+    for command in [
+        "layer.delete",
+        "layer.duplicate",
+        "layer.setProps",
+        "layer.template",
+        "layer.merge",
+        "layer.reverse",
+        "layer.hideOthers",
+        "layer.outlineOthers",
+        "layer.lockOthers",
+    ] {
+        for mut params in malformed_layer_targets(rows[0], rows[1]) {
+            let (mut s, _) = layer_target_fixture();
+            if command == "layer.setProps" {
+                params["name"] = json!("Changed");
+            }
+            assert_layer_target_error(&mut s, command, params);
+        }
+    }
+}
+
+/// These commands have their own selectors, not the shared row-default parser.
+#[test]
+fn layer_collect_and_flatten_validate_their_own_explicit_targets() {
+    let (_, rows) = layer_target_fixture();
+    for params in malformed_layer_targets(rows[0], rows[1]) {
+        let command = if params.get("ids").is_some() { "layer.collectInNew" } else { "layer.flatten" };
+        let (mut s, _) = layer_target_fixture();
+        assert_layer_target_error(&mut s, command, params);
+    }
+}
+
+/// Truncation limits work, not validation: a malformed or unknown tail cannot be ignored.
+#[test]
+fn layer_target_arrays_are_fully_validated_before_the_row_limit() {
+    // The existing panel row limit is 100,000; exercise the public command beyond it.
+    const ROW_LIMIT: usize = 100_000;
+    for tail in [json!("$1.id"), json!(u64::MAX)] {
+        let (mut s, rows) = layer_target_fixture();
+        let mut values = vec![json!(rows[0].0); ROW_LIMIT + 1];
+        *values.last_mut().unwrap() = tail;
+        assert_layer_target_error(&mut s, "layer.delete", json!({"ids": values}));
+    }
+    let (mut s, rows) = layer_target_fixture();
+    let mut values = vec![json!(rows[0].0); ROW_LIMIT + 1];
+    *values.last_mut().unwrap() = json!(rows[1].0);
+    run(&mut s, "layer.setProps", json!({"ids": values, "name": "Within limit"}));
+    assert_eq!(node(&s, rows[0]).name.as_deref(), Some("Within limit"));
+    assert_ne!(node(&s, rows[1]).name.as_deref(), Some("Within limit"), "the valid tail remains beyond the work cap");
+}
+
+#[test]
+fn layer_target_defaults_and_valid_explicit_precedence_are_preserved() {
+    let (mut s, rows) = layer_target_fixture();
+    run(&mut s, "layer.setProps", json!({"name": "Highlighted"}));
+    assert_eq!(node(&s, rows[0]).name.as_deref(), Some("Highlighted"));
+    assert_eq!(node(&s, rows[1]).name.as_deref(), Some("Highlighted"));
+    run(&mut s, "layer.setProps", json!({"id": rows[2].0, "name": "Single"}));
+    assert_eq!(node(&s, rows[2]).name.as_deref(), Some("Single"));
+    let before = undos(&s);
+    run(&mut s, "layer.setProps", json!({"ids": [rows[1].0, rows[0].0, rows[1].0], "id": "$1.id", "name": "Explicit"}));
+    assert_eq!(node(&s, rows[0]).name.as_deref(), Some("Explicit"));
+    assert_eq!(node(&s, rows[1]).name.as_deref(), Some("Explicit"));
+    assert_eq!(node(&s, rows[2]).name.as_deref(), Some("Single"));
+    assert_eq!(undos(&s), before + 1, "duplicates remain one edit");
+    assert_layer_target_error(&mut s, "layer.setProps", json!({"ids": [], "id": rows[2].0, "name": "Must not fall back"}));
+    run(&mut s, "layer.setCurrent", json!({"id": rows[2].0}));
+    run(&mut s, "layer.highlight", json!({"ids": []}));
+    run(&mut s, "layer.setProps", json!({"name": "Current"}));
+    assert_eq!(node(&s, rows[2]).name.as_deref(), Some("Current"));
+    let before = undos(&s);
+    run(&mut s, "layer.delete", json!({}));
+    assert!(s.doc().unwrap().doc.node(rows[2]).is_none());
+    assert_eq!(undos(&s), before + 1);
+}
+
+#[test]
+fn layer_collect_and_flatten_keep_valid_and_omitted_target_behavior() {
+    let (mut s, rows) = layer_target_fixture();
+    let r = run(&mut s, "layer.flatten", json!({"id": rows[2].0}));
+    assert_eq!(r["id"], json!(rows[2].0));
+    assert_eq!(s.doc().unwrap().doc.layers.len(), 1);
+    let (mut s, _) = layer_target_fixture();
+    let selected = s.doc().unwrap().selection.objects.clone();
+    s.doc_mut().unwrap().layer_rows.clear();
+    let r = run(&mut s, "layer.collectInNew", json!({}));
+    let collected = id(&r);
+    assert!(selected.iter().all(|id| parent(&s, *id) == Some(collected)));
 }

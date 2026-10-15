@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~14 points and ~340–600 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against Lightroom Classic 15.5 and the installed Lightroom 9.6; restructured to the progress-docs standard) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (EOS R5 Mark II CR3 verified; RAW decoding 77%) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 One-page summary of how close LightCraft is to Adobe Lightroom. Agents: read this, then pick work
 from [docs/gaps.md](docs/gaps.md). The full assessment, method and evidence are in
@@ -29,11 +29,11 @@ Each audience with its own hours (Opus 5.5 agent wall-clock hours to ~95%):
 | Essentials user | **~64%** | **160–300 h** (~50% parallelizes) | default raw look for popular cameras; launch stability; basic-slider feel; opening CR3 / HEIC files people send |
 
 The gap between breadth and readiness is quality and coverage, not missing buttons: camera colour is
-estimated rather than measured, CR3 decodes on three verified Canon bodies, compressed ORF and HE NEF
+estimated rather than measured, CR3 decodes on four verified Canon bodies, compressed ORF and HE NEF
 open as previews, rendering is tuned by eye, AI masks are heuristics, there is no lens database, and
 tests run in CI on FreeBSD only. **Why alpha:** core workflows run end to end, but readiness is below
 the ~75% beta bar (it is above the ~40% alpha bar) and Lightroom's main inputs, raw files, still have blocking gaps (Canon, ~30% of
-raw users, decodes CR3 on three verified bodies). It passes the alpha gate: all six core workflows
+raw users, decodes CR3 on four verified bodies). It passes the alpha gate: all six core workflows
 (import, cull, develop, save and reopen, batch looks, export) work end to end on macOS
 ([docs/roadmap.md](docs/roadmap.md#alpha-gate)). The three readiness numbers and their weights and discounts are in
 [target-app-parity.md](docs/target-app-parity.md#ready-for-real-work-mainstream-practitioner-and-essentials-user).
@@ -61,7 +61,7 @@ Hours are calibrated on this repo's PR history; see
 | Area | Ready | Breadth | Remaining |
 |---|---:|---:|---:|
 | Import and library | 80% | 90% | 25–45 h |
-| RAW decoding and camera coverage | 76% | 81% | 120–220 h |
+| RAW decoding and camera coverage | 77% | 81% | 120–220 h |
 | Colour, camera profiles, render fidelity | 35% | 65% | 80–150 h |
 | Global develop adjustments | 70% | 93% | 30–60 h |
 | Optics, lens profiles, crop and geometry | 50% | 80% | 40–80 h |
@@ -114,6 +114,11 @@ Ranked toward beta; detail in [docs/roadmap.md](docs/roadmap.md), gaps in [docs/
 
 ## Progress log
 
+- 2026-10-11: Canon EOS R5 Mark II C-RAW decodes from sensor data (57% of its files opened as a
+  preview): the CRX QP map's first-symbol literal and limited-length escape; four CC0 R5 Mark II files
+  pinned, the QP maps of 33,665 private C-RAW files decode exactly ([cr3.md](docs/cr3.md)). 235 models
+  verified; RAW decoding 76% → 77%; headline numbers unchanged.
+- **2026-10-10 (UI docking):** Library, Tools, and Presets panels can be regrouped, split, floated within the app window, closed, and reopened. Tools keeps the current Edit/Crop/Masking mode; the photo view and filmstrip stay together. Panel moves and reset are available as UI commands, and saved UI preferences retain arrangements. Widget state styling uses the shared `craft-ui` theme helper, retaining the dark palette, typography, spacing and per-state borders. No readiness percentage change.
 - 2026-10-10 (RAW): RAW measured model by model against Adobe's 1,446-model list (234 verified, 943
   unverified, 233 preview-only, 36 unsupported; ~84% of photographers' cameras decode, ~40% on a
   verified body). Full ~61%, mainstream ~49%, essentials ~64%; beta ~14 points away.
@@ -156,6 +161,7 @@ Ranked toward beta; detail in [docs/roadmap.md](docs/roadmap.md), gaps in [docs/
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | EOS R5 Mark II CR3 verified: CR3 on four verified bodies, RAW decoding 76% → 77%; headline numbers unchanged |
 | 2026-10-10 | minor | RAW measured model by model; RAW decode and colour as explicit rows: full 59% → 61%, mainstream 51% → 49%, essentials 63% → 64%; beta ~14 points |
 | 2026-10-10 | minor | Full ready restored to the additive weighted sum (~59%; method aligned with the standard, no new evidence); hours per audience; beta ~16 points away |
 | 2026-10-10 | minor | Mainstream practitioner and essentials user numbers; full ready 55% → 46% (method written down); beta 340–600 h |

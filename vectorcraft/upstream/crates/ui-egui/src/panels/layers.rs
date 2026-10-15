@@ -30,8 +30,8 @@
 //! those scrolled into view are laid out, so a document of many thousand objects costs no more
 //! per frame than a small one.
 
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Weak};
 
 use egui::{Color32, Sense, Stroke, StrokeKind, Ui, vec2};
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,7 @@ use vectorcraft_doc::{Document, Node, NodeId, NodeKind};
 use vectorcraft_engine::OpenRows;
 
 use crate::theme::Tokens;
+use crate::thumb_worker::{Settle, ThumbWorker};
 use crate::widgets::{Live, PanelDrag};
 use crate::{VectorcraftApp, icons, widgets};
 
@@ -98,6 +99,9 @@ enum LayersDrag {
     Rows(Vec<NodeId>),
     /// The selected-art square: the selected objects go to the row it is dropped on.
     Art,
+    /// Ruler guide rows (indexes into the document's guides): they go to the layer of the row
+    /// they are dropped on.
+    Guides(Vec<usize>),
 }
 
 /// A drag down the eye or lock column: every row it passes takes `value`.
@@ -133,12 +137,12 @@ fn colour_bar(ui: &Ui, n: &Node, r: egui::Rect, x: f32, colour: Color32) {
 }
 
 /// The thumbnail of row `n` (rect `r`) at `x`; returns where it went.
-fn row_thumb(ui: &Ui, view: &View, n: &Node, r: egui::Rect, x: f32) -> egui::Rect {
+fn row_thumb(ui: &Ui, view: &View, n: &Arc<Node>, r: egui::Rect, x: f32) -> egui::Rect {
     let s = (view.h - 4.0).min(40.0);
     let th = egui::Rect::from_min_size(egui::pos2(x, r.center().y - s / 2.0), vec2(s, s));
     ui.painter().rect_filled(th, 0.0, Color32::WHITE);
     ui.painter().rect_stroke(th, 0.0, Stroke::new(1.0, view.t.border), StrokeKind::Outside);
-    if !real_thumb(ui, view.doc, n, th) {
+    if !real_thumb(ui, &view.thumbs, n, th) {
         thumb(ui, n, th);
     }
     th
@@ -148,7 +152,8 @@ fn row_thumb(ui: &Ui, view: &View, n: &Node, r: egui::Rect, x: f32) -> egui::Rec
 /// colour bar, thumbnail and name.
 fn drag_ghost(ui: &Ui, view: &View, src: NodeId, pos: egui::Pos2) {
     let (doc, t, h) = (view.doc, &view.t, view.h);
-    let Some(n) = doc.node(src) else { return };
+    let Some(n) = node_arc(doc, src) else { return };
+    let n = &n;
     let (grab, width, depth) = ui.data(|d| d.get_temp::<(egui::Vec2, f32, usize)>(key("grab"))).unwrap_or((vec2(h, h / 2.0), 240.0, 0));
     // A plain Ui on the tooltip layer, not an Area: a new Area is invisible for a frame and fades in.
     let r = egui::Rect::from_min_size(pos - grab, vec2(width, h));
@@ -220,6 +225,8 @@ struct Row {
     colour: Color32,
     /// Drawn dimmed: hidden itself or in a hidden layer or group, or a template layer.
     dim: bool,
+    /// A ruler guide on the layer `node` (its index in the document's guides): the guide's row.
+    guide: Option<usize>,
 }
 
 /// What the rows were listed from: listed again when any of it changes.
@@ -239,7 +246,7 @@ fn list_rows(doc: &Document, open: &OpenRows, opts: &PanelOptions, query: &str) 
     let mask_layer = doc.mask_edit.map(|m| m.layer);
     let mut out = vec![];
     for l in doc.layers.iter().rev().filter(|l| mask_layer.is_none_or(|m| m == l.id)) {
-        push_rows(l, 0, false, (Color32::PLACEHOLDER, true), (open, opts, query), &mut out);
+        push_rows(l, 0, false, (Color32::PLACEHOLDER, true), (open, opts, query, doc), &mut out);
     }
     out
 }
@@ -251,10 +258,10 @@ fn push_rows(
     depth: usize,
     clip_path: bool,
     (colour, shown): (Color32, bool),
-    cx: (&OpenRows, &PanelOptions, &str),
+    cx: (&OpenRows, &PanelOptions, &str, &Document),
     out: &mut Vec<Row>,
 ) {
-    let (open_rows, opts, query) = cx;
+    let (open_rows, opts, query, doc) = cx;
     if opts.layers_only && !n.is_layer() {
         return;
     }
@@ -266,11 +273,18 @@ fn push_rows(
         _ => colour,
     };
     let shown = shown && n.visible;
-    let opens = opens(n, opts);
     let searching = !query.is_empty();
+    // A layer's ruler guides are rows in it, above its art (not while searching).
+    let guides: Vec<usize> = if n.is_layer() && !opts.layers_only && !searching { doc.guides_on(n.id).map(|(i, _)| i).collect() } else { vec![] };
+    let opens = opens(n, opts) || !guides.is_empty();
     let open = opens && (searching || open_rows.contains(n.id));
     let at = out.len();
-    out.push(Row { node: n.clone(), depth, clip_path, opens, open, colour, dim: !shown || n.is_template() });
+    out.push(Row { node: n.clone(), depth, clip_path, opens, open, colour, dim: !shown || n.is_template(), guide: None });
+    if open {
+        for i in guides.into_iter().rev() {
+            out.push(Row { node: n.clone(), depth: depth + 1, clip_path: false, opens: false, open: false, colour, dim: !shown, guide: Some(i) });
+        }
+    }
     if open && let Some(children) = n.children() {
         for (i, c) in children.iter().enumerate().rev() {
             push_rows(c, depth + 1, i == 0 && n.clips(), (colour, shown), cx, out);
@@ -300,8 +314,12 @@ fn rows_of_doc(ui: &Ui, st: &vectorcraft_engine::DocState, opts: &PanelOptions, 
 
 /// Everything one frame of the panel reads.
 struct View<'a> {
-    doc: &'a Document,
+    doc: &'a Arc<Document>,
+    /// Where the row thumbnails come from.
+    thumbs: ThumbSource<'a>,
     sel: HashSet<NodeId>,
+    /// The selected ruler guides.
+    guides: Vec<usize>,
     target: Option<NodeId>,
     current: Option<NodeId>,
     rows: Vec<NodeId>,
@@ -361,7 +379,9 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
     let list = rows_of_doc(ui, st, &app.ui.layers_panel, &query);
     let view = View {
         doc: &doc,
+        thumbs: ThumbSource::of(app, st, &doc),
         sel: st.selection.objects.iter().copied().collect(),
+        guides: st.selection.guides.clone(),
         target: st.selection.target,
         current: st.current_layer(),
         rows,
@@ -537,13 +557,77 @@ fn takes(n: &Node, drag: &LayersDrag, doc: &Document) -> bool {
         NodeKind::Group { .. } => match drag {
             LayersDrag::Rows(ids) => !ids.iter().any(|i| doc.node(*i).is_some_and(Node::is_layer)),
             LayersDrag::Art => true,
+            LayersDrag::Guides(_) => false,
         },
         _ => false,
     }
 }
 
+/// The row of ruler guide `i` on the layer of `item`: a guide mark and its name, the selection
+/// square when it is selected. A click selects the guide; Shift or Cmd adds it to (or takes it
+/// from) the selected guides. A guide on a hidden or locked layer can't be selected or dragged.
+fn guide_row(ui: &mut Ui, view: &View, item: &Row, i: usize, out: &mut Out) {
+    let (t, h) = (&view.t, view.h);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click_and_drag());
+    let Some(g) = view.doc.guides.get(i) else { return };
+    let selected = view.guides.contains(&i);
+    let editable = view.doc.guide_editable(g);
+    if editable && resp.hovered() {
+        ui.painter().rect_filled(r, 0.0, t.hover.gamma_multiply(0.6));
+    }
+    ui.painter().line_segment([r.left_bottom(), r.right_bottom()], Stroke::new(1.0, t.input_border));
+    let mut x = r.left() + 2.0 * COLUMN + 2.0;
+    colour_bar(ui, &item.node, r, x, item.colour);
+    x += 6.0 + item.depth as f32 * INDENT + 16.0;
+    // The guide mark: a short line across or down, in the guides' colour.
+    let c = egui::pos2(x + 8.0, r.center().y);
+    let half = if g.vertical { vec2(0.0, 6.0) } else { vec2(6.0, 0.0) };
+    ui.painter().line_segment([c - half, c + half], Stroke::new(1.5, t.accent));
+    x += 22.0;
+    let name = format!("<{}>", if g.vertical { tl!("Vertical Guide") } else { tl!("Horizontal Guide") });
+    let color = if item.dim { t.text_dim } else { t.text };
+    ui.painter().text(egui::pos2(x, r.center().y), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(13.0), color);
+    let col_x = r.right() - 43.5;
+    ui.painter().line_segment([egui::pos2(col_x, r.top()), egui::pos2(col_x, r.bottom())], Stroke::new(1.0, t.input_border));
+    if selected {
+        let q = egui::Rect::from_center_size(egui::pos2(r.right() - SQUARE_X, r.center().y), vec2(7.0, 7.0));
+        ui.painter().rect_filled(q, 0.0, item.colour);
+        ui.painter().rect_stroke(q, 0.0, Stroke::new(1.0, t.text), StrokeKind::Inside);
+    }
+    if editable && resp.clicked() {
+        let m = ui.input(|i| i.modifiers);
+        out.actions.push(("guide.select".into(), json!({"indexes": [i], "toggle": m.shift || m.command})));
+    }
+    // Dragged: the selected guides when this is one of them, else this one, to another layer's row.
+    if editable && resp.drag_started() {
+        let guides = if selected { view.guides.clone() } else { vec![i] };
+        egui::DragAndDrop::set_payload(ui.ctx(), LayersDrag::Guides(guides));
+    }
+    if resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    // Guides dropped here go to this guide's layer.
+    if let Some(drag) = resp.dnd_hover_payload::<LayersDrag>()
+        && let LayersDrag::Guides(guides) = &*drag
+    {
+        guide_drop(ui, view, guides, item.node.id, r, &resp, out);
+    }
+}
+
+/// Guide rows `guides` dragged over row `r` (`resp`) of layer `layer`: the row lights up, and the
+/// release puts them on that layer (`guide.setLayer`, one undo step).
+fn guide_drop(ui: &Ui, view: &View, guides: &[usize], layer: NodeId, r: egui::Rect, resp: &egui::Response, out: &mut Out) {
+    ui.painter().rect_stroke(r.shrink(1.0), 0.0, Stroke::new(2.0, view.t.accent), StrokeKind::Inside);
+    if resp.dnd_release_payload::<LayersDrag>().is_some() {
+        out.actions.push(("guide.setLayer".into(), json!({"indexes": guides, "layer": layer.0})));
+    }
+}
+
 /// The widgets of row `item`.
 fn row(ui: &mut Ui, view: &View, item: &Row, out: &mut Out) {
+    if let Some(i) = item.guide {
+        return guide_row(ui, view, item, i, out);
+    }
     let n = &*item.node;
     let (depth, clip_path, has_children, open, color) = (item.depth, item.clip_path, item.opens, item.open, item.colour);
     let doc = view.doc;
@@ -597,7 +681,7 @@ fn row(ui: &mut Ui, view: &View, item: &Row, out: &mut Out) {
     x += 16.0;
     // Thumbnail.
     let thumb_rect = view.opts.thumb(n).then(|| {
-        let th = row_thumb(ui, view, n, r, x);
+        let th = row_thumb(ui, view, &item.node, r, x);
         x = th.right() + 4.0;
         th
     });
@@ -639,7 +723,7 @@ fn row(ui: &mut Ui, view: &View, item: &Row, out: &mut Out) {
             // A clipping path's name is underlined, a masked object's with a dashed line.
             if clip_path {
                 painter.line_segment([text.left_bottom(), text.right_bottom()], Stroke::new(1.0, t.text));
-            } else if n.mask.is_some() {
+            } else if n.extras().mask.is_some() {
                 painter.extend(egui::Shape::dashed_line(&[text.left_bottom(), text.right_bottom()], Stroke::new(1.0, t.text), 3.0, 2.0));
             }
         }
@@ -777,6 +861,13 @@ fn drop_target(ui: &Ui, view: &View, n: &Node, r: egui::Rect, indent: f32, open:
     let moving: Vec<NodeId> = match &*drag {
         LayersDrag::Rows(ids) => ids.clone(),
         LayersDrag::Art => view.sel.iter().copied().collect(),
+        LayersDrag::Guides(guides) => {
+            // Guides go to the layer of the row (the row's own, for a layer).
+            if let Some(layer) = if n.is_layer() { Some(n.id) } else { doc.layer_containing(n.id) } {
+                guide_drop(ui, view, guides, layer, r, resp, out);
+            }
+            return;
+        }
     };
     // Never into itself or a row inside it.
     let around = doc.ancestry(n.id).unwrap_or_default();
@@ -791,7 +882,7 @@ fn drop_target(ui: &Ui, view: &View, n: &Node, r: egui::Rect, indent: f32, open:
         LayersDrag::Art => Place::Above,
         LayersDrag::Rows(_) if inside && rel >= 0.25 && (rel <= 0.75 || open) => Place::Inside,
         LayersDrag::Rows(_) if rel < 0.5 => Place::Above,
-        LayersDrag::Rows(_) => Place::Below,
+        LayersDrag::Rows(_) | LayersDrag::Guides(_) => Place::Below,
     };
     let stroke = Stroke::new(2.0, view.t.accent);
     match place {
@@ -811,6 +902,7 @@ fn drop_target(ui: &Ui, view: &View, n: &Node, r: egui::Rect, indent: f32, open:
             // The selection's top objects, as Arrange and Group take them.
             LayersDrag::Art => doc.paint_order(moving.iter().copied()).iter().map(|i| i.0).collect(),
             LayersDrag::Rows(ids) => ids.iter().map(|i| i.0).collect(),
+            LayersDrag::Guides(_) => return,
         };
         out.actions.push(("layer.move".into(), json!({"ids": ids, "target": n.id.0, "place": place.id(), "copy": copy})));
     }
@@ -854,35 +946,215 @@ fn has_styled_target(n: &Node) -> bool {
         || !n.has_default_transparency()
 }
 
-/// A real rendered thumbnail, cached by node identity (unchanged nodes keep their `Arc`
-/// allocation, so the address is a free change detector). Only rendered for visible rows.
-pub(crate) fn real_thumb(ui: &Ui, doc: &vectorcraft_doc::Document, n: &Node, r: egui::Rect) -> bool {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-    thread_local! {
-        static RENDERER: RefCell<vectorcraft_render::Renderer> = RefCell::new(vectorcraft_render::Renderer::new());
-        static CACHE: crate::graphics::TexCache<HashMap<(usize, u64), egui::TextureHandle>> = crate::graphics::TexCache::default();
+/// Where row thumbnails come from: document `uid` at `revision`, and whether a drag is in
+/// progress (the thumbnails shown then stay until it ends).
+pub(crate) struct ThumbSource<'a> {
+    pub uid: u64,
+    pub revision: u64,
+    pub doc: &'a Arc<Document>,
+    pub busy: bool,
+}
+
+impl<'a> ThumbSource<'a> {
+    /// The thumbnails of the document `st` holds (`doc`, its document).
+    pub(crate) fn of(app: &VectorcraftApp, st: &vectorcraft_engine::DocState, doc: &'a Arc<Document>) -> Self {
+        Self { uid: st.uid, revision: st.revision, doc, busy: st.interaction.is_some() || app.session.tool_busy() }
     }
+}
+
+/// Node `id` of `doc`, as the `Arc` its parent holds.
+pub(crate) fn node_arc(doc: &Document, id: NodeId) -> Option<Arc<Node>> {
+    let path = doc.index_path(id)?;
+    let (first, rest) = path.split_first()?;
+    let mut cur = doc.layers.get(*first)?;
+    for &i in rest {
+        cur = cur.children()?.get(i)?;
+    }
+    Some(cur.clone())
+}
+
+/// A row thumbnail's image.
+struct ThumbEntry {
+    /// The node it shows. Weak, so the cache doesn't keep old art alive, but its allocation stays
+    /// and no other node can come to have its address.
+    node: Weak<Node>,
+    px: u32,
+    /// None: the node draws nothing.
+    tex: Option<egui::TextureHandle>,
+    /// How long it took to render (ms).
+    ms: f64,
+    /// The pass it was last drawn in.
+    used: u64,
+}
+
+/// A row thumbnail job: the row (document uid, node), the node and the size rendered.
+type ThumbJob = ((u64, NodeId), Weak<Node>, u32);
+
+#[derive(Default)]
+struct Thumbs {
+    entries: HashMap<(u64, NodeId), ThumbEntry>,
+    /// What the worker is rendering, by row.
+    pending: HashMap<(u64, NodeId), (Weak<Node>, u32)>,
+    worker: Option<ThumbWorker<(u64, NodeId), ThumbJob>>,
+    worker_started: bool,
+    settle: Settle,
+    /// (pass, ms, count) rendered on the UI thread in that pass.
+    spent: (u64, f64, u32),
+    /// Thumbnails rendered on the UI thread (tests count them).
+    renders: u64,
+}
+
+thread_local! {
+    static THUMBS: crate::graphics::TexCache<Thumbs> = crate::graphics::TexCache::default();
+}
+
+/// The most row thumbnails kept: past it the ones drawn longest ago go.
+const MAX_THUMBS: usize = 512;
+/// Rendering a thumbnail that took longer than this (ms) again goes to the worker.
+const LIGHT_THUMB_MS: f64 = 4.0;
+/// A node with more objects than this inside has its first thumbnail made on the worker.
+const LIGHT_THUMB_NODES: usize = 200;
+/// At most this long (ms) and this many thumbnails are rendered on the UI thread in a pass; the
+/// rest go to the worker, or wait for the next pass where there is none.
+const THUMB_BUDGET_MS: f64 = 8.0;
+const THUMB_BUDGET_COUNT: u32 = 16;
+
+/// How row thumbnails render: images far smaller than they are sample their mip levels.
+pub(crate) fn thumb_options() -> vectorcraft_render::RenderOptions {
+    vectorcraft_render::RenderOptions { image_mips: true, ..Default::default() }
+}
+
+/// Has `n` at most `limit` objects inside it (counting stops there)?
+fn small_node(n: &Node, limit: usize) -> bool {
+    fn count(n: &Node, left: &mut usize) -> bool {
+        for c in n.children().into_iter().flatten() {
+            if *left == 0 {
+                return false;
+            }
+            *left -= 1;
+            if !count(c, left) {
+                return false;
+            }
+        }
+        true
+    }
+    let mut left = limit;
+    count(n, &mut left)
+}
+
+impl Thumbs {
+    /// Keep `img` (None: nothing drawn) as the thumbnail of row `key` showing `node`.
+    fn upload(&mut self, ctx: &egui::Context, key: (u64, NodeId), node: Weak<Node>, px: u32, img: Option<&vectorcraft_render::Rendered>, ms: f64) {
+        let color = img.map(|img| egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels));
+        let used = ctx.cumulative_pass_nr();
+        let name = format!("layer-thumb-{}", key.1.0);
+        match self.entries.get_mut(&key) {
+            Some(e) => {
+                match (color, &mut e.tex) {
+                    (Some(color), Some(tex)) => tex.set(color, egui::TextureOptions::LINEAR),
+                    (Some(color), tex) => *tex = Some(ctx.load_texture(name, color, egui::TextureOptions::LINEAR)),
+                    (None, tex) => *tex = None,
+                }
+                (e.node, e.px, e.ms, e.used) = (node, px, ms, used);
+            }
+            None => {
+                let tex = color.map(|color| ctx.load_texture(name, color, egui::TextureOptions::LINEAR));
+                self.entries.insert(key, ThumbEntry { node, px, tex, ms, used });
+                if self.entries.len() > MAX_THUMBS {
+                    // Keep the three quarters drawn last.
+                    let mut by_use: Vec<u64> = self.entries.values().map(|e| e.used).collect();
+                    by_use.sort_unstable();
+                    let cut = by_use.get(by_use.len() - MAX_THUMBS * 3 / 4).copied().unwrap_or(0);
+                    self.entries.retain(|_, e| e.used >= cut);
+                }
+            }
+        }
+    }
+
+    /// The texture of row `n` (`px` pixels square) to draw: made or updated now, or on the
+    /// worker (the old one is drawn meanwhile). Thumbnails shown stay during a drag and until
+    /// the document settles.
+    fn texture(&mut self, ctx: &egui::Context, src: &ThumbSource, n: &Arc<Node>, px: u32) -> Option<egui::TextureHandle> {
+        if !self.worker_started {
+            self.worker_started = true;
+            self.worker = ThumbWorker::spawn(ctx, "thumbnails");
+        }
+        let done = match self.worker.as_ref().map(ThumbWorker::poll) {
+            Some(Some(done)) => done,
+            Some(None) => {
+                // The thread is gone: render here from now on.
+                self.worker = None;
+                self.pending.clear();
+                vec![]
+            }
+            None => vec![],
+        };
+        for d in done {
+            let (key, node, px) = d.key;
+            if self.pending.get(&key).is_some_and(|(p, ppx)| p.ptr_eq(&node) && *ppx == px) {
+                self.pending.remove(&key);
+            }
+            self.upload(ctx, key, node, px, d.img.as_ref(), d.ms);
+        }
+        let key = (src.uid, n.id);
+        let pass = ctx.cumulative_pass_nr();
+        let (fresh, light) = match self.entries.get_mut(&key) {
+            Some(e) => {
+                e.used = pass;
+                (std::ptr::eq(e.node.as_ptr(), Arc::as_ptr(n)) && e.px == px, Some(e.ms <= LIGHT_THUMB_MS))
+            }
+            None => (false, None),
+        };
+        let shown = self.entries.get(&key).and_then(|e| e.tex.clone());
+        if fresh || self.pending.get(&key).is_some_and(|(p, ppx)| std::ptr::eq(p.as_ptr(), Arc::as_ptr(n)) && *ppx == px) {
+            return shown;
+        }
+        if light.is_some() && (src.busy || !self.settle.settled(ctx, src.uid, src.revision, ctx.input(|i| i.time))) {
+            return shown;
+        }
+        if self.spent.0 != pass {
+            self.spent = (pass, 0.0, 0);
+        }
+        let in_budget = self.spent.1 < THUMB_BUDGET_MS && self.spent.2 < THUMB_BUDGET_COUNT;
+        let light = light.unwrap_or_else(|| small_node(n, LIGHT_THUMB_NODES)) && in_budget;
+        if !light && let Some(w) = &self.worker {
+            let (doc, node) = (src.doc.clone(), n.clone());
+            let job: ThumbJob = (key, Arc::downgrade(n), px);
+            if w.submit(key, job, Box::new(move |r| r.render_node_thumbnail_with(&doc, &node, px, None, &thumb_options()))) {
+                self.pending.insert(key, (Arc::downgrade(n), px));
+                return shown;
+            }
+            self.worker = None;
+            self.pending.clear();
+        }
+        if !in_budget {
+            ctx.request_repaint();
+            return shown;
+        }
+        thread_local! {
+            static RENDERER: std::cell::RefCell<vectorcraft_render::Renderer> = std::cell::RefCell::new(vectorcraft_render::Renderer::new());
+        }
+        let t0 = crate::now_ms();
+        let img = RENDERER.with(|r| r.borrow_mut().render_node_thumbnail_with(src.doc, n, px, None, &thumb_options()));
+        let ms = crate::now_ms() - t0;
+        self.spent.1 += ms;
+        self.spent.2 += 1;
+        self.renders += 1;
+        self.upload(ctx, key, Arc::downgrade(n), px, img.as_ref(), ms);
+        self.entries.get(&key).and_then(|e| e.tex.clone())
+    }
+}
+
+/// A real rendered thumbnail of row `n`, cached by node identity (unchanged nodes keep their `Arc`
+/// allocation, so the address is a free change detector). Only rendered for visible rows; see
+/// [`Thumbs::texture`] for when.
+pub(crate) fn real_thumb(ui: &Ui, src: &ThumbSource, n: &Arc<Node>, r: egui::Rect) -> bool {
     if !ui.is_rect_visible(r) {
         return true;
     }
-    let key = (n as *const Node as usize, n.id.0);
     let ppp = ui.ctx().pixels_per_point();
-    let px = (r.width() * ppp).round() as u32;
-    let tex = CACHE.with(|c| c.borrow().get(&key).cloned()).or_else(|| {
-        let img = RENDERER.with(|rr| rr.borrow_mut().render_thumbnail(doc, n.id, px.max(8)))?;
-        let color = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);
-        let tex = ui.ctx().load_texture(format!("layer-thumb-{}", n.id.0), color, egui::TextureOptions::LINEAR);
-        CACHE.with(|c| {
-            let mut c = c.borrow_mut();
-            if c.len() > 2000 {
-                c.clear();
-            }
-            c.insert(key, tex.clone());
-        });
-        Some(tex)
-    });
-    match tex {
+    let px = ((r.width() * ppp).round() as u32).max(8);
+    match THUMBS.with(|c| c.borrow_mut().texture(ui.ctx(), src, n, px)) {
         Some(t) => {
             ui.painter().image(t.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
             true
@@ -1217,6 +1489,34 @@ mod tests {
     }
 
     #[test]
+    fn row_thumbnails_wait_for_the_end_of_a_drag() {
+        let (mut app, _, _) = two_rects();
+        app.session.execute("select.all", &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let renders = || THUMBS.with(|c| c.borrow().renders);
+        frame(&mut app, &ctx, vec![], false);
+        let first = renders();
+        assert!(first >= 1, "the rows' thumbnails render at once");
+        frame(&mut app, &ctx, vec![], false);
+        assert_eq!(renders(), first, "and stay");
+        // A move drag: the layer (and the moved objects) change on every preview.
+        app.session.begin_interaction("Move").unwrap();
+        for i in 1..=10 {
+            app.session.preview("object.transform", &json!({"matrix": [1, 0, 0, 1, i, 0]})).unwrap();
+            frame(&mut app, &ctx, vec![], false);
+        }
+        assert_eq!(renders(), first, "nothing renders while the drag goes on");
+        app.session.commit_interaction().unwrap();
+        for _ in 0..12 {
+            frame(&mut app, &ctx, vec![], false);
+        }
+        assert!(renders() > first, "the changed rows render after it");
+        let after = renders();
+        frame(&mut app, &ctx, vec![], false);
+        assert_eq!(renders(), after, "once");
+    }
+
+    #[test]
     fn clicking_a_target_circle_targets_the_layer() {
         let (mut app, layer, [a, b]) = two_rects();
         let ctx = egui::Context::default();
@@ -1424,6 +1724,42 @@ mod tests {
         let d = &app.session.active().unwrap().doc;
         assert!(d.node(sub).is_none() && d.node(c).is_none());
         assert_eq!(d.layers.len(), 1);
+    }
+
+    /// A layer's ruler guides are rows in it, above its art: a click selects the guide, a drag onto
+    /// another layer's row moves it there, and a guide on a locked layer is left alone.
+    #[test]
+    fn guide_rows_select_and_move_their_guides() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        let run = |app: &mut VectorcraftApp, id: &str, p: serde_json::Value| app.session.execute(id, &p).unwrap();
+        run(&mut app, "file.new", json!({"width": 200, "height": 200}));
+        run(&mut app, "shape.rectangle", json!({"x": 0, "y": 0, "width": 20, "height": 20}));
+        run(&mut app, "guide.add", json!({"vertical": true, "pos": 50}));
+        run(&mut app, "select.none", json!({}));
+        let second = NodeId(run(&mut app, "layer.new", json!({}))["id"].as_u64().unwrap());
+        expand(&mut app, &json!({})).unwrap();
+        let ctx = egui::Context::default();
+        // Rows top down: Layer 2, Layer 1, its guide (no target circle), the rectangle.
+        let (circles, _) = frame(&mut app, &ctx, vec![], false);
+        assert_eq!(circles.len(), 3);
+        let guide_row = egui::pos2(150.0, (circles[1].y + circles[2].y) / 2.0);
+        let guides = |app: &VectorcraftApp| app.session.active().unwrap().selection.guides.clone();
+        click_with(&mut app, &ctx, guide_row, egui::Modifiers::NONE);
+        assert_eq!(guides(&app), [0], "its row selects it");
+        // Dragged onto Layer 2's row, it goes on Layer 2, in one undo step.
+        let undo = app.session.active().unwrap().history.undo.len();
+        drag(&mut app, &ctx, guide_row, egui::pos2(150.0, circles[0].y), false);
+        let st = app.session.active().unwrap();
+        assert_eq!((st.doc.guides[0].layer, st.history.undo.len()), (Some(second), undo + 1));
+        // Now under Layer 2: locked, its row neither selects nor drags it.
+        run(&mut app, "layer.setProps", json!({"ids": [second.0], "locked": true}));
+        assert!(guides(&app).is_empty(), "deselected with its layer locked");
+        let (circles, _) = frame(&mut app, &ctx, vec![], false);
+        let guide_row = egui::pos2(150.0, (circles[0].y + circles[1].y) / 2.0);
+        click_with(&mut app, &ctx, guide_row, egui::Modifiers::NONE);
+        assert!(guides(&app).is_empty());
+        drag(&mut app, &ctx, guide_row, egui::pos2(150.0, circles[2].y), false);
+        assert_eq!(app.session.active().unwrap().doc.guides[0].layer, Some(second));
     }
 
     /// The selection squares drawn: (big ones on rows whose object is selected, small ones on rows

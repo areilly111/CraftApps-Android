@@ -98,6 +98,13 @@ pub fn color_lookup_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: Layer
     let builtins = photocraft_engine::adjust_cmds::LOOKS;
     let current =
         if lut.is_none() { "none".to_string() } else { builtins.iter().find(|b| b.1 == name).map_or_else(|| "custom".to_string(), |b| b.0.to_string()) };
+    let current = app
+        .live_adjust
+        .as_ref()
+        .filter(|(layer, params)| *layer == id && params.get("lut").is_some())
+        .and_then(|(_, params)| params.get("lut").and_then(Value::as_str))
+        .map(str::to_owned)
+        .unwrap_or(current);
     let custom_label = format!("{name} ({size}³)");
     let mut opts: Vec<(String, &str)> = vec![("load".into(), tl!("Load 3D LUT…")), ("none".into(), tl!("None"))];
     opts.extend(builtins.iter().map(|(id, label)| (id.to_string(), *label)));
@@ -107,16 +114,47 @@ pub fn color_lookup_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: Layer
     let mut sel = current.clone();
     let mut params: Option<Value> = None;
     let mut browse = false;
+    let cycle_key = egui::Id::new(("color-lookup-cycle", id.0));
+    let cycle_input = ui.input(|input| {
+        input.raw.events.iter().any(|event| {
+            matches!(event, egui::Event::MouseWheel { .. })
+                || matches!(event, egui::Event::Key { key: egui::Key::ArrowDown | egui::Key::ArrowUp, pressed: true, .. })
+        })
+    });
+    let mut cycling_preview = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tl!("3D LUT File")).color(t.text_dim));
-        if widgets::dropdown(ui, &format!("clrl-{}", id.0), &mut sel, &opts, 170.0) {
-            if sel == "load" {
+        let (chosen, _) = widgets::dropdown_wheel_hovered(ui, &format!("clrl-{}", id.0), &mut sel, &opts, 170.0);
+        if !chosen.is_empty() {
+            if cycle_input {
+                if sel != "load" && sel != "custom" {
+                    app.live_adjust = Some((id, json!({"lut": sel})));
+                    cycling_preview = true;
+                }
+            } else if sel == "load" {
                 browse = true;
             } else if sel != current && sel != "custom" {
                 params = Some(json!({"lut": sel}));
             }
         }
     });
+    if cycling_preview {
+        let now = ui.input(|input| input.time);
+        ui.ctx().data_mut(|data| data.insert_temp(cycle_key, now));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+    } else if let Some(since) = ui.ctx().data(|data| data.get_temp::<f64>(cycle_key)) {
+        if ui.input(|input| input.time - since) >= 0.75 {
+            if let Some((layer, preview)) = &app.live_adjust
+                && *layer == id
+                && preview.get("lut").is_some()
+            {
+                params = Some(preview.clone());
+            }
+            ui.ctx().data_mut(|data| data.remove::<f64>(cycle_key));
+        } else {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
     if browse
         && let Err(e) = browse_color_lookup(app, id)
         && e != crate::file_dialog::CANCELLED
@@ -139,9 +177,18 @@ pub fn color_lookup_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: Layer
         params = Some(json!({"dither": d}));
     }
     if let Some(mut p) = params {
+        if p.get("lut").is_none()
+            && let Some((layer, preview)) = &app.live_adjust
+            && *layer == id
+            && let Some(lut) = preview.get("lut")
+        {
+            p["lut"] = lut.clone();
+        }
         p["layer"] = json!(id.0);
         // Errors (an unreadable LUT file) land in the status bar.
         let _ = app.run("layer.setAdjustment", p);
+        app.live_adjust = None;
+        ui.ctx().data_mut(|data| data.remove::<f64>(cycle_key));
     }
 }
 

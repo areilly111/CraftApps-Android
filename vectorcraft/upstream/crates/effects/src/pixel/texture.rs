@@ -189,6 +189,18 @@ pub(super) fn luma(c: [f32; 3]) -> f32 {
     0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 }
 
+/// Strict distance ordering, with the original hypot comparison at rounding/tie boundaries.
+fn distance_less(a2: f64, b2: f64, exact: impl FnOnce() -> (f64, f64)) -> bool {
+    // Cell distances are small and finite. Preserve hypot's ordering at rounding/tie
+    // boundaries, without computing it for every candidate of every pixel.
+    if b2.is_finite() && (a2 - b2).abs() <= 8.0 * f64::EPSILON * (a2 + b2) {
+        let (a, b) = exact();
+        a < b
+    } else {
+        a2 < b2
+    }
+}
+
 /// The two random points nearest to (`u`, `v`) (in cells), `point(i, j)` being cell (`i`, `j`)'s,
 /// found among the cells [`AROUND`] the one holding it.
 fn nearest_two(u: f64, v: f64, around: &mut Around<Point>, point: impl Fn(i64, i64) -> Point) -> Option<(Point, Point)> {
@@ -196,15 +208,17 @@ fn nearest_two(u: f64, v: f64, around: &mut Around<Point>, point: impl Fn(i64, i
     let mut best: [(f64, Option<Point>); 2] = [(f64::INFINITY, None); 2];
     for (k, (di, dj)) in AROUND.iter().enumerate() {
         // A cell farther than the second point so far can't hold a nearer one.
-        if gap(i.wrapping_add(*di), u).hypot(gap(j.wrapping_add(*dj), v)) >= best[1].0 {
+        let (gx, gy) = (gap(i.wrapping_add(*di), u), gap(j.wrapping_add(*dj), v));
+        let exact = |p: Option<Point>| p.map_or(f64::INFINITY, |p| (p.x - u).hypot(p.y - v));
+        if !distance_less(gx * gx + gy * gy, best[1].0, || (gx.hypot(gy), exact(best[1].1))) {
             continue;
         }
         let Some(p) = around.get((i, j), k, &point) else { continue };
-        let d = (p.x - u).hypot(p.y - v);
-        if d < best[0].0 {
-            best = [(d, Some(p)), best[0]];
-        } else if d < best[1].0 {
-            best[1] = (d, Some(p));
+        let d2 = (p.x - u) * (p.x - u) + (p.y - v) * (p.y - v);
+        if distance_less(d2, best[0].0, || (exact(Some(p)), exact(best[0].1))) {
+            best = [(d2, Some(p)), best[0]];
+        } else if distance_less(d2, best[1].0, || (exact(Some(p)), exact(best[1].1))) {
+            best[1] = (d2, Some(p));
         }
     }
     Some((best[0].1?, best[1].1?))
@@ -573,4 +587,54 @@ pub(super) fn texturizer(
         let ridge = (at(0.0, 0.0) - 0.25 * (left + right + up + down)) / step;
         *p = premultiply(lit(straight(*p), strength * (facing(slope, toward) + ridge)), f32::from(p[3]) / 255.0);
     });
+}
+
+#[cfg(test)]
+mod nearest_tests {
+    use super::*;
+
+    /// Compare with all 25 candidates, without the production distance-pruning shortcut.
+    fn brute_force(u: f64, v: f64, point: &impl Fn(i64, i64) -> Point) -> Option<(Point, Point)> {
+        let (i, j) = (cell(u)?, cell(v)?);
+        let mut candidates: Vec<_> = AROUND
+            .iter()
+            .map(|(di, dj)| {
+                let p = point(i.wrapping_add(*di), j.wrapping_add(*dj));
+                ((p.x - u).hypot(p.y - v), p)
+            })
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+        Some((candidates.first()?.1, candidates.get(1)?.1))
+    }
+
+    #[test]
+    fn nearest_points_match_all_candidates_at_cell_and_rounding_boundaries() {
+        let mut queries = vec![];
+        for y in -20..=20 {
+            for x in -24..=24 {
+                queries.push((f64::from(x) / 13.0, f64::from(y) / 11.0));
+            }
+        }
+        queries.extend([
+            (0.0, 0.0),
+            (0.5, 0.5),
+            (1.0 - f64::EPSILON, -1.0),
+            (1.0 + f64::EPSILON, -1.0 - f64::EPSILON),
+            (4.0e6, -4.0e6),
+            (1.0e14 + 0.25, -1.0e14 + 0.5),
+            (f64::INFINITY, 0.0),
+            (f64::NAN, 0.0),
+        ]);
+        for pattern in 0..3 {
+            let point = |i: i64, j: i64| match pattern {
+                0 => point_in(SALT_CRACKS, i, j),
+                1 => Point::new(i as f64 + 0.5, j as f64 + 0.5),
+                _ => Point::new(i as f64, j as f64),
+            };
+            let mut around = Around::new();
+            for &(u, v) in &queries {
+                assert_eq!(nearest_two(u, v, &mut around, point), brute_force(u, v, &point), "pattern {pattern} at ({u}, {v})");
+            }
+        }
+    }
 }

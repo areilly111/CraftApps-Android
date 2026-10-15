@@ -70,6 +70,29 @@ fn created_encryption_authenticates_owner_and_user() {
 }
 
 #[test]
+fn the_owner_password_upgrades_a_user_session() {
+    for alg in ALL {
+        let d = new(alg, "", "secret", 0b0100).dict().clone();
+        let user = SecurityHandler::open(d, ID, None).unwrap();
+        assert!(!user.permissions().modify(), "{alg:?}");
+        // The (empty) user password and wrong ones don't unlock anything.
+        assert_eq!(user.authenticate_owner(ID, "").unwrap_err(), CryptError::WrongPassword, "{alg:?}");
+        assert_eq!(user.authenticate_owner(ID, "nope").unwrap_err(), CryptError::WrongPassword, "{alg:?}");
+        let owner = user.authenticate_owner(ID, "secret").unwrap();
+        assert_eq!(owner.auth(), Auth::Owner, "{alg:?}");
+        assert_eq!(owner.file_key(), user.file_key(), "{alg:?}");
+        assert!(owner.permissions().modify(), "{alg:?}");
+    }
+    // A separate open password is not the permissions password.
+    for alg in ALL {
+        let d = new(alg, "open", "perms", 0b0100).dict().clone();
+        let user = SecurityHandler::open(d, ID, Some("open")).unwrap();
+        assert_eq!(user.authenticate_owner(ID, "open").unwrap_err(), CryptError::WrongPassword, "{alg:?}");
+        assert_eq!(user.authenticate_owner(ID, "perms").unwrap().auth(), Auth::Owner, "{alg:?}");
+    }
+}
+
+#[test]
 fn empty_user_password_opens_without_asking() {
     for alg in ALL {
         let d = new(alg, "", "secret", -1).dict().clone();
@@ -120,6 +143,53 @@ fn r6_passwords_are_saslprepped() {
     let d = new(Algorithm::Aes256, "SªSL\u{AD}prep", "o", -1).dict().clone();
     assert!(SecurityHandler::open(d.clone(), ID, Some("SaSLprep")).is_ok());
     assert!(SecurityHandler::open(d, ID, Some("SaSL-prep")).is_err());
+}
+
+#[test]
+fn effective_passwords_are_the_bytes_the_keys_are_made_from() {
+    // AES-256: SASLprep drops soft hyphens, makes other spaces plain and folds compatibility
+    // characters (NFKC); at most 127 bytes of UTF-8.
+    let r6 = |pw: &str| effective_password(Algorithm::Aes256, pw);
+    assert_eq!(r6("\u{AD}"), r6(""), "a soft hyphen alone is no password");
+    assert_eq!(r6("\u{FF21}"), r6("A"), "fullwidth A");
+    assert_eq!(r6("\u{FB01}"), r6("fi"), "the fi ligature");
+    assert_eq!(r6("a\u{3000}b"), b"a b", "an ideographic space");
+    assert_ne!(r6("A"), r6("a"), "case matters");
+    assert_eq!(r6(&"é".repeat(100)).len(), 127);
+    // RC4 and AES-128: PDFDocEncoding, padded or cut to exactly 32 bytes.
+    let (a31, a32) = ("a".repeat(31), "a".repeat(32));
+    for alg in [Algorithm::Rc4_40, Algorithm::Rc4_128, Algorithm::Aes128] {
+        assert_eq!(effective_password(alg, &format!("{a32}1")), a32.as_bytes(), "{alg:?}");
+        assert_eq!(effective_password(alg, &format!("1{a32}")), effective_password(alg, &format!("1{a32}2")), "{alg:?}");
+        assert_ne!(effective_password(alg, &format!("1{a32}")), effective_password(alg, &format!("2{a32}")), "{alg:?}");
+        assert_eq!(effective_password(alg, &a31), effective_password(alg, &format!("{a31}(")), "{alg:?}: the padding starts with '('");
+        assert_eq!(effective_password(alg, ""), PADDING, "{alg:?}");
+        assert_eq!(effective_password(alg, "ılık€")[..5], [0x9A, b'l', 0x9A, b'k', 0xA0], "{alg:?}");
+    }
+}
+
+#[test]
+fn passwords_with_the_same_effective_bytes_are_one_password() {
+    // A file protected with "\u{FF21}" (fullwidth A) opens with "A".
+    let d = new(Algorithm::Aes256, "\u{FF21}", "owner", 0b0100).dict().clone();
+    assert_eq!(SecurityHandler::open(d.clone(), ID, Some("A")).unwrap().auth(), Auth::User);
+    assert_eq!(SecurityHandler::open(d, ID, Some("a")).unwrap_err(), CryptError::WrongPassword);
+    // A soft hyphen is no open password at all.
+    let d = new(Algorithm::Aes256, "\u{AD}", "owner", 0b0100).dict().clone();
+    assert_eq!(SecurityHandler::open(d, ID, None).unwrap().auth(), Auth::User);
+    // Open and permissions passwords with the same bytes: the open password gives owner rights.
+    let d = new(Algorithm::Aes256, "\u{FB01}", "fi", 0b0100).dict().clone();
+    assert_eq!(effective_password(Algorithm::Aes256, "\u{FB01}"), effective_password(Algorithm::Aes256, "fi"));
+    assert_eq!(SecurityHandler::open(d, ID, Some("\u{FB01}")).unwrap().auth(), Auth::Owner);
+    let a31 = "a".repeat(31);
+    let pairs = [(format!("{a31}a1"), format!("{a31}a2")), (a31.clone(), format!("{a31}("))];
+    for alg in [Algorithm::Rc4_40, Algorithm::Rc4_128, Algorithm::Aes128] {
+        for (open, perms) in &pairs {
+            assert_eq!(effective_password(alg, open), effective_password(alg, perms), "{alg:?}");
+            let d = new(alg, open, perms, 0b0100).dict().clone();
+            assert_eq!(SecurityHandler::open(d, ID, Some(open)).unwrap().auth(), Auth::Owner, "{alg:?} {open:?}");
+        }
+    }
 }
 
 #[test]

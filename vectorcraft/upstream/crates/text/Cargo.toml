@@ -21,6 +21,13 @@ subsetter = { version = "0.2", default-features = false, features = ["variable-f
 unicode-bidi = "0.3.18"
 unicode-general-category = "1"
 unicode-script = "0.5"
+# Word boundaries in scripts written without spaces between words (Thai, Lao, Khmer, Myanmar), where
+# lines may break: ICU4X's line segmenter (Unicode-3.0, as icu_properties already in the build),
+# with its dictionaries on the desktop and its far smaller LSTM models on the web.
+icu_segmenter = "2.3"
+# Grapheme clusters (a Thai consonant with its vowel and tone marks, an accented letter, an emoji
+# sequence) for caret movement; MIT OR Apache-2.0, already in the build.
+unicode-segmentation = "1.13"
 # Builds a small variable font for tests (`test_fonts`; no font file is committed). MIT OR
 # Apache-2.0, already in the build through subsetter.
 write-fonts = { version = "0.48", optional = true }

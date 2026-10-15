@@ -112,6 +112,15 @@ fn first_media_item(v: &Value) -> Option<u64> {
     }
 }
 
+fn item_duration(v: &Value, item: u64) -> Option<f64> {
+    match v {
+        Value::Object(m) if m.get("item").and_then(Value::as_u64) == Some(item) && m.contains_key("duration") => m["duration"].as_f64(),
+        Value::Object(m) => m.values().find_map(|v| item_duration(v, item)),
+        Value::Array(a) => a.iter().find_map(|v| item_duration(v, item)),
+        _ => None,
+    }
+}
+
 #[test]
 fn view_menu_resolutions_and_display_modes() {
     let mut d = Driver::demo();
@@ -181,6 +190,218 @@ fn view_menu_resolutions_and_display_modes() {
     d.ok("ui.set", json!({"source": {"display": "Composite", "show_rulers": true}}));
     let s = d.ok("ui.inspect", json!({}))["ui"]["source"].clone();
     assert_eq!((s["display"].as_str(), s["show_rulers"].as_bool()), (Some("Composite"), Some(true)));
+}
+
+fn num(v: &Value) -> f64 {
+    v.as_f64().unwrap_or_else(|| panic!("not a number: {v}"))
+}
+
+/// #807: the wheel over a monitor zooms about the pointer, a middle-button drag pans, Fit resets,
+/// and each monitor keeps its own view.
+#[test]
+fn wheel_zooms_about_the_pointer_and_the_middle_button_pans() {
+    let mut d = Driver::demo();
+    // at 100% the picture is larger than the monitor, so the element is the monitor's area
+    d.menu("view.magnification.100");
+    let area = d.rect("program.picture");
+    let centre = (area[0] + area[2] / 2.0, area[1] + area[3] / 2.0);
+    let at = (area[0] + area[2] * 0.25, area[1] + area[3] * 0.4);
+    // one wheel notch (40 points) up: 10% larger; the point under the pointer stays under it
+    d.ok("ui.scroll", json!({"x": at.0, "y": at.1, "dx": 0.0, "dy": 40.0}));
+    d.frames(2);
+    let p = d.program();
+    assert!((num(&p["zoom"]) - 1.1).abs() < 1e-4, "{p}");
+    let want = ((centre.0 - at.0) * 0.1, (centre.1 - at.1) * 0.1);
+    assert!((num(&p["pan"][0]) - want.0).abs() < 1.0 && (num(&p["pan"][1]) - want.1).abs() < 1.0, "pan {} for {want:?}", p["pan"]);
+    // a notch down, then up again, comes back to the same zoom
+    d.ok("ui.scroll", json!({"x": at.0, "y": at.1, "dx": 0.0, "dy": -40.0}));
+    d.frames(2);
+    assert!((num(&d.program()["zoom"]) - 1.0).abs() < 1e-4, "{}", d.program());
+    d.ok("ui.scroll", json!({"x": at.0, "y": at.1, "dx": 0.0, "dy": 40.0}));
+    d.frames(2);
+    let p = d.program();
+    assert!((num(&p["zoom"]) - 1.1).abs() < 1e-4, "{p}");
+
+    // the middle button drags the picture, whatever the tool
+    let (zoom, pan) = (num(&p["zoom"]), [num(&p["pan"][0]), num(&p["pan"][1])]);
+    let send = |d: &mut Driver, e: egui::Event| {
+        d.harness.input_mut().events.push(e);
+        d.frames(1);
+    };
+    let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Middle, pressed, modifiers: Default::default() };
+    let from = egui::pos2(centre.0 as f32, centre.1 as f32);
+    send(&mut d, egui::Event::PointerMoved(from));
+    send(&mut d, button(from, true));
+    for k in 1..=4 {
+        send(&mut d, egui::Event::PointerMoved(from + egui::vec2(-10.0 * k as f32, 5.0 * k as f32)));
+    }
+    send(&mut d, button(from + egui::vec2(-40.0, 20.0), false));
+    let p = d.program();
+    assert_eq!(num(&p["zoom"]), zoom, "a pan does not zoom");
+    assert!((num(&p["pan"][0]) - (pan[0] - 40.0)).abs() < 1.0 && (num(&p["pan"][1]) - (pan[1] + 20.0)).abs() < 1.0, "pan {} after {pan:?}", p["pan"]);
+
+    // zooming out stops at the menu's smallest level; Fit resets zoom and pan
+    for _ in 0..12 {
+        d.ok("ui.scroll", json!({"x": centre.0, "y": centre.1, "dx": 0.0, "dy": -200.0}));
+    }
+    d.frames(2);
+    assert!((num(&d.program()["zoom"]) - 0.1).abs() < 1e-6, "stops at 10%");
+    d.menu("view.magnification.fit");
+    let p = d.program();
+    assert!(p["zoom"].is_null() && p["pan"] == json!([0.0, 0.0]), "{p}");
+
+    // from Fit, the wheel zooms in too; the Source monitor keeps its own view
+    d.ok("ui.scroll", json!({"x": centre.0, "y": centre.1, "dx": 0.0, "dy": 20.0}));
+    d.frames(2);
+    assert!(d.program()["zoom"].as_f64().is_some(), "zoomed in from Fit");
+    let source = d.ok("ui.inspect", json!({}))["ui"]["source"].clone();
+    assert!(source["zoom"].is_null() && source["pan"] == json!([0.0, 0.0]), "{source}");
+}
+
+/// The x positions of the tick marks drawn on the time ruler `bar`.
+fn ruler_ticks(d: &Driver, bar: [f64; 4]) -> Vec<f64> {
+    let bottom = (bar[1] + bar[3]) as f32;
+    let (left, right) = (bar[0] as f32 - 1.0, (bar[0] + bar[2]) as f32 + 1.0);
+    let mut xs: Vec<f64> = d
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::LineSegment { points: [a, b], .. }
+                if a.x == b.x && (b.y - bottom).abs() < 0.01 && [3.5, 8.0].iter().any(|h| (b.y - a.y - h).abs() < 0.01) && (left..=right).contains(&a.x) =>
+            {
+                Some(f64::from(a.x))
+            }
+            _ => None,
+        })
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    xs
+}
+
+/// The frames the ticks `xs` of the ruler `bar` stand for while it shows `zoom` (fractions) of a
+/// sequence `frames` long; and that each is a whole frame.
+fn tick_frames(xs: &[f64], bar: [f64; 4], zoom: (f64, f64), frames: f64) -> Vec<f64> {
+    let f: Vec<f64> = xs.iter().map(|x| (zoom.0 + (x - bar[0]) / bar[2] * (zoom.1 - zoom.0)) * frames).collect();
+    assert!(f.iter().all(|f| (f - f.round()).abs() < 0.05), "ticks off whole frames: {f:?}");
+    f
+}
+
+/// The minor tick step (frames): the commonest gap between neighbouring ticks.
+fn tick_step(frames: &[f64]) -> i64 {
+    let mut counts = std::collections::BTreeMap::new();
+    for w in frames.windows(2) {
+        *counts.entry((w[1] - w[0]).round() as i64).or_insert(0) += 1;
+    }
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(gap, _)| gap).expect("ticks")
+}
+
+/// The zoom bar under a monitor's time ruler: a handle zooms the ruler in, the middle scrolls it,
+/// the ruler maps clicks and the playhead to the part it shows, and each monitor keeps its own.
+#[test]
+fn time_zoom_bar_zooms_and_scrolls_the_monitor_ruler() {
+    let mut d = Driver::demo();
+    let seq = d.exec("sequence.inspect", json!({}));
+    let duration = num(&seq["duration"]);
+    let rate = &seq["settings"]["frame_rate"];
+    let frames = duration * num(&rate["num"]) / num(&rate["den"]) / 254_016_000_000.0;
+    let track = d.rect("program.zoomBar.track");
+    assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5, "the whole sequence at first");
+    let bar = d.rect("program.scrubBar");
+    let full = tick_frames(&ruler_ticks(&d, bar), bar, (0.0, 1.0), frames);
+    // the right handle dragged to the middle: the ruler shows the first half
+    let y = track[1] + track[3] / 2.0;
+    d.ok("ui.drag", json!({"from": {"x": track[0] + track[2] - 4.0, "y": y}, "to": {"x": track[0] + track[2] / 2.0, "y": y}, "steps": 8}));
+    d.frames(2);
+    let z = d.program()["time_zoom"].clone();
+    assert!(num(&z[0]) == 0.0 && (num(&z[1]) - 0.5).abs() < 0.02, "{z}");
+    let thumb = d.rect("program.zoomBar");
+    assert!((thumb[2] - track[2] * num(&z[1])).abs() < 1.0, "thumb {thumb:?} for {z}");
+    // the ticks follow the zoom: still on whole frames, no further apart in time, and spread
+    // further apart on screen than the same step was before
+    let zoomed = tick_frames(&ruler_ticks(&d, bar), bar, (0.0, num(&z[1])), frames);
+    let (full_step, zoomed_step) = (tick_step(&full), tick_step(&zoomed));
+    assert!(zoomed_step <= full_step, "tick steps {full_step} → {zoomed_step} frames");
+    let (before, after) = (full_step as f64 / frames * bar[2], zoomed_step as f64 / (frames * num(&z[1])) * bar[2]);
+    assert!(after >= 12.0 - 0.01, "minor ticks at least 12 pt apart: {after}");
+    if zoomed_step == full_step {
+        assert!(after > before * 1.5, "same step, spread out: {before} → {after} pt");
+    }
+
+    // a click halfway along the ruler is halfway through the half shown, and the playhead is drawn there
+    d.ok("ui.click", json!({"x": bar[0] + bar[2] / 2.0, "y": bar[1] + bar[3] / 2.0}));
+    d.frames(2);
+    let playhead = num(&d.exec("sequence.inspect", json!({}))["playhead"]);
+    let want = duration * num(&z[1]) / 2.0;
+    assert!((playhead - want).abs() < duration * 0.01, "playhead {playhead} for {want}");
+    let head = d.rect("program.playhead");
+    let at = bar[0] + bar[2] * (playhead / (duration * num(&z[1])));
+    assert!((head[0] + head[2] / 2.0 - at).abs() < 1.0, "playhead drawn at {head:?}, want x {at}");
+
+    // the thumb's middle dragged right scrolls the ruler without zooming; the playhead goes out of view
+    let (x, shift) = (thumb[0] + thumb[2] / 2.0, track[2] * 0.3);
+    d.ok("ui.drag", json!({"from": {"x": x, "y": y}, "to": {"x": x + shift, "y": y}, "steps": 8}));
+    d.frames(2);
+    let z2 = d.program()["time_zoom"].clone();
+    assert!((num(&z2[0]) - 0.3).abs() < 0.02 && (num(&z2[1]) - num(&z2[0]) - num(&z[1])).abs() < 1e-9, "{z2}");
+    assert!(d.try_rect("program.playhead").is_none(), "a playhead off the zoomed ruler is not drawn");
+    let source = d.ok("ui.inspect", json!({}))["ui"]["source"]["time_zoom"].clone();
+    assert!(source.is_null(), "the Source monitor keeps its own range: {source}");
+
+    // an unusable range from ui.set shows all of it
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.9, 0.1]}}));
+    d.frames(2);
+    assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5);
+}
+
+/// While a monitor plays, its zoomed ruler pages to keep the playhead in view, keeping its width,
+/// as the Timeline follows the playhead; stopped, or with auto-scrolling off, it stays put.
+#[test]
+fn zoomed_monitor_ruler_follows_the_playhead_while_playing() {
+    let mut d = Driver::demo();
+    let duration = num(&d.exec("sequence.inspect", json!({}))["duration"]);
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.0, 0.25]}}));
+    // a playhead moved past the range while stopped leaves it alone
+    d.exec("playhead.set", json!({"time": (duration * 0.6) as i64}));
+    d.frames(2);
+    assert_eq!(d.program()["time_zoom"], json!([0.0, 0.25]));
+    // playing, the range pages forward: the playhead near its left edge
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    let z = d.program()["time_zoom"].clone();
+    let f = num(&d.exec("sequence.inspect", json!({}))["playhead"]) / duration;
+    let (s, e) = (num(&z[0]), num(&z[1]));
+    assert!(s <= f && f <= e && (e - s - 0.25).abs() < 1e-9, "playhead at {f} in {z}");
+    assert!((f - s - 0.25 * 0.05).abs() < 0.01, "paged to near the left edge: {f} in {z}");
+    // and back when the playhead is before it
+    d.exec("playhead.set", json!({"time": (duration * 0.1) as i64}));
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    let z = d.program()["time_zoom"].clone();
+    assert!(num(&z[0]) < 0.1 && num(&z[1]) > 0.1, "{z}");
+
+    // with auto-scrolling off the range stays put
+    d.exec("prefs.set", json!({"key": "timeline.autoScroll", "value": "noScroll"}));
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.0, 0.25]}}));
+    d.exec("playhead.set", json!({"time": (duration * 0.6) as i64}));
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    assert_eq!(d.program()["time_zoom"], json!([0.0, 0.25]));
+    d.exec("prefs.set", json!({"key": "timeline.autoScroll", "value": "pageScroll"}));
+
+    // the Source monitor follows its own playback
+    let project = d.exec("project.inspect", json!({}));
+    let item = first_media_item(&project).expect("media item");
+    let source_duration = item_duration(&project, item).expect("media duration");
+    d.exec("source.open", json!({"item": item}));
+    d.ok("ui.set", json!({"source": {"time_zoom": [0.0, 0.25]}}));
+    d.exec("source.setPlayhead", json!({"time": (source_duration * 0.6) as i64}));
+    d.ok("ui.menu.invoke", json!({"id": "playback.toggle", "params": {"monitor": "source"}}));
+    d.frames(2);
+    d.ok("ui.menu.invoke", json!({"id": "playback.toggle", "params": {"monitor": "source"}}));
+    let z = d.ok("ui.inspect", json!({}))["ui"]["source"]["time_zoom"].clone();
+    assert!(num(&z[0]) > 0.5 && (num(&z[1]) - num(&z[0]) - 0.25).abs() < 1e-9, "{z}");
 }
 
 #[test]

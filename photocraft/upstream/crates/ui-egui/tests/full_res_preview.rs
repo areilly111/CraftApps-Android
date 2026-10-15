@@ -111,6 +111,7 @@ fn mean(r: &[i32]) -> f32 {
 
 #[test]
 fn adjustment_layer_drag_previews_at_full_resolution_when_low_res_is_off() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     setup(&mut h, 1.0);
     if !on_gpu(&mut h) {
@@ -135,6 +136,7 @@ fn adjustment_layer_drag_previews_at_full_resolution_when_low_res_is_off() {
 
 #[test]
 fn filter_dialog_previews_at_full_resolution_when_low_res_is_off() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     setup(&mut h, 1.0);
     if !on_gpu(&mut h) {
@@ -151,6 +153,7 @@ fn filter_dialog_previews_at_full_resolution_when_low_res_is_off() {
 
 #[test]
 fn adjustment_dialog_zoomed_out_skips_the_reduced_copy_when_low_res_is_off() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness() else { return };
     setup(&mut h, 0.5);
     if !on_gpu(&mut h) {

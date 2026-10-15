@@ -99,7 +99,7 @@ fn opacity_masks_take_screen_luminance() {
     let mut d = Document::new_with_mode(20.0, 20.0, ColorMode::Cmyk);
     let mut n = rect(&mut d, Rect::new(0.0, 0.0, 20.0, 20.0), Color::cmyk(0.0, 0.0, 0.0, 1.0));
     let art = rect(&mut d, Rect::new(0.0, 0.0, 20.0, 20.0), CYAN);
-    n.mask = Some(Box::new(OpacityMask::new(art, true)));
+    n.extras_mut().mask = Some(Box::new(OpacityMask::new(art, true)));
     add(&mut d, n);
     let [r, g, b] = CYAN.to_rgb();
     let cover = MASK_LUM[0] * r + MASK_LUM[1] * g + MASK_LUM[2] * b;
@@ -116,11 +116,49 @@ fn placed_images_are_separated_not_blackened() {
     d.images.insert("red".into(), ImageBlob::new("image/png", png));
     let n = Node::new(
         d.alloc_id(),
-        NodeKind::Image(ImageObject { key: "red".into(), width: 4, height: 4, xf: Affine::IDENTITY, link: None, placement: Default::default() }),
+        NodeKind::Image(Box::new(ImageObject {
+            key: "red".into(),
+            width: 4,
+            height: 4,
+            xf: Affine::IDENTITY,
+            link: None,
+            placement: Default::default(),
+        })),
     );
     add(&mut d, n);
     let got = Renderer::new().render_region(&d, d.artboards[0].rect, 1.0, true).pixel(1, 1);
     let cms = vectorcraft_color::cms::active();
     let [r, g, b] = cms.cmyk_to_srgb(cms.srgb_to_cmyk([1.0, 0.0, 0.0], cms.settings().intent), false).map(|v| (v * 255.0).round() as u8);
     assert!(near(got, [r, g, b, 255], 4), "{got:?} ≠ {:?}", [r, g, b]);
+}
+
+/// Appearance of Black's Rich Black (`rich_black`, #394): pure CMYK black (black ink alone at
+/// 100%) shows as RGB black, in an opaque CMYK document (screen colours) and in one drawn by ink
+/// planes (Multiply); a rich black, a black tint and placed images show as they do without it.
+#[test]
+fn rich_black_shows_black_ink_alone_as_rgb_black() {
+    let k = |k| Color::cmyk(0.0, 0.0, 0.0, k);
+    let centre_with = |d: &Document, rich_black| {
+        let opts = RenderOptions { background: Some([255; 4]), skip_templates: true, rich_black, ..Default::default() };
+        Renderer::new().render_region_with(d, d.artboards[0].rect, 1.0, &opts).pixel(10, 10)
+    };
+    for blend in [Blend::Normal, Blend::Multiply] {
+        let black = doc(ColorMode::Cmyk, None, k(1.0), blend, 1.0);
+        let accurate = centre_with(&black, false);
+        assert!(near(accurate, shown([0.0, 0.0, 0.0, 1.0]), 1) && accurate[0] > 10, "{blend:?}: accurate {accurate:?}");
+        assert_eq!(centre_with(&black, true), [0, 0, 0, 255], "{blend:?}: rich");
+        for c in [Color::cmyk(0.6, 0.4, 0.4, 1.0), k(0.5)] {
+            let d = doc(ColorMode::Cmyk, None, c, blend, 1.0);
+            assert_eq!(centre_with(&d, true), centre_with(&d, false), "{blend:?}: {c:?}");
+        }
+    }
+    let mut d = Document::new_with_mode(20.0, 20.0, ColorMode::Cmyk);
+    let img = image::RgbaImage::from_pixel(20, 20, image::Rgba([255, 0, 0, 255]));
+    let mut png = vec![];
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+    d.images.insert("red".into(), ImageBlob::new("image/png", png));
+    let im = ImageObject { key: "red".into(), width: 20, height: 20, xf: Affine::IDENTITY, link: None, placement: Default::default() };
+    let n = Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)));
+    add(&mut d, n);
+    assert_eq!(centre_with(&d, true), centre_with(&d, false), "an image shows as it is");
 }

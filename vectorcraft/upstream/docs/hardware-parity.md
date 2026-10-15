@@ -1,6 +1,6 @@
 # Hardware parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (first checklist) · **Target:** Adobe Illustrator 2026 (30.x)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Linux Display Server preference opens the window through XWayland, #1151) · **Target:** Adobe Illustrator 2026 (30.x)
 
 What hardware Illustrator uses, per platform, against VectorCraft. Illustrator's side is from its public
 documentation (GPU Performance, touch workspace, pen pressure pages); ours from the code
@@ -19,7 +19,7 @@ on huge documents. Pen input is pressure-only and Windows-first.
 | Multithreaded rendering off the UI thread | partial | yes | yes | yes | single-threaded | beyond Illustrator |
 | Hybrid-graphics GPU choice | automatic | power-saving GPU by default, Preferences › Graphics Processor | same; DX12 then OpenGL; no Vulkan unless asked (#545, #806) | the desktop's GPU | browser | done |
 | Restart on another GPU when the first fails to present | — | yes (#502, #964) | yes | yes | restart on lost device (#369) | done |
-| Pen pressure | yes (Wacom, Windows Ink, macOS tablet events) | **no** (winit reports none, #852) | yes (pointer force via `WM_POINTER`) | X11 only via XWayland; none on Wayland (#491, #764) | browser pointer events | partial: 4–8 h for macOS and Wayland (winit 0.31) |
+| Pen pressure | yes (Wacom, Windows Ink, macOS tablet events) | **no** (winit reports none, #852) | yes (pointer force via `WM_POINTER`) | X11 only via XWayland (Preferences › Performance › Linux Display Server, #1151); none on Wayland (#491, #764) | browser pointer events | partial: 4–8 h for macOS and Wayland (winit 0.31) |
 | Pen tilt, bearing, barrel rotation (6D Art Pen) | yes, drives brushes | no | no | no | no | missing: 4–8 h after the input layer (#372) |
 | Pen eraser end | yes | no | no | no | no | missing |
 | Touch gestures (pinch zoom, two-finger pan, rotate view, Touch workspace) | yes (Windows touch, Surface) | trackpad pinch and scroll | pinch, pan; two-finger tap undo, three-finger redo (#585) | same where winit reports touch | same | partial: touch workspace and rotate gesture missing, 3–5 h |
@@ -33,4 +33,5 @@ on huge documents. Pen input is pressure-only and Windows-first.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Preferences › Performance › Linux Display Server › X11 (XWayland) opens the window through XWayland on a Wayland session, where pens and dropped files reach the app (#1151); score unchanged (estimated) |
 | 2026-10-10 | major | First checklist from the canvas, touch and graphics code and the open hardware issues |

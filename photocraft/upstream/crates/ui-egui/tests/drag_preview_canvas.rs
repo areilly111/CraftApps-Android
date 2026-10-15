@@ -142,10 +142,38 @@ fn coverage(img: &Image, ppp: f32, a: Pos2, b: Pos2, test: impl Fn(u8) -> bool) 
     hits as f32 / n.max(1) as f32
 }
 
-/// Ink that contrasts with `background`: dark on white, light on black.
+/// Fraction of positions along the polyline `pts` (points) where a pixel within ±2
+/// physical pixels across the local tangent passes `test`.
+fn coverage_along(img: &Image, ppp: f32, pts: &[Pos2], test: impl Fn(u8) -> bool) -> f32 {
+    let mut samples = 0;
+    let mut hits = 0;
+    for w in pts.windows(2) {
+        let (a, b) = (w[0] * ppp, w[1] * ppp);
+        let len = a.distance(b);
+        if len < 1e-3 {
+            continue;
+        }
+        let dir = (b - a) / len;
+        let normal = egui::vec2(-dir.y, dir.x);
+        let n = len.round().max(1.0) as usize;
+        for i in 0..n {
+            let p = a + dir * (i as f32 + 0.5);
+            let hit = (-2..=2).any(|o| {
+                let q = p + normal * o as f32;
+                img.luma(q.x.round() as i64, q.y.round() as i64).is_some_and(&test)
+            });
+            samples += 1;
+            hits += usize::from(hit);
+        }
+    }
+    hits as f32 / samples.max(1) as f32
+}
+
+/// Ink that contrasts with `background`: dark on white, light on black. The 1 px ants are half
+/// antialiasing where the curve crosses pixel columns, so a quarter of the luma range suffices.
 fn ink(background: &str) -> impl Fn(u8) -> bool {
     let white = background == "white";
-    move |l| if white { l < 64 } else { l > 192 }
+    move |l| if white { l < 192 } else { l > 63 }
 }
 
 /// The four edges of the document rectangle `[x0, y0]`–`[x1, y1]` on screen.
@@ -157,6 +185,7 @@ fn edges(h: &Harness, a: [f32; 2], b: [f32; 2]) -> [(Pos2, Pos2); 4] {
 
 #[test]
 fn marquee_previews_show_while_dragging_on_white_and_black_at_1x_and_2x() {
+    let _gpu = photocraft_testkit::gpu_lock();
     for ppp in [1.0, 2.0] {
         let Some(mut h) = harness(ppp) else { return };
         h.run_steps(4);
@@ -175,14 +204,24 @@ fn marquee_previews_show_while_dragging_on_white_and_black_at_1x_and_2x() {
                         assert!(was < 0.05 && now > 0.3, "{tool} on {bg} @{ppp}x, edge {i}: {was:.2} → {now:.2} contrasting");
                     }
                 } else {
-                    // The ellipse touches its box at the edge midpoints: check short arcs there.
-                    // The arcs keep a physical length at any scale, so their sagitta stays inside
-                    // `coverage`'s ±2 physical px search.
-                    for (mx, my) in [(200.0, 80.0), (300.0, 150.0), (200.0, 220.0), (100.0, 150.0)] {
-                        let m = screen(&h, mx, my);
-                        let along = if mx == 200.0 { egui::vec2(14.0 / ppp, 0.0) } else { egui::vec2(0.0, 14.0 / ppp) };
-                        let now = coverage(&img, ppp, m - along, m + along, ink(bg));
-                        assert!(now > 0.3, "{tool} on {bg} @{ppp}x at {m:?}: {now:.2} contrasting");
+                    // The ellipse touches its box at the edge midpoints. Walk the curve around
+                    // each midpoint over several dash periods, so the check sees the dashes
+                    // wherever the animation phase put them; the ±2 physical px band hugs the
+                    // curve, so the arc stays inside it where a straight chord would sag out.
+                    let (cx, cy) = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0);
+                    let (rx, ry) = ((b[0] - a[0]) / 2.0, (b[1] - a[1]) / 2.0);
+                    for (mx, my, t0) in
+                        [(cx, a[1], std::f64::consts::TAU * 0.75), (b[0], cy, 0.0), (cx, b[1], std::f64::consts::FRAC_PI_2), (a[0], cy, std::f64::consts::PI)]
+                    {
+                        let span = 0.3; // rad: ≈ ±21..30 px of arc, ≈ 5 dash periods
+                        let pts: Vec<Pos2> = (0..=48)
+                            .map(|i| {
+                                let t = t0 - span + 2.0 * span * i as f64 / 48.0;
+                                screen(&h, (cx as f64 + rx as f64 * t.cos()) as f32, (cy as f64 + ry as f64 * t.sin()) as f32)
+                            })
+                            .collect();
+                        let now = coverage_along(&img, ppp, &pts, ink(bg));
+                        assert!(now > 0.3, "{tool} on {bg} @{ppp}x at ({mx}, {my}): {now:.2} contrasting");
                     }
                 }
                 // Each move's frame shows the outline where the pointer is now (no stale frame).
@@ -202,6 +241,7 @@ fn marquee_previews_show_while_dragging_on_white_and_black_at_1x_and_2x() {
 
 #[test]
 fn lasso_and_crop_previews_show_while_dragging() {
+    let _gpu = photocraft_testkit::gpu_lock();
     for ppp in [1.0, 2.0] {
         let Some(mut h) = harness(ppp) else { return };
         h.run_steps(4);
@@ -234,6 +274,7 @@ fn lasso_and_crop_previews_show_while_dragging() {
 
 #[test]
 fn a_held_marquee_drag_keeps_requesting_frames() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some(mut h) = harness(1.0) else { return };
     h.run_steps(4);
     setup(&mut h, "white", "rectMarquee");

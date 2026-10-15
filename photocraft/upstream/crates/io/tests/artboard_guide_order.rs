@@ -14,12 +14,12 @@ fn guides_in_numbers_vertical_first_like_resource_1032() {
     // One vertical guide at x=20 inside the rect, one horizontal at y=90 outside it.
     // In 1032's order the vertical guide is index 0 and the horizontal is index 1,
     // so the artboard rect (x 10..30, y 0..100) must select index 0.
-    let g = Guides { horizontal: vec![90.0], vertical: vec![20.0] };
+    let g = Guides { horizontal: vec![90.0], vertical: vec![20.0], ..Default::default() };
     let r = Rect::new(10, 0, 30, 50); // contains x=20 (vertical), not y=90
     assert_eq!(guides_in(&g, r), vec![0], "the vertical guide is 1032 index 0");
 
     // Both inside: vertical (1032 index 0) before horizontal (1032 index 1).
-    let g2 = Guides { horizontal: vec![50.0], vertical: vec![50.0] };
+    let g2 = Guides { horizontal: vec![50.0], vertical: vec![50.0], ..Default::default() };
     let r2 = Rect::new(0, 0, 100, 100);
     assert_eq!(guides_in(&g2, r2), vec![0, 1], "vertical must be numbered before horizontal");
 }
@@ -34,7 +34,7 @@ fn doc_with_board(rect: Rect) -> Document {
         g.artboard = Some(Artboard { rect, background: ArtboardBackground::White, preset: String::new() });
     }
     d.layers = vec![g1];
-    d.guides = Guides { horizontal: vec![90.0], vertical: vec![20.0] };
+    d.guides = Guides { horizontal: vec![90.0], vertical: vec![20.0], ..Default::default() };
     d
 }
 

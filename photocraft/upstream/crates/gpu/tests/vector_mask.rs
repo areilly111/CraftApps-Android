@@ -26,7 +26,9 @@ fn check(g: &mut (wgpu::Device, wgpu::Queue, photocraft_gpu::Compositor), d: &Do
         .zip(&out)
         .map(|(c, o)| (0..4).map(|k| if k == 3 { (c[3] - o[3]).abs() } else { (c[k] * c[3] - o[k] * o[3]).abs() }).fold(0.0f32, f32::max))
         .fold(0.0f32, f32::max);
-    assert!(worst <= 1.0 / 255.0, "{what}: max diff {:.2}/255", worst * 255.0);
+    // One 8-bit code at most; the epsilon absorbs float noise on an exact one-code step
+    // (the combined mask is cached as U16 since #2417).
+    assert!(worst <= 1.0 / 255.0 + 1e-6, "{what}: max diff {:.2}/255", worst * 255.0);
 }
 
 fn tri(inverted: bool, density: f32) -> VectorMask {

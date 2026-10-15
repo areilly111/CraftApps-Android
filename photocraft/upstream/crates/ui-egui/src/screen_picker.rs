@@ -250,6 +250,25 @@ pub fn cancel(ctx: &Context) {
     lock(&r).answer = Some(Ok(None));
     ctx.request_repaint();
 }
+
+/// The picker window: hidden until its snapshot has been painted (#3210).
+fn viewport_builder(ctx: &Context, image: &ScreenImage) -> egui::ViewportBuilder {
+    let mut builder = egui::ViewportBuilder::default()
+        .with_title(tl!("PhotoCraft — Screen Color Picker"))
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_position(image.position / ctx.zoom_factor())
+        .with_inner_size(image.size / ctx.zoom_factor())
+        .with_window_level(egui::WindowLevel::AlwaysOnTop)
+        // Do not expose the native window's empty first frame over the desktop.
+        // The viewport is made visible after its snapshot has been painted below.
+        .with_visible(false)
+        .with_clamp_size_to_monitor_size(false);
+    if let Some(monitor) = image.monitor {
+        builder = builder.with_monitor(monitor);
+    }
+    builder
+}
 pub fn show(ctx: &Context) {
     let r = runtime(ctx);
     let s = lock(&r);
@@ -260,17 +279,7 @@ pub fn show(ctx: &Context) {
         let Snapshot { image, texture, conversion } = snapshot;
         let shared = r.clone();
         let vid = egui::ViewportId::from_hash_of(("screen-color", generation, n));
-        let mut builder = egui::ViewportBuilder::default()
-            .with_title("PhotoCraft — Screen Color Picker")
-            .with_decorations(false)
-            .with_resizable(false)
-            .with_position(image.position / ctx.zoom_factor())
-            .with_inner_size(image.size / ctx.zoom_factor())
-            .with_window_level(egui::WindowLevel::AlwaysOnTop)
-            .with_clamp_size_to_monitor_size(false);
-        if let Some(monitor) = image.monitor {
-            builder = builder.with_monitor(monitor);
-        }
+        let builder = viewport_builder(ctx, &image);
         ctx.show_viewport_deferred(vid, builder, move |ui, _| {
             {
                 let s = lock(&shared);
@@ -322,6 +331,9 @@ pub fn show(ctx: &Context) {
                     ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
                 }
             });
+            // Showing a new native viewport before this frame is painted can briefly cover
+            // the screen with the window's default white clear color.
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Visible(true));
         });
     }
 }
@@ -374,6 +386,11 @@ mod tests {
             rgba: vec![255, 0, 0, 255, 0, 128, 255, 255],
             profile: None,
         }
+    }
+    #[test]
+    fn screen_picker_viewport_starts_hidden_until_its_snapshot_is_painted() {
+        let builder = viewport_builder(&Context::default(), &image());
+        assert_eq!(builder.visible, Some(false));
     }
     #[test]
     fn pixel_mapping_handles_display_edges_negative_origins_and_hidpi() {

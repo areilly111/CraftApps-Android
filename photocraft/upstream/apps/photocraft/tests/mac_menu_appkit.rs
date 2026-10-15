@@ -165,6 +165,31 @@ fn main() {
     frame(&mut app, raw);
     assert_eq!(app.ui.extras.rulers, !rulers, "↩ on Rulers toggled it");
 
+    // Window ends with the open documents (#2991). Opening one rebuilds only the Window menu,
+    // which AppKit still knows as its Window menu; choosing a row brings that document forward.
+    app.run("file.new", json!({"width": 32, "height": 32})).expect("a second document");
+    frame(&mut app, egui::RawInput::default());
+    assert!(Retained::as_ptr(&bar) == Retained::as_ptr(&main_menu()), "a new document rebuilt only the Window menu");
+    let window = submenu(&main_menu(), "Window");
+    assert!(nsapp.windowsMenu().is_some_and(|w| Retained::as_ptr(&w) == Retained::as_ptr(&window)), "AppKit knows the new Window menu");
+    let names: Vec<String> = app.session.documents().iter().map(|d| d.doc.name.clone()).collect();
+    // The last rows (both documents are "Untitled").
+    let rows = [window.numberOfItems() - 2, window.numberOfItems() - 1];
+    let shown: Vec<String> = rows.iter().filter_map(|&i| window.itemAtIndex(i)).map(|it| it.title().to_string()).collect();
+    assert_eq!(shown, names, "in tab order, after Bring All to Front: {:?}", titles(&window));
+    let checked = |menu: &NSMenu, at: isize| menu.itemAtIndex(at).is_some_and(|it| it.state() == 1);
+    assert!(!checked(&window, rows[0]) && checked(&window, rows[1]), "the active document is checked");
+    dequeue(&other());
+    window.performActionForItemAtIndex(rows[0]);
+    let mut raw = egui::RawInput::default();
+    if let Some(m) = app.services.native_menu.as_mut() {
+        m.raw_input(&mut raw);
+    }
+    frame(&mut app, raw);
+    assert_eq!(app.session.active_index(), Some(0), "choosing the first row brought it forward");
+    let window = submenu(&main_menu(), "Window");
+    assert!(checked(&window, rows[0]) && !checked(&window, rows[1]), "the check moved in place");
+
     println!("mac_menu_appkit: ok");
 }
 

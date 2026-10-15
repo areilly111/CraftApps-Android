@@ -305,3 +305,20 @@ fn color_matte_dialog_picks_and_changes_the_color() {
     assert_eq!(d.call("ui.menu.invoke", json!({"id": "project.matteColor"}))["ok"], json!(false));
     assert!(!d.dialog_open());
 }
+
+#[test]
+fn reveal_in_finder_opens_an_imported_clip() {
+    let dir = std::env::temp_dir().join(format!("fc-ui-reveal-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("clip.png");
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([10, 20, 30, 255])).save(&path).unwrap();
+    let mut d = Driver::new();
+    let item = d.exec("file.import", json!({"paths": [path.to_string_lossy()]}))["items"][0].as_u64().unwrap();
+    assert!(!d.app().session.is_enabled("file.reveal"));
+    d.exec("project.select", json!({"items": [item]}));
+    assert!(d.app().session.is_enabled("file.reveal"));
+    let r = d.ok("ui.menu.invoke", json!({"id": "file.reveal"}));
+    assert_eq!(r["paths"][0], path.to_string_lossy().as_ref());
+    assert_eq!(d.app().ui.extras.opened.last().map(String::as_str), Some(path.to_string_lossy().as_ref()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

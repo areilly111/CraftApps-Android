@@ -34,16 +34,19 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod atomic;
 mod legacy;
+mod stream;
+mod unpack;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
-use std::io::{Read as _, Write as _};
+use std::io::{Read as _, Write};
 
 use serde::{Deserialize, Serialize};
 use vectorcraft_doc::{Document, ImageBlob};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use atomic::{write_atomic, write_atomic_with, write_new_with};
+use stream::{Gz, Indent, KeyScan, Out};
 
 /// v4: large data after the JSON (v1 to v3 files still load).
 pub const VERSION: u32 = 4;
@@ -60,7 +63,17 @@ pub const PREVIEW_MAX: u32 = 256;
 pub const EXTENSION: &str = "vectorcraft";
 /// Extension and format name from before the project was renamed (DrawCraft): still opened.
 pub const LEGACY_EXTENSION: &str = "drawcraft";
-/// Most bytes a compressed file may unpack to (a guard against decompression bombs).
+/// Most bytes the JSON of a compressed file may unpack to (a guard against decompression bombs,
+/// as are [`MAX_BLOB`] and [`MAX_BLOBS`]). A compressed save refuses a document past any of them,
+/// so every file VectorCraft writes reads back.
+pub const MAX_JSON: u64 = 1 << 30;
+/// Most bytes one entry of the data after the JSON (an image, a placed document, the PDF, a
+/// profile) may have in a compressed file.
+pub const MAX_BLOB: u64 = 1 << 30;
+/// Most bytes the entries after the JSON may have together in a compressed file.
+pub const MAX_BLOBS: u64 = 4 << 30;
+/// Most bytes a compressed file whose JSON isn't followed by the marker where VectorCraft puts it
+/// (hand-made or damaged files) may unpack to: it is unpacked whole.
 const MAX_UNPACKED: u64 = 512 << 20;
 
 /// Is `ext` (without the dot, any case) a native document extension?
@@ -85,8 +98,10 @@ pub enum FormatError {
     BadVersion(u32),
     #[error("version {0} files can't be compressed: only version {COMPRESSED_SINCE} and later open compressed files")]
     CompressedTooOld(u32),
-    #[error("the compressed file unpacks to more than {} MB", MAX_UNPACKED >> 20)]
+    #[error("the compressed file unpacks to more than VectorCraft reads ({} MB of document, {} MB per image)", MAX_JSON >> 20, MAX_BLOB >> 20)]
     TooBig,
+    #[error("the document is too large to save compressed ({0}): save it with Use Compression off")]
+    TooBigToCompress(String),
     #[error("can't encode the document: {0}")]
     Encode(String),
 }
@@ -106,35 +121,41 @@ struct Image {
 }
 
 impl Image {
-    /// Its bytes: the base64 `data`, or its part of `tail` (the data after the JSON).
-    fn bytes(&self, tail: &[u8]) -> Option<Vec<u8>> {
+    /// Its bytes when they are in the JSON (base64 `data`); `None` when they come after it
+    /// ([`Image::blob`]) or don't decode.
+    fn inline(&self) -> Option<Vec<u8>> {
         match self.blob {
-            Some([offset, len]) => {
-                let start = usize::try_from(offset).ok()?;
-                let end = start.checked_add(usize::try_from(len).ok()?)?;
-                tail.get(start..end).map(<[u8]>::to_vec)
-            }
+            Some(_) => None,
             None => base64_decode(&self.data),
         }
     }
 }
 
 /// Entries written for one file: large bytes go to the data after the JSON when the version keeps
-/// them there.
-struct Blobs {
-    tail: Vec<u8>,
+/// them there (in the order they are added, each at the offset it is given).
+struct Blobs<'a> {
+    /// The bytes, and whether they are compressed already ([`is_packed`]).
+    tail: Vec<(&'a [u8], bool)>,
+    at: u64,
     outside: bool,
 }
 
-impl Blobs {
-    fn image(&mut self, mime: &str, bytes: &[u8], proxy: bool) -> Image {
+impl<'a> Blobs<'a> {
+    fn image(&mut self, mime: &str, bytes: &'a [u8], proxy: bool) -> Image {
         if self.outside && bytes.len() >= INLINE_MAX {
-            let at = self.tail.len() as u64;
-            self.tail.extend_from_slice(bytes);
-            return Image { mime: mime.into(), data: String::new(), blob: Some([at, bytes.len() as u64]), proxy };
+            let len = bytes.len() as u64;
+            let at = self.at;
+            self.at += len;
+            self.tail.push((bytes, is_packed(mime)));
+            return Image { mime: mime.into(), data: String::new(), blob: Some([at, len]), proxy };
         }
         Image { mime: mime.into(), data: base64_encode(bytes), blob: None, proxy }
     }
+}
+
+/// Is data of this MIME type compressed already (no use compressing it again)?
+fn is_packed(mime: &str) -> bool {
+    matches!(mime, "image/jpeg" | "image/png" | "image/gif" | "image/webp")
 }
 
 /// The MIME type of a preview's bytes (JPEG or PNG).
@@ -145,6 +166,19 @@ fn preview_mime(bytes: &[u8]) -> &'static str {
 /// The JSON of a file and the data after it (v4), split at [`BLOB_MAGIC`] after the first JSON
 /// value.
 fn split_tail(text: &[u8]) -> (&[u8], &[u8]) {
+    // JSON holds no raw NUL, so the marker (which has one) starts at the first NUL, if the file
+    // has one. The writer puts it right after the JSON's last byte; found there, it is where the
+    // first JSON value ends, without parsing the JSON twice. Anything else takes the parse.
+    let Some(nul) = text.iter().position(|&b| b == 0) else {
+        // No NUL, so no marker: the parse below would find none either.
+        return (text, &[]);
+    };
+    if let Some(at) = nul.checked_sub(1)
+        && text.get(at..).is_some_and(|r| r.starts_with(BLOB_MAGIC))
+        && at.checked_sub(1).and_then(|k| text.get(k)).is_some_and(|b| matches!(b, b'}' | b']' | b'"'))
+    {
+        return (text.get(..at).unwrap_or(text), text.get(at + BLOB_MAGIC.len()..).unwrap_or_default());
+    }
     let mut values = serde_json::Deserializer::from_slice(text).into_iter::<serde::de::IgnoredAny>();
     if values.next().is_some_and(|v| v.is_ok()) {
         let end = values.byte_offset();
@@ -234,6 +268,19 @@ pub fn save_file(doc: &Document) -> Vec<u8> {
 /// Serialize a document as `o` says: the version, compression, layout and preview. Editing-mode
 /// working copies and images nothing uses are left out.
 pub fn save_with(doc: &Document, o: &SaveOptions) -> Result<Vec<u8>, FormatError> {
+    let mut out = Vec::new();
+    save_to(doc, o, &mut out)?;
+    Ok(out)
+}
+
+/// Bytes of JSON serialized at a time on their way to the output.
+const JSON_CHUNK: usize = 64 << 10;
+
+/// [`save_with`], written to `w` as it is made: the JSON is serialized straight into it (through
+/// the compressor when compressing) and the images are copied in from the document, so the file
+/// is never held in memory as a whole. Give it a buffered writer. On an error `w` has part of a
+/// file: write to a temporary file ([`write_atomic_with`]).
+pub fn save_to(doc: &Document, o: &SaveOptions, w: impl Write) -> Result<(), FormatError> {
     o.check()?;
     let pretty = o.pretty && !o.compress;
     let mut d = doc.without_edit_modes().into_owned();
@@ -251,62 +298,103 @@ pub fn save_with(doc: &Document, o: &SaveOptions) -> Result<Vec<u8>, FormatError
     if o.version < 3 {
         d.store_legacy_color_profiles();
     }
-    let body = if o.version == 1 {
+    let v1 = if o.version == 1 {
         let mut v = serde_json::to_value(&d).map_err(encode_err)?;
         legacy::anchors_to_v1(&mut v);
-        to_json(&v, pretty)?
+        Some(v)
     } else {
-        to_json(&d, pretty)?
+        None
     };
+    let entries = Entries { blobs: &blobs, linked: &linked, include_linked: o.include_linked };
+    let mut out_blobs = Blobs { tail: vec![], at: 0, outside: o.version >= 4 };
     // Images are only referenced by image objects' `key` (wherever the objects are: layers,
-    // symbols, patterns, masks, or foreign data).
-    let used = if blobs.is_empty() { HashSet::new() } else { string_members(&body, "key") };
-    let mut out_blobs = Blobs { tail: vec![], outside: o.version >= 4 };
-    let images: BTreeMap<&str, Image> = blobs
-        .iter()
-        .filter(|(k, _)| used.contains(k.as_str()))
-        .map(|(k, b)| {
-            // Include Linked Files keeps the file's bytes whenever they are loaded.
-            let preview_only = linked.contains(k) && (!o.include_linked || b.is_proxy());
-            let image = match b.proxy.as_ref().filter(|_| preview_only) {
-                Some(p) => out_blobs.image(preview_mime(p), p, true),
-                None => out_blobs.image(&b.mime, &b.bytes, false),
-            };
-            (k.as_str(), image)
-        })
-        .collect();
+    // symbols, patterns, masks, or foreign data). The data after the JSON has the images first,
+    // then the profiles and the PDF, which the file lists before the document: with those, the
+    // images in use are looked for before the document is written (it is serialized twice).
+    let mut images = None;
+    if !blobs.is_empty() && (!o.profiles.is_empty() || o.pdf.is_some()) {
+        let mut scan = KeyScan::new(std::io::sink());
+        write_body(std::io::BufWriter::with_capacity(JSON_CHUNK, &mut scan), v1.as_ref(), &d, pretty)?;
+        images = Some(entries.images(&scan.keys, &mut out_blobs));
+    }
     let profiles: BTreeMap<&str, Image> = o.profiles.iter().map(|(name, icc)| (name.as_str(), out_blobs.image(ICC_MIME, icc, false))).collect();
     let pdf = o.pdf.as_deref().map(|p| out_blobs.image("application/pdf", p, false));
     let blob = |mime: &str, bytes: &[u8]| Image { mime: mime.into(), data: base64_encode(bytes), blob: None, proxy: false };
-    let carried = profiles.values().chain(&pdf).map(|i| i.data.len()).sum::<usize>();
-    let size = body.len() + images.values().map(|i| i.data.len()).sum::<usize>() + carried + 256;
-    let mut w = Envelope { out: Vec::with_capacity(size), pretty };
+    let mut out = if o.compress { Out::Gz(Box::new(Gz::new(w).map_err(encode_err)?)) } else { Out::Plain(w) };
+    let mut env = Envelope { pretty, first: true };
     // Older apps only know the name from before the rename.
-    w.field("format", &if o.version < 3 { LEGACY_EXTENSION } else { EXTENSION })?;
-    w.field("version", &o.version)?;
-    w.field("generator", &format!("VectorCraft {}", env!("CARGO_PKG_VERSION")))?;
+    env.field(&mut out, "format", &if o.version < 3 { LEGACY_EXTENSION } else { EXTENSION })?;
+    env.field(&mut out, "version", &o.version)?;
+    env.field(&mut out, "generator", &format!("VectorCraft {}", env!("CARGO_PKG_VERSION")))?;
     if let Some(png) = &o.preview {
-        w.field("preview", &blob("image/png", png))?;
+        env.field(&mut out, "preview", &blob("image/png", png))?;
     }
     if !profiles.is_empty() {
-        w.field("profiles", &profiles)?;
+        env.field(&mut out, "profiles", &profiles)?;
     }
     if let Some(pdf) = &pdf {
-        w.field("pdf", pdf)?;
+        env.field(&mut out, "pdf", pdf)?;
     }
-    w.raw("document", &body);
-    w.field("images", &images)?;
-    let mut out = w.finish();
+    env.key(&mut out, "document")?;
+    let mut scan = KeyScan::new(Indent { inner: &mut out, on: pretty });
+    // Without blobs no key matters.
+    scan.active = images.is_none() && !blobs.is_empty();
+    let mut buffered = std::io::BufWriter::with_capacity(JSON_CHUNK, &mut scan);
+    write_body(&mut buffered, v1.as_ref(), &d, pretty)?;
+    buffered.flush().map_err(encode_err)?;
+    drop(buffered);
+    let used = std::mem::take(&mut scan.keys);
+    let images = images.unwrap_or_else(|| entries.images(&used, &mut out_blobs));
+    env.field(&mut out, "images", &images)?;
+    env.finish(&mut out)?;
+    if o.compress {
+        let json = out.written().unwrap_or(0);
+        let tail: Vec<u64> = out_blobs.tail.iter().map(|(b, _)| b.len() as u64).collect();
+        if json > MAX_JSON {
+            return Err(FormatError::TooBigToCompress(format!("{} MB of document, at most {} MB", json >> 20, MAX_JSON >> 20)));
+        }
+        if let Some(big) = tail.iter().find(|&&n| n > MAX_BLOB) {
+            return Err(FormatError::TooBigToCompress(format!("an image of {} MB, at most {} MB", big >> 20, MAX_BLOB >> 20)));
+        }
+        if out_blobs.at > MAX_BLOBS {
+            return Err(FormatError::TooBigToCompress(format!("{} MB of images, at most {} MB", out_blobs.at >> 20, MAX_BLOBS >> 20)));
+        }
+    }
     if !out_blobs.tail.is_empty() {
-        out.extend_from_slice(BLOB_MAGIC);
-        out.extend_from_slice(&out_blobs.tail);
+        out.write_all(BLOB_MAGIC).map_err(encode_err)?;
+        for &(bytes, packed) in &out_blobs.tail {
+            out.packed(packed).map_err(encode_err)?;
+            out.write_all(bytes).map_err(encode_err)?;
+        }
     }
-    if !o.compress {
-        return Ok(out);
+    out.finish().map_err(encode_err)
+}
+
+/// The images a file lists, from the document's blobs.
+struct Entries<'a> {
+    blobs: &'a BTreeMap<String, ImageBlob>,
+    /// Images only linked images show (see [`Document::linked_only_images`]).
+    linked: &'a std::collections::BTreeSet<String>,
+    include_linked: bool,
+}
+
+impl<'a> Entries<'a> {
+    /// The entries of the images named in `used`, in the order of their names.
+    fn images(&self, used: &HashSet<String>, out: &mut Blobs<'a>) -> BTreeMap<&'a str, Image> {
+        self.blobs
+            .iter()
+            .filter(|(k, _)| used.contains(k.as_str()))
+            .map(|(k, b)| {
+                // Include Linked Files keeps the file's bytes whenever they are loaded.
+                let preview_only = self.linked.contains(k) && (!self.include_linked || b.is_proxy());
+                let image = match b.proxy.as_ref().filter(|_| preview_only) {
+                    Some(p) => out.image(preview_mime(p), p, true),
+                    None => out.image(&b.mime, &b.bytes, false),
+                };
+                (k.as_str(), image)
+            })
+            .collect()
     }
-    let mut gz = flate2::write::GzEncoder::new(Vec::with_capacity(out.len() / 4), flate2::Compression::default());
-    gz.write_all(&out).map_err(encode_err)?;
-    gz.finish().map_err(encode_err)
 }
 
 fn encode_err(e: impl std::fmt::Display) -> FormatError {
@@ -317,83 +405,49 @@ fn to_json(v: &impl Serialize, pretty: bool) -> Result<Vec<u8>, FormatError> {
     if pretty { serde_json::to_vec_pretty(v) } else { serde_json::to_vec(v) }.map_err(encode_err)
 }
 
-/// The file's top-level object, written member by member (the document goes in pre-serialized).
+/// The document's JSON: its version 1 form `v1`, else `d` (generic, not `dyn Write`: serde_json
+/// writes token by token).
+fn write_body(w: impl Write, v1: Option<&serde_json::Value>, d: &Document, pretty: bool) -> Result<(), FormatError> {
+    match v1 {
+        Some(v) => write_json(w, v, pretty),
+        None => write_json(w, d, pretty),
+    }
+}
+
+fn write_json(w: impl Write, v: &impl Serialize, pretty: bool) -> Result<(), FormatError> {
+    if pretty { serde_json::to_writer_pretty(w, v) } else { serde_json::to_writer(w, v) }.map_err(encode_err)
+}
+
+/// The file's top-level object, written member by member (the document is streamed in).
 struct Envelope {
-    out: Vec<u8>,
     pretty: bool,
+    first: bool,
 }
 
 impl Envelope {
-    fn field(&mut self, key: &str, value: &impl Serialize) -> Result<(), FormatError> {
+    fn field(&mut self, out: &mut impl Write, key: &str, value: &impl Serialize) -> Result<(), FormatError> {
         let json = to_json(value, self.pretty)?;
-        self.raw(key, &json);
-        Ok(())
+        self.key(out, key)?;
+        Indent { inner: out, on: self.pretty }.write_all(&json).map_err(encode_err)
     }
 
-    /// Member `key` (a plain name) with the JSON text `json`, indented one level when pretty (as
-    /// serde_json would).
-    fn raw(&mut self, key: &str, json: &[u8]) {
-        let out = &mut self.out;
-        out.push(if out.is_empty() { b'{' } else { b',' });
-        if self.pretty {
-            out.extend_from_slice(b"\n  ");
-        }
-        out.push(b'"');
-        out.extend_from_slice(key.as_bytes());
-        out.extend_from_slice(if self.pretty { b"\": " } else { b"\":" });
-        // Newlines only occur between tokens (inside strings they are escaped).
-        let mut lines = json.split(|&b| b == b'\n');
-        out.extend_from_slice(lines.next().unwrap_or_default());
-        for line in lines {
-            out.extend_from_slice(b"\n  ");
-            out.extend_from_slice(line);
-        }
+    /// The start of member `key` (a plain name): its value follows, indented one level when
+    /// pretty (as serde_json would: see [`Indent`]).
+    fn key(&mut self, out: &mut impl Write, key: &str) -> Result<(), FormatError> {
+        let sep: &[u8] = if std::mem::take(&mut self.first) { b"{" } else { b"," };
+        let indent: &[u8] = if self.pretty { b"\n  " } else { b"" };
+        let colon: &[u8] = if self.pretty { b"\": " } else { b"\":" };
+        [sep, indent, b"\"", key.as_bytes(), colon].iter().try_for_each(|part| out.write_all(part)).map_err(encode_err)
     }
 
-    fn finish(mut self) -> Vec<u8> {
-        self.out.extend_from_slice(if self.pretty { b"\n}" } else { b"}" });
-        self.out
+    fn finish(self, out: &mut impl Write) -> Result<(), FormatError> {
+        out.write_all(if self.pretty { b"\n}" } else { b"}" }).map_err(encode_err)
     }
-}
-
-/// The string values of every `"<name>": "…"` member at any depth of JSON text. Quotes inside JSON
-/// strings are escaped, so every match is a real member.
-fn string_members(json: &[u8], name: &str) -> HashSet<String> {
-    let tag = format!("\"{name}\":");
-    let tag = tag.as_bytes();
-    let mut out = HashSet::new();
-    let mut rest = json;
-    while let Some(at) = rest.windows(tag.len()).position(|w| w == tag) {
-        rest = rest.get(at + tag.len()..).unwrap_or_default();
-        let value = rest.trim_ascii_start();
-        if value.first() == Some(&b'"')
-            && let Some(Ok(s)) = serde_json::Deserializer::from_slice(value).into_iter::<String>().next()
-        {
-            out.insert(s);
-        }
-    }
-    out
 }
 
 /// Is this gzip data (a compressed file)?
 pub fn is_compressed(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0x1f, 0x8b])
-}
-
-/// The JSON text of a file, unpacked when compressed.
-fn unpack(bytes: &[u8]) -> Result<Cow<'_, [u8]>, FormatError> {
-    if !is_compressed(bytes) {
-        return Ok(Cow::Borrowed(bytes));
-    }
-    let mut raw = Vec::new();
-    flate2::read::GzDecoder::new(bytes)
-        .take(MAX_UNPACKED + 1)
-        .read_to_end(&mut raw)
-        .map_err(|e| FormatError::NotVectorcraft(format!("damaged compressed data: {e}")))?;
-    if raw.len() as u64 > MAX_UNPACKED {
-        return Err(FormatError::TooBig);
-    }
-    Ok(Cow::Owned(raw))
 }
 
 pub fn load(bytes: &[u8]) -> Result<Document, FormatError> {
@@ -432,18 +486,24 @@ pub fn load_info(bytes: &[u8]) -> Result<(Document, FileInfo), FormatError> {
 
 /// [`load`], with everything else the file carries.
 pub fn load_file(bytes: &[u8]) -> Result<NativeFile, FormatError> {
-    let text = unpack(bytes)?;
-    let (json, tail) = split_tail(&text);
-    let f: File = serde_json::from_slice(json).map_err(|e| FormatError::NotVectorcraft(e.to_string()))?;
+    let file = unpack::Unpacked::new(bytes)?;
+    let f: File = serde_json::from_slice(file.json()).map_err(|e| FormatError::NotVectorcraft(e.to_string()))?;
     if f.format != EXTENSION && f.format != LEGACY_EXTENSION {
         return Err(FormatError::NotVectorcraft(format!("format is `{}`", f.format)));
     }
     if f.version > VERSION {
         return Err(FormatError::TooNew(f.version));
     }
+    // The bytes after the JSON, read in one pass: the images' first, then the profiles'.
+    let entries: Vec<[u64; 2]> = f.images.values().chain(f.profiles.values()).filter_map(|i| i.blob).collect();
+    let mut tail = file.entries(&entries)?.into_iter();
+    let mut bytes_of = |img: &Image| match img.blob {
+        Some(_) => tail.next().flatten(),
+        None => img.inline(),
+    };
     let mut doc = f.document;
     for (k, img) in f.images {
-        let bytes = img.bytes(tail).ok_or_else(|| FormatError::BadImage(k.clone()))?;
+        let bytes = bytes_of(&img).ok_or_else(|| FormatError::BadImage(k.clone()))?;
         let mut blob = ImageBlob::new(img.mime, bytes);
         // Until the linked file is read, the preview stands in for it.
         if img.proxy {
@@ -460,7 +520,8 @@ pub fn load_file(bytes: &[u8]) -> Result<NativeFile, FormatError> {
     doc.fix_next_id();
     // Untrusted: capped, named and pointing at objects the file has.
     doc.tidy_saved_selections();
-    let profiles = f.profiles.into_iter().filter_map(|(name, icc)| Some((name, icc.bytes(tail)?))).collect();
+    doc.tidy_graph_designs();
+    let profiles = f.profiles.into_iter().filter_map(|(name, icc)| Some((name, bytes_of(&icc)?))).collect();
     Ok(NativeFile { doc, info: FileInfo { version: f.version, legacy: f.format == LEGACY_EXTENSION }, profiles })
 }
 
@@ -471,24 +532,27 @@ struct Head {
     pdf: Option<Image>,
 }
 
-/// The file's head and the data after its JSON.
-fn head(bytes: &[u8]) -> Option<(Head, Vec<u8>)> {
-    let text = unpack(bytes).ok()?;
-    let (json, tail) = split_tail(&text);
-    Some((serde_json::from_slice(json).ok()?, tail.to_vec()))
+/// The bytes of the member of the file's head `pick` picks (only that entry of the data after
+/// the JSON is kept).
+fn head_member(bytes: &[u8], pick: impl FnOnce(Head) -> Option<Image>) -> Option<Vec<u8>> {
+    let file = unpack::Unpacked::new(bytes).ok()?;
+    let head: Head = serde_json::from_slice(file.json()).ok()?;
+    let img = pick(head)?;
+    match img.blob {
+        Some(at) => file.entries(&[at]).ok()?.pop().flatten(),
+        None => img.inline(),
+    }
 }
 
 /// The preview PNG embedded in a native file (`None`: it has none, or isn't a native file).
 pub fn preview(bytes: &[u8]) -> Option<Vec<u8>> {
-    let (h, tail) = head(bytes)?;
-    h.preview?.bytes(&tail)
+    head_member(bytes, |h| h.preview)
 }
 
 /// The PDF a native file saved with Create PDF-Compatible File carries (`None`: it has none, or
 /// isn't a native file).
 pub fn pdf_content(bytes: &[u8]) -> Option<Vec<u8>> {
-    let (h, tail) = head(bytes)?;
-    h.pdf?.bytes(&tail)
+    head_member(bytes, |h| h.pdf)
 }
 
 /// Does this look like a `.vectorcraft` file (compressed or not)?
@@ -591,7 +655,7 @@ mod tests {
         // Only images in use are saved.
         let img = d.alloc_id();
         let im = ImageObject { key: "k".into(), width: 1, height: 1, xf: Affine::IDENTITY, link: None, placement: Default::default() };
-        d.insert(Some(l), 1, Node::new(img, NodeKind::Image(im))).unwrap();
+        d.insert(Some(l), 1, Node::new(img, NodeKind::Image(Box::new(im)))).unwrap();
         let bytes = save(&d, true);
         assert!(sniff(&bytes));
         let back = load(&bytes).unwrap();

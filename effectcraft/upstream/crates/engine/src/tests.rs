@@ -280,6 +280,57 @@ fn toolbar_fill_and_stroke_paint_selected_shape_layers() {
     let _ = s.render(cid, s.time(), Default::default());
 }
 
+/// The toolbar's Fill Options / Stroke Options change a selected shape layer's paint kind (#732):
+/// None switches the fill off, a gradient turns the Fill into a Gradient Fill that keeps its
+/// opacity, Solid Color turns it back, and a Stroke kind adds a stroke where there is none.
+#[test]
+fn toolbar_fill_and_stroke_kinds_change_selected_shape_layers() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"width": 400, "height": 300, "duration": 2})).unwrap();
+    let sh = s.execute("layer.newShape", json!({"kind": "rect", "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+    let items = |s: &Session| -> Vec<(String, bool)> {
+        let l = s.active_comp().unwrap().layer(effectcraft_project::LayerId(sh)).unwrap();
+        l.props.group("contents/group/contents").unwrap().groups().map(|g| (g.match_id.clone(), g.enabled)).collect()
+    };
+    let kinds = |s: &mut Session| {
+        let p = s.execute("shape.fillStroke", json!({})).unwrap();
+        (p["fillType"].as_str().unwrap().to_string(), p["strokeType"].as_str().unwrap().to_string())
+    };
+    assert_eq!(kinds(&mut s), ("solid".into(), "none".into()));
+    let cid = s.active_comp_id().unwrap();
+    let centre = |s: &Session| s.render(cid, s.time(), Default::default()).get(200, 150);
+    let red = centre(&s);
+    // None switches the fill off: nothing is drawn, and the item stays.
+    s.execute("shape.fillStroke", json!({"fillType": "none"})).unwrap();
+    assert_eq!(items(&s), [("rect".into(), true), ("fill".into(), false)]);
+    assert_eq!(kinds(&mut s).0, "none");
+    assert_ne!(centre(&s), red, "the fill is off");
+    // A radial gradient: the Fill becomes a Gradient Fill (switched on) that keeps its opacity.
+    s.execute("shape.fillStroke", json!({"fillType": "solid", "fill": "#ff0000"})).unwrap();
+    assert_eq!(centre(&s), red);
+    let opacity = |s: &Session, m: &str| {
+        let l = s.active_comp().unwrap().layer(effectcraft_project::LayerId(sh)).unwrap();
+        l.props.group(&format!("contents/group/contents/{m}")).unwrap().get("opacity").unwrap().value.as_f64()
+    };
+    s.execute("prop.set", json!({"layer": sh, "path": "contents/group/contents/fill/opacity", "value": 40})).unwrap();
+    s.execute("shape.fillStroke", json!({"fillType": "radial"})).unwrap();
+    assert_eq!(items(&s), [("rect".into(), true), ("gfill".into(), true)]);
+    assert_eq!((kinds(&mut s).0.as_str(), opacity(&s, "gfill")), ("radial", 40.0));
+    s.execute("shape.fillStroke", json!({"fillType": "linear"})).unwrap();
+    assert_eq!(kinds(&mut s).0, "linear");
+    s.execute("shape.fillStroke", json!({"fillType": "solid", "fill": "#00ff00"})).unwrap();
+    assert_eq!(items(&s), [("rect".into(), true), ("fill".into(), true)]);
+    assert_eq!(opacity(&s, "fill"), 40.0);
+    // A Stroke kind adds a stroke (before the fill); None switches it off again; undo is per step.
+    s.execute("shape.fillStroke", json!({"strokeType": "linear"})).unwrap();
+    assert_eq!(items(&s), [("rect".into(), true), ("gstroke".into(), true), ("fill".into(), true)]);
+    s.execute("shape.fillStroke", json!({"strokeType": "none"})).unwrap();
+    assert_eq!(kinds(&mut s), ("solid".into(), "none".into()));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(kinds(&mut s), ("solid".into(), "linear".into()));
+    assert!(s.execute("shape.fillStroke", json!({"fillType": "plaid"})).is_err());
+}
+
 /// Selecting a mask in the Timeline (its row or its Mask Path) selects all of its points, so the
 /// viewer drags the whole mask (#203); a shape's Path item works the same way.
 #[test]
@@ -576,4 +627,62 @@ fn new_text_rejects_malformed_positions_without_creating_a_layer() {
     assert_eq!(s.active_comp().unwrap().layers[0].props.prop("transform/position").unwrap().value, effectcraft_keyframe::Value::Vec3([10.0, 20.0, 0.0]));
     s.execute("layer.newText", json!({"text": "No explicit position"})).unwrap();
     assert_eq!(s.active_comp().unwrap().layers.len(), 2);
+}
+
+/// The active comp and the open comp tabs are saved with the project and restored on open (#748).
+#[test]
+fn reopening_a_project_restores_its_active_comp() {
+    use effectcraft_project::ItemId;
+    let dir = std::env::temp_dir().join(format!("ec-test-748-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("view.ecproj").to_string_lossy().to_string();
+    let mut s = Session::default();
+    let a = s.execute("comp.new", json!({"name": "CompA"})).unwrap()["comp"].as_u64().unwrap();
+    let b = s.execute("comp.new", json!({"name": "CompB"})).unwrap()["comp"].as_u64().unwrap();
+    let c = s.execute("comp.new", json!({"name": "CompC"})).unwrap()["comp"].as_u64().unwrap();
+    s.execute("comp.open", json!({"comp": "CompB"})).unwrap();
+    s.state.open_comps.retain(|id| id.0 != c);
+    s.execute("file.saveAs", json!({"path": path})).unwrap();
+    let mut s2 = Session::default();
+    s2.execute("file.open", json!({"path": path})).unwrap();
+    assert_eq!(s2.state.active_comp, Some(ItemId(b)));
+    assert_eq!(s2.state.open_comps, vec![ItemId(a), ItemId(b)]);
+    assert!(!s2.is_dirty());
+
+    // A file from before the view was saved opens on its first comp, as it always did.
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut old: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let obj = old.as_object_mut().unwrap();
+    obj.remove("activeComp");
+    obj.remove("openComps");
+    std::fs::write(&path, serde_json::to_string_pretty(&old).unwrap()).unwrap();
+    let mut s3 = Session::default();
+    s3.execute("file.open", json!({"path": path})).unwrap();
+    assert_eq!((s3.state.active_comp, s3.state.open_comps.clone()), (Some(ItemId(a)), vec![ItemId(a)]));
+
+    // Ids that no longer name a comp (edited by hand, or written by another tool) fall back.
+    obj_set(&mut old, json!(999), json!([999, b, "x"]));
+    std::fs::write(&path, serde_json::to_string_pretty(&old).unwrap()).unwrap();
+    let mut s4 = Session::default();
+    s4.execute("file.open", json!({"path": path})).unwrap();
+    assert_eq!((s4.state.active_comp, s4.state.open_comps.clone()), (Some(ItemId(b)), vec![ItemId(b)]));
+    obj_set(&mut old, json!(999), json!([]));
+    std::fs::write(&path, serde_json::to_string_pretty(&old).unwrap()).unwrap();
+    let mut s5 = Session::default();
+    s5.execute("file.open", json!({"path": path})).unwrap();
+    assert_eq!((s5.state.active_comp, s5.state.open_comps.clone()), (Some(ItemId(a)), vec![ItemId(a)]));
+
+    // XML copies carry it too.
+    let xml = dir.join("view.ecprojx").to_string_lossy().to_string();
+    s.execute("file.saveAs", json!({"path": xml})).unwrap();
+    let mut s6 = Session::default();
+    s6.execute("file.open", json!({"path": xml})).unwrap();
+    assert_eq!(s6.state.active_comp, Some(ItemId(b)));
+    let _ = std::fs::remove_dir_all(dir);
+
+    fn obj_set(v: &mut serde_json::Value, active: serde_json::Value, open: serde_json::Value) {
+        let o = v.as_object_mut().unwrap();
+        o.insert("activeComp".into(), active);
+        o.insert("openComps".into(), open);
+    }
 }

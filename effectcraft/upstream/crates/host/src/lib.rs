@@ -257,6 +257,38 @@ mod tests {
         assert!(red * 20 > img.data.len(), "red cube pixels: {red} of {}", img.data.len());
     }
 
+    /// #651: an animated GIF imported from disk plays: the layer shows each frame at its time,
+    /// in the viewer's renders and in exports alike.
+    #[test]
+    fn an_imported_animated_gif_plays() {
+        let dir = std::env::temp_dir().join(format!("ec-gif-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("anim.gif");
+        let mut bytes = Vec::new();
+        {
+            let mut enc = gif::Encoder::new(&mut bytes, 4, 4, &[]).unwrap();
+            for rgb in [[255u8, 0, 0], [0, 255, 0], [0, 0, 255]] {
+                let mut f = gif::Frame::from_rgb(4, 4, &rgb.repeat(16));
+                f.delay = 10;
+                enc.write_frame(&f).unwrap();
+            }
+        }
+        std::fs::write(&path, bytes).unwrap();
+        let mut s = super::session();
+        s.execute("comp.new", json!({"name": "G", "width": 4, "height": 4, "frameRate": 30, "duration": 1})).unwrap();
+        s.execute("file.import", json!({"paths": [path.to_string_lossy()], "addToComp": true})).unwrap();
+        let cid = s.active_comp_id().unwrap();
+        let rgb = |t: f64| {
+            let img = s.render(cid, effectcraft_time::Tick::from_seconds_f64(t), effectcraft_engine::render::RenderOpts::default());
+            let p = img.data[5];
+            [p[0].round(), p[1].round(), p[2].round()]
+        };
+        assert_eq!(rgb(0.05), [1.0, 0.0, 0.0]);
+        assert_eq!(rgb(0.15), [0.0, 1.0, 0.0]);
+        assert_eq!(rgb(0.25), [0.0, 0.0, 1.0]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// The web app's path: outputs go to a sink (downloads), never to the file system.
     #[test]
     fn render_queue_exports_to_a_sink() {

@@ -130,7 +130,7 @@ fn effect_controls_show_the_audio_of_a_video_clip() {
 
     // the audio rows edit the audio clip
     for fx in ["motion", "opacity", "time_remap"] {
-        d.click(&format!("effectControls.effect.{fx}"));
+        d.click(&format!("effectControls.effect.{fx}.twirl"));
     }
     d.click("effectControls.volume.level.stopwatch");
     assert!(d.item(pair.audio).effect("volume").unwrap().param("level").unwrap().is_animated());
@@ -141,6 +141,21 @@ fn effect_controls_show_the_audio_of_a_video_clip() {
     d.exec("timeline.select", json!({"clips": [pair.video]}));
     assert!(d.find("effectControls.effect.volume").is_none());
     d.rect("effectControls.effect.motion");
+}
+
+/// #696: Parametric EQ on a linked A/V pair shows in Effect Controls (and Custom Setup) while the
+/// video clip is selected — Effect Controls used to keep only the picture clip.
+#[test]
+fn effect_controls_show_audio_fx_on_a_linked_pair() {
+    let (mut d, pair) = Driver::demo(&["EffectControls"]);
+    d.exec("timeline.select", json!({"clips": [pair.video]}));
+    d.exec("effects.apply", json!({"clips": [pair.video], "effect": "parametric_eq"}));
+    assert_eq!(d.item(pair.audio).effects.last().map(|e| e.effect.as_str()), Some("parametric_eq"));
+    for fx in ["motion", "opacity", "time_remap", "volume", "channel_volume", "panner"] {
+        d.click(&format!("effectControls.effect.{fx}"));
+    }
+    d.rect("effectControls.effect.parametric_eq");
+    d.rect("effectControls.effect.parametric_eq.edit");
 }
 
 #[test]

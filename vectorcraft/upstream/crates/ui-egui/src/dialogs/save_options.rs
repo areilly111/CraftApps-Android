@@ -67,7 +67,12 @@ fn shown(f: &Format) -> impl Iterator<Item = &'static FormatOption> {
     let range = f.options.iter().any(|o| o.name == "range");
     let separate = separates(f);
     let options = if own_dialog(f) { &[][..] } else { f.options };
-    options.iter().filter(move |o| !(matches!(o.ty, "array" | "object") || (range && o.name == "artboard") || (separate && o.name == "range")))
+    options.iter().filter(move |o| {
+        !(matches!(o.ty, "array" | "object")
+            || (range && o.name == "artboard")
+            || (separate && o.name == "range")
+            || (f.id == "ai" && o.name == "useArtboards"))
+    })
 }
 
 /// An option's label: the save options as the reference app's options dialog names them, the
@@ -145,9 +150,9 @@ fn option_row(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, o: &Forma
     let value = d.fields.get(o.name).cloned().unwrap_or(Value::Null);
     if o.ty == "boolean" {
         ui.label("");
-        let mut on = value.as_bool().unwrap_or(false);
-        if ui.checkbox(&mut on, label.trim_end_matches(':')).on_hover_text(o.description).changed() {
-            d.fields.insert(o.name.into(), json!(on));
+        let on = value.as_bool().unwrap_or(false);
+        if widgets::check_tip(ui, label.trim_end_matches(':'), on, true, o.description) {
+            d.fields.insert(o.name.into(), json!(!on));
         }
         ui.end_row();
         if o.name == "separateArtboards" {

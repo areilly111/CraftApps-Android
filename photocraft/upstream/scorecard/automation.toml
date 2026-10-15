@@ -1,5 +1,5 @@
 # Scorecard checklist: automation (#219). The command count and the menu wiring number come from
-# docs/parity.md.
+# docs/parity-checklist.md.
 # Statuses must be true on main. Verified against 4b53f62 on 2026-10-05.
 area = "automation"
 title = "Automation"
@@ -9,7 +9,7 @@ order = 6
 id = "AUTO-1"
 target = "Every menu item dispatches a command id (UI, CLI, control channel and MCP share them)"
 status = "done"
-note = "docs/parity.md: all menu items live; menus.rs is_live"
+note = "docs/parity-checklist.md: all menu items live; menus.rs is_live"
 
 [[item]]
 id = "AUTO-219-1"
@@ -35,9 +35,9 @@ note = "actions.list/get/record/stop/play/delete in actions_cmds.rs; the panel, 
 [[item]]
 id = "AUTO-219-4"
 target = "Replay tests for crop, filters, selections and styled text on a second document"
-status = "missing"
+status = "done"
 issue = 219
-note = "One replay test (actions.rs:171: new layer, rect select, fill)"
+note = "actions_cmds.rs: a_recorded_edit_run_replays_on_a_second_document records a crop, a Gaussian Blur, a selection fill and faux-bold type on one document and replays all of them onto a second (plus the original layer/select/fill replay)"
 
 [[item]]
 id = "AUTO-219-5"

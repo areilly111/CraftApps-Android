@@ -4,21 +4,15 @@
 
 use std::path::PathBuf;
 
+#[path = "profile.rs"]
+mod profile;
+
 /// The settings file `ui.json` of the app `name`: in a folder named `name` in ~/Library/Application
 /// Support (macOS) or %APPDATA% (Windows), or `lower` in $XDG_CONFIG_HOME or ~/.config (Linux and
 /// BSD).
 pub fn prefs_path_for(name: &str, lower: &str) -> Option<PathBuf> {
-    let base = if cfg!(target_os = "macos") {
-        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Application Support").join(name))
-    } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map(|a| std::path::PathBuf::from(a).join(name))
-    } else {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
-            .map(|c| c.join(lower))
-    };
-    base.map(|b| b.join("ui.json"))
+    let legacy = name == "DrawCraft" || lower == "drawcraft";
+    profile::prefs_path(legacy)
 }
 
 /// Have the font scans read VectorCraft's own Fonts folder, next to the settings, which

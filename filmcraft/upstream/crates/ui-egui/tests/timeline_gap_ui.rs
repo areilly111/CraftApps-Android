@@ -33,10 +33,21 @@ impl Driver {
         let (a, b) = (v1.items[0].id, v1.items[1].id);
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(s).with_control(rx);
-        let harness = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
+        let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000);
+        if std::env::var_os("FILMCRAFT_UI_SHOTS").is_some() {
+            builder = builder.wgpu();
+        }
+        let harness = builder.build_eframe(move |_cc| app);
         let mut d = Driver { harness, tx };
         d.frames(4);
         (d, a, b)
+    }
+
+    fn shot(&mut self, name: &str) {
+        let Some(dir) = std::env::var_os("FILMCRAFT_UI_SHOTS").map(std::path::PathBuf::from) else { return };
+        self.frames(3);
+        std::fs::create_dir_all(&dir).unwrap();
+        self.harness.render().unwrap().save(dir.join(format!("{name}.png"))).unwrap();
     }
 
     fn frames(&mut self, n: usize) {
@@ -164,4 +175,39 @@ fn the_gap_menu_follows_an_edit_point_menu() {
     d.click_between(a, b, "right");
     assert!(d.rect("timeline.gapMenu.edit.rippleDelete").is_some(), "the gap's menu");
     assert!(d.rect("timeline.editPointMenu.rippleIn").is_none(), "not the edit point menu");
+}
+
+#[test]
+fn close_gap_can_be_found_assigned_and_run_from_the_shortcut_editor() {
+    let (mut d, a, b) = Driver::two_clips();
+    let before = serde_json::to_value(&d.harness.state().session.project).unwrap();
+    d.ok("ui.menu.invoke", json!({"id":"app.keyboardShortcuts"}));
+    d.frames(4);
+    d.ok("ui.click", json!({"id":"shortcuts.search"}));
+    d.ok("ui.type", json!({"text":"Close Gap"}));
+    d.frames(2);
+    assert_eq!(d.harness.state().shortcut_editor.search, "Close Gap");
+    assert!(d.rect("shortcuts.row.sequence.closeGap").is_some(), "Close Gap must be searchable and assignable");
+    d.shot("close-gap-shortcut-found");
+    d.ok("ui.click", json!({"id":"shortcuts.cell.sequence.closeGap"}));
+    d.frames(3);
+    d.shot("close-gap-shortcut-recording");
+    assert_eq!(d.harness.state().shortcut_editor.recording, Some(("sequence.closeGap".into(), false)), "{:?}", d.harness.state().shortcut_editor);
+    d.ok("ui.key", json!({"key":"Alt+Shift+F8"}));
+    d.frames(3);
+    assert_eq!(d.harness.state().session.shortcuts.primary("sequence.closeGap").as_deref(), Some("Alt+Shift+F8"));
+    d.shot("close-gap-shortcut-assigned");
+    d.ok("ui.click", json!({"id":"shortcuts.ok"}));
+    d.click_between(a, b, "left");
+    assert_eq!(serde_json::to_value(&d.harness.state().session.project).unwrap(), before, "shortcut editing and gap selection do not edit the project");
+    let undo = d.harness.state().session.history.undo.len();
+    d.ok("ui.key", json!({"key":"Alt+Shift+F8"}));
+    d.frames(3);
+    assert_eq!(d.start(b), d.frame(48));
+    assert_eq!(d.start(a), 0);
+    assert_eq!(d.gap(), Value::Null);
+    assert_eq!(d.harness.state().session.history.undo.len(), undo + 1);
+    d.shot("close-gap-shortcut-result");
+    d.ok("engine.execute", json!({"command":"edit.undo","params":{}}));
+    assert_eq!(serde_json::to_value(&d.harness.state().session.project).unwrap(), before);
 }

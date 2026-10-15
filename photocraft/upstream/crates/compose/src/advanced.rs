@@ -84,10 +84,10 @@ pub fn shapeless(layer: &Layer) -> bool {
     !layer.advanced.transparency_shapes && (layer.advanced.knockout != Knockout::None || effects::has_effects(layer))
 }
 
-/// The Background layer of a stack: the bottom layer, a locked, opaque-by-convention pixel layer
-/// named "Background" (how PSD import and File › New create it).
+/// Whether `l`, the bottom layer of a stack, is the Background: identified by its locks and kind,
+/// never by its (localized) name ([`photocraft_doc::Document::background`]).
 pub fn is_background(l: &Layer) -> bool {
-    l.name == "Background" && l.locks.transparency && !l.clipped && matches!(l.content, LayerContent::Raster(_))
+    l.has_background_traits()
 }
 
 /// What a deep knockout reveals over `rect`: the document's initial backdrop with its Background

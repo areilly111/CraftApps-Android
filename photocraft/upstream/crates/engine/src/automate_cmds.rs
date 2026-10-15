@@ -107,7 +107,14 @@ fn run_steps(s: &mut Session, steps: &[(String, Value)]) -> Vec<Value> {
     let mut results = Vec::new();
     for (id, params) in steps {
         match s.execute(id, params.clone()) {
-            Ok(r) => results.push(json!({"command": id, "result": r})),
+            // A called action reports a failed step inside an `Ok`; it stops the script too.
+            Ok(r) => match crate::actions_cmds::nested_failure(id, &r) {
+                Some(error) => {
+                    results.push(json!({"command": id, "result": r, "error": error}));
+                    break;
+                }
+                None => results.push(json!({"command": id, "result": r})),
+            },
             Err(e) => {
                 results.push(json!({"command": id, "error": e.to_string()}));
                 break;
@@ -284,8 +291,13 @@ fn create_droplet(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "file.automate.createDroplet";
     let path = p.get("path").and_then(Value::as_str).filter(|v| !v.is_empty()).ok_or_else(|| bad(cmd, "missing \"path\" (where to save the droplet)"))?;
     let steps_v = p.get("steps").or_else(|| p.get("action")).ok_or_else(|| bad(cmd, "missing \"steps\" (the action to run)"))?;
-    let steps = parse_steps(steps_v, cmd)?;
+    let mut steps = parse_steps(steps_v, cmd)?;
+    // The droplet's output folder replaces recorded saves, and view steps don't apply, as in batch.
+    steps.retain(|(id, _)| !crate::actions_cmds::shell_save_command(id) && !crate::actions_cmds::shell_view_command(id));
     check_known(&steps, cmd)?;
+    // Play Action steps need their actions when the droplet runs on its own (#2794). Not under
+    // `actions`: the CLI reads that key as an action set.
+    let called = crate::actions_cmds::called_actions(&s.actions.list, &mut steps);
     let path = if path.ends_with(".pcdroplet") || path.ends_with(".json") { path.to_string() } else { format!("{path}.pcdroplet") };
     let name = p.get("name").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| stem(&path));
     let steps_json: Vec<Value> = steps.iter().map(|(id, pr)| json!([id, pr])).collect();
@@ -295,12 +307,14 @@ fn create_droplet(s: &mut Session, p: &Value) -> Result<Value> {
             options.insert(k.into(), v.clone());
         }
     }
-    let droplet = json!({"photocraftDroplet": 1, "name": name, "action": {"name": name, "steps": steps_json}, "options": options});
+    let mut droplet = json!({"photocraftDroplet": 1, "name": name, "action": {"name": name, "steps": steps_json}, "options": options});
+    if !called.is_empty() {
+        droplet["calledActions"] = json!(called);
+    }
     let text = serde_json::to_string_pretty(&droplet).unwrap_or_default();
     write_file(&path, text.as_bytes())?;
     let shim = p.get("shim").and_then(Value::as_bool).unwrap_or(cfg!(unix));
     let shim_path = if shim { Some(write_shim(&path)?) } else { None };
-    let _ = s;
     Ok(json!({"path": path, "shim": shim_path, "steps": steps.len()}))
 }
 
@@ -310,9 +324,11 @@ fn write_shim(droplet: &str) -> Result<String> {
     let abs = std::fs::canonicalize(droplet).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| droplet.to_string());
     let base = abs.trim_end_matches(".pcdroplet").trim_end_matches(".json");
     let shim = format!("{base}.command");
+    // Single quotes keep shell expansions inert; embedded quotes need to end the
+    // quoted segment, emit a literal quote, then resume it.
+    let quoted_abs = format!("'{}'", abs.replace('\'', "'\\''"));
     let body = format!(
-        "#!/bin/sh\n# PhotoCraft droplet: runs the action on the files given (or dropped).\nexec \"${{PHOTOCRAFT_CLI:-photocraft-cli}}\" droplet \"{}\" \"$@\"\n",
-        abs.replace('"', "\\\"")
+        "#!/bin/sh\n# PhotoCraft droplet: runs the action on the files given (or dropped).\nexec \"${{PHOTOCRAFT_CLI:-photocraft-cli}}\" droplet {quoted_abs} \"$@\"\n"
     );
     crate::file_cmds::write_file(&shim, body.as_bytes())?;
     #[cfg(unix)]
@@ -357,6 +373,9 @@ fn run_droplet(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(q) = opts.get("quality") {
         bp["quality"] = q.clone();
     }
+    if let Some(called) = v.get("calledActions") {
+        bp["calledActions"] = called.clone();
+    }
     let r = s.execute("file.automate.batch", bp)?;
     Ok(json!({"droplet": path, "output": output, "files": r["files"], "errors": r["errors"]}))
 }
@@ -379,9 +398,8 @@ fn statistics(s: &mut Session, p: &Value) -> Result<Value> {
         s.execute("edit.autoAlignLayers", json!({"projection": "auto"}))?;
         let name = s.active().map(|d| d.doc.name.clone()).unwrap_or_default();
         s.edit("Convert to Smart Object", |doc, active| {
-            let children = std::mem::take(&mut doc.layers);
-            let group = Layer::new(name.clone(), LayerContent::Group(photocraft_doc::Group { children, expanded: true, artboard: None }));
-            let smart = crate::smart_cmds::layer_to_smart(doc, &group)?;
+            let layers = std::mem::take(&mut doc.layers);
+            let smart = crate::smart_cmds::layers_to_smart(doc, &name, layers)?;
             *active = Some(smart.id);
             doc.layers = vec![smart];
             Ok(())
@@ -533,7 +551,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "file.automate.createDroplet",
             "Create Droplet…",
             &["File", "Automate"],
-            r##"{"path":str (.pcdroplet),"steps":[[id,params]…] (the action),"name":str?,"output":folder?,"format":"same|png|jpg|…"?,"quality":0..12?,"shim":bool=true on Unix (writes <name>.command calling `photocraft-cli droplet`)} → {path, shim}"##,
+            r##"{"path":str (.pcdroplet),"steps":[[id,params]…] (the action),"name":str?,"output":folder?,"format":"same|png|jpg|…"?,"quality":0..12?,"shim":bool=true on Unix (writes <name>.command calling `photocraft-cli droplet`)} → {path, shim} (the actions its Play Action steps call are saved in the droplet)"##,
             native,
             create_droplet
         ),

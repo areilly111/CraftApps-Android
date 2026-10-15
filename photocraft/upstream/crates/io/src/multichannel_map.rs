@@ -9,12 +9,20 @@
 use photocraft_color::{Color, ColorMode, PixelFormat, SampleType};
 use photocraft_doc::{AlphaChannel, Document};
 use photocraft_geom::Rect;
-use photocraft_psd::file::LayerInfoPlacement;
+use photocraft_psd::file::{GlobalLayerMask, LayerInfoPlacement};
 use photocraft_psd::resources::{ImageResource, ResolutionInfo, ids, version_info_resource};
-use photocraft_psd::{ColorMode as PsdMode, Compression, Header, ImageData, PsdFile};
+use photocraft_psd::{ColorMode as PsdMode, Compression, Header, ImageData, PsdFile, TaggedBlock};
 use photocraft_raster::Surface;
 
 use crate::pixels::{encode_be, psd_depth};
+
+/// Grid and guides.
+const GRID_AND_GUIDES: u16 = 1032;
+/// Alpha identifiers: one u32 per extra channel.
+const ALPHA_IDENTIFIERS: u16 = 1053;
+/// Resources that only describe layers: target layer (1024), layer groups (1026), layer
+/// selection ids (1069) and layer groups enabled (1072). A Multichannel document has no layers.
+const LAYER_ONLY_RESOURCES: [u16; 4] = [ids::LAYER_STATE, ids::LAYER_GROUP_INFO, 1069, 1072];
 
 /// Value of sample `i` of a big-endian plane.
 fn decode(plane: &[u8], i: usize, s: SampleType) -> f32 {
@@ -44,13 +52,14 @@ pub(crate) fn import(file: &PsdFile, all: &[u8], doc: &mut Document, names: &[St
         s.write_region(canvas, &vals);
         s.prune();
         let name = names.get(k).cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("Channel {}", k + 1));
-        // Without DisplayInfo the channels print in black, as Photoshop shows them.
+        // Without DisplayInfo the channels print in black, as Photoshop shows them. DisplayInfo
+        // turns alpha-type channels (selected / masked areas) back into alpha channels.
         doc.channels.push(AlphaChannel { spot: Some((Color::BLACK, 0.0)), ..AlphaChannel::new(name, s) });
     }
     if let Some(r) = file.resource(crate::channel_map::DISPLAY_INFO) {
-        crate::channel_map::apply_display_info(&r.data, true, &mut doc.channels);
+        crate::channel_map::apply_display_info(&r.data, true, 0, &mut doc.channels);
     } else if let Some(r) = file.resource(crate::channel_map::DISPLAY_INFO_OLD) {
-        crate::channel_map::apply_display_info(&r.data, false, &mut doc.channels);
+        crate::channel_map::apply_display_info(&r.data, false, 0, &mut doc.channels);
     }
 }
 
@@ -97,17 +106,54 @@ pub(crate) fn document_to_psd(doc: &Document, force_psb: bool) -> (PsdFile, Vec<
     let image_data = ImageData::encode(Compression::Rle, &planes, &header)
         .or_else(|_| ImageData::encode(Compression::Raw, &planes, &header))
         .unwrap_or(ImageData { compression: Compression::Raw, data: planes });
-    let mut resources = vec![ImageResource::new(ids::RESOLUTION_INFO, ResolutionInfo::from_dpi(f64::from(doc.resolution_dpi)).to_bytes())];
+    let mut resources = vec![
+        ImageResource::new(ids::RESOLUTION_INFO, ResolutionInfo::from_dpi(f64::from(doc.resolution_dpi)).to_bytes()),
+        ImageResource::new(ids::GLOBAL_ANGLE, (doc.global_light.angle.round() as i32).to_be_bytes().to_vec()),
+        ImageResource::new(ids::GLOBAL_ALTITUDE, (doc.global_light.altitude.round() as i32).to_be_bytes().to_vec()),
+    ];
+    // Grid and guides: Photoshop writes it in every file, guides or not.
+    resources.push(ImageResource::new(GRID_AND_GUIDES, crate::psd_export::guides_resource(doc)));
     if !channels.is_empty() {
         let names: Vec<&str> = channels.iter().map(|c| c.name.as_str()).collect();
         resources.push(ImageResource::new(1006, crate::psd_export::pascal_names_resource(&names)));
         resources.push(ImageResource::new(1045, crate::psd_export::unicode_names_resource(&names)));
-        resources.push(ImageResource::new(crate::channel_map::DISPLAY_INFO, crate::channel_map::display_info(&channels)));
+        resources.push(ImageResource::new(crate::channel_map::DISPLAY_INFO, crate::channel_map::display_info(&channels, false)));
     }
+    resources.extend(crate::psd_export::path_resources(doc, &mut warnings));
+    // The XMP and EXIF resolution follow the ResolutionInfo resource, so no copy contradicts it.
+    let ppi = Some((doc.resolution_dpi, doc.resolution_dpi)).filter(|d| d.0 > 0.0);
     if let Some(x) = &doc.metadata.xmp {
-        resources.push(ImageResource::new(ids::XMP, x.as_bytes().to_vec()));
+        resources.push(ImageResource::new(ids::XMP, photocraft_codecs::export_xmp(x, ppi).as_bytes().to_vec()));
+    }
+    if let Some(e) = &doc.metadata.exif {
+        resources.push(ImageResource::new(ids::EXIF, photocraft_codecs::export_exif(e, ppi).into_owned()));
+    }
+    // Every other imported resource (print settings, IPTC, the layer-id seed, ...), except the
+    // ones that only describe layers and any already written above.
+    let written: Vec<u16> = resources.iter().map(|r| r.id).collect();
+    for (id, name, data) in &doc.metadata.psd_resources {
+        if LAYER_ONLY_RESOURCES.contains(id) || written.contains(id) || !crate::psd_export::keep_imported_resource(doc, *id, data) {
+            continue;
+        }
+        // Alpha identifiers: one u32 per channel, only while they still match the channels.
+        if *id == ALPHA_IDENTIFIERS && data.len() != channels.len().saturating_mul(4) {
+            continue;
+        }
+        let mut r = ImageResource::new(*id, data.to_vec());
+        r.name = crate::psd_export::legacy_name(name);
+        resources.push(r);
+    }
+    if let Some(data) = crate::annotations_map::fresh_scale_resource(doc) {
+        resources.push(ImageResource::new(crate::annotations_map::MEASUREMENT_SCALE, data));
     }
     resources.push(version_info_resource(true));
+    // Document-level tagged blocks (patterns, notes, ...) are valid without a layer section; a
+    // kept layer block would describe layers the document doesn't have.
+    let global_blocks: Vec<TaggedBlock> = crate::annotations_map::export_blocks(doc, crate::pattern_map::export_global_blocks(doc))
+        .into_iter()
+        .filter(|(_, key, _)| !matches!(key, b"Layr" | b"Lr16" | b"Lr32"))
+        .map(|(sig, key, data)| crate::psd_export::global_block(sig, key, &data))
+        .collect();
     let color_mode_data = photocraft_psd::hdr::color_mode_data_for_depth(header.depth);
     let file = PsdFile {
         header,
@@ -115,8 +161,8 @@ pub(crate) fn document_to_psd(doc: &Document, force_psb: bool) -> (PsdFile, Vec<
         resources,
         layer_info: None,
         layer_info_placement: LayerInfoPlacement::Section,
-        global_layer_mask: None,
-        global_blocks: Vec::new(),
+        global_layer_mask: (!global_blocks.is_empty()).then(GlobalLayerMask::default),
+        global_blocks,
         layer_mask_trailing: Vec::new(),
         image_data,
     };

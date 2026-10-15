@@ -197,3 +197,32 @@ fn parts_are_capped_together() {
     let e = exr_info(&aov_file(), &limits).unwrap_err().to_string();
     assert!(e.contains("across 3 parts"), "{e}");
 }
+
+/// Two ZIP1 parts of 4x4 RGBA; every chunk of part 0 is then overwritten with garbage, so
+/// inflating it fails.
+fn file_with_corrupt_first_part() -> Vec<u8> {
+    let px = |k: f32| -> Vec<(&'static str, Vec<f32>)> { ["R", "G", "B", "A"].iter().map(|c| (*c, vec![k; 16])).collect() };
+    let mut bytes = write_image(vec![layer_f32("first", Compression::ZIP1, &px(0.25)), layer_f32("second", Compression::ZIP1, &px(0.75))]);
+    let mut cursor = std::io::Cursor::new(&bytes[..]);
+    exr::meta::MetaData::read_from_buffered(&mut cursor, false).unwrap();
+    let table = cursor.position() as usize;
+    // Part 0 owns the first four of the eight chunks (one scan line per ZIP1 block).
+    for i in 0..4 {
+        let at = table + i * 8;
+        let offset = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
+        let size = u32::from_le_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        bytes[offset + 12..offset + 12 + size].fill(0xA5);
+    }
+    bytes
+}
+
+#[test]
+fn decoding_one_part_does_not_decode_the_others() {
+    let bytes = file_with_corrupt_first_part();
+    // Part 0 is unreadable ...
+    assert!(decode_exr_part(&bytes, 0, &DecodeOptions::default()).is_err());
+    // ... but asking for part 1 must not touch it.
+    let img = decode_exr_part(&bytes, 1, &DecodeOptions::default()).expect("part 1 decodes on its own");
+    assert_eq!((img.width(), img.height()), (4, 4));
+    assert!(img.to_normalized().iter().all(|v| near(*v, 0.75)), "wrong pixels");
+}

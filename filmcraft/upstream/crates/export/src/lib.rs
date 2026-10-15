@@ -6,7 +6,7 @@
 //!
 //! Video encoders implement [`VideoEncoder`]; codec crates register theirs with
 //! [`register_encoder`] (H.264, ProRes …). Built in: Motion-JPEG (MOV), PNG / TIFF / BMP / JPEG /
-//! Targa / DPX sequences, GIF, WAV and AIFF.
+//! Targa / DPX / OpenEXR sequences, GIF, WAV and AIFF.
 //!
 //! [`ExportSettings`] carries every Export-mode setting (frame size, rate, bitrate encoding, audio
 //! format, multiplexer, captions, effects, metadata) as serde data; [`presets`] defines the
@@ -15,7 +15,9 @@
 
 use std::io::Write;
 
+mod aac_out;
 mod audio_out;
+mod deflate;
 mod job;
 mod mxf_out;
 mod pace;
@@ -106,12 +108,22 @@ pub enum Format {
     /// Numbered DPX stills (SMPTE ST 268, 10-bit RGB, BT.709).
     #[serde(rename = "dpx", alias = "DpxSequence")]
     DpxSequence,
+    /// Numbered OpenEXR stills (half-float scene-linear RGB, RGBA with [`ExportSettings::alpha`]).
+    #[serde(rename = "exr", alias = "ExrSequence")]
+    ExrSequence,
     #[serde(rename = "gif", alias = "Gif")]
     Gif,
     #[serde(rename = "wav", alias = "Wav")]
     Wav,
     #[serde(rename = "aiff", alias = "Aiff")]
     Aiff,
+    /// AAC Audio: the mix alone, AAC-LC in an MPEG-4 audio file (`.m4a`), or a raw ADTS stream when
+    /// the path ends in `.aac`.
+    #[serde(rename = "aac", alias = "Aac")]
+    Aac,
+    /// FLAC (RFC 9639): lossless compressed audio.
+    #[serde(rename = "flac", alias = "Flac")]
+    Flac,
     /// MXF OP1a (SMPTE ST 378): frame-wrapped DNxHR, ProRes or H.264 ([`MxfVideoCodec`]) + PCM.
     #[serde(rename = "mxf-op1a", alias = "MxfOp1a")]
     MxfOp1a,
@@ -140,9 +152,12 @@ impl Format {
             "jpg" | "jpgsequence" | "jpegsequence" => Format::JpegSequence,
             "tga" | "targa" | "tgasequence" | "targasequence" => Format::TgaSequence,
             "dpx" | "dpxsequence" => Format::DpxSequence,
+            "exr" | "openexr" | "exrsequence" | "openexrsequence" => Format::ExrSequence,
             "gif" | "animatedgif" => Format::Gif,
             "wav" | "waveform" | "waveformaudio" => Format::Wav,
             "aif" | "aiff" | "aifc" => Format::Aiff,
+            "aac" | "aacaudio" | "m4a" | "adts" => Format::Aac,
+            "flac" | "fla" => Format::Flac,
             _ => return None,
         })
     }
@@ -162,9 +177,12 @@ impl Format {
             Format::JpegSequence => "jpg",
             Format::TgaSequence => "tga",
             Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aiff",
+            Format::Aac => "aac",
+            Format::Flac => "flac",
             Format::MxfOp1a => "mxf-op1a",
             Format::MxfOpAtom => "mxf-opatom",
         }
@@ -179,9 +197,12 @@ impl Format {
             Format::JpegSequence => "jpg",
             Format::TgaSequence => "tga",
             Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aif",
+            Format::Aac => "m4a",
+            Format::Flac => "flac",
             Format::MxfOp1a | Format::MxfOpAtom => "mxf",
         }
     }
@@ -200,16 +221,28 @@ impl Format {
             Format::JpegSequence => "JPEG",
             Format::TgaSequence => "Targa",
             Format::DpxSequence => "DPX",
+            Format::ExrSequence => "OpenEXR",
             Format::Gif => "Animated GIF",
             Format::Wav => "Waveform Audio",
             Format::Aiff => "AIFF",
+            Format::Aac => "AAC Audio",
+            Format::Flac => "FLAC",
             Format::MxfOp1a => "MXF OP1a",
             Format::MxfOpAtom => "MXF OP-Atom",
         }
     }
     /// Numbered stills, one per frame ([`image_sequence_path`]).
     pub fn is_image_sequence(self) -> bool {
-        matches!(self, Format::PngSequence | Format::TiffSequence | Format::BmpSequence | Format::JpegSequence | Format::TgaSequence | Format::DpxSequence)
+        matches!(
+            self,
+            Format::PngSequence
+                | Format::TiffSequence
+                | Format::BmpSequence
+                | Format::JpegSequence
+                | Format::TgaSequence
+                | Format::DpxSequence
+                | Format::ExrSequence
+        )
     }
     /// An MXF container format.
     pub fn is_mxf(self) -> bool {
@@ -219,6 +252,10 @@ impl Format {
     /// ([`register_format_probe`]).
     pub fn has_builtin_encoder(self) -> bool {
         !matches!(self, Format::Hevc | Format::Av1)
+    }
+    /// Sound without picture: Waveform Audio, AIFF, AAC Audio and FLAC.
+    pub fn is_audio_only(self) -> bool {
+        matches!(self, Format::Wav | Format::Aiff | Format::Aac | Format::Flac)
     }
     /// H.264 or H.265: MPEG-4 (or QuickTime) with AAC audio, set up with the same bitrate controls.
     pub fn is_h26x(self) -> bool {
@@ -232,7 +269,7 @@ impl Format {
     pub fn is_mp4_with(self, mux: Multiplexer) -> bool {
         self == Format::Av1 || (self.is_h26x() && mux == Multiplexer::Mp4)
     }
-    pub const ALL: [Format; 18] = [
+    pub const ALL: [Format; 21] = [
         Format::H264,
         Format::Hevc,
         Format::Av1,
@@ -246,9 +283,12 @@ impl Format {
         Format::JpegSequence,
         Format::TgaSequence,
         Format::DpxSequence,
+        Format::ExrSequence,
         Format::Gif,
         Format::Wav,
         Format::Aiff,
+        Format::Aac,
+        Format::Flac,
         Format::MxfOp1a,
         Format::MxfOpAtom,
     ];
@@ -302,11 +342,15 @@ pub struct ExportSettings {
     /// sequence's HDR space and signal it (VUI / `colr` / `mdcv` / `clli` / SEI).
     #[serde(default)]
     pub sdr: bool,
-    /// Keep the alpha channel in PNG, TIFF and Targa sequences and ProRes 4444 / 4444 XQ QuickTime movies
-    /// (straight alpha, Premiere's "Include Alpha Channel"). Off, every frame is flattened over
-    /// black (#160). Other formats ignore it.
+    /// Keep the alpha channel in PNG, TIFF, Targa and OpenEXR sequences and ProRes 4444 / 4444 XQ
+    /// QuickTime movies (straight alpha, Premiere's "Include Alpha Channel"; OpenEXR stores it
+    /// premultiplied, as the format defines). Off, every frame is flattened over black (#160).
+    /// Other formats ignore it.
     #[serde(default)]
     pub alpha: bool,
+    /// Compression of OpenEXR sequences (uncompressed unless set); other formats ignore it.
+    #[serde(default)]
+    pub exr_compression: ExrCompression,
     /// Output frame size (None = Match Source: the sequence size times `scale`).
     pub frame_size: Option<(u32, u32)>,
     /// Output frame rate (None = Match Source).
@@ -372,6 +416,12 @@ impl std::fmt::Debug for OutputSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("OutputSink")
     }
+}
+
+/// How an audio-only export codes its samples.
+enum AudioWriter {
+    Pcm(pcm::PcmContainer),
+    Flac(Box<filmcraft_flac::Encoder>),
 }
 
 /// An export's output file: on disk, or in memory for an [`OutputSink`].
@@ -514,6 +564,7 @@ impl Default for ExportSettings {
             mxf_video_codec: MxfVideoCodec::default(),
             sdr: false,
             alpha: false,
+            exr_compression: ExrCompression::None,
             frame_size: None,
             frame_rate: None,
             scaling: Scaling::default(),
@@ -701,6 +752,17 @@ pub trait AudioEncoder: Send {
     fn priming(&self) -> u32;
     /// Samples per access unit (1024 for AAC).
     fn frame_size(&self) -> u32;
+    /// [`AudioEncoder::flush`] with each access unit's duration, for codecs whose last unit is
+    /// shorter than [`AudioEncoder::frame_size`] (FLAC); by default every unit is a full frame.
+    fn flush_timed(&mut self) -> Result<Vec<(Vec<u8>, u32)>> {
+        let n = self.frame_size();
+        Ok(self.flush()?.into_iter().map(|au| (au, n)).collect())
+    }
+    /// The sample entry once everything is encoded, when it differs from the first one (the FLAC
+    /// STREAMINFO learns its frame sizes and MD5 at the end).
+    fn final_sample_entry(&self) -> Option<SampleEntry> {
+        None
+    }
 }
 
 pub type EncoderFactory = fn(format: Format, width: u32, height: u32, rate: FrameRate, settings: &ExportSettings) -> Option<Result<Box<dyn VideoEncoder>>>;
@@ -1040,6 +1102,53 @@ impl AudioEncoder for AacEncoder {
     }
     fn frame_size(&self) -> u32 {
         1024
+    }
+}
+
+/// FLAC (our encoder) in MP4 / QuickTime: one frame of 4096 samples per access unit.
+pub(crate) struct FlacAudio {
+    enc: filmcraft_flac::Encoder,
+    bits: u16,
+    /// Samples of the frame `flush` returns (shorter than a full block).
+    tail: u32,
+}
+
+impl FlacAudio {
+    pub(crate) fn new(sample_rate: u32, channels: u32, s: &ExportSettings) -> Result<Self> {
+        let bits = if s.audio.bits >= 24 { 24 } else { 16 };
+        let ch = u8::try_from(channels).map_err(|_| ExportError::Unsupported("FLAC: too many audio channels".into()))?;
+        let mut cfg = filmcraft_flac::EncoderConfig::new(sample_rate, ch, bits as u8);
+        cfg.level = s.audio.flac_level.min(8);
+        let enc = filmcraft_flac::Encoder::new(cfg).map_err(|e| ExportError::Unsupported(format!("FLAC: {e}")))?;
+        Ok(FlacAudio { enc, bits, tail: 0 })
+    }
+}
+
+impl AudioEncoder for FlacAudio {
+    fn sample_entry(&self) -> SampleEntry {
+        SampleEntry::flac(&self.enc.streaminfo())
+    }
+    fn encode(&mut self, planar: &[Vec<f32>]) -> Result<Vec<Vec<u8>>> {
+        let ints: Vec<Vec<i32>> = planar.iter().map(|c| c.iter().map(|&s| pcm::quantise(s, self.bits)).collect()).collect();
+        let refs: Vec<&[i32]> = ints.iter().map(Vec::as_slice).collect();
+        self.enc.encode_frames(&refs).map_err(|e| ExportError::Encode(format!("FLAC: {e}")))
+    }
+    fn flush(&mut self) -> Result<Vec<Vec<u8>>> {
+        Ok(self.flush_timed()?.into_iter().map(|(au, _)| au).collect())
+    }
+    fn flush_timed(&mut self) -> Result<Vec<(Vec<u8>, u32)>> {
+        self.tail = self.enc.pending_samples() as u32;
+        let last = self.enc.finish();
+        Ok(if last.is_empty() { Vec::new() } else { vec![(last, self.tail)] })
+    }
+    fn priming(&self) -> u32 {
+        0
+    }
+    fn frame_size(&self) -> u32 {
+        4096
+    }
+    fn final_sample_entry(&self) -> Option<SampleEntry> {
+        Some(SampleEntry::flac(&self.enc.streaminfo()))
     }
 }
 
@@ -1639,6 +1748,19 @@ pub fn frame_span(rate: FrameRate, range: TimeRange) -> (i64, i64) {
     (f0, f1.max(f0))
 }
 
+/// The delay of the `i`th GIF frame (from the start of the export) in centiseconds, the unit GIF
+/// stores. Each frame runs from its rounded start time to the next frame's, so the delays add up
+/// to the exact duration (24 fps: 4, 4, 5, 4, 4, 4 cs …) instead of every frame truncating
+/// 4.17 cs to 4 cs and the animation playing 4 % fast (#854).
+fn gif_delay_cs(rate: FrameRate, i: i64) -> u16 {
+    let num = i128::from(rate.num.max(1));
+    let den = i128::from(rate.den.max(0));
+    // start of frame `k` in centiseconds, rounded half up
+    let at = |k: i64| i128::from(k.max(0)).saturating_mul(200).saturating_mul(den).saturating_add(num) / num.saturating_mul(2);
+    let cs = at(i.saturating_add(1)).saturating_sub(at(i));
+    u16::try_from(cs.clamp(0, i128::from(u16::MAX))).unwrap_or(u16::MAX)
+}
+
 /// An in-memory writer that stays reachable after the encoder that owns a clone is dropped.
 #[derive(Clone, Default)]
 struct SharedBuf(Arc<Mutex<Vec<u8>>>);
@@ -1659,7 +1781,8 @@ pub fn encode_png(rgba: Vec<u8>, w: u32, h: u32) -> Result<Vec<u8>> {
 }
 
 /// Encode one still of an image sequence (also Export Frame). PNG always carries the alpha
-/// channel it is given; `alpha` keeps it in TIFF and Targa too, which are otherwise written as RGB.
+/// channel it is given; `alpha` keeps it in TIFF, Targa and OpenEXR too, which are otherwise written
+/// as RGB.
 /// JPEG uses the default export quality ([`encode_still_with_quality`] picks another).
 pub fn encode_still(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool) -> Result<Vec<u8>> {
     encode_still_with_quality(format, rgba, w, h, alpha, ExportSettings::default().quality)
@@ -1667,6 +1790,11 @@ pub fn encode_still(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool) 
 
 /// [`encode_still`] with the JPEG quality (1–100; ignored by the lossless formats).
 pub fn encode_still_with_quality(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool, quality: u8) -> Result<Vec<u8>> {
+    encode_still_with(format, rgba, w, h, alpha, quality, ExrCompression::None)
+}
+
+/// [`encode_still_with_quality`] with the OpenEXR compression (ignored by the other formats).
+pub fn encode_still_with(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool, quality: u8, exr: ExrCompression) -> Result<Vec<u8>> {
     let enc = |e: image::ImageError| ExportError::Encode(e.to_string());
     let mut out = std::io::Cursor::new(Vec::new());
     match format {
@@ -1683,6 +1811,7 @@ pub fn encode_still_with_quality(format: Format, rgba: Vec<u8>, w: u32, h: u32, 
         }
         Format::TgaSequence => return raster::tga(&rgba, w, h, alpha),
         Format::DpxSequence => return raster::dpx(&rgba, w, h),
+        Format::ExrSequence => return raster::exr(&rgba, w, h, alpha, exr),
         Format::PngSequence => {
             image::ImageEncoder::write_image(image::codecs::png::PngEncoder::new(&mut out), &rgba, w, h, image::ExtendedColorType::Rgba8).map_err(enc)?
         }
@@ -1719,13 +1848,25 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
     let cancelled = || progress.cancel.load(Ordering::Relaxed);
     let batch = rayon::current_num_threads().clamp(2, 16) as i64;
     let (bytes, nframes) = match settings.format {
-        Format::Wav | Format::Aiff => {
+        Format::Aac => aac_out::export(project, seq, settings, range, sources, progress)?,
+        Format::Wav | Format::Aiff | Format::Flac => {
             let mut a = audio_out::AudioOut::new(project.clone(), seq, settings, range)?;
             let (ch, sr, bits) = (a.channels as u16, a.sr, settings.audio.bits);
-            let container = if settings.format == Format::Wav { pcm::PcmContainer::Wav } else { pcm::PcmContainer::Aiff };
             let frames = a.remaining();
             // the sizes are known up front: refuse an AIFF that cannot hold them before measuring
-            let head = pcm::header(container, ch, sr, bits, frames).map_err(ExportError::Unsupported)?;
+            let mut writer = match settings.format {
+                Format::Flac => {
+                    let mut cfg = filmcraft_flac::EncoderConfig::new(sr, ch as u8, if bits >= 24 { 24 } else { 16 });
+                    cfg.level = settings.audio.flac_level.min(8);
+                    AudioWriter::Flac(Box::new(filmcraft_flac::Encoder::new(cfg).map_err(|e| ExportError::Unsupported(format!("FLAC: {e}")))?))
+                }
+                Format::Wav => AudioWriter::Pcm(pcm::PcmContainer::Wav),
+                _ => AudioWriter::Pcm(pcm::PcmContainer::Aiff),
+            };
+            let head = match &writer {
+                AudioWriter::Pcm(c) => pcm::header(*c, ch, sr, bits, frames).map_err(ExportError::Unsupported)?,
+                AudioWriter::Flac(enc) => enc.header(),
+            };
             // one second per chunk: memory stays flat however long the range is
             let chunk = i64::from(sr.max(1));
             if !settings.part_of_batch {
@@ -1743,13 +1884,30 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
                     return Err(ExportError::Cancelled);
                 }
                 buf.clear();
-                pcm::encode(container, &audio_out::interleave(&planar), bits, &mut buf);
+                match &mut writer {
+                    AudioWriter::Pcm(c) => pcm::encode(*c, &audio_out::interleave(&planar), bits, &mut buf),
+                    AudioWriter::Flac(enc) => {
+                        let ints: Vec<Vec<i32>> = planar.iter().map(|c| c.iter().map(|&s| pcm::quantise(s, bits)).collect()).collect();
+                        let refs: Vec<&[i32]> = ints.iter().map(Vec::as_slice).collect();
+                        buf = enc.encode(&refs).map_err(|e| ExportError::Encode(format!("FLAC: {e}")))?;
+                    }
+                }
                 out.write_all(&buf).map_err(io)?;
                 if !settings.part_of_batch {
                     progress.done.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            out.write_all(pcm::pad(frames, ch, bits)).map_err(io)?;
+            match &mut writer {
+                AudioWriter::Pcm(_) => out.write_all(pcm::pad(frames, ch, bits)).map_err(io)?,
+                AudioWriter::Flac(enc) => {
+                    out.write_all(&enc.finish()).map_err(io)?;
+                    // the frame sizes and MD5 are known now: fill them into STREAMINFO
+                    use std::io::{Seek, SeekFrom};
+                    out.seek(SeekFrom::Start(filmcraft_flac::STREAMINFO_OFFSET)).map_err(io)?;
+                    out.write_all(&enc.streaminfo()).map_err(io)?;
+                    out.seek(SeekFrom::End(0)).map_err(io)?;
+                }
+            }
             let n = out.finish(settings)?;
             if settings.part_of_batch {
                 progress.done.store(1, Ordering::Relaxed);
@@ -1774,7 +1932,6 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
             } else {
                 None
             };
-            let delay = image::Delay::from_numer_denom_ms((1000 * pipe.rate.den) as u32, pipe.rate.num as u32);
             let mut f = f0;
             while f < f1 {
                 if cancelled() {
@@ -1783,15 +1940,24 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
                 let end = (f + batch).min(f1);
                 if let Some(enc) = gif.as_mut() {
                     let frames: Vec<Vec<u8>> = (f..end).into_par_iter().map(|fi| pipe.frame(fi, sources).0).collect();
-                    for rgba in frames {
+                    for (fi, rgba) in (f..end).zip(frames) {
                         let img = image::RgbaImage::from_raw(w, h, rgba).ok_or_else(|| ExportError::Encode("frame".into()))?;
+                        let delay = image::Delay::from_numer_denom_ms(u32::from(gif_delay_cs(pipe.rate, fi - f0)) * 10, 1);
                         enc.encode_frame(image::Frame::from_parts(img, 0, 0, delay)).map_err(|e| ExportError::Encode(e.to_string()))?;
                     }
                 } else {
                     let written: Vec<Result<u64>> = (f..end)
                         .into_par_iter()
                         .map(|fi| {
-                            let data = encode_still_with_quality(settings.format, pipe.frame(fi, sources).0, w, h, settings.alpha, settings.quality)?;
+                            let data = encode_still_with(
+                                settings.format,
+                                pipe.frame(fi, sources).0,
+                                w,
+                                h,
+                                settings.alpha,
+                                settings.quality,
+                                settings.exr_compression,
+                            )?;
                             write_output(settings, &pcm::image_sequence_path(&settings.path, (fi - f0) as u64, count), data)
                         })
                         .collect();

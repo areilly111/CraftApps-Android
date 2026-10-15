@@ -227,7 +227,12 @@ fn inspect_report(data: lightcraft_engine::lightroom_catalog::CatalogImport) -> 
     })
 }
 
-fn terminal(app: &mut LightcraftApp, ctx: &egui::Context, kind: Kind, value: Value) {
+/// The task is over: keep its result (with the catalog's `path`) for `status` and say how it went.
+fn terminal(app: &mut LightcraftApp, ctx: &egui::Context, task: &LightroomTask, mut value: Value) {
+    let kind = task.kind;
+    if let Some(o) = value.as_object_mut() {
+        o.entry("path").or_insert_with(|| json!(task.path));
+    }
     let message = if let Some(e) = value.get("error").and_then(Value::as_str) {
         let warning = value.get("indexWarning").and_then(Value::as_str).map_or(String::new(), |w| format!("; index warning: {w}"));
         if matches!(kind, Kind::Inspect) {
@@ -343,26 +348,26 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
             return;
         }
         Err(mpsc::TryRecvError::Disconnected) => {
-            terminal(app, ctx, task.kind, json!({"error": "Lightroom worker stopped unexpectedly"}));
+            terminal(app, ctx, &task, json!({"error": "Lightroom worker stopped unexpectedly"}));
             return;
         }
     };
     match message {
         Message::Inspected(result) => match result {
-            Ok(report) if !task.cancel.load(Ordering::Relaxed) => terminal(app, ctx, task.kind, report),
-            Ok(_) => terminal(app, ctx, task.kind, json!({"cancelled": true})),
-            Err(e) if task.cancel.load(Ordering::Relaxed) || e.contains("cancelled") => terminal(app, ctx, task.kind, json!({"cancelled": true})),
-            Err(e) => terminal(app, ctx, task.kind, json!({"error": e})),
+            Ok(report) if !task.cancel.load(Ordering::Relaxed) => terminal(app, ctx, &task, report),
+            Ok(_) => terminal(app, ctx, &task, json!({"cancelled": true})),
+            Err(e) if task.cancel.load(Ordering::Relaxed) || e.contains("cancelled") => terminal(app, ctx, &task, json!({"cancelled": true})),
+            Err(e) => terminal(app, ctx, &task, json!({"error": e})),
         },
         Message::Prepared(result) => {
             let prepared = match result {
                 Ok(p) => p,
                 Err(e) if task.cancel.load(Ordering::Relaxed) || e.contains("cancelled") => {
-                    terminal(app, ctx, task.kind, json!({"cancelled": true}));
+                    terminal(app, ctx, &task, json!({"cancelled": true}));
                     return;
                 }
                 Err(e) => {
-                    terminal(app, ctx, task.kind, json!({"error": e}));
+                    terminal(app, ctx, &task, json!({"error": e}));
                     return;
                 }
             };
@@ -371,7 +376,7 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
                 terminal(
                     app,
                     ctx,
-                    task.kind,
+                    &task,
                     if task.cancel.load(Ordering::Relaxed) {
                         json!({"cancelled": true})
                     } else {
@@ -394,7 +399,7 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
             let (tx, rx) = mpsc::channel();
             let commit_error = committed.as_ref().err().map(ToString::to_string);
             let Some(finalization) = finalization else {
-                terminal(app, ctx, task.kind, json!({"error": commit_error.clone().unwrap_or_else(|| "Lightroom import did not commit".into())}));
+                terminal(app, ctx, &task, json!({"error": commit_error.clone().unwrap_or_else(|| "Lightroom import did not commit".into())}));
                 return;
             };
             if let Err(e) = spawn_finalize(finalization, tx, ctx.clone()) {
@@ -402,7 +407,7 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
                 if let Some(error) = commit_error {
                     result["error"] = json!(error);
                 }
-                terminal(app, ctx, task.kind, result);
+                terminal(app, ctx, &task, result);
                 return;
             }
             task.rx = rx;
@@ -418,14 +423,14 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
             let pending = app.lightroom_last.take().unwrap_or(Value::Null);
             let report = pending.get("report").cloned().unwrap_or(Value::Null);
             match result {
-                Ok(()) if pending.get("error").is_none() => terminal(app, ctx, task.kind, report),
-                Ok(()) => terminal(app, ctx, task.kind, json!({"report": report, "error": pending["error"].clone()})),
+                Ok(()) if pending.get("error").is_none() => terminal(app, ctx, &task, report),
+                Ok(()) => terminal(app, ctx, &task, json!({"report": report, "error": pending["error"].clone()})),
                 Err(e) => {
                     let mut value = json!({"report": report, "indexWarning": e});
                     if let Some(error) = pending.get("error") {
                         value["error"] = error.clone();
                     }
-                    terminal(app, ctx, task.kind, value);
+                    terminal(app, ctx, &task, value);
                 }
             }
         }
@@ -509,7 +514,7 @@ mod tests {
         tx.send(Message::Prepared(Err("cancelled".into()))).unwrap();
         h.step();
         assert!(h.app.lightroom.is_none());
-        assert_eq!(h.app.lightroom_last, Some(serde_json::json!({"cancelled": true})));
+        assert_eq!(h.app.lightroom_last, Some(serde_json::json!({"cancelled": true, "path": "fixture.lrcat"})));
         assert!(h.app.session.activity.list().is_empty());
     }
 

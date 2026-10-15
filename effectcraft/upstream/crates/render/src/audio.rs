@@ -74,7 +74,8 @@ pub fn audible(project: &Project, l: &Layer) -> bool {
             })
 }
 
-fn db_to_gain(db: f64) -> f32 {
+/// Linear gain of an Audio Levels value in dB; -96 dB and below is silence.
+pub fn db_to_gain(db: f64) -> f32 {
     if db <= -96.0 { 0.0 } else { 10f64.powf(db / 20.0) as f32 }
 }
 

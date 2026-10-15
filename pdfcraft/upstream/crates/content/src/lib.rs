@@ -125,12 +125,19 @@ pub fn parse(data: &[u8]) -> Parsed {
                 start.get_or_insert(at);
                 operands.push(Object::Null);
             }
-            b"BI" => {
-                let (dict, img, end) = inline_image(data, lx.pos);
-                lx.pos = end;
-                out.ops.push(Op { op: b"BI".to_vec(), operands: Vec::new(), inline: Some((dict, img)), span: start.take().unwrap_or(at)..end });
-                operands.clear();
-            }
+            b"BI" => match inline_image(data, lx.pos) {
+                Ok((dict, img, end)) => {
+                    lx.pos = end;
+                    out.ops.push(Op { op: b"BI".to_vec(), operands: Vec::new(), inline: Some((dict, img)), span: start.take().unwrap_or(at)..end });
+                    operands.clear();
+                }
+                Err(end) => {
+                    out.skipped += end.saturating_sub(at);
+                    lx.pos = end;
+                    start = None;
+                    operands.clear();
+                }
+            },
             _ => {
                 let s = start.take().unwrap_or(at);
                 out.ops.push(Op { op: kw.to_vec(), operands: std::mem::take(&mut operands), inline: None, span: s..lx.pos });
@@ -141,8 +148,9 @@ pub fn parse(data: &[u8]) -> Parsed {
     out
 }
 
-/// Read an inline image starting after `BI`: (parameters, data, position after `EI`).
-fn inline_image(data: &[u8], pos: usize) -> (Dict, Vec<u8>, usize) {
+/// Read an inline image starting after `BI`: (parameters, data, position after `EI`). `Err` holds
+/// the position after the `EI` (or the end of the stream) of an image whose parameters can't be read.
+fn inline_image(data: &[u8], pos: usize) -> Result<(Dict, Vec<u8>, usize), usize> {
     let mut lx = Lexer::new(data, pos);
     let mut dict = Dict::new();
     loop {
@@ -150,17 +158,32 @@ fn inline_image(data: &[u8], pos: usize) -> (Dict, Vec<u8>, usize) {
         if lx.eat_keyword(b"ID") {
             break;
         }
-        let Ok(Object::Name(k)) = lx.object() else {
-            return (dict, Vec::new(), data.len());
+        let at = lx.pos;
+        let entry = match lx.object() {
+            Ok(Object::Name(k)) => lx.object().ok().map(|v| (k, v)),
+            _ => None,
         };
-        let Ok(v) = lx.object() else {
-            return (dict, Vec::new(), data.len());
+        let Some((k, v)) = entry else {
+            // A stream that ends inside the parameters is cut short, not unreadable: keep what was read.
+            if at >= data.len() {
+                return Ok((dict, Vec::new(), data.len()));
+            }
+            // Without an `EI` after it, the image runs to the end of the stream.
+            return Err(end_of_image(data, at).map_or(data.len(), |(_, end)| end));
         };
         dict.set(k, v);
     }
     // One whitespace byte separates ID from the data.
     let begin = (lx.pos + 1).min(data.len());
-    // The data ends at whitespace + `EI` + (whitespace or end). Search for that pattern.
+    Ok(match end_of_image(data, begin) {
+        Some((end_data, end)) => (dict, data[begin..end_data].to_vec(), end),
+        None => (dict, data[begin..].to_vec(), data.len()),
+    })
+}
+
+/// Where inline image data starting at `begin` ends: (end of the data, position after `EI`). The
+/// data ends at whitespace + `EI` + (whitespace, a delimiter or the end).
+fn end_of_image(data: &[u8], begin: usize) -> Option<(usize, usize)> {
     let mut i = begin;
     while i + 2 <= data.len() {
         if data[i] == b'E'
@@ -169,11 +192,11 @@ fn inline_image(data: &[u8], pos: usize) -> (Dict, Vec<u8>, usize) {
             && data.get(i + 2).is_none_or(|b| is_ws(*b) || is_delim(*b))
         {
             let end_data = if i > begin && is_ws(data[i - 1]) { i - 1 } else { i };
-            return (dict, data[begin..end_data].to_vec(), i + 2);
+            return Some((end_data, i + 2));
         }
         i += 1;
     }
-    (dict, data[begin..].to_vec(), data.len())
+    None
 }
 
 /// Write one operator (with a trailing newline).

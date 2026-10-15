@@ -8,15 +8,17 @@
 //! - `engine.commands`: list commands with enablement
 //! - `ui.inspect`: full UI state (tool, panels, views, dialogs, windows, window size); the menu
 //!   tree is `ui.menu.list`
-//! - `ui.set {tool?, panels?, dock?, dockTabs?, dockWidth?, colorPanel?, maskTarget?, vectorMaskTarget?, selectionMode?, zoom?, center?, rotation?, fit?, theme?, brushSection?, brushTab?, brushesView?, brushPicker?, brushPickerView?, brushSize?}`:
+//! - `ui.set {tool?, panels?, dock?, dockTabs?, dockWidth?, colorPanel?, maskTarget?, vectorMaskTarget?, selectionMode?, zoom?, center?, rotation?, fit?, theme?, brushSection?, brushTab?, brushesView?, brushPicker?, brushPickerName?, brushPickerStroke?, brushPickerTip?, brushPickerScale?, brushSize?}`:
 //!   change UI state; any other field is an error ([`UI_SET_FIELDS`])
 //! - `ui.dialog.open {kind, fields?}` (kinds: newDocument, about, layerStyle {effect?}, colorPicker {target: foreground|background}, command {command}) / `ui.dialog.set {dialog, field, value}` / `ui.dialog.confirm {dialog, wait?}` / `ui.dialog.cancel {dialog}`
 //! - `ui.dialog.apply {dialog}`: commit Preferences changes without closing the dialog
 //! - `ui.window.open {document?}` / `ui.window.close {window}`: extra document windows
-//! - `ui.pointer {events: [{kind: down|move|up, x, y, pressure?, tiltX?, tiltY?, rotation?}], modifiers?, button?}`: drive the active tool in document coordinates (`button: "secondary"` opens the tool's canvas context menu or Brush Preset picker, or erases with Preferences › Tools › Right-click with painting tools = erase)
+//! - `ui.pointer {events: [{kind: down|move|up, x, y, pressure?, tiltX?, tiltY?, rotation?}], tool?, modifiers?, button?}`: drive the active tool in document coordinates (`button: "secondary"` opens the tool's canvas context menu (the pasteboard colour menu outside the image) or Brush Preset picker, or erases with Preferences › Tools › Right-click with painting tools = erase)
 //! - `ui.click {x, y, button?, count?}` / `ui.move {x, y}`: synthetic pointer input in screen points
 //!   (`count` at most [`MAX_CLICKS`])
 //! - `ui.key {key, command?, shift?, alt?, ctrl?}` / `ui.type {text}`: synthetic keyboard input
+//! - The synthetic input methods reject unknown fields, wrong types, unknown enum values and
+//!   out-of-range numbers before acting, naming the parameter (#2449)
 //! - `ui.resize {width, height}`: resize the main window
 //! - `ui.gpu.simulateLoss {error?}`: act as if the wgpu device was lost (or, with `error: true`,
 //!   reported an error): the app switches to the CPU renderer for the rest of the session, as on a
@@ -40,6 +42,19 @@ use crate::canvas::{ToolEvent, tool_event};
 use crate::state::{DialogKind, Tool};
 
 pub type ControlResponse = Value;
+
+/// The control server's per-request reply deadline.
+pub const REPLY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The error both timeout sites return when a request's [`REPLY_DEADLINE`] passes: the
+/// transport thread waiting for a reply, and the UI thread rejecting a request it is only
+/// now draining. Built from the same constant, so the text cannot drift from the deadline.
+pub fn timeout_error() -> String {
+    format!(
+        "timeout: no reply in {}s — the command may still be running, or the app was not drawing frames (display asleep, window fully occluded, or a long operation blocked the frame loop)",
+        REPLY_DEADLINE.as_secs()
+    )
+}
 
 pub struct ControlRequest {
     pub method: String,
@@ -74,7 +89,7 @@ pub enum Outcome {
 /// field's value is validated before the first one is applied, so a typo, an unknown field, a
 /// bad value or a bad nested key can't reply with success while nothing — or only half of it —
 /// changed (#412).
-pub const UI_SET_FIELDS: [&str; 29] = [
+pub const UI_SET_FIELDS: [&str; 34] = [
     "tool",
     "panels",
     "dock",
@@ -93,7 +108,10 @@ pub const UI_SET_FIELDS: [&str; 29] = [
     "brushTab",
     "brushesView",
     "brushPicker",
-    "brushPickerView",
+    "brushPickerName",
+    "brushPickerStroke",
+    "brushPickerTip",
+    "brushPickerScale",
     "brushSize",
     "gradientBlendMode",
     "gradientClassic",
@@ -104,6 +122,8 @@ pub const UI_SET_FIELDS: [&str; 29] = [
     "cropOverlayShow",
     "cropOverlayOrientation",
     "cropShield",
+    "shapeStroke",
+    "camTransformOnDrop",
 ];
 
 /// Most clicks one `ui.click` may queue (#982). Each click is a press and a release that the app
@@ -178,6 +198,62 @@ fn whole_object<T: serde::Serialize + serde::de::DeserializeOwned>(current: &T, 
     }
     serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("{field}: {e}"))
 }
+
+/// The buttons `ui.pointer` and `ui.click` accept (`right` and `secondary` are the same one).
+const BUTTONS: [&str; 4] = ["left", "right", "secondary", "middle"];
+/// The modifier flags `ui.key` reads, top-level or under `modifiers`; `ui.pointer` adds `space`.
+const KEY_MODIFIERS: [&str; 4] = ["shift", "alt", "command", "ctrl"];
+const POINTER_MODIFIERS: [&str; 5] = ["shift", "alt", "command", "ctrl", "space"];
+
+/// A synthetic input method's params (or one nested object, named `what`): an object whose keys
+/// are all in `fields`, returned with its null fields dropped so they mean "omitted". A typo must
+/// not reply ok after acting on a default (#2449), as `ui.set` already promises (#412).
+fn input_object(v: &Value, what: Option<&str>, fields: &[&str]) -> std::result::Result<Value, String> {
+    let object = match (v, what) {
+        (Value::Null, None) => return Ok(json!({})),
+        (Value::Object(o), _) => o,
+        (_, what) => return Err(format!("{} must be an object", what.unwrap_or("params"))),
+    };
+    if let Some(key) = object.keys().find(|k| !fields.contains(&k.as_str())) {
+        let field = what.map(|w| format!("{w} field")).unwrap_or_else(|| "field".into());
+        return Err(format!("unknown {field} `{key}` (fields: {})", fields.join(", ")));
+    }
+    Ok(Value::Object(object.iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect()))
+}
+
+/// An optional finite number named `name` in errors, within `range` when given.
+fn input_number(v: &Value, key: &str, name: &str, range: Option<(f64, f64)>) -> std::result::Result<Option<f64>, String> {
+    let n = num_field(v, key).map_err(|_| format!("{name} must be a finite number"))?;
+    match (n, range) {
+        (Some(n), Some((lo, hi))) if !(lo..=hi).contains(&n) => Err(format!("{name} must be between {lo} and {hi} (got {n})")),
+        _ => Ok(n),
+    }
+}
+
+/// An optional string named `name` in errors, one of `accepted` when given.
+fn input_choice<'a>(v: &'a Value, key: &str, name: &str, accepted: &[&str]) -> std::result::Result<Option<&'a str>, String> {
+    match v.get(key) {
+        None => Ok(None),
+        Some(Value::String(s)) if accepted.is_empty() || accepted.contains(&s.as_str()) => Ok(Some(s)),
+        Some(Value::String(s)) => Err(format!("unknown {name} `{s}` ({})", accepted.join(", "))),
+        Some(_) => Err(format!("{name} must be a string")),
+    }
+}
+
+/// The modifier flags of `ui.pointer` / `ui.key`: grouped under `modifiers` when present (the
+/// top-level flags are then ignored, but still type-checked), else top-level.
+fn input_modifiers(p: &Value, flags: &[&str]) -> std::result::Result<Value, String> {
+    for flag in flags {
+        bool_field(p, flag)?;
+    }
+    let Some(m) = p.get("modifiers") else { return Ok(p.clone()) };
+    let m = input_object(m, Some("modifiers"), flags)?;
+    for flag in flags {
+        bool_field(&m, flag).map_err(|e| format!("modifiers.{e}"))?;
+    }
+    Ok(m)
+}
+
 fn wrap(r: Result<Value, String>) -> Outcome {
     match r {
         Ok(v) => ok(v),
@@ -214,6 +290,26 @@ fn screen_point(app: &PhotocraftApp, x: f64, y: f64) -> [f32; 2] {
     [p.x, p.y]
 }
 
+/// Modifier flags of a request, top-level or grouped under `modifiers`.
+///
+/// Off the Mac, Ctrl is the shortcut key, so egui wants `ctrl` and `command` to carry the same
+/// value (`egui::Modifiers::command`: "On Windows and Linux, set this to the same value as
+/// `ctrl`") and shortcuts are matched on `command`. A real Ctrl press arrives with both set, so
+/// a request that sets only one of them gets both here and reaches the same shortcuts. On the Mac
+/// they are different keys and stay apart: `command` is the ⌘ key, `ctrl` the Control key.
+fn modifiers_from(p: &Value) -> egui::Modifiers {
+    let m = p.get("modifiers").unwrap_or(p);
+    let flag = |k: &str| m.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let (ctrl, command) = (flag("ctrl"), flag("command"));
+    egui::Modifiers {
+        shift: flag("shift"),
+        alt: flag("alt"),
+        command: if cfg!(target_os = "macos") { command } else { command || ctrl },
+        mac_cmd: cfg!(target_os = "macos") && command,
+        ctrl: if cfg!(target_os = "macos") { ctrl } else { command || ctrl },
+    }
+}
+
 /// The `dialog` id of the shell's own dialog (`workspace_ui`) in `ui.inspect` and `ui.dialog.*`.
 const SHELL_DIALOG: &str = "shell";
 
@@ -239,8 +335,10 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             if !crate::canvas_tool_menu::available(app, menu, id) {
                 return err("context action is unavailable");
             }
+            // A pasteboard row changes a preference: the policy sees the `prefs.set` it runs.
+            let (command, params) = crate::canvas_tool_menu::engine_call(menu, id);
             if let Some(authorize) = app.services.automation_command.as_ref()
-                && let Err(error) = authorize(id, &json!({}))
+                && let Err(error) = authorize(&command, &params)
             {
                 return err(error);
             }
@@ -249,12 +347,20 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
         }
         "engine.execute" | "ui.menu.invoke" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
+            let params = p.get("params").cloned().unwrap_or(json!({}));
             // A control-channel menu click must respect the same modal gate as the native menu.
+            // Camera Raw's documented `ui` requests operate its already-open dialog rather
+            // than click a menu. Only that continuation may pass its own modal gate.
             // engine.execute is deliberately not subject to the UI's menu-click semantics.
-            if req.method == "ui.menu.invoke" && !crate::menus::modal_allows(app, id) {
+            let camera_raw_continuation = id == "filter.cameraRaw"
+                && app.camera_raw.is_some()
+                && params.as_object().is_some_and(|fields| fields.len() == 1 && fields.get("ui").is_some_and(Value::is_object))
+                && app.ui.dialogs.is_empty()
+                && app.discard.is_none()
+                && !crate::crop_ui::blocks(app, id);
+            if req.method == "ui.menu.invoke" && !camera_raw_continuation && !crate::menus::modal_allows(app, id) {
                 return err("menu command is unavailable while a modal dialog is open");
             }
-            let params = p.get("params").cloned().unwrap_or(json!({}));
             if let Some(authorize) = app.services.automation_command.as_ref()
                 && let Err(error) = authorize(id, &params)
             {
@@ -308,6 +414,20 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             // rejected call applies none of its fields (#412's guarantee, down to the values
             // and nested keys).
             let applied = (|| -> std::result::Result<Value, String> {
+                let shape_stroke = match p.get("shapeStroke") {
+                    Some(v) => {
+                        if let Some(object) = v.as_object() {
+                            let keys = ["width", "opacity", "align", "cap", "join", "miterLimit", "dashes", "dashOffset"];
+                            if let Some(key) = object.keys().find(|key| !keys.contains(&key.as_str())) {
+                                return Err(format!("unknown shapeStroke field `{key}`"));
+                            }
+                        }
+                        let o = &app.ui.tool_options;
+                        let base = o.shape_stroke.stroke(o.stroke_width, photocraft_doc::Fill::Solid(photocraft_doc::Color::BLACK));
+                        Some(photocraft_engine::vector_cmds::parse_stroke(v, Some(base), photocraft_doc::Color::BLACK)?)
+                    }
+                    None => None,
+                };
                 let tool = match s("tool") {
                     Some(t) => Tool::from_name(t).map(Some).ok_or_else(|| format!("unknown tool `{t}`"))?,
                     None => None,
@@ -330,6 +450,8 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                     None => None,
                 };
                 let eyedropper_ring = bool_field(p, "eyedropperRing")?;
+                // Content-Aware Move's Transform On Drop checkbox.
+                let cam_transform_on_drop = bool_field(p, "camTransformOnDrop")?;
                 // The Crop tool's overlay menu (#1919).
                 let crop_overlay = match p.get("cropOverlay") {
                     Some(v) => Some(v.as_str().and_then(crate::crop_overlay::CropOverlay::from_id).ok_or_else(|| {
@@ -400,8 +522,26 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                     Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("brushesView: {e} (list, grid)"))?,
                     None => None,
                 };
-                let brush_picker_view = match p.get("brushPickerView") {
-                    Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("brushPickerView: {e} (list, grid)"))?,
+                // The three parts of the picker's cards. At least one stays on (a rejected call
+                // leaves them all alone).
+                let brush_picker_name = bool_field(p, "brushPickerName")?;
+                let brush_picker_stroke = bool_field(p, "brushPickerStroke")?;
+                let brush_picker_tip = bool_field(p, "brushPickerTip")?;
+                if [brush_picker_name, brush_picker_stroke, brush_picker_tip].iter().any(Option::is_some) {
+                    let on = [
+                        brush_picker_name.unwrap_or(app.ui.brush_picker_list.show_name),
+                        brush_picker_stroke.unwrap_or(app.ui.brush_picker_list.show_stroke),
+                        brush_picker_tip.unwrap_or(app.ui.brush_picker_list.show_tip),
+                    ];
+                    if !on.iter().any(|b| *b) {
+                        return Err("brushPickerName, brushPickerStroke and brushPickerTip: at least one must stay on".into());
+                    }
+                }
+                // The picker footer slider: the preset cards' size scale (1 standard; 0.30 and
+                // below the tips drop their size numbers).
+                let brush_picker_scale = match num_field(p, "brushPickerScale")? {
+                    Some(s) if !(0.15..=2.0).contains(&s) => return Err("brushPickerScale must be between 0.15 and 2".into()),
+                    Some(s) => Some(s as f32),
                     None => None,
                 };
                 // `Some(None)` is an explicit null, which closes the picker (a missing field
@@ -430,7 +570,18 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                     None => None,
                 };
 
+                let bridge_pro = matches!(theme.unwrap_or(app.ui.theme), crate::theme::ThemeKind::Pro | crate::theme::ThemeKind::ProMedium);
+                let legacy_update = crate::panel_docking::prepare_legacy_update(app, p, panels.as_ref(), dock_tabs.as_ref(), dock.as_ref(), bridge_pro)?;
+
                 // Apply (nothing below can fail).
+                if let Some(stroke) = shape_stroke {
+                    if let Some(stroke) = stroke {
+                        app.ui.tool_options.stroke_width = stroke.width;
+                        app.ui.tool_options.shape_stroke = crate::shape_stroke_ui::StrokeOptions::from(&stroke);
+                    } else {
+                        app.ui.tool_options.stroke_width = 0.0;
+                    }
+                }
                 if let Some(t) = tool {
                     app.ui.tool = t;
                     // Each tool keeps its own brush (#218), so switch it in before `brushSize`
@@ -456,6 +607,9 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 if let Some(ring) = eyedropper_ring {
                     app.ui.tool_options.eyedropper_ring = ring;
                 }
+                if let Some(on) = cam_transform_on_drop {
+                    app.ui.tool_options.cam_transform_on_drop = on;
+                }
                 if let Some(k) = crop_overlay {
                     app.ui.tool_options.crop_overlay = k;
                 }
@@ -473,15 +627,21 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 }
                 if let Some(m) = mask_target {
                     app.ui.mask_target = m;
+                    app.ui.properties_layer = None;
                     app.ui.vector_mask_target &= !m;
+                    app.sync_mask_targets();
                 }
                 if let Some(m) = vector_mask_target {
                     app.ui.vector_mask_target = m;
                     app.ui.mask_target &= !m;
+                    app.sync_mask_targets();
                 }
                 // Selection tools' options-bar mode: 0 New, 1 Add, 2 Subtract, 3 Intersect.
                 if let Some(m) = selection_mode {
                     app.ui.selection_mode = m.min(3) as u8;
+                }
+                if let Some(k) = theme {
+                    app.set_theme(ctx, k);
                 }
                 if let Some(v) = dock_tabs {
                     app.ui.dock_tabs = v;
@@ -489,6 +649,9 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 // Dock group order, heights and collapsed groups (see `dock::DockLayout`).
                 if let Some(v) = dock {
                     app.ui.dock = v;
+                }
+                if let Some(update) = legacy_update {
+                    crate::panel_docking::commit_legacy_update(app, update, p);
                 }
                 if let Some(v) = color_panel {
                     app.ui.color_panel = v;
@@ -517,9 +680,6 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                         app.ui.views[i].rotation = crate::rotate_view::wrap_deg(r as f32);
                     }
                 }
-                if let Some(k) = theme {
-                    app.set_theme(ctx, k);
-                }
                 if let Some(i) = brush_section {
                     app.ui.brush_section = (i as usize).min(crate::brush_panel::SECTIONS.len() - 1);
                 }
@@ -529,8 +689,17 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 if let Some(v) = brushes_view {
                     app.ui.brushes_panel.view = v;
                 }
-                if let Some(v) = brush_picker_view {
-                    app.ui.brush_picker_list.view = v;
+                if let Some(v) = brush_picker_name {
+                    app.ui.brush_picker_list.show_name = v;
+                }
+                if let Some(v) = brush_picker_stroke {
+                    app.ui.brush_picker_list.show_stroke = v;
+                }
+                if let Some(v) = brush_picker_tip {
+                    app.ui.brush_picker_list.show_tip = v;
+                }
+                if let Some(v) = brush_picker_scale {
+                    app.ui.brush_picker_list.scale = v;
                 }
                 if let Some(at) = brush_picker {
                     app.ui.brush_picker = at;
@@ -590,6 +759,19 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                     }
                     let target = if s("target") == Some("background") { "background" } else { "foreground" };
                     return ok(json!({"dialog": crate::color_picker_ui::open(app, target)}));
+                }
+                // The Crop tool's New / Delete Crop Preset… (#1919).
+                "newCropPreset" => {
+                    return match crate::crop_presets::open_new(app) {
+                        Some(id) => ok(json!({"dialog": id})),
+                        None => err("nothing to save: set W and H (W x H x Resolution) or a ratio first"),
+                    };
+                }
+                "deleteCropPreset" => {
+                    return match crate::crop_presets::open_delete(app) {
+                        Some(id) => ok(json!({"dialog": id})),
+                        None => err("no crop presets are saved"),
+                    };
                 }
                 "command" | "Command" => {
                     let Some(cmd) = s("command") else { return err("command dialogs need `command`") };
@@ -685,33 +867,53 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             if app.ui.windows.len() < before { ok(Value::Null) } else { err(format!("no window {id}")) }
         }
         "ui.pointer" => {
-            let Some(events) = p.get("events").and_then(Value::as_array) else { return err("missing `events`") };
-            // Modifier flags may be top-level or grouped under "modifiers".
-            let m = p.get("modifiers").unwrap_or(p);
-            let flag = |k: &str| m.get(k).and_then(Value::as_bool).unwrap_or(false);
-            let mods = egui::Modifiers {
-                shift: flag("shift"),
-                alt: flag("alt"),
-                command: flag("command"),
-                mac_cmd: cfg!(target_os = "macos") && flag("command"),
-                ctrl: flag("ctrl"),
+            // Every field and event is validated before the first event runs, so a rejected call
+            // changes nothing (#2449).
+            let parsed = (|| -> std::result::Result<_, String> {
+                let fields = ["events", "tool", "modifiers", "button", "shift", "alt", "command", "ctrl", "space"];
+                let p = input_object(p, None, &fields)?;
+                let tool = match input_choice(&p, "tool", "tool", &[])? {
+                    Some(t) => Some(Tool::from_name(t).ok_or_else(|| format!("unknown tool `{t}`"))?),
+                    None => None,
+                };
+                let button = input_choice(&p, "button", "button", &BUTTONS)?.unwrap_or("left").to_string();
+                // Modifier flags may be top-level or grouped under "modifiers".
+                let m = input_modifiers(&p, &POINTER_MODIFIERS)?;
+                let Some(events) = p.get("events") else { return Err("missing `events`".into()) };
+                let Some(events) = events.as_array() else { return Err("events must be an array".into()) };
+                let mut parsed = Vec::with_capacity(events.len());
+                for (i, e) in events.iter().enumerate() {
+                    let name = format!("events[{i}]");
+                    let e = input_object(e, Some(&name), &["kind", "x", "y", "pressure", "tiltX", "tiltY", "rotation"])?;
+                    let num = |k: &str, range| input_number(&e, k, &format!("{name}.{k}"), range);
+                    let (x, y) = (num("x", None)?.unwrap_or(0.0), num("y", None)?.unwrap_or(0.0));
+                    let pr = num("pressure", Some((0.0, 1.0)))?.unwrap_or(1.0) as f32;
+                    let ev = match input_choice(&e, "kind", &format!("{name}.kind"), &["down", "move", "up"])?.unwrap_or("move") {
+                        "down" => ToolEvent::Down { x, y, pressure: pr },
+                        "up" => ToolEvent::Up { x, y },
+                        _ => ToolEvent::Move { x, y, pressure: pr },
+                    };
+                    let tilt = |k: &str, range| num(k, Some(range)).map(|v| v.map(|v| v as f32));
+                    let pen = (tilt("tiltX", (-90.0, 90.0))?, tilt("tiltY", (-90.0, 90.0))?, tilt("rotation", (0.0, 360.0))?);
+                    parsed.push((ev, x, y, pr, pen));
+                }
+                Ok((tool, button, m, parsed))
+            })();
+            let (tool, button, m, events) = match parsed {
+                Ok(parsed) => parsed,
+                Err(e) => return err(e),
             };
-            if let Some(t) = s("tool").and_then(Tool::from_name) {
+            let secondary = matches!(button.as_str(), "secondary" | "right");
+            let mods = modifiers_from(&m);
+            if let Some(t) = tool {
                 app.ui.tool = t;
             }
             // Space held: the Crop tool moves the frame being drawn, a marquee, lasso or shape
-            // being drawn moves instead of growing (hold_keys.rs).
-            let space = flag("space");
+            // being drawn moves instead of growing (hold_keys.rs). Like a modifier flag, it may be
+            // top-level or grouped under "modifiers".
+            let space = p.get("modifiers").unwrap_or(p).get("space").and_then(Value::as_bool).unwrap_or(false);
             crate::crop_ui::set_space(app, space);
-            for e in events {
-                let x = e.get("x").and_then(Value::as_f64).unwrap_or(0.0);
-                let y = e.get("y").and_then(Value::as_f64).unwrap_or(0.0);
-                let pr = e.get("pressure").and_then(Value::as_f64).unwrap_or(1.0) as f32;
-                let ev = match e.get("kind").and_then(Value::as_str).unwrap_or("move") {
-                    "down" => ToolEvent::Down { x, y, pressure: pr },
-                    "up" => ToolEvent::Up { x, y },
-                    _ => ToolEvent::Move { x, y, pressure: pr },
-                };
+            for (ev, x, y, pr, pen) in events {
                 // With the Color Picker on top the image is its eyedropper, as for the mouse.
                 if crate::color_picker_ui::top(app).is_some() {
                     if !matches!(ev, ToolEvent::Up { .. }) {
@@ -721,9 +923,16 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 }
                 // Curves' modal eyedroppers use document coordinates here, matching the native
                 // canvas path after its ViewXform conversion. Sample on press only.
-                if !matches!(s("button"), Some("secondary" | "right")) && crate::adjust_dialog::picker_armed(app) {
+                if !secondary && crate::adjust_dialog::picker_armed(app) {
                     if matches!(ev, ToolEvent::Down { .. }) {
                         crate::adjust_dialog::sample_at(app, x, y);
+                    }
+                    continue;
+                }
+                // A Properties Levels/Curves eyedropper owns the primary button the same way.
+                if app.ui.dialogs.is_empty() && !matches!(s("button"), Some("secondary" | "right")) && crate::layer_picker::armed(app).is_some() {
+                    if matches!(ev, ToolEvent::Down { .. }) {
+                        crate::layer_picker::sample_at(app, x, y);
                     }
                     continue;
                 }
@@ -736,34 +945,51 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                     if let Some(d) = app.ui.dialogs.last_mut() {
                         d.fields.insert("__pointerDown".into(), json!(!up && (down || held)));
                     }
-                    if !up && (down || held) && !space && !matches!(s("button"), Some("secondary" | "right" | "middle")) {
+                    if !up && (down || held) && !space && !secondary && button != "middle" {
                         crate::color_range_ui::pick_top(app, [x, y], mods);
                     }
                     continue;
                 }
-                if matches!(s("button"), Some("secondary" | "right")) {
+                if secondary {
                     let down = matches!(ev, ToolEvent::Down { .. });
+                    // Right-click while transforming: the box's menu, as on the canvas.
+                    if app.ui.transform.as_ref().is_some_and(|t| t.warp.is_none()) {
+                        if down {
+                            crate::canvas_tool_menu::open_transform(app, ctx, screen_point(app, x, y));
+                        }
+                        continue;
+                    }
                     // Right-click with the Move tool, or ⌘/Ctrl+right-click: list the layers there.
                     if crate::layer_pick_ui::is_gesture(app.ui.tool, mods) {
                         if down {
                             app.ui.canvas_tool_menu = None;
-                            crate::layer_pick_ui::open(app, screen_point(app, x, y), x, y);
+                            crate::layer_pick_ui::open(app, ctx, screen_point(app, x, y), x, y);
                         }
                         continue;
                     }
-                    if crate::canvas_tool_menu::applies(app.ui.tool) {
+                    if crate::canvas_tool_menu::pasteboard_at(app, app.ui.tool, [x, y]) {
                         if down {
-                            crate::canvas_tool_menu::open(app, app.ui.tool, screen_point(app, x, y));
+                            crate::canvas_tool_menu::open_pasteboard(app, ctx, app.ui.tool, screen_point(app, x, y));
                         }
                         continue;
                     }
-                    if !crate::paint_mouse::pointer_secondary(app, down, mods, screen_point(app, x, y)) {
+                    if crate::canvas_tool_menu::is_view_tool(app.ui.tool) {
+                        if down {
+                            crate::canvas_tool_menu::open_view(app, ctx, app.ui.tool, screen_point(app, x, y), [x, y]);
+                        }
+                        continue;
+                    }
+                    if crate::canvas_tool_menu::applies(app.ui.tool) || crate::canvas_tool_menu::editing_text(app, app.ui.tool) {
+                        if down {
+                            crate::canvas_tool_menu::open(app, ctx, app.ui.tool, screen_point(app, x, y));
+                        }
+                        continue;
+                    }
+                    if !crate::paint_mouse::pointer_secondary(app, ctx, down, mods, screen_point(app, x, y)) {
                         continue;
                     }
                 }
                 // A simulated pen: tilt/rotation reach the stroke like a real stylus's (see `stylus`).
-                let tilt = |k: &str| e.get(k).and_then(Value::as_f64).map(|v| v as f32);
-                let pen = (tilt("tiltX"), tilt("tiltY"), tilt("rotation"));
                 if pen != (None, None, None) {
                     let (tilt_x, tilt_y, rotation) = (pen.0.unwrap_or(0.0), pen.1.unwrap_or(0.0), pen.2.unwrap_or(0.0));
                     app.stylus.feed.set(Some(crate::stylus::PenSample { pressure: pr, tilt_x, tilt_y, rotation, eraser: false }));
@@ -771,25 +997,47 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 if let Some(d) = app.drag.as_mut().filter(|d| crate::hold_keys::repositions(d.tool)) {
                     d.reposition = space;
                 }
+                // A Crop drag in the default mode turns and pans the view with the image: its
+                // points are read as the view showed them at the press (`crop_mode`).
+                let ev = match ev {
+                    ToolEvent::Move { x, y, pressure } => {
+                        let [x, y] = crate::crop_mode::control_point(app, [x, y]);
+                        ToolEvent::Move { x, y, pressure }
+                    }
+                    ToolEvent::Up { x, y } => {
+                        let [x, y] = crate::crop_mode::control_point(app, [x, y]);
+                        ToolEvent::Up { x, y }
+                    }
+                    down => down,
+                };
                 tool_event(app, ev, mods);
             }
             app.stylus.feed.set(None);
             ok(json!({"status": app.ui.status}))
         }
         "ui.click" | "ui.move" => {
-            // Screen coordinates in points (as reported by ui.inspect window size).
-            let x = p.get("x").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-            let y = p.get("y").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-            let pos = egui::pos2(x, y);
-            let button = match s("button").unwrap_or("left") {
-                "right" | "secondary" => egui::PointerButton::Secondary,
-                "middle" => egui::PointerButton::Middle,
-                _ => egui::PointerButton::Primary,
+            let click = req.method == "ui.click";
+            let fields: &[&str] = if click { &["x", "y", "button", "count"] } else { &["x", "y"] };
+            let parsed = (|| -> std::result::Result<_, String> {
+                let p = input_object(p, None, fields)?;
+                // Screen coordinates in points (as reported by ui.inspect window size).
+                let x = input_number(&p, "x", "x", None)?.unwrap_or(0.0) as f32;
+                let y = input_number(&p, "y", "y", None)?.unwrap_or(0.0) as f32;
+                let button = match input_choice(&p, "button", "button", &BUTTONS)?.unwrap_or("left") {
+                    "right" | "secondary" => egui::PointerButton::Secondary,
+                    "middle" => egui::PointerButton::Middle,
+                    _ => egui::PointerButton::Primary,
+                };
+                let clicks = if click { uint_field(&p, "count")?.unwrap_or(1) } else { 0 };
+                if clicks > MAX_CLICKS {
+                    return Err(format!("`count` must be at most {MAX_CLICKS} (got {clicks})"));
+                }
+                Ok((egui::pos2(x, y), button, clicks))
+            })();
+            let (pos, button, clicks) = match parsed {
+                Ok(parsed) => parsed,
+                Err(e) => return err(e),
             };
-            let clicks = if req.method == "ui.click" { u("count").unwrap_or(1) } else { 0 };
-            if clicks > MAX_CLICKS {
-                return err(format!("`count` must be at most {MAX_CLICKS} (got {clicks})"));
-            }
             app.synthetic.push(egui::Event::PointerMoved(pos));
             for _ in 0..clicks {
                 app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() });
@@ -799,18 +1047,18 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             Outcome::AfterInput
         }
         "ui.key" => {
-            let Some(name) = s("key") else { return err("missing `key`") };
-            let Some(key) = egui::Key::from_name(name) else { return err(format!("unknown key `{name}`")) };
-            // Modifier flags may be top-level or grouped under "modifiers".
-            let m = p.get("modifiers").unwrap_or(p);
-            let flag = |k: &str| m.get(k).and_then(Value::as_bool).unwrap_or(false);
-            let modifiers = egui::Modifiers {
-                command: flag("command"),
-                mac_cmd: cfg!(target_os = "macos") && flag("command"),
-                shift: flag("shift"),
-                alt: flag("alt"),
-                ctrl: flag("ctrl"),
+            let parsed = (|| -> std::result::Result<_, String> {
+                let p = input_object(p, None, &["key", "modifiers", "shift", "alt", "command", "ctrl"])?;
+                let Some(name) = input_choice(&p, "key", "key", &[])? else { return Err("missing `key`".into()) };
+                let key = egui::Key::from_name(name).ok_or_else(|| format!("unknown key `{name}`"))?;
+                // Modifier flags may be top-level or grouped under "modifiers".
+                Ok((key, input_modifiers(&p, &KEY_MODIFIERS)?))
+            })();
+            let (key, m) = match parsed {
+                Ok(parsed) => parsed,
+                Err(e) => return err(e),
             };
+            let modifiers = modifiers_from(&m);
             app.synthetic.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
             app.synthetic.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
             ctx.request_repaint();
@@ -853,18 +1101,45 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             ok(Value::Null)
         }
         "ui.screenshot" => {
+            let parsed = input_object(p, None, &["path", "focus"])
+                .and_then(|p| Ok((input_choice(&p, "path", "path", &[])?.map(str::to_string), bool_field(&p, "focus")?)));
+            let (path, focus) = match parsed {
+                Ok(parsed) => parsed,
+                Err(e) => return err(e),
+            };
             // Occluded windows don't render on macOS, so the screenshot would never arrive: raise first.
-            if p.get("focus").and_then(Value::as_bool).unwrap_or(true) {
+            if focus.unwrap_or(true) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
             // The capture itself is issued by `PhotocraftApp::issue_screenshots` once open/close
             // animations (modals, popups) have settled.
             let token = app.ui.alloc_id();
             ctx.request_repaint();
-            Outcome::Screenshot { token, path: s("path").map(str::to_string) }
+            Outcome::Screenshot { token, path }
         }
         "app.open" => match s("path") {
             Some(path) => {
+                // Directory .pcraft (the native on-disk form) loads through a capability-scoped
+                // source; the single-file (zip) form falls back to the bytes path, as do all
+                // other formats.
+                if path.rsplit_once('.').is_some_and(|(_, ext)| ext.eq_ignore_ascii_case(photocraft_format::EXTENSION))
+                    && let Some(open) = app.services.automation_open_pcraft.as_mut()
+                {
+                    match open(path) {
+                        Ok(Some((name, doc))) => {
+                            app.session.add_document(doc, None);
+                            // Recent files, but no save-back target: the capability writer
+                            // replaces files, never directories.
+                            app.push_recent(path);
+                            app.sync_views();
+                            app.ui.status = crate::i18n::fmt(tl!("Opened {name}"), &[("name", &name)]);
+                            app.ui.status_error = false;
+                            return ok(json!({"path": path, "name": name, "warnings": []}));
+                        }
+                        Ok(None) => {} // a regular file: the bytes path reads the zip form
+                        Err(e) => return err(e),
+                    }
+                }
                 let opened = match app.services.automation_read.as_mut() {
                     Some(read) => read(path),
                     None => Err("automation read authority is not configured".into()),
@@ -881,7 +1156,13 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             }
             None => err("missing `path`"),
         },
-        "app.save" => wrap(app.save_automation(s("path").map(str::to_string)).map(|(p, w)| json!({"path": p, "warnings": w}))),
+        "app.save" => match crate::targa_options_ui::bits_param(p, "app.save") {
+            Ok(tga_bits) => {
+                let path = s("path").map(str::to_string);
+                run_waiting(app, p.get("wait").and_then(Value::as_bool).unwrap_or(true), move |app| app.save_automation_with(path, tga_bits))
+            }
+            Err(e) => err(e),
+        },
         "app.quit" => {
             app.allow_close = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -903,18 +1184,35 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
         "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
         "tool": app.ui.tool,
         "toolOptions": app.ui.tool_options,
+        "perspectiveCrop": app.ui.perspective_crop,
+        "strokeEditor": app.ui.stroke_editor,
         "magnetic": app.ui.magnetic,
         "textEdit": app.ui.text_edit,
         "typeTransform": app.ui.type_transform,
+        "camTransform": app.ui.cam_transform,
         "layerMenu": app.ui.layer_menu,
+        "layerPicker": app.ui.layer_picker,
         "brushPicker": app.ui.brush_picker.map(|pos| json!({
             "pos": pos,
-            "list": app.ui.brush_picker_list,
+            // The picker's content size once its corner grip was dragged (null: the default).
+            "size": app.ui.brush_picker_size,
+            "list": {
+                "collapsed": app.ui.brush_picker_list.collapsed,
+                "filter": app.ui.brush_picker_list.filter,
+                "renaming": app.ui.brush_picker_list.renaming,
+                // The card's parts (`view` is the Brushes panel's listing and doesn't apply).
+                "showName": app.ui.brush_picker_list.show_name,
+                "showStroke": app.ui.brush_picker_list.show_stroke,
+                "showTip": app.ui.brush_picker_list.show_tip,
+                // The footer slider: the cards' width scale.
+                "scale": app.ui.brush_picker_list.scale,
+            },
         })),
         "canvasToolMenu": app.ui.canvas_tool_menu.as_ref().map(|menu| {
             json!({
                 "pos": menu.pos,
                 "tool": menu.tool,
+                "pasteboard": menu.pasteboard,
                 "entries": crate::canvas_tool_menu::rows(menu).iter().map(|row| match row {
                     Some((label, id)) => json!({"label": label, "id": id, "enabled": crate::canvas_tool_menu::entry_enabled(app, menu, id)}),
                     None => json!({"separator": true}),
@@ -922,6 +1220,11 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
             })
         }),
         "panels": app.ui.panels,
+        "dockTabs": app.ui.dock_tabs,
+        "dock": app.ui.dock,
+        "docking": app.ui.docking,
+        "dockingHidden": app.ui.docking_hidden,
+        "dockingCollapsed": app.ui.docking_collapsed,
         "view": app.ui.view,
         "views": app.ui.views,
         "dialogs": dialogs,
@@ -931,6 +1234,7 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
         "statusError": app.ui.status_error,
         "notices": app.ui.notices,
         "gpuFallbackNotice": app.ui.gpu_fallback_notice,
+        "kysOffer": app.ui.kys_offer,
         "frame": app.frame,
         "session": photocraft_engine::inspect::session(&app.session),
         "document": app.session.active().map(photocraft_engine::inspect::document),
@@ -983,6 +1287,109 @@ mod tests {
             Outcome::Done(v) => v,
             _ => panic!("{method}: expected an immediate reply"),
         }
+    }
+
+    #[test]
+    fn camera_raw_control_updates_and_commits_or_cancels_an_open_raw() {
+        use photocraft_raw::testgen::{DngSpec, mosaic, scene};
+        let (w, h) = (48, 32);
+        let mut spec = DngSpec::cfa(w, h, mosaic(&scene(w, h), w, [0, 1, 1, 2], 0, 30000));
+        spec.as_shot_neutral = Some([0.5, 1.0, 0.7]);
+        let dng = spec.build();
+        for finish in ["commit", "cancel"] {
+            let services = crate::Services {
+                import: Some(Box::new(|name, bytes, depth| {
+                    photocraft_io::import_with_svg_group_depth(name, bytes, depth).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
+                })),
+                ..Default::default()
+            };
+            let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+            let ctx = egui::Context::default();
+            PhotocraftApp::setup_context(&ctx, Default::default());
+            app.open_bytes("control.dng", &dng).unwrap();
+            ctx.run_ui(Default::default(), |ui| crate::camera_raw_ui::show(&mut app, ui.ctx())).textures_delta.clear();
+            assert!(app.camera_raw.is_some());
+            // The raw develops in ProPhoto, so opening it also asks about the working-space
+            // mismatch. Answer that prompt through the same control path before editing.
+            assert_eq!(app.ui.dialogs.len(), 1);
+            let mismatch = app.ui.dialogs.first().unwrap();
+            assert_eq!(mismatch.fields["__prefsui"], "mismatch");
+            assert_eq!(mismatch.fields["action"], "preserve");
+            assert_eq!(mismatch.fields["applied"], "preserve");
+            let mismatch_id = mismatch.id;
+            let update = json!({"id":"filter.cameraRaw","params":{"ui":{"set":{"exposure":0.5}}}});
+            assert_eq!(call(&mut app, &ctx, "ui.menu.invoke", update.clone())["ok"], false);
+            let confirmed = call(&mut app, &ctx, "ui.dialog.confirm", json!({"dialog":mismatch_id}));
+            assert_eq!(confirmed["ok"], true, "{confirmed}");
+            assert_eq!(confirmed["result"]["action"], "preserve");
+            assert!(app.ui.dialogs.is_empty());
+            let original = app.session.active().unwrap().doc.clone();
+            let changed = call(&mut app, &ctx, "ui.menu.invoke", update);
+            assert_eq!(changed["ok"], true, "{changed}");
+            assert_eq!(changed["result"]["params"]["exposure"], 0.5);
+            assert!(std::sync::Arc::ptr_eq(&app.session.active().unwrap().doc, &original), "a preview must not commit");
+            assert!(!crate::menus::modal_allows(&app, "filter.cameraRaw"), "native menu clicks stay blocked");
+            let finished = call(&mut app, &ctx, "ui.menu.invoke", json!({"id":"filter.cameraRaw","params":{"ui":{finish:true}}}));
+            assert_eq!(finished["ok"], true, "{finished}");
+            assert!(app.camera_raw.is_none());
+            if finish == "commit" {
+                assert_eq!(finished["result"]["redeveloped"], true, "{finished}");
+                assert_eq!(app.session.documents().len(), 1);
+                let st = app.session.active().unwrap();
+                assert_ne!(st.doc.id, original.id);
+                assert_eq!(st.doc.depth, photocraft_color::SampleType::U16);
+                assert_eq!(st.saved_revision, st.revision);
+            } else {
+                assert_eq!(finished["result"]["cancelled"], true);
+                assert!(app.session.documents().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn camera_raw_control_continuation_does_not_bypass_other_modal_or_command_gates() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        app.run("file.new", json!({"width":16,"height":16})).unwrap();
+        app.run("layer.new.layer", json!({})).unwrap();
+        app.run("edit.fill", json!({"color":"#808080"})).unwrap();
+        let opened = call(&mut app, &ctx, "ui.menu.invoke", json!({"id":"filter.cameraRaw"}));
+        assert_eq!(opened["ok"], true, "{opened}");
+        let original = app.session.active().unwrap().doc.clone();
+        let cancel = json!({"id":"filter.cameraRaw","params":{"ui":{"cancel":true}}});
+        for request in [
+            json!({"id":"file.new"}),
+            json!({"id":"view.zoomIn"}),
+            json!({"id":"filter.cameraRaw"}),
+            json!({"id":"filter.cameraRaw","params":{"exposure":1}}),
+            json!({"id":"filter.cameraRaw","params":{"ui":null}}),
+            json!({"id":"filter.cameraRaw","params":{"ui":{},"smartFilter":{"layer":1,"index":0}}}),
+        ] {
+            let blocked = call(&mut app, &ctx, "ui.menu.invoke", request);
+            assert_eq!(blocked["ok"], false, "{blocked}");
+        }
+        app.ui.open_dialog(DialogKind::About, Default::default());
+        assert_eq!(call(&mut app, &ctx, "ui.menu.invoke", cancel.clone())["ok"], false);
+        app.ui.dialogs.clear();
+        assert!(crate::discard_ui::intercept(&mut app, "file.close", &json!({})));
+        assert_eq!(call(&mut app, &ctx, "ui.menu.invoke", cancel.clone())["ok"], false);
+        app.discard = None;
+        app.ui.tool = Tool::Crop;
+        app.ui.crop_rect = Some([1.0, 1.0, 10.0, 10.0]);
+        assert!(crate::crop_ui::blocks(&app, "filter.cameraRaw"));
+        assert_eq!(call(&mut app, &ctx, "ui.menu.invoke", cancel.clone())["ok"], false);
+        app.ui.crop_rect = None;
+        app.services.automation_command = Some(Box::new(|id, _| if id == "filter.cameraRaw" { Err("Camera Raw denied".into()) } else { Ok(()) }));
+        for ui in [json!({"set":{"exposure":1}}), json!({"commit":true}), json!({"cancel":true})] {
+            let denied = call(&mut app, &ctx, "ui.menu.invoke", json!({"id":"filter.cameraRaw","params":{"ui":ui}}));
+            assert_eq!(denied["ok"], false, "{denied}");
+            assert_eq!(denied["error"], "Camera Raw denied");
+        }
+        assert_eq!(app.camera_raw.as_ref().unwrap().params.exposure, 0.0);
+        assert!(std::sync::Arc::ptr_eq(&app.session.active().unwrap().doc, &original));
+        app.services.automation_command = None;
+        assert_eq!(call(&mut app, &ctx, "ui.menu.invoke", cancel)["ok"], true);
+        assert!(app.camera_raw.is_none());
     }
 
     #[test]
@@ -1067,6 +1474,28 @@ mod tests {
     }
 
     #[test]
+    fn shape_stroke_defaults_are_drivable_and_validate_atomically() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let result = call(
+            &mut app,
+            &ctx,
+            "ui.set",
+            json!({"tool":"Triangle", "shapeStroke":{"width":5,"cap":"round","join":"bevel","dashes":[0,2,4,1],"dashOffset":-0.5}}),
+        );
+        assert_eq!(result["ok"], true);
+        assert_eq!(app.ui.tool_options.stroke_width, 5.0);
+        assert_eq!(app.ui.tool_options.shape_stroke.dashes, [0.0, 2.0, 4.0, 1.0]);
+        let before = app.ui.clone();
+        let bad = call(&mut app, &ctx, "ui.set", json!({"tool":"Rectangle","shapeStroke":{"dashes":[0,0]}}));
+        assert_eq!(bad["ok"], false);
+        assert_eq!(app.ui, before);
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"shapeStroke":{"colour":"#ff0000"}}))["ok"], false);
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"shapeStroke":null}))["ok"], true);
+        assert_eq!(app.ui.tool_options.stroke_width, 0.0);
+    }
+
+    #[test]
     fn shell_dialogs_are_listed_and_driven_through_ui_dialog() {
         // #1004: Window › Workspace and View dialogs live in `ui.shell.dialog`, and ui.inspect and
         // ui.dialog.* only knew `ui.dialogs`.
@@ -1138,11 +1567,23 @@ mod tests {
         retry.deadline = Some(Instant::now() + Duration::from_secs(60));
         tx.send(retry).unwrap();
         app.drain_control(&egui::Context::default());
-        assert_eq!(expired_reply.try_recv().unwrap(), json!({"ok": false, "error": "timeout"}));
+        assert_eq!(expired_reply.try_recv().unwrap(), json!({"ok": false, "error": super::timeout_error()}));
         assert_eq!(retry_reply.try_recv().unwrap()["ok"], true);
         let after = app.session.active().unwrap();
         assert_eq!(after.doc.layers.len(), layers + 1, "only the live retry adds a layer");
         assert_eq!(after.history.past_len(), steps + 1, "the expired edit adds no undo step");
+    }
+
+    #[test]
+    fn timeout_errors_name_the_likely_causes() {
+        // #2489: the reply must tell "wait" from "check the machine", and its number
+        // must come from the deadline it reports.
+        let error = super::timeout_error();
+        assert!(error.starts_with("timeout"), "machines match on the prefix");
+        assert!(error.contains(&format!("{}s", super::REPLY_DEADLINE.as_secs())), "the text matches the deadline: {error}");
+        assert!(error.contains("may still be running"), "the wait-it-out cause");
+        assert!(error.contains("display asleep"), "the check-the-display cause");
+        assert!(error.contains("frame"), "the frame-loop cause");
     }
 
     #[test]
@@ -1180,6 +1621,33 @@ mod tests {
         let entries = inspected.pointer("/result/canvasToolMenu/entries").and_then(Value::as_array).unwrap();
         assert!(entries.iter().any(|entry| entry.get("id") == Some(&json!("select.inverse")) && entry.get("enabled") == Some(&json!(true))));
         assert!(app.session.active().unwrap().doc.selection.is_some(), "right-click must not edit selection");
+    }
+
+    #[test]
+    fn agent_right_click_with_the_zoom_tool_opens_and_runs_the_view_menu() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        app.run("file.new", json!({"width": 32, "height": 32})).unwrap();
+        app.sync_views();
+        let result = call(
+            &mut app,
+            &ctx,
+            "ui.pointer",
+            json!({"tool": "Zoom", "button": "secondary", "events": [{"kind":"down","x":8,"y":8},{"kind":"up","x":8,"y":8}]}),
+        );
+        assert_eq!(result["ok"], true);
+        assert_eq!(app.ui.canvas_tool_menu.as_ref().and_then(|m| m.anchor), Some([8.0, 8.0]));
+        let inspected = call(&mut app, &ctx, "ui.inspect", json!({}));
+        let entries = inspected.pointer("/result/canvasToolMenu/entries").and_then(Value::as_array).unwrap();
+        let ids: Vec<_> = entries.iter().filter_map(|row| row.get("id").and_then(Value::as_str)).collect();
+        assert_eq!(
+            ids,
+            ["view.zoomIn", "view.zoomOut", "view.fitOnScreen", "view.fillScreen", "view.actualPixels", "view.twoHundredPercent", "view.printSize"]
+        );
+        assert_eq!(call(&mut app, &ctx, "ui.context.choose", json!({"id":"select.all"}))["ok"], false);
+        assert_eq!(call(&mut app, &ctx, "ui.context.choose", json!({"id":"view.twoHundredPercent"}))["ok"], true);
+        assert_eq!(app.ui.views[0].zoom, 2.0);
+        assert!(app.ui.canvas_tool_menu.is_none());
     }
 
     #[test]
@@ -1338,6 +1806,18 @@ mod tests {
         assert_eq!(app.ui.tool_options.eyedropper_size, 1);
     }
 
+    /// #1046: the Color Sampler tool is selectable over the control channel and reported as active.
+    #[test]
+    fn ui_set_selects_the_color_sampler_tool() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"tool": "colorSampler"}))["ok"], true);
+        assert_eq!(app.ui.tool, Tool::ColorSampler);
+        assert_eq!(call(&mut app, &ctx, "ui.inspect", json!({}))["result"]["tool"], "ColorSampler");
+        // The `I` key group cycles through the eyedropper tools, so the sampler is on the same key.
+        assert_eq!(Tool::ColorSampler.key(), 'I');
+    }
+
     /// #1919: the Crop tool's overlay menu over the control channel, reported by `ui.inspect`.
     #[test]
     fn ui_set_drives_the_crop_overlay_options() {
@@ -1402,18 +1882,25 @@ mod tests {
     }
 
     #[test]
-    fn ui_set_opens_the_brush_preset_picker_and_sets_its_view() {
+    fn ui_set_opens_the_brush_preset_picker_and_sets_its_cards() {
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
         let ctx = egui::Context::default();
-        assert_eq!(app.ui.brush_picker_list.view, crate::brush_panel::BrushesView::Grid, "tip thumbnails by default");
-        let r = call(&mut app, &ctx, "ui.set", json!({"tool": "brush", "brushPicker": [120, 80], "brushPickerView": "list"}));
+        let list = &app.ui.brush_picker_list;
+        assert!(list.show_name && list.show_stroke && list.show_tip, "every card part is on by default");
+        let r = call(&mut app, &ctx, "ui.set", json!({"tool": "brush", "brushPicker": [120, 80], "brushPickerStroke": false}));
         assert_eq!(r["ok"], true, "{r}");
         assert_eq!(app.ui.brush_picker, Some([120.0, 80.0]));
-        assert_eq!(app.ui.brush_picker_list.view, crate::brush_panel::BrushesView::List);
-        for bad in [json!({"brushPicker": [1]}), json!({"brushPicker": "here"}), json!({"brushPickerView": "tiles"})] {
+        assert!(!app.ui.brush_picker_list.show_stroke);
+        for bad in [
+            json!({"brushPicker": [1]}),
+            json!({"brushPicker": "here"}),
+            json!({"brushPickerStroke": "nope"}),
+            json!({"brushPickerName": false, "brushPickerStroke": false, "brushPickerTip": false}),
+        ] {
             assert_eq!(call(&mut app, &ctx, "ui.set", bad.clone())["ok"], false, "{bad}");
         }
         assert_eq!(app.ui.brush_picker, Some([120.0, 80.0]), "a bad value leaves the picker alone");
+        assert!(app.ui.brush_picker_list.show_name, "a rejected call leaves the card parts alone");
         assert_eq!(call(&mut app, &ctx, "ui.set", json!({"brushPicker": null}))["ok"], true);
         assert_eq!(app.ui.brush_picker, None);
     }
@@ -1441,11 +1928,13 @@ mod tests {
         assert_eq!(click["ok"], true, "{click}");
         let open = call(&mut app, &ctx, "ui.inspect", json!({}));
         assert!(open["result"]["brushPicker"]["pos"].is_array(), "{open}");
-        assert_eq!(open["result"]["brushPicker"]["list"]["view"], "grid");
+        assert_eq!(open["result"]["brushPicker"]["list"]["showName"], true);
+        assert_eq!(open["result"]["brushPicker"]["list"]["showStroke"], true);
+        assert_eq!(open["result"]["brushPicker"]["list"]["showTip"], true);
 
-        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"brushPickerView": "list"}))["ok"], true);
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"brushPickerTip": false}))["ok"], true);
         let changed = call(&mut app, &ctx, "ui.inspect", json!({}));
-        assert_eq!(changed["result"]["brushPicker"]["list"]["view"], "list");
+        assert_eq!(changed["result"]["brushPicker"]["list"]["showTip"], false);
 
         assert_eq!(call(&mut app, &ctx, "ui.set", json!({"brushPicker": null}))["ok"], true);
         let closed_again = call(&mut app, &ctx, "ui.inspect", json!({}));
@@ -1485,6 +1974,17 @@ mod tests {
         assert_eq!(serde_json::to_value(&app.ui.panels).unwrap_or_default(), panels_before, "nothing was applied");
         // Non-numeric brushSize keeps the API's historical silent no-op (see the dispatch test).
         assert_eq!(call(&mut app, &ctx, "ui.set", json!({"brushSize": "large"}))["ok"], true);
+    }
+
+    #[test]
+    fn ui_set_theme_keeps_explicit_dock_tab_indices() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        for theme in ["adwaitaDark", "pro"] {
+            let r = call(&mut app, &ctx, "ui.set", json!({"theme": theme, "dockTabs": {"color": 0}}));
+            assert_eq!(r["ok"], true, "{r}");
+            assert_eq!(app.ui.dock_tabs.color, 0, "{theme}: explicit tab index changed");
+        }
     }
 
     #[test]
@@ -1620,6 +2120,41 @@ mod tests {
         assert_eq!(error, "filesystem command denied");
     }
 
+    /// `app.save` takes the Targa bits per pixel (`tgaBits`) and never stops at Targa Options.
+    #[test]
+    fn automation_save_passes_targa_bits_without_asking() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        // The bits each export was asked for, and each path written.
+        let asked: Rc<RefCell<Vec<Option<u8>>>> = Rc::default();
+        let written: Rc<RefCell<Vec<String>>> = Rc::default();
+        let (a, w) = (asked.clone(), written.clone());
+        let services = crate::Services {
+            export: Some(Box::new(move |_d: &photocraft_doc::Document, _p: &str, s: &crate::ExportSettings| {
+                a.borrow_mut().push(s.tga_bits.map(photocraft_io::TgaBits::bits));
+                Ok((b"out".to_vec(), Vec::new()))
+            })),
+            automation_write: Some(Box::new(move |path: &str, _b: &[u8]| {
+                w.borrow_mut().push(path.to_string());
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        let ctx = egui::Context::default();
+        app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+        for params in [json!({"path": "a.tga"}), json!({"path": "b.tga", "tgaBits": 24}), json!({"path": "c.tga", "tgaBits": 32})] {
+            let r = call(&mut app, &ctx, "app.save", params.clone());
+            assert_eq!(r["result"]["path"], params["path"], "{r}");
+            assert!(app.targa_options.is_none(), "automation saves never prompt");
+        }
+        assert_eq!(*asked.borrow(), [None, Some(24), Some(32)]);
+        assert_eq!(*written.borrow(), ["a.tga", "b.tga", "c.tga"]);
+        let r = call(&mut app, &ctx, "app.save", json!({"path": "d.tga", "tgaBits": 16}));
+        assert!(r["error"].as_str().unwrap().contains("tgaBits"), "{r}");
+        assert_eq!(written.borrow().len(), 3, "a bad tgaBits writes nothing");
+    }
+
     #[test]
     fn automation_open_and_save_use_the_roots_and_reply_with_warnings() {
         use photocraft_color::{ColorMode, SampleType};
@@ -1645,7 +2180,7 @@ mod tests {
         let written: Rc<RefCell<Vec<String>>> = Rc::default();
         let w = written.clone();
         let services = crate::Services {
-            import: Some(Box::new(|name: &str, _b: &[u8]| {
+            import: Some(Box::new(|name: &str, _b: &[u8], _depth: usize| {
                 Ok((Document::new(name, Size::new(4, 4), ColorMode::Rgb, SampleType::U8), vec!["Adjustment layer flattened".to_string()]))
             })),
             export: Some(Box::new(|_d: &Document, _p: &str, _s: &crate::ExportSettings| Ok((b"out".to_vec(), vec!["Layers were flattened".to_string()])))),
@@ -1665,6 +2200,9 @@ mod tests {
         let r = call(&mut app, &ctx, "app.save", json!({"path": "out.png"}));
         assert_eq!(r["result"], json!({"path": "out.png", "warnings": ["Layers were flattened"]}), "{r}");
         assert_eq!(*written.borrow(), vec!["out.png".to_string()]);
+        // A flat export is a copy: the document keeps its name and file (#2579).
+        let st = app.session.active().unwrap();
+        assert_eq!((st.doc.name.as_str(), st.path.as_deref()), ("warn.psd", Some("in/warn.psd")));
         // Without `path`, only a layered file is written back, like File › Save (#416).
         call(&mut app, &ctx, "app.open", json!({"path": "in/flat.jpg"}));
         let r = call(&mut app, &ctx, "app.save", json!({}));
@@ -1688,6 +2226,179 @@ mod tests {
         } else {
             Ok(())
         }
+    }
+
+    #[test]
+    fn app_open_opens_a_directory_pcraft_and_falls_back_for_the_zip_form() {
+        use photocraft_doc::Document;
+        use serde_json::json;
+        let services = crate::Services {
+            automation_open_pcraft: Some(Box::new(|path: &str| {
+                if path == "native.pcraft" {
+                    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                    let doc = Document::new("Native", photocraft_doc::Size::new(16, 12), photocraft_doc::ColorMode::Rgb, photocraft_doc::SampleType::U8);
+                    Ok(Some((name, doc)))
+                } else if path == "zipped.pcraft" {
+                    Ok(None) // a regular file: the bytes path reads the zip form
+                } else {
+                    Err(format!("corrupt bundle: {path}"))
+                }
+            })),
+            import: Some(Box::new(|name: &str, _b: &[u8], _depth: usize| {
+                Ok((Document::new(name, photocraft_doc::Size::new(4, 4), photocraft_doc::ColorMode::Rgb, photocraft_doc::SampleType::U8), Vec::new()))
+            })),
+            automation_read: Some(Box::new(|path: &str| {
+                if path == "zipped.pcraft" {
+                    Ok((path.rsplit('/').next().unwrap_or(path).to_string(), b"zip-bytes".to_vec()))
+                } else {
+                    Err(format!("no such path: {path}"))
+                }
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        let ctx = egui::Context::default();
+
+        let r = call(&mut app, &ctx, "app.open", json!({"path": "native.pcraft"}));
+        assert_eq!(r["result"], json!({"path": "native.pcraft", "name": "native.pcraft", "warnings": []}), "{r}");
+        assert_eq!(app.session.active().unwrap().doc.name, "Native");
+        assert_eq!(app.ui.recent_files, vec!["native.pcraft".to_string()], "the open is recorded in recent files");
+        assert_eq!(app.session.active().unwrap().path, None, "no save-back target: the automation writer replaces files, never directories");
+        let r = call(&mut app, &ctx, "app.save", json!({}));
+        assert!(r["error"].as_str().unwrap().contains("pass `path`"), "an in-place save is refused up front: {r}");
+
+        // The single-file form takes the bytes path through the same `.pcraft` extension.
+        let r = call(&mut app, &ctx, "app.open", json!({"path": "zipped.pcraft"}));
+        assert_eq!(r["result"]["name"], "zipped.pcraft", "{r}");
+        assert_eq!(app.session.active().unwrap().doc.name, "zipped.pcraft", "the import served the zip form");
+
+        // A real opener error propagates instead of being masked by the fallback.
+        let r = call(&mut app, &ctx, "app.open", json!({"path": "gone.pcraft"}));
+        assert!(r["error"].as_str().unwrap().contains("corrupt bundle"), "{r}");
+    }
+
+    #[test]
+    fn app_save_runs_as_a_background_job_and_the_final_reply_carries_the_path() {
+        use photocraft_engine::automate_cmds::ScriptBinding;
+        use serde_json::json;
+        let saved: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let record = saved.clone();
+        let services = crate::Services {
+            automation_save: Some(std::sync::Arc::new(move |_doc, path: &str, _settings, _ctl| {
+                record.lock().unwrap().push(path.to_string());
+                Ok(vec!["Layers were flattened".to_string()])
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        app.background_jobs = true;
+        app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+        // A "Save Document" binding that would leave a trace: automation saves never fire it.
+        app.session.edit_prefs(|prefs| {
+            prefs.script_events.enabled = true;
+            prefs.script_events.bindings = vec![ScriptBinding {
+                event: "saveDocument".into(),
+                script: None,
+                steps: Some(json!([["layer.new.layer", {"name": "From the binding"}]])),
+                name: "Binding".into(),
+            }];
+        });
+        let ctx = egui::Context::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app = app.with_control(rx);
+        let mut app = app;
+
+        let (mut req, reply) = ControlRequest::new("app.save", json!({"path": "out.psd"}));
+        req.deadline = None;
+        tx.send(req).unwrap();
+        app.drain_control(&ctx);
+        // Started in the background: no reply yet, the job is on the document.
+        assert!(reply.try_recv().is_err(), "the reply waits for the save job");
+        assert!(app.saving(), "the save runs as a background job");
+        for _ in 0..100 {
+            crate::jobs_ui::tick(&mut app, &ctx);
+            if !app.saving() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!app.saving(), "the save finished");
+        assert_eq!(*saved.lock().unwrap(), vec!["out.psd".to_string()]);
+        assert_eq!(app.session.active().unwrap().path.as_deref(), Some("out.psd"), "the save was recorded");
+        assert_eq!(app.session.active().unwrap().doc.layer_count(), 1, "the saveDocument binding did not run for an automation save");
+        let r = reply.recv().unwrap();
+        assert_eq!(r["result"], json!({"path": "out.psd", "warnings": ["Layers were flattened"]}), "{r}");
+
+        // An interactive save (File › Save's worker) still fires the binding.
+        let save = std::sync::Arc::new(|_doc: &photocraft_doc::Document, path: &str, _settings: &crate::ExportSettings, _ctl: &crate::jobs_ui::SaveCtl| {
+            let _ = path;
+            Ok(Vec::new())
+        }) as crate::SaveFileFn;
+        crate::jobs_ui::start_save(&mut app, "user.psd".into(), crate::ExportSettings::default(), false, save, false).unwrap();
+        for _ in 0..100 {
+            crate::jobs_ui::tick(&mut app, &ctx);
+            if !app.saving() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!app.saving(), "the interactive save finished");
+        assert_eq!(app.session.active().unwrap().doc.layer_count(), 2, "the binding runs for an interactive save");
+    }
+
+    #[test]
+    fn ui_inspect_replies_while_a_save_job_encodes() {
+        // #2488: the control channel must keep answering while a large save runs.
+        use serde_json::json;
+        let gate = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let wait_for_gate = gate.clone();
+        let saved: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let record = saved.clone();
+        let services = crate::Services {
+            automation_save: Some(std::sync::Arc::new(move |_doc, path: &str, _settings, ctl| {
+                while !wait_for_gate.load(std::sync::atomic::Ordering::Acquire) {
+                    ctl.check()?;
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                record.lock().unwrap().push(path.to_string());
+                Ok(Vec::new())
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        app.background_jobs = true;
+        app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+        let ctx = egui::Context::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app = app.with_control(rx);
+        let mut app = app;
+
+        let (mut save_req, save_reply) = ControlRequest::new("app.save", json!({"path": "out.png", "wait": false}));
+        save_req.deadline = None;
+        tx.send(save_req).unwrap();
+        let (mut inspect_req, inspect_reply) = ControlRequest::new("ui.inspect", json!({}));
+        inspect_req.deadline = None;
+        tx.send(inspect_req).unwrap();
+        app.drain_control(&ctx);
+
+        let pending = save_reply.recv_timeout(std::time::Duration::from_secs(5)).expect("the unwaited save replies at once");
+        assert_eq!(pending["result"]["pending"], true, "{pending}");
+        assert_eq!(pending["result"]["path"], "out.png", "{pending}");
+        assert!(pending["result"]["job"].is_u64(), "the caller can poll or wait: {pending}");
+        // While the save is still encoding, the channel answers other requests.
+        assert!(saved.lock().unwrap().is_empty(), "the save is still encoding");
+        let inspected = inspect_reply.recv_timeout(std::time::Duration::from_secs(5)).expect("ui.inspect is not blocked by the save");
+        assert_eq!(inspected["ok"], true, "{inspected}");
+
+        gate.store(true, std::sync::atomic::Ordering::Release);
+        for _ in 0..500 {
+            crate::jobs_ui::tick(&mut app, &ctx);
+            if !app.saving() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(*saved.lock().unwrap(), vec!["out.png".to_string()], "the save completed after the gate opened");
     }
 
     fn deny_smart_object_paths(id: &str, params: &Value) -> photocraft_engine::Result<()> {
@@ -1801,8 +2512,11 @@ mod tests {
             let r = call(&mut app, &ctx, "engine.execute", json!({"command": command, "params": {"layer": smart.0}}));
             assert_eq!(r["ok"], false, "{r}");
             assert!(r["error"].as_str().unwrap().contains("ambient smart-object path denied"), "{r}");
-            app.session.actions.list =
-                vec![photocraft_engine::actions_cmds::Action { name: "Linked contents".into(), steps: vec![(command.into(), json!({"layer": smart.0}))] }];
+            app.session.actions.list = vec![photocraft_engine::actions_cmds::Action {
+                name: "Linked contents".into(),
+                steps: vec![(command.into(), json!({"layer": smart.0}))],
+                disabled: Default::default(),
+            }];
             let r = call(&mut app, &ctx, "engine.execute", json!({"command": "actions.play", "params": {"action": "Linked contents"}}));
             assert_eq!(r["ok"], true, "{r}");
             assert_eq!(r["result"]["ran"], 0, "{r}");
@@ -1831,6 +2545,7 @@ mod tests {
         app.session.actions.list.push(photocraft_engine::actions_cmds::Action {
             name: "Open".into(),
             steps: vec![("file.open".into(), json!({"path": "/etc/passwd"})), ("layer.new.layer".into(), json!({}))],
+            disabled: Default::default(),
         });
         let ctx = egui::Context::default();
         let r = call(&mut app, &ctx, "engine.execute", json!({"command": "actions.play", "params": {"action": "Open"}}));
@@ -1849,6 +2564,7 @@ mod tests {
         app.session.actions.list.push(photocraft_engine::actions_cmds::Action {
             name: "Open".into(),
             steps: vec![("file.open".into(), json!({"path": "/etc/passwd"})), ("layer.new.layer".into(), json!({}))],
+            disabled: Default::default(),
         });
         app.automation_input = true;
         let r = app.run("actions.play", json!({"action": "Open"})).unwrap();
@@ -1886,5 +2602,206 @@ mod tests {
             assert_eq!(app.synthetic.len(), events);
             app.synthetic.clear();
         }
+    }
+
+    /// #2449: the error of a rejected synthetic input call, after checking it changed nothing.
+    fn rejected(app: &mut PhotocraftApp, ctx: &egui::Context, method: &str, params: Value, names: &str) -> String {
+        let (tool, revision) = (app.ui.tool, app.session.active().map(|d| d.revision));
+        let r = call(app, ctx, method, params.clone());
+        assert_eq!(r["ok"], false, "{method} {params}: {r}");
+        let error = r["error"].as_str().unwrap().to_string();
+        assert!(error.contains(names), "{method} {params}: `{error}` should name `{names}`");
+        assert!(app.synthetic.is_empty(), "{method} {params}: a rejected call queues nothing");
+        assert_eq!(app.ui.tool, tool, "{method} {params}: a rejected call keeps the tool");
+        assert_eq!(app.session.active().map(|d| d.revision), revision, "{method} {params}: a rejected call edits nothing");
+        error
+    }
+
+    #[test]
+    fn ui_pointer_rejects_bad_params_before_acting() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        app.run("file.new", json!({"width": 64, "height": 64})).unwrap();
+        let stroke = json!([{"kind": "down", "x": 5, "y": 5}, {"kind": "move", "x": 30, "y": 30}, {"kind": "up", "x": 30, "y": 30}]);
+        // The same unknown tool is the same error as `ui.set`'s.
+        let set = call(&mut app, &ctx, "ui.set", json!({"tool": "noSuchTool"}));
+        let error = rejected(&mut app, &ctx, "ui.pointer", json!({"tool": "noSuchTool", "events": stroke}), "noSuchTool");
+        assert_eq!(json!(error), set["error"]);
+        let event = |extra: Value| {
+            let mut e = json!({"kind": "down", "x": 5, "y": 5});
+            e.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            // A valid stroke first: a later bad event must not let the earlier ones run.
+            json!({"tool": "move", "events": [stroke[0], stroke[1], stroke[2], e]})
+        };
+        let cases = [
+            // Unknown fields, top-level, under `modifiers` and in an event.
+            (json!({"tol": "move", "events": stroke}), "tol"),
+            (json!({"modifiers": {"shfit": true}, "events": stroke}), "shfit"),
+            (event(json!({"presure": 0.5})), "presure"),
+            // Wrong JSON types.
+            (json!({"tool": 3, "events": stroke}), "tool"),
+            (json!({"events": "down"}), "events"),
+            (json!({}), "events"),
+            (json!({"events": [5]}), "events[0]"),
+            (event(json!({"x": "abc"})), "x"),
+            (event(json!({"y": true})), "y"),
+            (event(json!({"kind": 1})), "kind"),
+            (json!({"shift": "yes", "events": stroke}), "shift"),
+            (json!({"modifiers": {"alt": 1}, "events": stroke}), "alt"),
+            (json!({"modifiers": true, "events": stroke}), "modifiers"),
+            (json!({"button": 2, "events": stroke}), "button"),
+            (json!([1, 2]), "params"),
+            // Values outside the accepted set.
+            (json!({"button": "ritgh", "events": stroke}), "button"),
+            (event(json!({"kind": "dwon"})), "kind"),
+            // Numbers outside their documented range.
+            (event(json!({"pressure": 99})), "pressure"),
+            (event(json!({"pressure": -0.1})), "pressure"),
+            (event(json!({"tiltX": 91})), "tiltX"),
+            (event(json!({"tiltY": -90.5})), "tiltY"),
+            (event(json!({"rotation": 361})), "rotation"),
+            (event(json!({"rotation": -1})), "rotation"),
+        ];
+        for (params, names) in cases {
+            rejected(&mut app, &ctx, "ui.pointer", params, names);
+        }
+        let error = rejected(&mut app, &ctx, "ui.pointer", json!({"button": "ritgh", "events": stroke}), "button");
+        assert!(error.contains("right") && error.contains("secondary"), "the error lists the buttons: {error}");
+        let error = rejected(&mut app, &ctx, "ui.pointer", event(json!({"kind": "dwon"})), "kind");
+        assert!(error.contains("down") && error.contains("move") && error.contains("up"), "the error lists the kinds: {error}");
+
+        // Valid calls still run: an omitted kind is a move, null is an omitted field, and the
+        // documented range ends are accepted.
+        let before = app.session.active().unwrap().revision;
+        let pen = json!({"kind": "down", "x": 5, "y": 5, "pressure": 0, "tiltX": -90, "tiltY": 90, "rotation": 360});
+        let valid = json!({"tool": "brush", "button": null, "modifiers": {"shift": false}, "events": [pen, {"x": 20, "y": 20, "pressure": 1}, {"kind": "up", "x": 20, "y": 20}]});
+        let r = call(&mut app, &ctx, "ui.pointer", valid);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(app.ui.tool, Tool::Brush);
+        assert!(app.session.active().unwrap().revision > before, "the stroke painted");
+        for button in ["left", "middle", "right", "secondary"] {
+            let r = call(
+                &mut app,
+                &ctx,
+                "ui.pointer",
+                json!({"tool": "move", "button": button, "events": [{"kind": "down", "x": 5, "y": 5}, {"kind": "up", "x": 5, "y": 5}]}),
+            );
+            assert_eq!(r["ok"], true, "{button}: {r}");
+        }
+        assert!(app.ui.layer_menu.is_some(), "a right click with Move still opens the layer menu");
+    }
+
+    #[test]
+    fn ui_click_and_move_reject_bad_params_before_queueing_input() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let cases = [
+            ("ui.click", json!({"x": 10, "y": 10, "buton": "right"}), "buton"),
+            ("ui.move", json!({"x": 10, "y": 10, "count": 2}), "count"),
+            ("ui.click", json!({"x": "abc", "y": 10}), "x"),
+            ("ui.move", json!({"x": 10, "y": [10]}), "y"),
+            ("ui.click", json!({"x": 10, "y": 10, "count": "dos"}), "count"),
+            ("ui.click", json!({"x": 10, "y": 10, "count": 1.5}), "count"),
+            ("ui.click", json!({"x": 10, "y": 10, "count": -1}), "count"),
+            ("ui.click", json!({"x": 10, "y": 10, "button": true}), "button"),
+            ("ui.click", json!({"x": 10, "y": 10, "button": "ritgh"}), "button"),
+            ("ui.click", json!({"x": 10, "y": 10, "count": MAX_CLICKS + 1}), "count"),
+            ("ui.click", json!("click"), "params"),
+        ];
+        for (method, params, names) in cases {
+            rejected(&mut app, &ctx, method, params, names);
+        }
+        let error = rejected(&mut app, &ctx, "ui.click", json!({"x": 10, "y": 10, "button": "ritgh"}), "button");
+        assert!(error.contains("left") && error.contains("right") && error.contains("middle"), "the error lists the buttons: {error}");
+        // Valid calls queue what they did before; an omitted button is a left click.
+        for (method, params, button, events) in [
+            ("ui.click", json!({"x": 10, "y": 10}), egui::PointerButton::Primary, 3),
+            ("ui.click", json!({"x": 10, "y": 10, "button": "right", "count": 2}), egui::PointerButton::Secondary, 5),
+            ("ui.click", json!({"x": 10, "y": 10, "button": "secondary"}), egui::PointerButton::Secondary, 3),
+            ("ui.click", json!({"x": 10.5, "y": 10, "button": "middle", "count": null}), egui::PointerButton::Middle, 3),
+            ("ui.move", json!({"x": 10, "y": 10}), egui::PointerButton::Primary, 1),
+        ] {
+            let (req, _rx) = ControlRequest::new(method, params.clone());
+            assert!(matches!(handle(&mut app, &ctx, &req), Outcome::AfterInput), "{method} {params}");
+            assert_eq!(app.synthetic.len(), events, "{method} {params}");
+            if let Some(egui::Event::PointerButton { button: queued, .. }) = app.synthetic.get(1) {
+                assert_eq!(*queued, button, "{method} {params}");
+            }
+            app.synthetic.clear();
+        }
+    }
+
+    #[test]
+    fn ui_key_rejects_bad_params_before_queueing_input() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let cases = [
+            (json!({"key": "N", "ctl": true}), "ctl"),
+            (json!({"key": "N", "modifiers": {"space": true}}), "space"),
+            (json!({"key": "N", "ctrl": "yes"}), "ctrl"),
+            (json!({"key": "N", "modifiers": {"shift": 1}}), "shift"),
+            (json!({"key": "N", "modifiers": "ctrl"}), "modifiers"),
+            (json!({"key": 5}), "key"),
+            (json!({}), "key"),
+            (json!({"key": "NoSuchKey"}), "NoSuchKey"),
+        ];
+        for (params, names) in cases {
+            rejected(&mut app, &ctx, "ui.key", params, names);
+        }
+        for params in [json!({"key": "N", "ctrl": true}), json!({"key": "N", "shift": false, "modifiers": {"ctrl": true}})] {
+            let (req, _rx) = ControlRequest::new("ui.key", params.clone());
+            assert!(matches!(handle(&mut app, &ctx, &req), Outcome::AfterInput), "{params}");
+            assert!(matches!(app.synthetic.first(), Some(egui::Event::Key { key: egui::Key::N, modifiers, .. }) if modifiers.ctrl), "{params}");
+            app.synthetic.clear();
+        }
+    }
+
+    #[test]
+    fn ui_screenshot_rejects_bad_params_before_capturing() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        for (params, names) in [(json!({"focus": "yes"}), "focus"), (json!({"path": 5}), "path"), (json!({"pth": "shot.png"}), "pth")] {
+            rejected(&mut app, &ctx, "ui.screenshot", params, names);
+        }
+        for (params, path) in [(json!({}), None), (Value::Null, None), (json!({"path": "shot.png", "focus": false}), Some("shot.png"))] {
+            let (req, _rx) = ControlRequest::new("ui.screenshot", params.clone());
+            let Outcome::Screenshot { path: queued, .. } = handle(&mut app, &ctx, &req) else { panic!("{params}: expected a capture") };
+            assert_eq!(queued.as_deref(), path, "{params}");
+        }
+    }
+
+    /// A key event's modifiers, as `ui.key` queued them.
+    fn key_modifiers(app: &mut PhotocraftApp, ctx: &egui::Context, params: Value) -> egui::Modifiers {
+        app.synthetic.clear();
+        let (req, _rx) = ControlRequest::new("ui.key", params.clone());
+        assert!(matches!(handle(app, ctx, &req), Outcome::AfterInput), "{params}");
+        match app.synthetic.first() {
+            Some(egui::Event::Key { modifiers, .. }) => *modifiers,
+            other => panic!("{params}: expected a key event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ui_key_ctrl_reaches_shortcuts_like_a_real_ctrl_press() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let ctrl = key_modifiers(&mut app, &ctx, json!({"key":"N","ctrl":true}));
+        let command = key_modifiers(&mut app, &ctx, json!({"key":"N","command":true}));
+        let grouped = key_modifiers(&mut app, &ctx, json!({"key":"N","modifiers":{"ctrl":true}}));
+        assert_eq!(ctrl, grouped, "a grouped flag must match the top-level one");
+        if cfg!(target_os = "macos") {
+            // Two different keys: Control is not ⌘, and only ⌘ matches a shortcut.
+            assert!(ctrl.ctrl && !ctrl.command && !ctrl.mac_cmd, "{ctrl:?}");
+            assert!(command.command && command.mac_cmd && !command.ctrl, "{command:?}");
+        } else {
+            // One key under two names, and shortcuts are matched on `command`, so asking for
+            // either must reach them: Ctrl+N has to open New Document, not do nothing.
+            assert_eq!(ctrl, command, "ctrl and command are the same key off the Mac");
+            assert!(ctrl.command && ctrl.ctrl && !ctrl.mac_cmd, "{ctrl:?}");
+        }
+        let plain = key_modifiers(&mut app, &ctx, json!({"key":"N"}));
+        assert_eq!(plain, egui::Modifiers::default(), "{plain:?}");
+        let shift_alt = key_modifiers(&mut app, &ctx, json!({"key":"N","shift":true,"alt":true}));
+        assert!(shift_alt.shift && shift_alt.alt && !shift_alt.command && !shift_alt.ctrl, "{shift_alt:?}");
     }
 }

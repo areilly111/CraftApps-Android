@@ -93,6 +93,30 @@ fn png_bomb_header_rejected_before_alloc() {
     assert!(is_limit(decode(&b)));
 }
 
+#[test]
+fn png_header_at_the_default_limit_needs_a_plausible_file_size() {
+    // 32768 x 32768 x RGBA16 is exactly the default max_alloc: it passes the dimension limits,
+    // but a ~100 byte file cannot hold it (zlib tops out near 1032:1), so it is refused before
+    // the 8 GiB output buffer is allocated.
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&32768u32.to_be_bytes());
+    ihdr.extend_from_slice(&32768u32.to_be_bytes());
+    ihdr.extend_from_slice(&[16, 6, 0, 0, 0]);
+    let mut b = b"\x89PNG\r\n\x1a\n".to_vec();
+    b.extend(png_chunk(b"IHDR", &ihdr));
+    b.extend(png_chunk(b"IDAT", &[0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    b.extend(png_chunk(b"IEND", &[]));
+    assert!(is_limit(decode(&b)));
+}
+
+#[test]
+fn png_highly_compressible_image_still_decodes() {
+    let img = Image::from_u8(3000, 3000, ChannelLayout::Rgba, vec![255u8; 3000 * 3000 * 4]).unwrap();
+    let b = encode(&img, Format::Png, &EncodeOptions::default()).unwrap();
+    assert!(b.len() < 100_000, "{}", b.len());
+    assert_eq!(decode(&b).unwrap().width(), 3000);
+}
+
 const PNG_TEXT_BUDGET: usize = 64 << 10;
 
 fn png_text_decode(bytes: &[u8], max_alloc: usize) -> Result<Image, CodecError> {

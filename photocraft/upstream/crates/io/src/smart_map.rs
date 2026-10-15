@@ -18,6 +18,9 @@
 //! to their command id and dialog parameters; any other filter becomes a
 //! [`UNSUPPORTED_FILTER`] entry that keeps its descriptor verbatim (hex in `params.psd`), so it is
 //! listed, can be hidden, reordered or deleted, and is written back unchanged.
+//!
+//! Camera Raw and Displace keep their whole item as a template next to the editable settings
+//! (Displace's carries the embedded displacement map, see `displace_map.rs`).
 
 use photocraft_color::{BlendMode, ColorMode, PixelFormat, SampleType};
 use photocraft_doc::{LayerMask, SmartFilter};
@@ -34,6 +37,10 @@ use crate::blocks::{enum_of, get_desc, num};
 
 #[path = "camera_raw_map.rs"]
 mod camera_raw;
+#[path = "displace_map.rs"]
+mod displace;
+
+pub use displace::embedded_map as displace_embedded_map;
 
 /// Command id of a Photoshop smart filter PhotoCraft does not implement. Its params hold the
 /// filter's name, Photoshop filter id and descriptor (`psd`, hex); it renders as a pass-through.
@@ -231,6 +238,13 @@ fn curves_params(f: &Descriptor) -> Option<J> {
     let mut out = Map::new();
     for a in adjustment_list(f)? {
         let key = channel_key(a)?;
+        // A pencil-drawn curve is a mapping of 256 output levels (`Mpng`) instead of points.
+        if let Some(Value::List(map)) = a.get("Mpng") {
+            let map: Option<Vec<J>> = map.iter().map(|v| int_value(v).map(|o| json!(o.clamp(0, 255)))).collect();
+            out.insert(if key.is_empty() { "points".into() } else { key.into() }, J::Array(map.filter(|m| m.len() == 256)?));
+            out.insert("pencil".into(), J::Bool(true));
+            continue;
+        }
         let Some(Value::List(pts)) = a.get("Crv ") else { return None };
         let pts: Option<Vec<J>> = pts
             .iter()
@@ -305,10 +319,10 @@ pub fn filter_from_item(item: &Descriptor) -> SmartFilter {
     let class = fltr.map(|f| String::from_utf8_lossy(f.class_id.as_bytes()).into_owned());
     let filter_id = int(item, "filterID").unwrap_or(0);
     let class = class.or_else(|| KNOWN.iter().find(|k| k.filter_id == filter_id).map(|k| k.class.to_string()));
-    let known = if class.as_deref() == Some(camera_raw::CLASS) {
-        camera_raw::import_params(item).map(|p| (camera_raw::COMMAND, p))
-    } else {
-        class.as_deref().and_then(|c| known_params(c, fltr))
+    let known = match class.as_deref() {
+        Some(camera_raw::CLASS) => camera_raw::import_params(item).map(|p| (camera_raw::COMMAND, p)),
+        Some(displace::CLASS) => displace::import_params(item).map(|p| (displace::COMMAND, p)),
+        c => c.and_then(|c| known_params(c, fltr)),
     };
     let (command, params) = match known {
         Some((c, p)) => (c.to_string(), p),
@@ -370,7 +384,7 @@ fn channel_ref(code: &[u8; 4]) -> Value {
 fn adjustments(p: &J, curves: bool) -> Result<Value, String> {
     let obj = p.as_object().ok_or("parameters are not an object")?;
     let allowed: &[&str] =
-        if curves { &["points", "red", "green", "blue"] } else { &["inBlack", "inWhite", "gamma", "outBlack", "outWhite", "red", "green", "blue"] };
+        if curves { &["points", "red", "green", "blue", "pencil"] } else { &["inBlack", "inWhite", "gamma", "outBlack", "outWhite", "red", "green", "blue"] };
     if let Some(k) = obj.keys().find(|k| !is_meta(k) && !allowed.contains(&k.as_str())) {
         return Err(format!("setting `{k}` has no PSD equivalent"));
     }
@@ -382,6 +396,13 @@ fn adjustments(p: &J, curves: bool) -> Result<Value, String> {
         if curves {
             let src = if key.is_empty() { p.get("points") } else { Some(o) };
             let Some(pts) = src.and_then(J::as_array) else { continue };
+            if p.get("pencil").and_then(J::as_bool) == Some(true) {
+                let map: Option<Vec<Value>> =
+                    pts.iter().map(|o| o.as_f64().filter(|o| o.is_finite()).map(|o| Value::Integer(o.round().clamp(0.0, 255.0) as i32))).collect();
+                a = a.with("Mpng", Value::List(map.filter(|m| m.len() == 256).ok_or("a pencil-drawn curve is not 256 output levels")?));
+                list.push(Value::Descriptor(a));
+                continue;
+            }
             let pts: Option<Vec<Value>> = pts
                 .iter()
                 .map(|q| {
@@ -442,6 +463,12 @@ fn fltr_for(k: &Known, p: &J) -> Result<Option<Descriptor>, String> {
 pub fn item_for_filter(f: &SmartFilter) -> Result<Descriptor, String> {
     if f.command == camera_raw::COMMAND {
         let mut d = camera_raw::export_item(&f.params)?;
+        set(&mut d, "blendOptions", blend_options(f));
+        set(&mut d, "enab", Value::Boolean(f.visible));
+        return Ok(d);
+    }
+    if f.command == displace::COMMAND {
+        let mut d = displace::export_item(&f.params)?;
         set(&mut d, "blendOptions", blend_options(f));
         set(&mut d, "enab", Value::Boolean(f.visible));
         return Ok(d);
@@ -512,7 +539,9 @@ pub struct PlacedSpec<'a> {
     pub filter_fx: Option<Descriptor>,
 }
 
-/// Where the source corners land (top-left, top-right, bottom-right, bottom-left), as x, y pairs.
+/// Where the frame corners land (top-left, top-right, bottom-right, bottom-left), as x, y pairs.
+/// The frame is [`crate::blocks::placed_frame`] for an affine placement (the inverse of
+/// `parse_smart`), the source rect for a projective one (as `parse_smart_perspective` reads it).
 fn quad_points(s: &PlacedSpec<'_>) -> [f64; 8] {
     let (w, h) = s.size;
     let [a, b, c, d, e, f] = s.transform.m;
@@ -520,8 +549,9 @@ fn quad_points(s: &PlacedSpec<'_>) -> [f64; 8] {
         Some(p) => photocraft_algo::transform::Homography(*p).apply(x, y),
         None => (a * x + c * y + e, b * x + d * y + f),
     };
+    let [x0, y0, x1, y1] = if s.perspective.is_some() { [0.0, 0.0, w, h] } else { crate::blocks::placed_frame(s.warp, w, h) };
     let mut out = [0.0; 8];
-    for (i, (x, y)) in [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].into_iter().enumerate() {
+    for (i, (x, y)) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].into_iter().enumerate() {
         (out[2 * i], out[2 * i + 1]) = map(x, y);
     }
     out
@@ -597,13 +627,16 @@ fn pad4(mut v: Vec<u8>) -> Vec<u8> {
 }
 
 /// `SoLd` block data. With `template` (the imported descriptor) every key it has is kept and only
-/// the transform (when it moved), warp and filter stack are rewritten; otherwise a fresh
-/// descriptor in Photoshop's key order.
+/// the placed id (for a duplicate), transform (when it moved), warp and filter stack are rewritten;
+/// otherwise a fresh descriptor in Photoshop's key order.
 pub fn sold_bytes(template: Option<&Descriptor>, s: &PlacedSpec<'_>, warnings: &mut Vec<String>) -> Vec<u8> {
     let warp = warp_desc(s.warp, s.size, warnings);
     let d = match template {
         Some(t) => {
             let mut d = t.clone();
+            if text_of(t, "placed").as_deref() != Some(s.placed) {
+                set(&mut d, "placed", Value::Text(UnicodeString::new_nul(s.placed)));
+            }
             if quad_moved(t, s) {
                 set(&mut d, "Trnf", quad(s));
                 set(&mut d, "nonAffineTransform", quad(s));
@@ -789,8 +822,7 @@ fn filter_mask_item(placed: &str, mask: Option<&LayerMask>, bounds: GeomRect, sa
     FilterEffectsItem { id: placed.to_string(), version: 1, rect, depth: u32::from(depth), max_channels: 24, slots: vec![None; 26], mask: Some((rect, plane)) }
 }
 
-/// A uuid-shaped id (8-4-4-4-12 hex digits) derived from `seed`: equal contents get equal ids, so
-/// identical smart objects share one embedded file, as Photoshop's instances do.
+/// A deterministic uuid-shaped id (8-4-4-4-12 hex digits) derived from `seed`.
 pub fn uuid_from(seed: &[u8]) -> String {
     let h = blake3::hash(seed);
     let x = to_hex(&h.as_bytes()[..16]);
@@ -800,6 +832,28 @@ pub fn uuid_from(seed: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn count(hay: &[u8], needle: &[u8]) -> usize {
+        hay.windows(needle.len()).filter(|w| *w == needle).count()
+    }
+
+    /// A freshly built placed layer writes `warp` (key and class) as a length-4 string, as
+    /// Photoshop does; the code form is a different key to Photoshop.
+    #[test]
+    fn fresh_placed_warp_is_a_string_id() {
+        let spec =
+            PlacedSpec { idnt: "id", placed: "id", transform: Affine::IDENTITY, perspective: None, size: (10.0, 10.0), dpi: 72.0, warp: None, filter_fx: None };
+        let mut warnings = Vec::new();
+        let sold = sold_bytes(None, &spec, &mut warnings);
+        let plld = plld_bytes(&spec, &mut warnings);
+        // `SoLd`: the `warp` key and the warp descriptor's class; `PlLd`: the descriptor's class.
+        for (bytes, n) in [(&sold, 2), (&plld, 1)] {
+            assert_eq!(count(bytes, b"\0\0\0\x04warp"), n);
+            assert_eq!(count(bytes, b"\0\0\0\0warp"), 0);
+        }
+        let d = sold_descriptor(&sold).unwrap();
+        assert!(matches!(d.get("warp"), Some(Value::Descriptor(w)) if w.class_id == Id::Str(b"warp".to_vec())));
+    }
 
     fn sf(command: &str, params: J) -> SmartFilter {
         SmartFilter { command: command.into(), params, blend: BlendMode::Normal, opacity: 1.0, visible: true }
@@ -822,6 +876,8 @@ mod tests {
             sf("image.adjustments.levels", json!({"inBlack": 20, "inWhite": 220, "gamma": 1.4, "red": {"inBlack": 0, "inWhite": 255, "gamma": 0.8}})),
             sf("image.adjustments.curves", json!({"points": [[0.0, 0.0], [64.0, 40.0], [255.0, 255.0]], "blue": [[0.0, 20.0], [255.0, 235.0]]})),
             sf("image.adjustments.shadowsHighlights", json!({})),
+            // A pencil-drawn curve: 256 output levels (`Mpng`).
+            sf("image.adjustments.curves", json!({"pencil": true, "points": (0..256).rev().collect::<Vec<i32>>()})),
         ];
         for mut f in filters {
             f.blend = BlendMode::Overlay;
@@ -1038,6 +1094,28 @@ mod tests {
             assert_eq!(crate::blocks::parse_placed_warp(b"SoLd", &sold), back);
             assert_eq!(warnings.len(), usize::from(w.is_some() && back.is_none()));
         }
+    }
+
+    /// Export writes `Trnf` as the image of the custom warp's control-point box, the inverse of
+    /// import: a spilled mesh comes back with the same transform and the quad Photoshop expects.
+    #[test]
+    fn warp_control_box_quad_round_trips() {
+        use photocraft_geom::warp::BezierMesh;
+        let mut mesh = BezierMesh::identity([0.0, 0.0, 50.0, 25.0], 1, 1);
+        mesh.points[0] = [-10.0, -5.0];
+        mesh.points[15] = [60.0, 25.0];
+        let mut warp = Warp::preset(WarpStyle::Custom, 0.0, [0.0, 0.0, 50.0, 25.0]);
+        warp.mesh = Some(mesh);
+        let transform = Affine { m: [2.0, 0.0, 0.0, 2.0, 120.0, 210.0] };
+        let spec = PlacedSpec { idnt: "i", placed: "p", transform, perspective: None, size: (50.0, 25.0), dpi: 72.0, warp: Some(&warp), filter_fx: None };
+        let sold = sold_bytes(None, &spec, &mut Vec::new());
+        let p = parse_sold(&sold).expect("parses");
+        let Some(Value::List(q)) = p.descriptor.get("Trnf") else { panic!("no Trnf") };
+        let q: Vec<f64> = q.iter().filter_map(|v| num(Some(v))).collect();
+        assert_eq!(q, [100.0, 200.0, 240.0, 200.0, 240.0, 260.0, 100.0, 260.0]);
+        assert_eq!(p.transform, transform);
+        // The imported quad reads as unmoved, so the template's `Trnf` is kept as stored.
+        assert!(!quad_moved(&p.descriptor, &spec));
     }
 
     #[test]

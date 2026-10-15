@@ -153,13 +153,44 @@ pub(crate) fn pan_image(app: &mut LightcraftApp, area: Rect, img: Rect, delta: e
     let _ = app.run("view.navigate", json!({"pan": pan}));
 }
 
+/// Net vertical notches (up is positive) of unmodified line/page-unit wheel events: a real mouse wheel, not a trackpad.
+fn wheel_notches(events: &[egui::Event]) -> f32 {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line | egui::MouseWheelUnit::Page, delta, modifiers, .. }
+                if *modifiers == egui::Modifiers::NONE && delta.y.is_finite() =>
+            {
+                Some(delta.y)
+            }
+            _ => None,
+        })
+        .sum()
+}
+
 /// Native pinch (also modifier-wheel zoom) and two-finger scroll, scoped to this image view.
 pub(crate) fn navigate_gesture(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, area: Rect, img: Rect, native: [usize; 2]) -> bool {
     if !resp.hovered() {
         return false;
     }
-    let (factor, delta, anchor) =
+    let (mut factor, mut delta, anchor) =
         ui.input(|i| (i.zoom_delta(), i.translation_delta(), i.multi_touch().map(|t| t.center_pos).or(i.pointer.hover_pos())));
+    // A notched mouse wheel (line/page units, no modifier) zooms around the pointer, through egui's smoothed wheel
+    // delta like Ctrl+wheel (so it glides instead of jumping); trackpads report points and still pan.
+    let wheel_id = egui::Id::new("loupe-wheel-zoom");
+    if ui.input(|i| wheel_notches(&i.events)) != 0.0 {
+        ui.data_mut(|d| d.insert_temp(wheel_id, true));
+    }
+    if ui.data(|d| d.get_temp::<bool>(wheel_id)).unwrap_or(false) {
+        let smooth = ui.input(|i| i.smooth_scroll_delta.y);
+        let speed = ui.ctx().options(|o| o.input_options.scroll_zoom_speed);
+        if smooth == 0.0 {
+            ui.data_mut(|d| d.remove_temp::<bool>(wheel_id));
+        } else {
+            factor *= (speed * smooth).exp();
+            delta = egui::Vec2::ZERO;
+        }
+    }
     if !factor.is_finite() || factor <= 0.0 || !delta.is_finite() || (factor == 1.0 && delta == egui::Vec2::ZERO) {
         return false;
     }
@@ -218,9 +249,17 @@ fn animated_rect(ctx: &egui::Context, anim: &mut bool, target: Rect) -> Rect {
     r
 }
 
+/// Whether an overlay can be rendered on a region tile without changing what the tile means.
+/// Mask overlays are evaluated from the same mask alpha as the full render; the other diagnostic
+/// overlays either need whole-frame context or deliberately replace the loupe.
+pub(crate) fn overlay_supports_window(overlay: lightcraft_pipeline::Overlay) -> bool {
+    matches!(overlay, lightcraft_pipeline::Overlay::None | lightcraft_pipeline::Overlay::Mask { .. })
+}
+
 /// What a window render of the loupe needs to know about the view it belongs to.
 struct WindowCtx {
     id: PhotoId,
+    overlay: lightcraft_pipeline::Overlay,
     /// Long edge of the frame the windows are cut from (`None`: no windows).
     frame_edge: Option<usize>,
     drawn_long: f32,
@@ -286,9 +325,15 @@ fn request_window(app: &mut LightcraftApp, c: &WindowCtx, v: &WindowView) -> Opt
         app.window_refused = Some((c.id, c.look, frame_edge));
         return None;
     };
-    // a drag renders drafts of the window, as it does of the whole frame
+    // a drag renders drafts of the window, as it does of the whole frame. The Before tile stays
+    // plain; the After tile carries the same mask overlay as the whole-frame render.
     let job = if c.interacting { job.draft() } else { job };
-    let look = job.settings.hash64();
+    let overlay = if v.before { lightcraft_pipeline::Overlay::None } else { c.overlay };
+    let job = if v.before { job } else { job.with_hidden_grading(app.ui.grading_hidden_for(c.id)) };
+    let job = job.with_overlay(overlay);
+    // The overlay is part of the tile's identity too, so changing mask view/colour never leaves a
+    // stale region tile on screen while its replacement renders.
+    let look = job.settings.hash64() ^ overlay.key().rotate_left(17);
     let view = crate::region::RegionView { photo: c.id, before: v.before, key: job.key, full: (fw, fh), window: win, settings: look };
     // windows of other photos, looks and zooms of this side can't be drawn any more
     app.region_tiles.retain(|(before, _), t| *before != v.before || t.is_current(c.id, (fw, fh), look, c.interacting));
@@ -397,15 +442,16 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let drawn_long = target_rect.width().max(target_rect.height()) * ppp;
     // the whole frame at about canvas size; the zoomed part of it is a window render (below)
     let look = d.hash64();
-    // (modes that draw another picture over the loupe, or reads too far for one window, have the
-    // whole frame rendered at the size it is drawn, as they did before windows)
+    let overlay = view_overlay(app, &d);
+    // Diagnostic views that need whole-frame context, soft proofing, or reads too far for one
+    // window still render the whole frame at the size it is drawn. A mask overlay is window-safe.
     let sizes = crate::region::ViewSizes {
         drawn_long,
         canvas_long: canvas.width().max(canvas.height()) * ppp,
         native_long,
         texture_side,
         draft_scale: scale,
-        windows: !app.ui.soft_proof && view_overlay(app, &d) == lightcraft_pipeline::Overlay::None,
+        windows: !app.ui.soft_proof && overlay_supports_window(overlay),
     };
     let mut plan = crate::region::plan(&app.ui.settings, sizes);
     if plan.window_edge.is_some_and(|edge| app.window_refused == Some((id, look, edge))) {
@@ -424,7 +470,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let (sw, sh) = if aspect >= 1.0 { (se, (se as f32 / aspect) as usize) } else { ((se as f32 * aspect) as usize, se) };
     if let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
         let job = if interacting { job.draft() } else { job };
-        let job = job.with_overlay(view_overlay(app, &d)).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+        let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+        let job = job.with_hidden_grading(app.ui.grading_hidden_for(id));
         app.renderer.request(Slot::Main, job, 100);
     }
     // hovering a preset or profile: the photo with that look, shown instead of the loupe render
@@ -472,17 +519,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         app.renderer.request(Slot::Before, job, 90);
     }
     // zoomed past what the whole-frame render holds: also render the part on screen, at no more
-    // than 100 % (the GPU magnifies beyond that), for each side that is shown. Not while hovering a
-    // look or showing an overlay (those draw another image), nor where the shown picture isn't the
-    // frame's own (an unsupported raw's embedded JPEG with another crop: window coordinates are
-    // the frame's).
-    let plain_view = hover_key.is_none()
-        && !app.ui.soft_proof
-        && view_overlay(app, &d) == lightcraft_pipeline::Overlay::None
-        && crate::region::same_aspect(display_aspect, aspect);
+    // than 100 % (the GPU magnifies beyond that), for each side that is shown. Mask overlays use
+    // the same window; diagnostic overlays that need whole-frame context do not.
+    let windowable_view =
+        hover_key.is_none() && !app.ui.soft_proof && overlay_supports_window(overlay) && crate::region::same_aspect(display_aspect, aspect);
     let window_ctx = WindowCtx {
         id,
-        frame_edge: plan.window_edge.filter(|_| plain_view),
+        overlay,
+        frame_edge: plan.window_edge.filter(|_| windowable_view),
         drawn_long,
         aspect,
         ppp,
@@ -531,7 +575,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let p = ui.painter_at(canvas);
     // what a view slot shows: its own render of this photo, else the stand-ins (no blank frame
     // between photos, and the full render replaces them in place)
-    let draw = |slot: Slot, r: Rect| -> &'static str {
+    let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
         let mine = |s: Slot| app.renderer.textures.get(&s).filter(|t| t.photo == id);
         let (tex, what) = if let Some(t) = mine(slot) {
             (t, "render")
@@ -543,7 +587,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             return "none";
         };
         let image_rect = fit_texture_rect(r, tex.size);
-        p.image(tex.tex.id(), image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        p.with_clip_rect(clip).image(tex.tex.id(), image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         what
     };
     // soft proofing: a paper-white surround and the proof's name, as Lightroom shows it
@@ -554,13 +598,17 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     }
     let shown;
     if split {
+        // each view stays in its pane: zoomed in, a photo reaches past it (and would cover the
+        // other view's margins with its whole-frame render, magnified and blurred)
         let br = fit_rect(areas[0], aspect, app.ui.zoom, native, ppp, app.ui.pan);
-        draw(Slot::Before, br);
-        shown = draw(Slot::Main, img_rect);
-        p.text(pos2(br.left(), br.bottom() + 14.0), Align2::LEFT_CENTER, crate::i18n::tr("Before"), t.font(12.0), t.text_dim);
-        p.text(pos2(img_rect.left(), img_rect.bottom() + 14.0), Align2::LEFT_CENTER, crate::i18n::tr("After"), t.font(12.0), t.text_dim);
+        draw(Slot::Before, br, areas[0]);
+        shown = draw(Slot::Main, img_rect, main_area);
+        // the labels under each photo, or under its pane when the photo reaches past it
+        let label_at = |r: Rect, pane: Rect| pos2(r.left().max(pane.left()), r.bottom().min(pane.bottom()) + 14.0);
+        p.text(label_at(br, areas[0]), Align2::LEFT_CENTER, crate::i18n::tr("Before"), t.font(12.0), t.text_dim);
+        p.text(label_at(img_rect, main_area), Align2::LEFT_CENTER, crate::i18n::tr("After"), t.font(12.0), t.text_dim);
     } else if show_before {
-        shown = draw(Slot::Before, img_rect);
+        shown = draw(Slot::Before, img_rect, canvas);
         p.text(pos2(img_rect.left() + 8.0, img_rect.top() + 14.0), Align2::LEFT_CENTER, crate::i18n::tr("Before"), t.font(12.0), t.text);
     } else if let Some((_key, label)) = &hover_key
         && let Some(tex) = app.renderer.textures.get(&Slot::Hover).filter(|t| t.photo == id)
@@ -573,7 +621,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
         shown = "hover";
     } else {
-        shown = draw(Slot::Main, img_rect);
+        shown = draw(Slot::Main, img_rect, canvas);
         if shown == "none" {
             match app.renderer.failure(Slot::Main) {
                 Some(e) => {
@@ -685,7 +733,19 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             RightPanel::Masking => mask_overlay(app, ui, &resp, &map, &d),
             RightPanel::Remove => remove_overlay(app, ui, &resp, &map, &d),
             RightPanel::RedEye => eye_overlay(app, ui, &resp, &map, &d),
-            _ => general_interaction(app, ui, &resp, &map, img_rect, main_area, native, aspect),
+            _ => {
+                // side by side / stacked: Before shows the same frame, so a click in its view (white
+                // balance, colour samples, targeted adjustment) means the same point of the photo.
+                // Zoomed in, a view's image reaches past its pane: what counts is the pane clicked.
+                let pointer = resp.interact_pointer_pos().or(resp.hover_pos());
+                let map = match (split, areas.first(), pointer) {
+                    (true, Some(before), Some(q)) if before.contains(q) => {
+                        CanvasMap::new(&frame, fit_rect(*before, aspect, app.ui.zoom, native, ppp, app.ui.pan))
+                    }
+                    _ => map,
+                };
+                general_interaction(app, ui, &resp, &map, img_rect, main_area, native, aspect)
+            }
         }
     }
     // drawn and hit-tested above the loupe and its tools: clicks on it pan
@@ -1148,16 +1208,7 @@ fn general_interaction(
         return;
     }
     if app.ui.tool == "colorRange" {
-        // click: sample the colour for the selected mask's colour range; ⇧-click adds (up to 5)
-        if resp.clicked()
-            && let Some(q) = resp.interact_pointer_pos()
-        {
-            let n = map.norm(q);
-            let add = ui.input(|i| i.modifiers.shift);
-            if let Err(e) = app.run("mask.sampleColor", json!({"x": n.x, "y": n.y, "add": add})) {
-                app.toast(ui.ctx(), e);
-            }
-        }
+        color_range_pick(app, ui, resp, map);
         return;
     }
     if app.ui.tool == "pointColor" {
@@ -1215,23 +1266,12 @@ fn crop_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
     let quad = frame_crop_quad(d, frame);
     let pts: Vec<Pos2> = quad.iter().map(|q| map.screen(*q)).collect();
     let p = ui.painter();
-    // darken outside the crop
-    let img = map.rect;
-    let shade = Color32::from_black_alpha(150);
-    let mut mesh = egui::epaint::Mesh::default();
-    let outer = [img.left_top(), img.right_top(), img.right_bottom(), img.left_bottom()];
-    for i in 0..4 {
-        let a = outer[i];
-        let b = outer[(i + 1) % 4];
-        let c = pts[(i + 1) % 4];
-        let dd = pts[i];
-        let base = mesh.vertices.len() as u32;
-        for v in [a, b, c, dd] {
-            mesh.vertices.push(egui::epaint::Vertex { pos: v, uv: Pos2::ZERO, color: shade });
-        }
-        mesh.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    // darken outside the crop (the box's corners in screen order: a flipped photo shows its
+    // top-left corner elsewhere)
+    let quad = flipped_corners(&pts, frame.flip_h, frame.flip_v);
+    if pts.len() == 4 {
+        p.add(outside_crop_mesh(map.rect, &quad, Color32::from_black_alpha(150)));
     }
-    p.add(mesh);
     p.add(egui::Shape::closed_line(pts.clone(), Stroke::new(1.0, Color32::WHITE)));
     // overlay guides
     let lerp = |a: Pos2, b: Pos2, t: f32| a + (b - a) * t;
@@ -1285,7 +1325,7 @@ fn crop_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
             None if inside(hq) && !rotating => egui::CursorIcon::Move,
             // a drag here rotates: no system cursor shows that, so draw a curved double arrow
             None => {
-                rotate_cursor(ui, hq);
+                rotate_cursor(ui, hq, rotate_cursor_turn(&pts, hq, inside(hq)));
                 egui::CursorIcon::None
             }
         };
@@ -1306,7 +1346,13 @@ fn crop_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
     if resp.drag_started()
         && let Some(q) = resp.interact_pointer_pos()
     {
-        let _ = app.run("develop.beginInteraction", json!({"label": "Crop"}));
+        if let Err(e) = app.run("develop.beginInteraction", json!({"label": "Crop"})).and_then(|_| app.begin_crop().map(|_| serde_json::Value::Null))
+        {
+            app.ui.status = e;
+            let _ = app.session.cancel_interaction();
+            return;
+        }
+        let d = app.session.develop_of(id).unwrap_or_default();
         app.gesture = Some(match handles.iter().position(|h| h.distance(q) < 12.0) {
             Some(h) => Gesture::CropHandle { handle: h as u8, start: d.crop.geometry.rect, angle: d.crop.geometry.angle },
             None if inside(q) => Gesture::CropHandle { handle: 8, start: d.crop.geometry.rect, angle: d.crop.geometry.angle },
@@ -1325,9 +1371,11 @@ fn crop_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
                 // `lightcraft_geom::drag_crop`; the UI only reports where the pointer started and is.
                 let n = to_straight(map.norm(q), angle, frame);
                 let orig = ui.input(|i| i.pointer.press_origin()).map(|q0| to_straight(map.norm(q0), angle, frame)).unwrap_or(n);
+                // Shift keeps the current proportions for this drag only; the Lock toggle is untouched.
+                let keep_ratio = ui.input(|i| i.modifiers.shift);
                 let _ = app.run(
                     "crop.drag",
-                    json!({"handle": handle, "from": [orig.x, orig.y], "to": [n.x, n.y], "start": [start.x0, start.y0, start.x1, start.y1]}),
+                    json!({"handle": handle, "from": [orig.x, orig.y], "to": [n.x, n.y], "start": [start.x0, start.y0, start.x1, start.y1], "keepRatio": keep_ratio}),
                 );
             }
             Some(Gesture::CropRotate { start_angle, a0 }) => {
@@ -1383,13 +1431,36 @@ fn top_painter(ui: &egui::Ui, name: &'static str) -> egui::Painter {
     ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(name)))
 }
 
-/// The rotation pointer: a curved double arrow on a dark disc, so it reads over any photo.
-fn rotate_cursor(ui: &egui::Ui, at: Pos2) {
+/// The rotation pointer: a curved double arrow on a dark disc, so it reads over any photo,
+/// turned `turn` radians clockwise ([`rotate_cursor_turn`]).
+fn rotate_cursor(ui: &egui::Ui, at: Pos2, turn: f32) {
     let p = top_painter(ui, "crop-rotate-cursor");
     let r = Rect::from_center_size(at, vec2(22.0, 22.0));
     p.circle_filled(at, 12.0, Color32::from_black_alpha(150));
-    crate::icons::paint(&p, r.shrink(2.0), crate::icons::Icon::RotateDrag, Color32::WHITE);
+    crate::icons::paint_turned(&p, r.shrink(2.0), crate::icons::Icon::RotateDrag, Color32::WHITE, turn);
     register(ui.ctx(), "cropRotateCursor", r);
+}
+
+/// How far to turn the rotation pointer (radians, clockwise) so its arc, drawn bulging up, bulges
+/// away from the crop box `pts` (its four corners on screen, maybe rotated): up above the top edge,
+/// right beside the right edge, down below it, diagonally off a corner. Measured from the nearest
+/// point of the box's outline; `inside` (a rotate drag that has come back over the box) faces it
+/// the other way, still away from that edge.
+fn rotate_cursor_turn(pts: &[Pos2], q: Pos2, inside: bool) -> f32 {
+    let nearest = (0..pts.len())
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let ab = b - a;
+            let t = if ab.length_sq() > 0.0 { ((q - a).dot(ab) / ab.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
+            a + ab * t
+        })
+        .min_by(|a, b| a.distance_sq(q).total_cmp(&b.distance_sq(q)));
+    let Some(nearest) = nearest else { return 0.0 };
+    let away = if inside { nearest - q } else { q - nearest };
+    if away.length() < 0.5 {
+        return 0.0;
+    }
+    away.y.atan2(away.x) + std::f32::consts::FRAC_PI_2
 }
 
 /// While rotating: the angle, next to the pointer, kept inside `bounds` (the canvas): on the
@@ -1449,6 +1520,75 @@ fn to_straight(n: Point, angle: f64, frame: &Frame) -> Point {
     let px = Point::new(n.x * w, n.y * h);
     let r = Affine::rotate_about(angle.to_radians(), Point::new(w / 2.0, h / 2.0)).apply(px);
     Point::new(r.x / w, r.y / h)
+}
+
+/// A crop box's corners (top-left, top-right, bottom-right, bottom-left of the unflipped photo)
+/// in the order they appear on screen when the photo is shown flipped.
+fn flipped_corners(pts: &[Pos2], flip_h: bool, flip_v: bool) -> [Pos2; 4] {
+    let at = |i: usize| pts.get(i).copied().unwrap_or(Pos2::ZERO);
+    let order = match (flip_h, flip_v) {
+        (false, false) => [0, 1, 2, 3],
+        (true, false) => [1, 0, 3, 2],
+        (false, true) => [3, 2, 1, 0],
+        (true, true) => [2, 3, 0, 1],
+    };
+    order.map(at)
+}
+
+/// The dimming outside the crop box: the photo's rectangle minus the crop quad, as one mesh of
+/// non-overlapping convex pieces. The quad is a rotated rectangle, so its opposite sides are
+/// parallel and the plane outside it splits into four disjoint half-strips: outside edge `i`
+/// and inside edge `i + 1`. Each is clipped to the photo and fanned into triangles.
+///
+/// Issue #731: joining photo corner `i` to crop corner `i` with a quad per side only works while
+/// the two rectangles are aligned. Rotated, those quads cross themselves and each other, which
+/// showed as dimmed wedges inside the crop and doubly dark ones outside, growing with the angle.
+/// A degenerate quad (a point, a line, a non-finite corner) dims nothing.
+fn outside_crop_mesh(img: Rect, quad: &[Pos2; 4], color: Color32) -> egui::epaint::Mesh {
+    let mut mesh = egui::epaint::Mesh::default();
+    if !quad.iter().all(|q| q.x.is_finite() && q.y.is_finite()) || !img.is_finite() {
+        return mesh;
+    }
+    let centre = pos2((quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4.0, (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4.0);
+    // signed distance from edge i's line, positive towards the crop's centre
+    let side = |i: usize, q: Pos2| -> Option<f32> {
+        let (a, b) = (quad[i % 4], quad[(i + 1) % 4]);
+        let n = vec2(a.y - b.y, b.x - a.x);
+        let orient = n.dot(centre - a);
+        // an edge the centre lies on: the box is flat
+        (orient.abs() > 1e-6 * n.length().max(1.0)).then(|| n.dot(q - a) * orient.signum())
+    };
+    // Sutherland–Hodgman: the part of a convex polygon where `keep` is at or above zero
+    let clip = |poly: &[Pos2], keep: &dyn Fn(Pos2) -> Option<f32>| -> Option<Vec<Pos2>> {
+        let mut out = Vec::with_capacity(poly.len() + 2);
+        for (k, &a) in poly.iter().enumerate() {
+            let b = *poly.get((k + 1) % poly.len())?;
+            let (da, db) = (keep(a)?, keep(b)?);
+            if da >= 0.0 {
+                out.push(a);
+            }
+            if (da < 0.0) != (db < 0.0) && (da - db).abs() > f32::EPSILON {
+                let t = da / (da - db);
+                out.push(a + (b - a) * t);
+            }
+        }
+        Some(out)
+    };
+    let photo = [img.left_top(), img.right_top(), img.right_bottom(), img.left_bottom()];
+    for i in 0..4 {
+        let outside = |q: Pos2| side(i, q).map(|d| -d);
+        let inside_next = |q: Pos2| side(i + 1, q);
+        let Some(strip) = clip(&photo, &outside).and_then(|poly| clip(&poly, &inside_next)) else { return egui::epaint::Mesh::default() };
+        if strip.len() < 3 {
+            continue;
+        }
+        let base = mesh.vertices.len() as u32;
+        mesh.vertices.extend(strip.iter().map(|&pos| egui::epaint::Vertex { pos, uv: Pos2::ZERO, color }));
+        for k in 1..(strip.len() as u32).saturating_sub(1) {
+            mesh.indices.extend([base, base + k, base + k + 1]);
+        }
+    }
+    mesh
 }
 
 fn frame_crop_quad(d: &DevelopSettings, frame: &Frame) -> [Point; 4] {
@@ -1543,14 +1683,25 @@ fn radial_body_contains(shape: &MaskShape, at: Point, map: &CanvasMap) -> bool {
     x * x + y * y <= 1.0
 }
 
+/// Colour Range eyedropper: a click samples the colour under it for the selected mask's
+/// colour range, at normalized frame coordinates (crop, rotation and zoom aware);
+/// ⇧-click adds a sample (up to 5).
+fn color_range_pick(app: &mut LightcraftApp, ui: &egui::Ui, resp: &egui::Response, map: &CanvasMap) {
+    if resp.clicked()
+        && let Some(q) = resp.interact_pointer_pos()
+    {
+        let n = map.norm(q);
+        let add = ui.input(|i| i.modifiers.shift);
+        if let Err(e) = app.run("mask.sampleColor", json!({"x": n.x, "y": n.y, "add": add})) {
+            app.toast(ui.ctx(), e);
+        }
+    }
+}
+
 /// The Masking tool on the photo: outlines and handles of the selected mask, a pin per mask
 /// component (click selects its mask, drag moves the component), and brush painting. The mask
 /// itself shows as a rendered overlay ([`view_overlay`]).
 fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Response, map: &CanvasMap, d: &DevelopSettings) {
-    let tint = {
-        let [r, g, b] = app.ui.mask_overlay_color;
-        Color32::from_rgba_unmultiplied(r, g, b, 110)
-    };
     let long = (map.rect.width().max(map.rect.height())) as f64;
     let active = app.session.active_mask;
     let clip = app.canvas_rect.unwrap_or(map.rect);
@@ -1638,6 +1789,15 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
             }
         }
     }
+    // Colour Range "Pick": the Masking panel owns the loupe's clicks (general_interaction
+    // never runs while it is open), so the eyedropper is handled here too.
+    if app.ui.tool == "colorRange" {
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        }
+        color_range_pick(app, ui, resp, map);
+        return;
+    }
     // Object tool: a click includes what's under it, ⌥-click leaves it out
     if app.ui.tool == "object" {
         if resp.hovered() {
@@ -1672,19 +1832,35 @@ fn mask_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respons
         {
             let n = map.norm(q);
             match &mut app.gesture {
+                // a held, unmoving pointer records nothing: coverage builds by passes, not time (#518)
+                Some(Gesture::Brush { points }) if points.last() == Some(&n) => {}
                 Some(Gesture::Brush { points }) => points.push(n),
                 _ => app.gesture = Some(Gesture::Brush { points: vec![n] }),
             }
         }
-        // the stroke being painted (the render shows it once it's committed)
+        // the stroke being painted (the render shows it once it's committed), with the committed
+        // stroke's dab spacing, feather and flow (issue #517)
         if let Some(Gesture::Brush { points }) = &app.gesture {
-            for q in points {
-                p.circle_filled(map.screen(*q), r, tint);
-            }
+            let screen: Vec<Pos2> = points.iter().map(|q| map.screen(*q)).collect();
+            let opacity = if app.ui.mask_overlay && app.ui.mask_overlay_opacity > 0.0 { app.ui.mask_overlay_opacity / 100.0 } else { 110.0 / 255.0 };
+            let params = crate::brush_live::LiveParams {
+                clip,
+                scale: ui.ctx().pixels_per_point(),
+                r,
+                hard: r * (1.0 - (app.ui.brush_feather / 100.0).clamp(0.0, 1.0)),
+                flow: (app.ui.brush_flow / 100.0).clamp(0.0, 1.0),
+                density: 1.0,
+                color: app.ui.mask_overlay_color,
+                opacity: opacity.clamp(0.0, 1.0),
+            };
+            crate::brush_live::paint(&mut app.brush_live, ui.ctx(), p, params, &screen);
+        } else {
+            app.brush_live = None;
         }
         if (resp.drag_stopped() || resp.clicked())
             && let Some(Gesture::Brush { points }) = app.gesture.take()
         {
+            app.brush_live = None;
             let pts: Vec<[f64; 2]> = points.iter().map(|q| [q.x, q.y]).collect();
             // holding ⌥ (Alt) paints with the other mode: Erase while adding, Add while erasing
             let erase = app.ui.brush_erase != resp.ctx.input(|i| i.modifiers.alt);
@@ -1875,6 +2051,7 @@ fn remove_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::Respo
         let mode = match app.ui.tool.as_str() {
             "heal" => "heal",
             "clone" => "clone",
+            "fill" => "fill",
             _ => "remove",
         };
         let pts: Vec<[f64; 2]> = points.iter().map(|q| [q.x, q.y]).collect();
@@ -2030,7 +2207,12 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
                     p.galley(pos2(br.min.x + 17.0, br.center().y - g.size().y / 2.0), g, Color32::WHITE);
                 }
             }
-            if resp.clicked() {
+            if resp.clicked() && app.ui.view == crate::state::ViewMode::Compare {
+                // Compare: the clicked photo replaces the active side (or swaps with the other one)
+                if let Err(e) = app.run("compare.set", json!({"id": id.0})) {
+                    app.toast(ui.ctx(), e);
+                }
+            } else if resp.clicked() {
                 let m = ui.input(|i| i.modifiers);
                 let mode = if m.command {
                     "toggle"
@@ -2143,7 +2325,128 @@ fn straighten_overlay(app: &mut LightcraftApp, ui: &mut egui::Ui, resp: &egui::R
 
 #[cfg(test)]
 mod tests {
-    use super::{film_label, texture_side};
+    /// The rotation pointer's arc bulges away from the side of the crop box it is on, and follows
+    /// a box that is itself rotated.
+    #[test]
+    fn rotate_cursor_faces_away_from_the_crop_box() {
+        use egui::{Pos2, pos2};
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+        let near = |a: f32, b: f32| ((a - b + PI).rem_euclid(2.0 * PI) - PI).abs() < 1e-3;
+        let pts = [pos2(100.0, 100.0), pos2(300.0, 100.0), pos2(300.0, 200.0), pos2(100.0, 200.0)];
+        let turn = |x: f32, y: f32| super::rotate_cursor_turn(&pts, pos2(x, y), false);
+        assert!(near(turn(200.0, 80.0), 0.0), "above: as drawn");
+        assert!(near(turn(320.0, 150.0), FRAC_PI_2), "right");
+        assert!(near(turn(200.0, 230.0), PI), "below");
+        assert!(near(turn(70.0, 150.0), -FRAC_PI_2), "left");
+        assert!(near(turn(290.0, 60.0), 0.0), "above the top edge near its end: still up");
+        // off each corner: diagonally out from it
+        assert!(near(turn(80.0, 80.0), -FRAC_PI_4), "top-left corner");
+        assert!(near(turn(320.0, 80.0), FRAC_PI_4), "top-right corner");
+        assert!(near(turn(320.0, 220.0), 3.0 * FRAC_PI_4), "bottom-right corner");
+        assert!(near(turn(80.0, 220.0), -3.0 * FRAC_PI_4), "bottom-left corner");
+        assert!(near(super::rotate_cursor_turn(&pts, pos2(200.0, 110.0), true), 0.0), "dragged back over the top edge: still up");
+        // a box turned 90°: its top edge is now on the right
+        let turned = [pts[3], pts[0], pts[1], pts[2]].map(|p| pos2(400.0 - p.y, p.x));
+        assert!(near(super::rotate_cursor_turn(&turned, pos2(420.0, 200.0), false), FRAC_PI_2));
+        // a box turned 30°: straight out from its top edge is 30° clockwise of up
+        let c = pos2(200.0, 150.0);
+        let rot = |p: Pos2| {
+            let (s, co) = (30f32.to_radians().sin(), 30f32.to_radians().cos());
+            let d = p - c;
+            pos2(c.x + d.x * co - d.y * s, c.y + d.x * s + d.y * co)
+        };
+        let tilted = pts.map(rot);
+        assert!(near(super::rotate_cursor_turn(&tilted, rot(pos2(200.0, 60.0)), false), 30f32.to_radians()));
+    }
+
+    use super::{film_label, flipped_corners, outside_crop_mesh, texture_side};
+    use egui::{Color32, Pos2, Rect, pos2};
+
+    /// A rotated `w` × `h` box centred on `centre`.
+    fn box_at(centre: Pos2, w: f32, h: f32, angle: f32) -> [Pos2; 4] {
+        let (s, c) = angle.to_radians().sin_cos();
+        [(-w, -h), (w, -h), (w, h), (-w, h)].map(|(x, y)| pos2(centre.x + (x * c - y * s) / 2.0, centre.y + (x * s + y * c) / 2.0))
+    }
+
+    /// Signed distances from a convex polygon's edges, positive inwards (its winding either way).
+    fn sides(poly: &[Pos2], p: Pos2) -> Vec<f32> {
+        let n = poly.len() as f32;
+        let centre = pos2(poly.iter().map(|q| q.x).sum::<f32>() / n, poly.iter().map(|q| q.y).sum::<f32>() / n);
+        (0..poly.len())
+            .map(|i| {
+                let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+                let nrm = egui::vec2(a.y - b.y, b.x - a.x).normalized();
+                nrm.dot(p - a) * nrm.dot(centre - a).signum()
+            })
+            .collect()
+    }
+
+    /// Issue #731: the dimming is the photo minus the crop box at any angle. Every point of the
+    /// photo outside the box lies in exactly one of the mesh's triangles; no point inside the box
+    /// or outside the photo lies in any. (Four quads joining photo and box corners crossed and
+    /// overlapped once the box was rotated.)
+    #[test]
+    fn the_dimming_outside_a_rotated_crop_is_exactly_the_photo_minus_the_box() {
+        let img = Rect::from_min_max(pos2(100.0, 50.0), pos2(500.0, 650.0));
+        // boxes inside the photo, poking out of it, and bigger than it
+        for (w, h) in [(240.0, 360.0), (420.0, 300.0), (700.0, 900.0)] {
+            for angle in [0.0f32, 5.0, 15.0, 30.0, -45.0, 90.0, 137.0, 200.0] {
+                let quad = box_at(img.center() + egui::vec2(30.0, -20.0), w, h, angle);
+                let mesh = outside_crop_mesh(img, &quad, Color32::BLACK);
+                let tris: Vec<[Pos2; 3]> = mesh
+                    .indices
+                    .chunks(3)
+                    .map(|t| [mesh.vertices[t[0] as usize].pos, mesh.vertices[t[1] as usize].pos, mesh.vertices[t[2] as usize].pos])
+                    .collect();
+                let (mut inside, mut outside) = (0, 0);
+                let mut y = img.top() - 20.0;
+                while y < img.bottom() + 20.0 {
+                    let mut x = img.left() - 20.0;
+                    while x < img.right() + 20.0 {
+                        let p = pos2(x, y);
+                        let in_box = sides(&quad, p);
+                        let in_img = sides(&[img.left_top(), img.right_top(), img.right_bottom(), img.left_bottom()], p);
+                        // a pixel on an edge may fall either way: skip the boundaries themselves
+                        if in_box.iter().chain(&in_img).any(|d| d.abs() < 1.0) {
+                            x += 7.0;
+                            continue;
+                        }
+                        let expected = if in_img.iter().all(|d| *d > 0.0) && !in_box.iter().all(|d| *d > 0.0) { 1 } else { 0 };
+                        // a sample on the seam between two of a strip's fan triangles is in both
+                        // or in neither, depending on rounding: count it both ways
+                        let covered = |eps: f32| tris.iter().filter(|t| sides(*t, p).iter().all(|d| *d > eps)).count();
+                        let (at_least, at_most) = (covered(0.01), covered(-0.01));
+                        assert!(
+                            at_least <= expected && expected <= at_most,
+                            "{w}×{h} box at {angle}°: ({x}, {y}) lies in {at_least}..={at_most} triangle(s), not {expected}"
+                        );
+                        if expected == 1 {
+                            outside += 1
+                        } else if in_img.iter().all(|d| *d > 0.0) {
+                            inside += 1
+                        }
+                        x += 7.0;
+                    }
+                    y += 7.0;
+                }
+                // (a box bigger than the photo swallows it whole at some angles)
+                assert!(inside > 50 && (outside > 50 || w > img.width()), "{w}×{h} at {angle}°: {outside} dimmed, {inside} clear samples");
+            }
+        }
+    }
+
+    /// A flat or broken box dims nothing rather than something arbitrary (or panicking).
+    #[test]
+    fn a_degenerate_crop_box_dims_nothing() {
+        let img = Rect::from_min_max(pos2(0.0, 0.0), pos2(400.0, 300.0));
+        let point = [pos2(10.0, 10.0); 4];
+        let line = [pos2(10.0, 10.0), pos2(90.0, 10.0), pos2(90.0, 10.0), pos2(10.0, 10.0)];
+        let nan = [pos2(f32::NAN, 10.0), pos2(90.0, 10.0), pos2(90.0, 50.0), pos2(10.0, 50.0)];
+        for quad in [point, line, nan] {
+            assert!(outside_crop_mesh(img, &quad, Color32::BLACK).indices.is_empty(), "{quad:?}");
+        }
+        assert!(outside_crop_mesh(Rect::NAN, &box_at(pos2(50.0, 50.0), 20.0, 20.0, 10.0), Color32::BLACK).indices.is_empty());
+    }
 
     /// Issue #652: a native host reports the GPU's texture limit in the first frame's input only.
     /// The loupe must still know it in every later frame (it read the raw input, found nothing and
@@ -2171,5 +2474,39 @@ mod tests {
         assert_eq!(film_label("IMG_20240712_153012"), "IMG_20240712_…");
         assert_eq!(film_label("DSC_0001"), "DSC_0001");
         assert_eq!(film_label(""), "");
+    }
+
+    /// With the photo flipped, the crop box's corners reach the screen mirrored; the dimming
+    /// outside the box pairs each photo corner with the box corner on the same side of the screen
+    /// (it used to pair them in data order, so a flipped photo was dimmed inside the box).
+    #[test]
+    fn flipped_crop_box_corners_come_in_screen_order() {
+        let screen = [pos2(10.0, 10.0), pos2(90.0, 10.0), pos2(90.0, 50.0), pos2(10.0, 50.0)];
+        // data order (top-left, top-right, bottom-right, bottom-left) as each flip shows it
+        let h = [screen[1], screen[0], screen[3], screen[2]];
+        let v = [screen[3], screen[2], screen[1], screen[0]];
+        let hv = [screen[2], screen[3], screen[0], screen[1]];
+        assert_eq!(flipped_corners(&screen, false, false), screen);
+        assert_eq!(flipped_corners(&h, true, false), screen);
+        assert_eq!(flipped_corners(&v, false, true), screen);
+        assert_eq!(flipped_corners(&hv, true, true), screen);
+    }
+}
+
+#[cfg(test)]
+mod wheel_zoom_tests {
+    use super::*;
+
+    fn wheel(unit: egui::MouseWheelUnit, y: f32, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::MouseWheel { unit, delta: egui::vec2(0.0, y), phase: egui::TouchPhase::Move, modifiers }
+    }
+
+    #[test]
+    fn only_notched_unmodified_wheels_count() {
+        let m = egui::Modifiers::NONE;
+        assert_eq!(wheel_notches(&[wheel(egui::MouseWheelUnit::Line, 1.0, m), wheel(egui::MouseWheelUnit::Line, 2.0, m)]), 3.0);
+        assert_eq!(wheel_notches(&[wheel(egui::MouseWheelUnit::Point, 40.0, m)]), 0.0);
+        assert_eq!(wheel_notches(&[wheel(egui::MouseWheelUnit::Line, 1.0, egui::Modifiers::CTRL)]), 0.0);
+        assert_eq!(wheel_notches(&[wheel(egui::MouseWheelUnit::Line, f32::NAN, m)]), 0.0);
     }
 }

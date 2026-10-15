@@ -64,8 +64,10 @@ POC / RPS / DPB bookkeeping; the CTU layer of each picture runs as a job (rayon 
 reconstructs into private planes, deblocks CTB row r once row r+1 is decoded, applies SAO to row r
 once row r+1 is deblocked, and publishes final rows (samples + 16x16 compressed motion for TMVP)
 into the shared `Frame` (`OnceLock` per CTB row). Motion compensation of later pictures blocks per
-row on exactly the reference rows it reads. Samples are stored as `u16` internally for all bit
-depths.
+row on exactly the reference rows it reads. Samples are stored as `u8` for 8-bit pictures (half
+the memory traffic in prediction reads, in-loop filters and output) and as `u16` above 8 bits: the
+slice decoder and the filters are generic over the sample type (`picture::Sample`), monomorphised
+once per type.
 
 Draft mode (`Decoder::set_draft(true)`; FilmCraft enables it with Settings ▸ Playback ▸ Draft
 decoding while the Program monitor plays at 1/2 or 1/4): sub-layer non-reference pictures

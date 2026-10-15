@@ -303,3 +303,16 @@ fn edit_group_refuses_to_change_built_in_swatches() {
     let ok = run(&mut s, "swatch.editGroup", json!({"group": "Marks", "colors": [key, "#0000ff"]}));
     assert_eq!(ok["swatches"][0], vectorcraft_color::swatch::REGISTRATION, "kept as it is");
 }
+
+/// A `{c, m, y, k}` object takes one scale for the whole colour: percent as soon as any component is
+/// above 1, else fractions. Reading each component on its own turned K 0.79 % into 79 %.
+#[test]
+fn cmyk_object_reads_one_scale_for_every_component() {
+    let k = |v: Value| color_value(&v).unwrap().to_cmyk();
+    let close = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-5);
+    assert!(close(k(json!({"c": 18.16, "m": 13.39, "y": 13.9, "k": 0.79})), [0.1816, 0.1339, 0.139, 0.0079]));
+    assert!(close(k(json!({"c": 100, "m": 0.5, "y": 0, "k": 1})), [1.0, 0.005, 0.0, 0.01]));
+    // All components 0..1: fractions, as before.
+    assert!(close(k(json!({"c": 0.1, "m": 0.5, "y": 0.9, "k": 0.2})), [0.1, 0.5, 0.9, 0.2]));
+    assert!(close(k(json!({"c": 0, "m": 1, "y": 1, "k": 0})), [0.0, 1.0, 1.0, 0.0]));
+}

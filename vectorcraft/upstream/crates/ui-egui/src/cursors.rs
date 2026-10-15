@@ -66,6 +66,17 @@ fn crosshair(p: &mut Ink, o: Pos2) {
     }
 }
 
+/// A pipette pointing down-left: the sampling tip is the hotspot, with the tube and bulb above
+/// right. Drawn here so bitmap and painted cursors share the same original glyph (#1269).
+fn eyedropper(p: &mut Ink, o: Pos2) {
+    let tube = [(0.0, 0.0), (1.0, -5.0), (14.0, -18.0), (18.0, -14.0), (5.0, -1.0)];
+    poly(p, tube.iter().map(|(x, y)| o + vec2(*x, *y)).collect(), HALO, INK);
+    let bulb = o + vec2(20.0, -20.0);
+    p.circle_filled(bulb, 6.5, HALO);
+    p.circle_filled(bulb, 5.0, INK);
+    line(p, o + vec2(11.0, -19.0), o + vec2(19.0, -11.0));
+}
+
 fn pen(p: &mut Ink, o: Pos2, badge: &str) {
     // Nib pointing to the top-left hotspot.
     let pts = vec![o, o + vec2(4.0, 12.0), o + vec2(8.0, 16.0), o + vec2(16.0, 8.0), o + vec2(12.0, 4.0)];
@@ -113,17 +124,21 @@ fn double_arrow(p: &mut Ink, o: Pos2, dir: egui::Vec2) {
 }
 
 /// A curved double arrow over the hotspot: an arc with an arrowhead at each end, pointing on along
-/// the arc (#701).
-fn rotate(p: &mut Ink, o: Pos2) {
+/// the arc (#701). The arc bows up, or toward `octant` (0 up, then clockwise in 45° steps): beside a
+/// bounding box it wraps the corner the pointer is at.
+fn rotate(p: &mut Ink, o: Pos2, octant: u8) {
     const R: f32 = 8.0;
     let (a0, a1) = (std::f32::consts::PI * 0.12, std::f32::consts::PI * 0.88);
-    let at = |a: f32| o + vec2(a.cos() * R, -a.sin() * R);
+    // Clockwise on screen (y down) by whole octants.
+    let (s, c) = (f32::from(octant % 8) * std::f32::consts::FRAC_PI_4).sin_cos();
+    let turn = |v: Vec2| vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+    let at = |a: f32| o + turn(vec2(a.cos() * R, -a.sin() * R));
     let pts: Vec<Pos2> = (0..=12).map(|i| at(a0 + (a1 - a0) * i as f32 / 12.0)).collect();
     p.add(Shape::line(pts.clone(), Stroke::new(3.2, HALO)));
     p.add(Shape::line(pts, Stroke::new(1.3, INK)));
     // Each head points away from the arc, along its tangent there.
     for (a, away) in [(a0, -1.0f32), (a1, 1.0)] {
-        let t = vec2(-a.sin(), -a.cos()) * away;
+        let t = turn(vec2(-a.sin(), -a.cos()) * away);
         let n = vec2(-t.y, t.x);
         let (end, tip) = (at(a) - t * 1.5, at(a) + t * 4.5);
         poly(p, vec![tip, end + n * 1.8, end - n * 1.8], INK, INK);
@@ -253,8 +268,54 @@ fn shape_builder(p: &mut Ink, o: Pos2, erase: bool) {
     }
 }
 
+/// The Hand tool and Space: an open hand (palm and four fingers, thumb to the left), or the same
+/// hand closed while it drags the view. Windows has no system hand that isn't a pointing finger
+/// (winit maps egui's Grab and Grabbing to the four-headed move cursor), so it is drawn like the
+/// other tool cursors. Hotspot in the palm.
+fn hand(p: &mut Ink, o: Pos2, closed: bool) {
+    // Thumb out to the left, four fingers up from the palm (open) or folded over it (closed),
+    // then the palm, a rounded block below the hotspot, over their bases.
+    let mut parts = vec![vec![o + vec2(-7.0, 0.0), o + vec2(-13.0, -4.0), o + vec2(-14.0, -1.0), o + vec2(-9.0, 5.0)]];
+    for (i, x) in [-5.5f32, -1.75, 2.0, 5.75].into_iter().enumerate() {
+        let top = if closed {
+            -5.0
+        } else if i == 0 || i == 3 {
+            -11.0
+        } else {
+            -14.0
+        };
+        parts.push(vec![o + vec2(x - 1.5, 0.0), o + vec2(x - 1.5, top), o + vec2(x + 1.5, top), o + vec2(x + 1.5, 0.0)]);
+    }
+    parts.push(vec![o + vec2(-7.0, -2.0), o + vec2(7.25, -2.0), o + vec2(8.0, 6.0), o + vec2(4.0, 11.0), o + vec2(-5.0, 11.0), o + vec2(-9.0, 5.0)]);
+    // Every halo first, so no part's halo covers another's outline.
+    for part in &parts {
+        p.add(Shape::closed_line(part.clone(), Stroke::new(3.0, HALO)));
+    }
+    for part in parts {
+        p.add(Shape::convex_polygon(part.clone(), HALO, Stroke::NONE));
+        p.add(Shape::closed_line(part, Stroke::new(1.0, INK)));
+    }
+}
+
+/// The Zoom tool: a magnifier with a plus in the lens (Alt: a minus), the lens centred on the
+/// hotspot, the handle down to the right.
+fn magnifier(p: &mut Ink, o: Pos2, out: bool) {
+    const R: f32 = 7.0;
+    p.circle_stroke(o, R, Stroke::new(3.0, HALO));
+    let d = vec2(R * 0.72, R * 0.72);
+    line(p, o + d, o + d + vec2(7.0, 7.0));
+    p.circle_filled(o, R, HALO);
+    p.circle_stroke(o, R, Stroke::new(1.2, INK));
+    // Inside the white lens, without halos: a halo would cut the plus's other bar.
+    let bar = Stroke::new(1.2, INK);
+    p.line_segment([o - vec2(3.5, 0.0), o + vec2(3.5, 0.0)], bar);
+    if !out {
+        p.line_segment([o - vec2(0.0, 3.5), o + vec2(0.0, 3.5)], bar);
+    }
+}
+
 /// The shapes of cursor `c` with its hotspot at `p`; `None` for cursors that stay system cursors
-/// (hand, zoom, busy states).
+/// (the busy states).
 fn glyph(c: Cursor, p: Pos2) -> Option<Vec<Shape>> {
     let ink = &mut Ink::default();
     match c {
@@ -264,12 +325,14 @@ fn glyph(c: Cursor, p: Pos2) -> Option<Vec<Shape>> {
             arrow(ink, p, false);
             double_arrow(ink, p + vec2(15.0, 18.0), vec2(1.0, 0.0));
         }
-        Cursor::Crosshair | Cursor::Eyedropper => crosshair(ink, p),
+        Cursor::Crosshair => crosshair(ink, p),
+        Cursor::Eyedropper => eyedropper(ink, p),
         Cursor::ResizeH => double_arrow(ink, p, vec2(1.0, 0.0)),
         Cursor::ResizeV => double_arrow(ink, p, vec2(0.0, 1.0)),
         Cursor::ResizeNwSe => double_arrow(ink, p, vec2(1.0, 1.0)),
         Cursor::ResizeNeSw => double_arrow(ink, p, vec2(1.0, -1.0)),
-        Cursor::Rotate => rotate(ink, p),
+        Cursor::Rotate => rotate(ink, p, 0),
+        Cursor::RotateToward(octant) => rotate(ink, p, octant),
         Cursor::CornerRadius => corner_radius(ink, p),
         Cursor::Pen => pen(ink, p, "*"),
         Cursor::PenAdd => pen(ink, p, "+"),
@@ -294,6 +357,10 @@ fn glyph(c: Cursor, p: Pos2) -> Option<Vec<Shape>> {
         Cursor::TypeWidget => type_widget(ink, p),
         Cursor::ShapeBuilder => shape_builder(ink, p, false),
         Cursor::ShapeBuilderErase => shape_builder(ink, p, true),
+        Cursor::Hand => hand(ink, p, false),
+        Cursor::HandGrab => hand(ink, p, true),
+        Cursor::ZoomIn => magnifier(ink, p, false),
+        Cursor::ZoomOut => magnifier(ink, p, true),
         _ => return None,
     }
     Some(std::mem::take(&mut ink.0))
@@ -432,7 +499,11 @@ mod tests {
     use crate::VectorcraftApp;
 
     /// Every cursor with a glyph.
-    const GLYPHS: [Cursor; 33] = [
+    const GLYPHS: [Cursor; 38] = [
+        Cursor::Hand,
+        Cursor::HandGrab,
+        Cursor::ZoomIn,
+        Cursor::ZoomOut,
         Cursor::Arrow,
         Cursor::ArrowHollow,
         Cursor::Move,
@@ -442,6 +513,7 @@ mod tests {
         Cursor::ResizeNwSe,
         Cursor::ResizeNeSw,
         Cursor::Rotate,
+        Cursor::RotateToward(1),
         Cursor::CornerRadius,
         Cursor::Pen,
         Cursor::PenAdd,
@@ -485,10 +557,17 @@ mod tests {
                 assert!(w as f32 <= 50.0 * ppp && h as f32 <= 50.0 * ppp, "{c:?} at {ppp}: {img:?}");
                 assert!(img.rgba.as_chunks::<4>().0.iter().any(|p| p[3] == 255), "{c:?}: nothing opaque");
             }
+            // #1269: the normal Eyedropper is a pipette, with its tip at the hotspot; only
+            // Use Precise Cursors turns it into a crosshair.
+            let dropper = rasterize(Cursor::Eyedropper, ppp).unwrap();
+            let precise = rasterize(Cursor::Eyedropper.precise(), ppp).unwrap();
+            assert_ne!(dropper, precise, "Eyedropper must be distinguishable from its precise cursor at {ppp}");
+            let [hx, hy] = dropper.hotspot.map(usize::from);
+            let halo = (3.0 * ppp).ceil(); // The bitmap bounds round out to whole physical pixels.
+            assert!(hx as f32 <= halo && f32::from(dropper.size[1]) - hy as f32 <= halo, "the tip is at the lower-left: {dropper:?}");
+            assert!(pixel(&dropper, hx, hy)[3] > 0, "the tip covers the hotspot at {ppp}");
         }
-        for c in [Cursor::Hand, Cursor::HandGrab, Cursor::ZoomIn, Cursor::ZoomOut, Cursor::NotAllowed] {
-            assert!(rasterize(c, 1.0).is_none(), "{c:?} stays a system cursor");
-        }
+        assert!(rasterize(Cursor::NotAllowed, 1.0).is_none(), "the busy states stay system cursors");
         for ppp in [0.0, -1.0, f32::NAN, f32::INFINITY, 1e9] {
             assert!(rasterize(Cursor::Arrow, ppp).is_none(), "{ppp}");
         }
@@ -523,7 +602,7 @@ mod tests {
         let b = images.get(Cursor::Pen, 1.5).unwrap();
         assert!(Arc::ptr_eq(&a.rgba, &b.rgba));
         assert!(!Arc::ptr_eq(&a.rgba, &images.get(Cursor::Pen, 2.0).unwrap().rgba));
-        assert!(images.get(Cursor::Hand, 1.5).is_none());
+        assert!(images.get(Cursor::NotAllowed, 1.5).is_none());
         assert!(images.get(Cursor::Arrow, f32::NAN).is_none());
         assert_eq!(images.0.len(), 2);
     }

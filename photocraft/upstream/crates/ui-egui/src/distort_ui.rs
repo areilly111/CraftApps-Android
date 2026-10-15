@@ -1,10 +1,11 @@
-//! Interactive Liquify (full-window dialog), Puppet Warp and Perspective Warp (on-canvas modes).
+//! Interactive Liquify (full-window dialog), Puppet Warp, Perspective Warp and Vanishing Point
+//! (on-canvas modes).
 //!
 //! All three are previews over plain data (strokes, pins, planes); committing runs the engine
-//! command with that data (`filter.liquify`, `edit.puppetWarp`, `edit.perspectiveWarp`, or the
-//! smart-object twins), so the result is one history step and exactly replayable. This module
+//! command with that data (`filter.liquify`, `edit.puppetWarp`, `edit.perspectiveWarp`,
+//! `filter.vanishingPoint`, or the smart-object twins), so the result is one history step and exactly replayable. This module
 //! holds the shared runtime state and the hooks the shell calls (menus, pointer, keys, overlay,
-//! options bar); the modes live in `liquify_ui`, `puppet_ui` and `perspective_ui`.
+//! options bar); the modes live in `liquify_ui`, `puppet_ui`, `perspective_ui` and `vp_ui`.
 
 use std::sync::Arc;
 
@@ -23,13 +24,14 @@ pub struct Distort {
     pub liquify: Option<crate::liquify_ui::LiquifyDialog>,
     pub puppet: Option<crate::puppet_ui::PuppetSession>,
     pub perspective: Option<crate::perspective_ui::PerspSession>,
+    pub vanishing: Option<crate::vp_ui::VpSession>,
     /// Filter Gallery dialog (gallery_ui).
     pub gallery: Option<crate::gallery_ui::GalleryDialog>,
 }
 
 impl Distort {
     pub fn active(&self) -> bool {
-        self.liquify.is_some() || self.puppet.is_some() || self.perspective.is_some()
+        self.liquify.is_some() || self.puppet.is_some() || self.perspective.is_some() || self.vanishing.is_some()
     }
 
     /// Short description for `ui.inspect`.
@@ -38,6 +40,7 @@ impl Distort {
             "liquify": self.liquify.as_ref().map(|d| d.describe()),
             "puppet": self.puppet.as_ref().map(|p| p.describe()),
             "perspective": self.perspective.as_ref().map(|p| p.describe()),
+            "vanishingPoint": self.vanishing.as_ref().map(|v| v.describe()),
             "gallery": self.gallery.as_ref().map(|g| g.describe()),
         })
     }
@@ -118,6 +121,8 @@ pub fn menu(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Val
         "edit.perspectiveWarp" | "layer.smartObjects.perspectiveWarp" if ui.is_some() && app.distort.perspective.is_some() => {
             Some(crate::perspective_ui::control(app, ui.unwrap_or(&Value::Null)))
         }
+        "filter.vanishingPoint" if empty => Some(crate::vp_ui::begin(app, ctx).map(|_| json!({"vanishingPoint": app.distort.describe()["vanishingPoint"]}))),
+        "filter.vanishingPoint" if ui.is_some() && app.distort.vanishing.is_some() => Some(crate::vp_ui::control(app, ui.unwrap_or(&Value::Null))),
         _ => None,
     }
 }
@@ -134,6 +139,10 @@ pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) ->
     }
     if app.distort.perspective.is_some() {
         crate::perspective_ui::pointer(app, ev, mods);
+        return true;
+    }
+    if app.distort.vanishing.is_some() {
+        crate::vp_ui::pointer(app, ev, mods);
         return true;
     }
     false
@@ -179,6 +188,16 @@ pub fn keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
         }
         return true;
     }
+    if app.distort.vanishing.is_some() {
+        if enter(ctx) {
+            let _ = crate::vp_ui::commit(app);
+        } else if esc(ctx) {
+            crate::vp_ui::escape(app);
+        } else {
+            crate::vp_ui::keys(app, ctx);
+        }
+        return true;
+    }
     false
 }
 
@@ -190,6 +209,9 @@ pub fn draw_overlay(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform
     if let Some(p) = &app.distort.perspective {
         crate::perspective_ui::draw(p, painter, xf);
     }
+    if let Some(v) = &app.distort.vanishing {
+        crate::vp_ui::draw(v, painter, xf);
+    }
 }
 
 /// Options bar for the on-canvas modes. True when drawn.
@@ -200,6 +222,10 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> bool {
     }
     if app.distort.perspective.is_some() {
         crate::perspective_ui::options_bar(app, ui);
+        return true;
+    }
+    if app.distort.vanishing.is_some() {
+        crate::vp_ui::options_bar(app, ui);
         return true;
     }
     false

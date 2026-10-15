@@ -1,4 +1,5 @@
-use crate::{RenderCache, derive_settings};
+use crate::{ColorReplacement, RenderCache, derive_settings};
+use hayro_interpret::color::Color;
 use hayro_interpret::encode::EncodedShadingPattern;
 use hayro_interpret::font::Glyph;
 use hayro_interpret::pattern::Pattern;
@@ -14,9 +15,10 @@ use std::collections::HashMap;
 use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::Arc;
+use vello_cpu::color::DynamicColor;
 use vello_cpu::color::palette::css::BLACK;
 use vello_cpu::color::{AlphaColor, PremulRgba8, Srgb};
-use vello_cpu::peniko::{Compose, Fill, ImageQuality, ImageSampler, Mix};
+use vello_cpu::peniko::{ColorStop, Compose, Fill, Gradient, ImageQuality, ImageSampler, Mix};
 use vello_cpu::{
     Image, ImageSource, Mask, PaintType, Pixmap, RenderContext, RenderSettings, peniko,
 };
@@ -114,17 +116,23 @@ fn resampling_scratch_byte_len(
 
 /// PdfCraft patch: validate output, crossed intermediate and filter-work bounds before planning.
 /// Source width × target height also bounds PicScale's smaller single-threaded four-row scratch.
+/// Nearest-neighbour (`!interpolate`) has none of those: it copies source pixels into the target,
+/// so only the source and target buffers are bounded.
 fn resampling_byte_len(
     source: (u32, u32),
     target: (u32, u32),
     channels: usize,
     data_len: usize,
     max_pixels: u64,
+    interpolate: bool,
 ) -> Option<usize> {
     if source_byte_len(source.0, source.1, channels, max_pixels)? != data_len {
         return None;
     }
     let target_len = image_byte_len(target.0, target.1, channels, max_pixels)?;
+    if !interpolate {
+        return Some(target_len);
+    }
     resampling_scratch_byte_len(source, target, channels, max_pixels)?;
     source_byte_len(source.0, target.1, channels, max_pixels)?;
     if source.0 > MAX_RESAMPLING_SOURCE_SIDE || source.1 > MAX_RESAMPLING_SOURCE_SIDE {
@@ -141,6 +149,7 @@ fn resampling_byte_len(
 /// PdfCraft patch: image dimensions selected before allocating resampling buffers.
 /// Exported for PdfCraft's small, metadata-only regression tests. `None` rejects invalid
 /// sources/scales or an over-budget target/intermediate; the caller may retain a valid source.
+/// `interpolate` selects the Catmull-Rom limits; nearest-neighbour (`false`) skips them.
 #[doc(hidden)]
 pub fn image_resampling_size(
     width: u32,
@@ -150,6 +159,7 @@ pub fn image_resampling_size(
     x_scale: f32,
     y_scale: f32,
     max_pixels: u64,
+    interpolate: bool,
 ) -> Option<(u32, u32)> {
     if !x_scale.is_finite() || !y_scale.is_finite() || x_scale <= 0.0 || y_scale <= 0.0 {
         return None;
@@ -165,7 +175,14 @@ pub fn image_resampling_size(
     } else {
         (width, height)
     };
-    resampling_byte_len((width, height), target, channels, data_len, max_pixels)?;
+    resampling_byte_len(
+        (width, height),
+        target,
+        channels,
+        data_len,
+        max_pixels,
+        interpolate,
+    )?;
     Some(target)
 }
 
@@ -173,6 +190,49 @@ pub fn image_resampling_size(
 fn image_buffer(len: usize) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     out.try_reserve_exact(len).ok()?;
+    Some(out)
+}
+
+/// PdfCraft patch (#624): the source index that PicScale's nearest-neighbour plan copies for
+/// destination `index` of `dst` samples taken from `src`. It is the same fixed-point centre
+/// sampling as `ResampleNearestPlan`, so these are the samples a nearest resize would copy.
+fn nearest_source_index(src: u32, dst: u32, index: u32) -> usize {
+    let step = (u64::from(src) << 32) / u64::from(dst);
+    ((u64::from(index) * step + (step >> 1)) >> 32) as usize
+}
+
+/// PdfCraft patch (#624): nearest-resizes a colour image and its same-sized soft mask straight
+/// into premultiplied RGBA of `target` size. Colour and mask come from the same source pixel, so
+/// this equals a nearest resize of the expanded RGBA followed by premultiplying each pixel.
+fn nearest_premultiplied_rgba(
+    color: &ImageData,
+    alpha: &[u8],
+    source: (u32, u32),
+    target: (u32, u32),
+) -> Option<Vec<u8>> {
+    let (samples, channels) = match color {
+        ImageData::Luma(luma) => (luma.data.as_slice(), 1),
+        ImageData::Rgb(rgb) => (rgb.data.as_slice(), 3),
+    };
+    let mut out = image_buffer(image_byte_len(target.0, target.1, 4, MAX_IMAGE_PIXELS)?)?;
+    for ty in 0..target.1 {
+        let sy = nearest_source_index(source.1, target.1, ty);
+        for tx in 0..target.0 {
+            let si = sy * source.0 as usize + nearest_source_index(source.0, target.0, tx);
+            let [r, g, b] = match samples.get(si * channels..si * channels + channels)? {
+                [v] => [*v; 3],
+                [r, g, b] => [*r, *g, *b],
+                _ => return None,
+            };
+            let a = *alpha.get(si)?;
+            out.extend_from_slice(
+                &AlphaColor::from_rgba8(r, g, b, a)
+                    .premultiply()
+                    .to_rgba8()
+                    .to_u8_array(),
+            );
+        }
+    }
     Some(out)
 }
 
@@ -251,6 +311,10 @@ fn control_polygon_length(path: &BezPath) -> (f64, usize) {
 /// Fills are flattened into chords, which stay inside the outline's bounds.
 const DRAW_SLACK: f64 = 0.5;
 
+/// PdfCraft patch: previews skip images below this target area in device pixels: redrawing
+/// them at full detail costs a decode and a resample each for pixels nobody can see.
+const PREVIEW_MIN_IMAGE_AREA: u32 = 16;
+
 thread_local! {
     /// PdfCraft patch: whether [`may_paint_canvas`] may skip paths on this thread. Turned off
     /// only by PdfCraft's regression test, which renders each tile with and without skipping.
@@ -261,6 +325,23 @@ thread_local! {
 #[doc(hidden)]
 pub fn set_skip_offscreen_paths(skip: bool) {
     SKIP_OFFSCREEN_PATHS.with(|s| s.set(skip));
+}
+
+/// PdfCraft patch: whether a device-space box can paint a pixel of a `width` × `height`
+/// canvas. A box whose bounds miss the canvas is skipped without changing a pixel.
+/// Bounds that aren't finite are drawn as before.
+fn paints_canvas(device: Rect, width: u16, height: u16) -> bool {
+    if !SKIP_OFFSCREEN_PATHS.with(std::cell::Cell::get) {
+        return true;
+    }
+    let finite = [device.x0, device.y0, device.x1, device.y1]
+        .iter()
+        .all(|v| v.is_finite());
+    !finite
+        || (device.x0 < f64::from(width)
+            && device.x1 > 0.0
+            && device.y0 < f64::from(height)
+            && device.y1 > 0.0)
 }
 
 /// PdfCraft patch: whether a path drawn with `transform` can paint a pixel of a `width` ×
@@ -279,9 +360,6 @@ fn may_paint_canvas(
     width: u16,
     height: u16,
 ) -> bool {
-    if !SKIP_OFFSCREEN_PATHS.with(std::cell::Cell::get) {
-        return true;
-    }
     let mut points = Rect::new(
         f64::INFINITY,
         f64::INFINITY,
@@ -308,24 +386,63 @@ fn may_paint_canvas(
     let device = transform
         .transform_rect_bbox(points.inflate(grow, grow))
         .inflate(2.0, 2.0);
-    let finite = [device.x0, device.y0, device.x1, device.y1]
-        .iter()
-        .all(|v| v.is_finite());
-    !finite
-        || (device.x0 < f64::from(width)
-            && device.x1 > 0.0
-            && device.y0 < f64::from(height)
-            && device.y1 > 0.0)
+    paints_canvas(device, width, height)
+}
+
+/// PdfCraft patch: whether a `rect` drawn with `transform` can paint a pixel of a `width` ×
+/// `height` canvas. Used for images: decoded data can only shrink against the stream-size box
+/// (subsampled `scale_factors`), so the box over-approximates what is drawn and skipping it
+/// never changes a pixel, while a tile of an image-heavy page no longer decodes, resamples and
+/// rasterizes every image on the page.
+fn may_paint_rect(rect: Rect, transform: Affine, width: u16, height: u16) -> bool {
+    let device = transform
+        .transform_rect_bbox(rect.inflate(DRAW_SLACK, DRAW_SLACK))
+        .inflate(2.0, 2.0);
+    paints_canvas(device, width, height)
+}
+
+/// PdfCraft patch: the whole-pixel device rectangle of a shrunk, axis-aligned image, as
+/// `(width, height, x0, y0)`. `transform` maps source pixels to device pixels and `planned` is the
+/// size [`image_resampling_size`] chose; `None` (draw as before) for rotated, skewed or flipped
+/// images, non-finite geometry, or a snapped size that strays more than a pixel from `planned`
+/// (so the memory budget that size passed still holds).
+fn snap_minified_image(
+    transform: &Affine,
+    source: (u32, u32),
+    planned: (u32, u32),
+) -> Option<(u32, u32, f64, f64)> {
+    let [a, b, c, d, e, f] = transform.as_coeffs();
+    let tiny = 1e-4 * a.abs().max(d.abs());
+    if !(a > 0.0 && d > 0.0 && b.abs() <= tiny && c.abs() <= tiny) {
+        return None;
+    }
+    let edge = |origin: f64, scale: f64, side: u32| {
+        let (lo, hi) = (origin.round(), (origin + scale * f64::from(side)).round());
+        (hi - lo >= 1.0 && lo.abs() < 1e6 && hi.abs() < 1e6).then_some((lo, hi))
+    };
+    let (x0, x1) = edge(e, a, source.0)?;
+    let (y0, y1) = edge(f, d, source.1)?;
+    // Bounded by the 1e6 check above, so the casts cannot saturate.
+    let (w, h) = ((x1 - x0) as u32, (y1 - y0) as u32);
+    (w.abs_diff(planned.0) <= 1 && h.abs_diff(planned.1) <= 1).then_some((w, h, x0, y0))
 }
 
 pub(crate) struct Renderer {
     pub(crate) ctx: RenderContext,
+    /// PdfCraft patch: when set, solid text and line-art paint colours are remapped
+    /// while rendering (the "reading colours" view setting).
+    color_replacement: Option<ColorReplacement>,
     pub(crate) inside_pattern: bool,
+    /// Soft masks drawn during this render. PdfCraft note: it belongs to one `Renderer` (one
+    /// render, every nested renderer starting empty) and so to one `preview` setting: a mask
+    /// drawn for a preview, which may leave out tiny images, never reaches a final render.
     pub(crate) soft_mask_cache: HashMap<u128, Mask>,
     pub(crate) outline_cache: Rc<std::cell::RefCell<HashMap<u128, Rc<BezPath>>>>,
     pub(crate) cur_mask: Option<Mask>,
     pub(crate) in_type3_glyph: bool,
     pub(crate) scaler: Scaler,
+    /// PdfCraft patch: low-detail preview render (see `InterpreterSettings::preview`).
+    pub(crate) preview: bool,
     // TODO: Remove this once vello_cpu bug with non-transparent images is fixed
     image_transparency_stack: Vec<bool>,
 }
@@ -343,15 +460,19 @@ impl Renderer {
         height: u16,
         settings: RenderSettings,
         cache: &RenderCache<'_>,
+        color_replacement: Option<ColorReplacement>,
+        preview: bool,
     ) -> Self {
         Self {
             ctx: RenderContext::new_with(width, height, settings),
+            color_replacement,
             inside_pattern: false,
             soft_mask_cache: HashMap::default(),
             outline_cache: cache.outline_cache.clone(),
             cur_mask: None,
             in_type3_glyph: false,
             scaler: Scaler::new(ResamplingFunction::CatmullRom),
+            preview,
             image_transparency_stack: Vec::new(),
         }
     }
@@ -440,12 +561,16 @@ impl Renderer {
                     self.ctx.height(),
                     derive_settings(self.ctx.render_settings()),
                 ),
+                // PdfCraft patch: this renders an image's alpha mask, which must keep its
+                // original values, so it is never remapped by the reading-colours setting.
+                color_replacement: None,
                 inside_pattern: false,
                 soft_mask_cache: HashMap::default(),
                 outline_cache: self.outline_cache.clone(),
                 cur_mask: None,
                 in_type3_glyph: false,
                 scaler: self.scaler,
+                preview: self.preview,
                 image_transparency_stack: Vec::new(),
             };
             let mut mask_pix = Pixmap::new(self.ctx.width(), self.ctx.height());
@@ -482,9 +607,19 @@ impl Renderer {
         new_width: u32,
         new_height: u32,
         pixel_format: ImagePixelFormat,
+        interpolate: bool,
     ) -> (Vec<u8>, u32, u32) {
+        // PdfCraft patch (#624): `/Interpolate` governs the pre-minification pass too. Using
+        // Catmull-Rom here for an image that did not request interpolation blends hard edges
+        // before ImageQuality::Low gets a chance to sample it. Keep the pre-resize (and its
+        // bounded memory/performance behaviour), but use nearest-neighbour when interpolation
+        // is disabled. PDF's default for `/Interpolate` is false.
+        let nearest = Scaler::new(ResamplingFunction::Nearest);
+        let scaler = if interpolate { &self.scaler } else { &nearest };
         let resized = match pixel_format {
             ImagePixelFormat::Luma => self.resize_image_data_impl::<1>(
+                scaler,
+                interpolate,
                 data,
                 src_width,
                 src_height,
@@ -495,6 +630,8 @@ impl Renderer {
                 },
             ),
             ImagePixelFormat::Rgb => self.resize_image_data_impl::<3>(
+                scaler,
+                interpolate,
                 data,
                 src_width,
                 src_height,
@@ -505,6 +642,8 @@ impl Renderer {
                 },
             ),
             ImagePixelFormat::Rgba => self.resize_image_data_impl::<4>(
+                scaler,
+                interpolate,
                 data,
                 src_width,
                 src_height,
@@ -528,6 +667,8 @@ impl Renderer {
 
     fn resize_image_data_impl<const N: usize>(
         &self,
+        scaler: &Scaler,
+        interpolate: bool,
         data: Vec<u8>,
         src_width: u32,
         src_height: u32,
@@ -548,19 +689,25 @@ impl Renderer {
                 N,
                 data.len(),
                 MAX_IMAGE_PIXELS,
+                interpolate,
             )?;
             let source_size = ImageSize::new(src_width as usize, src_height as usize);
             let target_size = ImageSize::new(new_width as usize, new_height as usize);
             let src = ImageStore::<u8, N>::from_slice(&data, source_size.width, source_size.height)
                 .ok()?;
-            let plan = plan(&self.scaler, source_size, target_size).ok()?;
+            let plan = plan(scaler, source_size, target_size).ok()?;
             let scratch_len = plan.scratch_size();
-            let scratch_bound = resampling_scratch_byte_len(
-                (src_width, src_height),
-                (new_width, new_height),
-                N,
-                MAX_IMAGE_PIXELS,
-            )?;
+            // Nearest-neighbour needs no scratch, so any scratch it reports is refused.
+            let scratch_bound = if interpolate {
+                resampling_scratch_byte_len(
+                    (src_width, src_height),
+                    (new_width, new_height),
+                    N,
+                    MAX_IMAGE_PIXELS,
+                )?
+            } else {
+                0
+            };
             if scratch_len > scratch_bound {
                 return None;
             }
@@ -642,6 +789,7 @@ impl Renderer {
             x_scale,
             y_scale,
             MAX_IMAGE_PIXELS,
+            interpolate,
         ) {
             Some(target) => target,
             None => {
@@ -657,17 +805,47 @@ impl Renderer {
                 (source_width, source_height)
             }
         };
-        if requested_resize && self.in_type3_glyph {
+        // PdfCraft patch (#624): High is bicubic and would blend the nearest pre-resize of an image
+        // that did not request interpolation, so only interpolated glyph images are promoted.
+        if requested_resize && self.in_type3_glyph && interpolate {
             quality = ImageQuality::High;
         }
+        // PdfCraft patch: an axis-aligned, interpolated image that is shrunk lands on whole device
+        // pixels. It is shrunk once to exactly its snapped device rectangle and drawn 1:1 at the
+        // snapped corner. Otherwise the shrunk raster (rounded up to a whole size) is sampled a
+        // second time at a fractional scale and offset, which blurs scans and photos.
+        let snapped = if interpolate
+            && requested_resize
+            && !self.in_type3_glyph
+            && (new_width, new_height) != (source_width, source_height)
+        {
+            snap_minified_image(&cur_transform, (source_width, source_height), (new_width, new_height))
+        } else {
+            None
+        };
+        let (new_width, new_height) = snapped.map_or((new_width, new_height), |s| (s.0, s.1));
         let needs_resize = (new_width, new_height) != (source_width, source_height);
 
+        // PdfCraft patch (#624): a minified image with a soft mask that is not interpolated is
+        // nearest-sampled straight into premultiplied target RGBA. That skips the full-resolution
+        // RGBA copy below and the premultiply pass after it.
+        let direct = match &alpha_data {
+            Some(alpha) if needs_resize && !interpolate => nearest_premultiplied_rgba(
+                &image_data,
+                &alpha.data,
+                (source_width, source_height),
+                (new_width, new_height),
+            ),
+            _ => None,
+        };
+        let premultiplied = direct.is_some();
         // Preserve the single-channel/RGB fast paths. With alpha, expand directly to RGBA;
         // every source and alpha length was validated before zipping or allocating.
-        let (data, format) = match (image_data, alpha_data) {
-            (ImageData::Luma(luma), None) => (luma.data, ImagePixelFormat::Luma),
-            (ImageData::Rgb(rgb), None) => (rgb.data, ImagePixelFormat::Rgb),
-            (image, Some(alpha)) => {
+        let (data, format) = match (direct, image_data, alpha_data) {
+            (Some(rgba), _, _) => (rgba, ImagePixelFormat::Rgba),
+            (None, ImageData::Luma(luma), None) => (luma.data, ImagePixelFormat::Luma),
+            (None, ImageData::Rgb(rgb), None) => (rgb.data, ImagePixelFormat::Rgb),
+            (None, image, Some(alpha)) => {
                 let Some(len) = source_byte_len(source_width, source_height, 4, MAX_IMAGE_PIXELS)
                 else {
                     return;
@@ -701,7 +879,9 @@ impl Renderer {
                 (rgba, ImagePixelFormat::Rgba)
             }
         };
-        let (data, mut img_width, mut img_height) = if needs_resize {
+        let (data, mut img_width, mut img_height) = if premultiplied {
+            (data, new_width, new_height)
+        } else if needs_resize {
             self.resize_image_data(
                 data,
                 source_width,
@@ -709,6 +889,7 @@ impl Renderer {
                 new_width,
                 new_height,
                 format,
+                interpolate,
             )
         } else {
             (data, source_width, source_height)
@@ -745,7 +926,7 @@ impl Renderer {
             }
             rgba
         };
-        if has_alpha {
+        if has_alpha && !premultiplied {
             let (chunks, _) = rgba_data.as_chunks_mut::<4>();
             for chunk in chunks {
                 let [r, g, b, a] = *chunk;
@@ -791,11 +972,11 @@ impl Renderer {
             img_height as u16,
             may_have_transparency,
         );
-        self.draw_pixmap(
-            Arc::new(pixmap),
-            quality,
-            cur_transform * additional_transform,
-        );
+        let draw_transform = match snapped {
+            Some((_, _, x0, y0)) => Affine::translate((x0, y0)),
+            None => cur_transform * additional_transform,
+        };
+        self.draw_pixmap(Arc::new(pixmap), quality, draw_transform);
     }
 
     fn push_clip_path_inner(&mut self, clip_path: &BezPath, fill: FillRule) {
@@ -824,6 +1005,25 @@ impl Renderer {
         self.ctx.set_paint(image);
         self.ctx
             .fill_rect(&Rect::new(0.0, 0.0, width as f64, height as f64));
+    }
+
+    /// PdfCraft patch: remaps a solid paint colour through `color_replacement`, if one is
+    /// set. `Paint::Pattern` (images, shadings, tiling patterns) always passes through
+    /// untouched.
+    fn replaced<'a>(&self, paint: &Paint<'a>, is_text: bool) -> Paint<'a> {
+        let Some(replacement) = self.color_replacement else {
+            return paint.clone();
+        };
+        match paint {
+            Paint::Color(c) => {
+                let mapped = replacement.map(c.to_rgba().to_rgba8(), is_text);
+                let rgba = hayro_interpret::color::AlphaColor::from_rgba8(
+                    mapped[0], mapped[1], mapped[2], mapped[3],
+                );
+                Paint::Color(Color::from_rgba(rgba))
+            }
+            other => other.clone(),
+        }
     }
 
     #[must_use]
@@ -861,6 +1061,20 @@ impl Renderer {
                         // PdfCraft patch: mesh shadings are sampled only inside `bbox` (and a
                         // pixel around it: texels at a fractional edge look one pixel further).
                         let encoded = s.encode_within(Some(bbox.inflate(1.0, 1.0)));
+
+                        // PdfCraft patch (backport of hayro 0.8): axial and radial shadings
+                        // become native gradients instead of a texture sampled pixel by pixel.
+                        // Upstream also shifts by half a pixel for vello_cpu 0.3; 0.0.8 already
+                        // evaluates gradients at pixel centres, like the texture below.
+                        if let Some(native) =
+                            encoded.as_svg_gradient(bbox, NATIVE_GRADIENT_TOLERANCE)
+                        {
+                            self.ctx
+                                .set_paint_transform(path_transform.inverse() * native.transform);
+                            self.ctx.set_paint(native_gradient(native));
+                            return clip_path;
+                        }
+
                         let (image, width, height, transform, may_have_transparency) =
                             render_shading_texture(bbox, &encoded);
                         let may_have_transparency =
@@ -923,12 +1137,16 @@ impl Renderer {
                                 pix_height,
                                 derive_settings(self.ctx.render_settings()),
                             ),
+                            // PdfCraft patch: a pattern cell is painted as one artwork, so its
+                            // content is never remapped by the reading-colours setting.
+                            color_replacement: None,
                             cur_mask: None,
                             inside_pattern: true,
                             soft_mask_cache: HashMap::default(),
                             outline_cache: self.outline_cache.clone(),
                             in_type3_glyph: false,
                             scaler: self.scaler,
+                            preview: self.preview,
                             image_transparency_stack: Vec::new(),
                         };
                         let mut initial_transform = Affine::scale_non_uniform(xs as f64, ys as f64)
@@ -990,7 +1208,9 @@ impl Renderer {
             return;
         }
 
-        let clip_path = self.set_paint(paint, path, true);
+        // PdfCraft patch: apply the reading-colours mapping before painting.
+        let paint = self.replaced(paint, is_text);
+        let clip_path = self.set_paint(&paint, path, true);
         if let Some(clip_path) = clip_path.as_ref() {
             self.push_clip_path_inner(clip_path, FillRule::NonZero);
         }
@@ -1006,6 +1226,9 @@ impl Renderer {
         transform: Affine,
         paint: &Paint<'_>,
         fill_rule: FillRule,
+        // PdfCraft patch: distinguishes glyph fills from plain line art for the
+        // reading-colours mapping.
+        is_text: bool,
     ) {
         self.ctx.set_fill_rule(convert_fill_rule(fill_rule));
         self.ctx.set_transform(transform);
@@ -1014,7 +1237,9 @@ impl Renderer {
             return;
         }
 
-        let clip_path = self.set_paint(paint, path, false);
+        // PdfCraft patch: apply the reading-colours mapping before painting.
+        let paint = self.replaced(paint, is_text);
+        let clip_path = self.set_paint(&paint, path, false);
         if let Some(clip_path) = clip_path.as_ref() {
             self.push_clip_path_inner(clip_path, fill_rule);
         }
@@ -1042,9 +1267,14 @@ impl Renderer {
                     transform * glyph_transform,
                     paint,
                     FillRule::NonZero,
+                    // PdfCraft patch: glyph outlines are text for the reading-colours mapping.
+                    true,
                 );
             }
             Glyph::Type3(s) => {
+                // PdfCraft patch: a type 3 glyph's content stream keeps painting as line art
+                // (its internal ops reach `fill_path`/`stroke_path` with `is_text: false`), so
+                // reading colours remap it only when line-art replacement is on.
                 self.in_type3_glyph = true;
                 s.interpret(self, transform, glyph_transform, paint);
                 self.in_type3_glyph = false;
@@ -1103,6 +1333,16 @@ impl Renderer {
 
 impl<'a> Device<'a> for Renderer {
     fn draw_image(&mut self, image: hayro_interpret::Image<'a, '_>, mut transform: Affine) {
+        // PdfCraft patch: see `may_paint_rect`. Checked before decoding: off-canvas images
+        // cost nothing, so a tile no longer decodes every image on its page.
+        if !may_paint_rect(
+            Rect::new(0.0, 0.0, f64::from(image.width()), f64::from(image.height())),
+            transform,
+            self.ctx.width(),
+            self.ctx.height(),
+        ) {
+            return;
+        }
         self.ctx.set_paint_transform(Affine::IDENTITY);
         self.ctx.set_aliasing_threshold(Some(1));
 
@@ -1115,6 +1355,18 @@ impl<'a> Device<'a> for Renderer {
             .length()
             .ceil() as u32;
 
+        // PdfCraft patch: previews skip images that would cover only a few device pixels.
+        // Final renders always draw them. (Measured as axis lengths: the `target_*` above
+        // map a point, so they include the translation and only suit the decode hint.)
+        if self.preview {
+            let c = transform.as_coeffs();
+            let tiny_w = (f64::from(image.width()) * (c[0] * c[0] + c[1] * c[1]).sqrt()).ceil() as u32;
+            let tiny_h = (f64::from(image.height()) * (c[2] * c[2] + c[3] * c[3]).sqrt()).ceil() as u32;
+            if tiny_w.saturating_mul(tiny_h) < PREVIEW_MIN_IMAGE_AREA {
+                return;
+            }
+        }
+
         match image {
             hayro_interpret::Image::Stencil(s) => {
                 s.with_stencil(
@@ -1124,6 +1376,11 @@ impl<'a> Device<'a> for Renderer {
                             stencil.scale_factors.1 as f64,
                         );
 
+                        // PdfCraft patch: a stencil mask is line art in disguise, so its solid
+                        // paint goes through the reading-colours mapping (line-art gate) like
+                        // every other solid fill; baked in raw, its ink would stay at its
+                        // original colour and vanish into a mapped background.
+                        let paint = &self.replaced(paint, false);
                         match paint {
                             Paint::Color(c) => {
                                 let color = c.to_rgba().to_rgba8();
@@ -1194,12 +1451,17 @@ impl<'a> Device<'a> for Renderer {
                                             height,
                                             derive_settings(self.ctx.render_settings()),
                                         ),
+                                        // PdfCraft patch: a stencil mask must keep its original
+                                        // coverage values, so its content is never remapped by
+                                        // the reading-colours setting.
+                                        color_replacement: None,
                                         inside_pattern: false,
                                         soft_mask_cache: HashMap::default(),
                                         outline_cache: self.outline_cache.clone(),
                                         cur_mask: None,
                                         in_type3_glyph: false,
                                         scaler: self.scaler,
+                                        preview: self.preview,
                                         image_transparency_stack: Vec::new(),
                                     };
                                     let mut sub_pix = Pixmap::new(width, height);
@@ -1284,7 +1546,7 @@ impl<'a> Device<'a> for Renderer {
 
                 self.soft_mask_cache
                     .entry(m.cache_key())
-                    .or_insert_with(|| draw_soft_mask(&m, settings, width, height))
+                    .or_insert_with(|| draw_soft_mask(&m, settings, width, height, self.preview))
                     .clone()
             }),
             None,
@@ -1310,7 +1572,7 @@ impl<'a> Device<'a> for Renderer {
 
             self.soft_mask_cache
                 .entry(m.cache_key())
-                .or_insert_with(|| draw_soft_mask(&m, settings, width, height))
+                .or_insert_with(|| draw_soft_mask(&m, settings, width, height, self.preview))
                 .clone()
         });
         if let Some(mask) = self.cur_mask.clone() {
@@ -1329,7 +1591,7 @@ impl<'a> Device<'a> for Renderer {
     ) {
         match draw_mode {
             PathDrawMode::Fill(f) => {
-                Self::fill_path(self, path, transform, paint, *f);
+                Self::fill_path(self, path, transform, paint, *f, false);
             }
             PathDrawMode::Stroke(s) => {
                 Self::stroke_path(self, path, transform, paint, s, false);
@@ -1354,7 +1616,9 @@ impl<'a> Device<'a> for Renderer {
                     return;
                 }
 
-                let clip_path = self.set_paint(paint, &path, false);
+                // PdfCraft patch: apply the reading-colours mapping before painting.
+                let paint = self.replaced(paint, false);
+                let clip_path = self.set_paint(&paint, &path, false);
                 if let Some(clip_path) = clip_path.as_ref() {
                     self.push_clip_path_inner(clip_path, *fill_rule);
                 }
@@ -1395,6 +1659,37 @@ impl<'a> Device<'a> for Renderer {
     fn set_blend_mode(&mut self, blend_mode: BlendMode) {
         self.ctx.set_blend_mode(convert_blend_mode(blend_mode));
     }
+}
+
+/// PdfCraft patch (backport of hayro 0.8): largest per-channel error allowed when approximating
+/// a shading function by gradient stops.
+const NATIVE_GRADIENT_TOLERANCE: f32 = 0.01;
+
+/// PdfCraft patch (backport of hayro 0.8): a `vello_cpu` gradient for an approximated shading.
+fn native_gradient(native: hayro_interpret::gradient::SvgGradient) -> PaintType {
+    use hayro_interpret::gradient::SvgGradientKind;
+
+    let stops = native
+        .stops
+        .iter()
+        .map(|stop| ColorStop {
+            offset: stop.offset,
+            color: DynamicColor::from_alpha_color(AlphaColor::<Srgb>::new(stop.color)),
+        })
+        .collect::<Vec<_>>();
+
+    match native.kind {
+        SvgGradientKind::Linear { start, end } => Gradient::new_linear(start, end),
+        SvgGradientKind::Radial {
+            start_center,
+            start_radius,
+            end_center,
+            end_radius,
+        } => Gradient::new_two_point_radial(start_center, start_radius, end_center, end_radius),
+    }
+    .with_extend(peniko::Extend::Pad)
+    .with_stops(stops.as_slice())
+    .into()
 }
 
 // TODO: Deduplicate with hayro-svg?
@@ -1439,15 +1734,19 @@ fn render_shading_texture(
     )
 }
 
-fn draw_soft_mask(mask: &SoftMask<'_>, settings: RenderSettings, width: u16, height: u16) -> Mask {
+fn draw_soft_mask(mask: &SoftMask<'_>, settings: RenderSettings, width: u16, height: u16, preview: bool) -> Mask {
     let mut renderer = Renderer {
         ctx: RenderContext::new_with(width, height, derive_settings(&settings)),
+        // PdfCraft patch: a soft mask must keep its original luminance values, so its
+        // content is never remapped by the reading-colours setting.
+        color_replacement: None,
         inside_pattern: false,
         cur_mask: None,
         soft_mask_cache: HashMap::default(),
         outline_cache: Rc::new(std::cell::RefCell::new(HashMap::new())),
         in_type3_glyph: false,
         scaler: Scaler::new(ResamplingFunction::CatmullRom),
+        preview,
         image_transparency_stack: Vec::new(),
     };
 

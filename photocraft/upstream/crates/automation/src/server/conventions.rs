@@ -16,7 +16,7 @@ fn annotated(mut tool: Tool) -> Tool {
         tool.name.as_ref(),
         "command_list" | "doc_inspect" | "session_list" | "render_preview" | "doc_render_preview" | "ui_inspect" | "ui_screenshot"
     );
-    let additive = matches!(tool.name.as_ref(), "doc_new" | "doc_open");
+    let additive = matches!(tool.name.as_ref(), "doc_new" | "doc_open" | "doc_place");
     tool.title = Some(title.clone());
     tool.annotations = Some(ToolAnnotations::from_raw(Some(title), Some(read), Some(!read && !additive), Some(read), Some(false)));
     Arc::make_mut(&mut tool.input_schema).insert("additionalProperties".into(), json!(false));

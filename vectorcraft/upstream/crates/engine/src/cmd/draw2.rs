@@ -781,6 +781,7 @@ fn remove_anchors_of(d: &mut Document, sel: &mut Selection, id: NodeId, anchors:
         sel.remove(id);
     } else {
         sel.anchors.remove(&id);
+        sel.segments.remove(&id);
     }
     Ok(gone)
 }
@@ -825,19 +826,8 @@ fn reshape_segment(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit("Reshape", |d, _| {
         let path = path_mut(d, id)?;
         let sp = path.subpaths.get_mut(si).ok_or_else(|| EngineError::Other("no such subpath".into()))?;
-        if seg >= sp.segment_count() {
+        if !sp.bend_segment(seg, t, dv) {
             return Err(EngineError::Other("no such segment".into()));
-        }
-        let n = sp.anchors.len();
-        // Moving both inner control points by v moves B(t) by 3t(1-t)·v. A smooth anchor stays
-        // smooth: its other handle turns with the moved one.
-        let v = dv / (3.0 * t * (1.0 - t));
-        let (i0, i1) = (seg % n, (seg + 1) % n);
-        if let Some(a) = sp.anchors.get_mut(i0) {
-            a.set_handle(true, a.h_out + v, false);
-        }
-        if let Some(b) = sp.anchors.get_mut(i1) {
-            b.set_handle(false, b.h_in + v, false);
         }
         Ok(())
     })?;

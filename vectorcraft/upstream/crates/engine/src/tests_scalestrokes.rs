@@ -138,8 +138,8 @@ fn group_appearance_scales_with_its_members() {
 
 #[test]
 fn scale_corners_keeps_or_scales_live_corner_radii() {
-    let radius = |s: &Session, id| match &node(s, id).kind {
-        NodeKind::Path { live: Some(LiveShape::Rectangle { radii, xf, .. }), .. } => radii[0] * xf.as_coeffs()[0],
+    let radius = |s: &Session, id| match node(s, id).live_shape() {
+        Some(LiveShape::Rectangle { radii, xf, .. }) => radii[0] * xf.as_coeffs()[0],
         _ => panic!("not a live rectangle"),
     };
     let mut s = session();
@@ -175,7 +175,7 @@ fn live_corners_stay_circular_when_a_rectangle_is_scaled_unevenly() {
     let n = node(&s, id);
     assert!((n.geometric_bounds().unwrap().width() - 300.0).abs() < 1e-9);
     assert!(round_corners(&n, 10.0), "{:?}", corner_spans(&n));
-    let NodeKind::Path { live: Some(LiveShape::Rectangle { w, h, radii, .. }), .. } = &n.kind else { panic!("not live") };
+    let Some(LiveShape::Rectangle { w, h, radii, .. }) = n.live_shape() else { panic!("not live") };
     assert!((w - 300.0).abs() < 1e-9 && (h - 100.0).abs() < 1e-9 && (radii[0] - 10.0).abs() < 1e-9, "the panels read document units");
     // Scale Corners on: the radius scales by the mean scale (√(2 × 0.5) = 1 here, 2 below).
     run(&mut s, "object.scale", json!({"sx": 200, "sy": 50, "corners": true}));

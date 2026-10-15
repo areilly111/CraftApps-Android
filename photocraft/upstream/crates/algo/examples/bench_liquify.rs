@@ -59,6 +59,22 @@ fn main() {
         prev = p;
     }
     println!("forward-warp segment (600 px brush, 25 px moves) + proxy update: mean {:.2} ms, worst {:.2} ms", total / n as f64, worst);
+    // One 3000 px drag with a 200 px brush (a straight leg, then a diagonal one), as a slow
+    // (every 2 px) and a fast (every 60 px) pointer reports it: the field cost of the whole
+    // stroke, and how far the two results differ.
+    let mut drag = LiquifyStroke::new(LiquifyTool::ForwardWarp, 200.0);
+    let mut fields = Vec::new();
+    let along = |d: f64| if d <= 1500.0 { vec![1500.0 + d, 2000.0] } else { vec![3000.0 + (d - 1500.0) * 0.6, 2000.0 + (d - 1500.0) * 0.8] };
+    for step in [2.0, 60.0] {
+        drag.points = (0..=(3000.0 / step) as usize).map(|k| along(k as f64 * step)).collect();
+        let t = Instant::now();
+        let mut f = LiquifyField::new(b, cell);
+        f.apply_stroke(&drag);
+        println!("forward-warp 3000 px drag (200 px brush), an event every {step} px: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
+        fields.push(f);
+    }
+    let diff = fields[0].d.iter().zip(&fields[1].d).map(|(p, q)| (p[0] - q[0]).abs().max((p[1] - q[1]).abs())).fold(0.0f32, f32::max);
+    println!("  slow vs fast pointer: fields differ by at most {diff:.3} px (max displacement {:.1} px)", fields[0].max_displacement());
     st.tool = LiquifyTool::Bloat;
     let t = Instant::now();
     let mut d = Rect::EMPTY;

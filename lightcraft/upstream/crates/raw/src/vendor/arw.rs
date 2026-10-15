@@ -29,17 +29,21 @@
 //! ([`word16_order`]). Measured on the CC0 DSC-R1 (raw.pixls.us 3221): StripByteCounts 20780544 = 3984×2608×2; read
 //! big-endian the maximum is 16368 and the image is smooth (neighbour roughness 0.012 against 0.249), read
 //! little-endian the maximum is 65340 (noise). Black stays the default 512 (the masked columns read 511.4) and white
-//! comes from the data. The crop and white balance are NOT addressed here: the file has no maker-note `FullImageSize`
-//! and no plain WB tag (they live in its `SR2SubIFD`), so it opens uncropped with unit multipliers.
+//! comes from the data. The file has no maker-note `FullImageSize` and no plain WB or crop tag; they live in its
+//! `SR2SubIFD` (key `63 be 01 3e`, see [`super::sr2`]): black `0x7300`, as-shot WB `0x7303` (G, R, B, G) and the crop
+//! `0x74c3` (x0, y0, x1, y1), each read only when no other source exists.
 //!
 //! Packed 12-bit ARW (DSLR-A900; Compression 32767 but BitsPerSample 12 and a strip of exactly width × height × 1.5
 //! bytes): plain 12-bit samples, two per three bytes, least-significant-bit first ([`unpack_row12`]); linear, black 128
 //! (512 on the 14-bit scale), CFA from the file's own pattern tag, crop centred on the frame (see [`default_crop`]).
 //!
+//! ARW6 (Compressed RAW 2, compression 32766): `arw6.rs`, output in 2 × 14-bit units.
+//!
 //! Also: uncompressed 16-bit ARW, and lossless-compressed ARW (Compression 7, ILCE-7M4 and later): LJ92 tiles whose
 //! frames hold one 2×2 CFA cell per four-component sample ([`read_quad_tiles`]). Other lossless-JPEG layouts go
 //! through the generic TIFF path.
 
+use super::arw6;
 use crate::tiffraw::{Packing, check_image, read_image_in};
 use crate::{BlackLevel, Cfa, ColorData, Mode, OpcodeLists, RawData, RawError, RawFormat, RawImage, Rect, Result, ljpeg};
 use lightcraft_geom::Orientation;
@@ -53,6 +57,11 @@ const BLACK_LEVEL: u16 = 0x7310;
 const WB_RGGB: u16 = 0x7313;
 const CROP_TOP_LEFT: u16 = 0x74c7;
 const CROP_SIZE: u16 = 0x74c8;
+/// `SR2SubIFD` tags of the oldest layout (DSC-R1): per-channel black, as-shot WB in G, R, B, G order, and the crop
+/// `(x0, y0, x1, y1)`. Used only when nothing else gives the value.
+const SR2_OLD_BLACK: u16 = 0x7300;
+const SR2_OLD_WB: u16 = 0x7303;
+const SR2_OLD_CROP: u16 = 0x74c3;
 const YCBCR_COEFFICIENTS: u16 = 529;
 const REFERENCE_BLACK_WHITE: u16 = 532;
 /// Maker-note tags (ExifTool Sony tag names): the enciphered `Tag2010` block and `FullImageSize` (height, width).
@@ -454,10 +463,25 @@ fn read_ycbcr_tiles(bytes: &[u8], info: &ImageInfo, raw: &Ifd, mode: Mode) -> Re
 /// on the DSLR-A450/A500/A550 (27152 bytes: 354–365) and the DSLR-A700 (62112 bytes: 975), whose black is 512 by
 /// ExifTool and by the data floor (issue #535).
 fn sr2_black(sr2: &super::sr2::SubIfd) -> Option<f32> {
-    match sr2.short_bytes(BLACK_LEVEL)? {
+    match sr2.short_bytes(BLACK_LEVEL).or_else(|| sr2.short_bytes(SR2_OLD_BLACK))? {
         (3, plain) if plain.len() == 8 => sr2_black_levels(plain, sr2.order()),
         _ => None,
     }
+}
+
+/// The DSC-R1's as-shot gains `[R/G, 1, B/G]` from `0x7303` (G, R, B, G), when plausible.
+fn sr2_old_wb(sr2: &super::sr2::SubIfd) -> Option<[f32; 3]> {
+    let v = sr2.shorts(SR2_OLD_WB).filter(|v| v.len() == 4 && v.iter().all(|&x| x > 0.0))?;
+    let g = (v[0] + v[3]) / 2.0;
+    let (r, b) = ((v[1] / g) as f32, (v[2] / g) as f32);
+    ((0.25..=16.0).contains(&r) && (0.25..=16.0).contains(&b)).then_some([r, 1.0, b])
+}
+
+/// The DSC-R1's crop from `0x74c3` (x0, y0, x1, y1): an even origin (CFA phase) and a window inside the `w × h` frame.
+fn sr2_old_crop(sr2: &super::sr2::SubIfd, w: usize, h: usize) -> Option<Rect> {
+    let v = sr2.shorts(SR2_OLD_CROP).filter(|v| v.len() == 4)?;
+    let [x0, y0, x1, y1] = [v[0] as usize, v[1] as usize, v[2] as usize, v[3] as usize];
+    (x0 % 2 == 0 && y0 % 2 == 0 && x1 > x0 && y1 > y0 && x1 <= w && y1 <= h).then(|| Rect::new(x0, y0, x1 - x0, y1 - y0))
 }
 
 /// One black level from the four deciphered per-channel levels (their mean), when they are near-equal and plausible.
@@ -609,6 +633,14 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
                 (RawData::U16(Vec::new()), bits)
             }
         },
+        32766 if chunks.len() == 1 => {
+            if bits != 14 {
+                return Err(RawError::Unsupported("ARW6 12-bit mode (no sample to verify)".into()));
+            }
+            let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            (RawData::U16(arw6::decode(src, w, h, mode)?), 16)
+        }
+        32766 => return Err(RawError::Unsupported("ARW6 without exactly one strip".into())),
         1 => {
             let word16 = strip_len >= (w * h * 2) as u64;
             let packing = if word16 { Packing::Word16 } else { Packing::Msb };
@@ -646,11 +678,20 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         _ if linear_rgb => BlackLevel::uniform(default_black + YCBCR_OFFSET),
         _ => BlackLevel::uniform((scale_bits >= 14).then(|| sr2().and_then(sr2_black)).flatten().unwrap_or(default_black)),
     };
+    // ARW6 samples are in 2 x 14-bit units, so the file's 14-bit levels double; without the tag the white is the
+    // 14-bit white in those units, 2 x 16383
+    let unit = if info.compression == 32766 { 2.0 } else { 1.0 };
     let white = if linear_rgb {
         YCBCR_WHITE + YCBCR_OFFSET
     } else {
-        raw.f64(t::WHITE_LEVEL).map(|v| v as f32).filter(|v| *v > 0.0).unwrap_or_else(|| super::white_from_data(samples, scale_bits))
+        let tag = raw.f64(t::WHITE_LEVEL).map(|v| v as f32 * unit).filter(|v| *v > 0.0);
+        match (tag, info.compression) {
+            (Some(v), _) => v,
+            (None, 32766) => 32766.0,
+            (None, _) => super::white_from_data(samples, scale_bits),
+        }
     };
+    let black = BlackLevel { values: black.values.iter().map(|v| v * unit).collect(), ..black };
     let model = ifd0.string(t::MODEL).unwrap_or_default();
     let mn = tiff
         .exif()
@@ -660,12 +701,15 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         .f64s(WB_RGGB)
         .and_then(|v| rggb_gains(&v))
         .or_else(|| rggb_gains(&sr2()?.shorts(WB_RGGB)?))
-        .or_else(|| mn.as_ref().and_then(|m| tag2010_wb(&model, m.ifd.bytes(MN_TAG2010)?, m.order)));
+        .or_else(|| mn.as_ref().and_then(|m| tag2010_wb(&model, m.ifd.bytes(MN_TAG2010)?, m.order)))
+        .or_else(|| sr2_old_wb(sr2()?));
     let crop = match (raw.u64s(CROP_TOP_LEFT).as_deref(), raw.u64s(CROP_SIZE).as_deref()) {
         (Some([x, y]), Some([cw, ch])) if *cw > 0 && *ch > 0 => Rect::new(*x as usize, *y as usize, *cw as usize, *ch as usize).clipped(w, h),
         _ => {
             let exif_size = tiff.exif().and_then(|e| Some((e.u64(t::PIXEL_X_DIMENSION)?, e.u64(t::PIXEL_Y_DIMENSION)?)));
-            default_crop(raw, mn.as_ref(), exif_size, w, h, packed12)
+            let crop = default_crop(raw, mn.as_ref(), exif_size, w, h, packed12);
+            // no crop from any other source: the old SR2SubIFD's
+            if crop == Rect::new(0, 0, w, h) { sr2().and_then(|s| sr2_old_crop(s, w, h)).unwrap_or(crop) } else { crop }
         }
     };
     let mut metadata = lightcraft_meta::from_tiff(&tiff);
@@ -694,7 +738,9 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         // validated against Sony's exports with that centre. The opcode's centre is in active-area coordinates, so
         // it stays on the optical centre whichever crop frames the image.
         opcodes: OpcodeLists {
-            list3: if linear_rgb {
+            // DefaultCrop can retain native geometry while Sony's tags select an aspect crop.
+            // Both the image framing and the table geometry must stay within the validated 3:2 scope.
+            list3: if linear_rgb || crop.height == 0 || (crop.width as f64 / crop.height as f64 - 1.5).abs() > 0.005 {
                 Vec::new()
             } else {
                 let geometry = dng_default_crop(raw, w, h).unwrap_or(crop);
@@ -1129,6 +1175,29 @@ mod tests {
             file[at..at + 4].copy_from_slice(&(private as u32).to_le_bytes());
         }
         file
+    }
+
+    #[test]
+    fn dsc_r1_sr2_subifd_gives_black_wb_and_crop() {
+        use lightcraft_tiff::ByteOrder::Little;
+        let key = [0x63, 0xbe, 0x01, 0x3e];
+        let enc = |crop: [u16; 4], wb: [u16; 4]| {
+            let b = super::super::sr2::tests::block_keyed(
+                230812,
+                &[(SR2_OLD_BLACK, 3, &[514, 511, 512, 513]), (SR2_OLD_WB, 3, &wb), (SR2_OLD_CROP, 3, &crop)],
+                Little,
+                key,
+            );
+            super::super::sr2::SubIfd::decrypt_keyed(&b, 230812, Little, key)
+        };
+        let sub = enc([16, 8, 3904, 2600], [256, 500, 385, 256]);
+        assert_eq!(sr2_black(&sub), Some(512.5));
+        assert_eq!(sr2_old_wb(&sub), Some([500.0 / 256.0, 1.0, 385.0 / 256.0]));
+        assert_eq!(sr2_old_crop(&sub, 3984, 2608), Some(Rect::new(16, 8, 3888, 2592)));
+        // implausible values are dropped, not guessed
+        assert_eq!(sr2_old_crop(&enc([15, 8, 3904, 2600], [0, 1, 1, 0]), 3984, 2608), None);
+        assert_eq!(sr2_old_crop(&sub, 3900, 2608), None);
+        assert_eq!(sr2_old_wb(&enc([16, 8, 3904, 2600], [0, 1, 1, 0])), None);
     }
 
     #[test]

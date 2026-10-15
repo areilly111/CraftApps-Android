@@ -103,13 +103,24 @@ pub struct ToneMap {
 
 impl ToneMap {
     pub fn camera(curve: &CameraTone, contrast: f64, whites: f64, blacks: f64) -> ToneMap {
+        ToneMap::camera_hdr(curve, contrast, whites, blacks, 1.0)
+    }
+
+    /// [`ToneMap::camera`] for an HDR render reaching `peak` (linear, SDR white = 1; 1 = SDR
+    /// exactly): the camera's look up to 1.5 EV over grey, so midtones match the SDR render (and a
+    /// gain map only lifts highlights), then the highlights gain up to `peak − 1` more as in
+    /// [`ToneMap::hdr`].
+    pub fn camera_hdr(curve: &CameraTone, contrast: f64, whites: f64, blacks: f64, peak: f32) -> ToneMap {
+        let peak = if peak.is_finite() { peak.max(1.0) } else { 1.0 };
         let adjustment = Self::display(contrast, whites, blacks);
         let neutral = contrast == 0.0 && whites == 0.0 && blacks == 0.0;
+        let top = (2.9 - 1.6 * (whites as f32 / 100.0) + peak.log2() + 1.0).max(HDR_FROM_EV + 0.5);
         let lut = (0..LUT_N)
             .map(|i| {
                 let ev = LUT_MIN_EV + (LUT_MAX_EV - LUT_MIN_EV) * i as f32 / (LUT_N - 1) as f32;
                 let y = curve.apply(GREY * 2f32.powf(ev));
-                if neutral { y } else { adjustment.apply(y) }
+                let o = if neutral { y } else { adjustment.apply(y) };
+                if peak > 1.0 { (o + (peak - 1.0) * smooth(HDR_FROM_EV, top, ev)).clamp(0.0, peak) } else { o }
             })
             .collect();
         ToneMap { lut, chroma: curve.chroma }
@@ -351,6 +362,33 @@ mod tests {
         }
         // a broken peak falls back to SDR
         assert_eq!(ToneMap::hdr(0.0, 0.0, 0.0, f32::NAN).lut(), ToneMap::new(0.0, 0.0, 0.0).lut());
+    }
+
+    #[test]
+    fn camera_hdr_keeps_the_camera_look_and_lifts_highlights() {
+        let curve = CameraTone::new(knots()).unwrap().with_chroma([1.2, 1.1, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6]).unwrap();
+        for (c, w, b) in [(0.0, 0.0, 0.0), (40.0, -30.0, -20.0)] {
+            let sdr = ToneMap::camera(&curve, c, w, b);
+            assert_eq!(ToneMap::camera_hdr(&curve, c, w, b, 1.0).lut(), sdr.lut());
+            assert_eq!(ToneMap::camera_hdr(&curve, c, w, b, f32::NAN).lut(), sdr.lut());
+            for peak in [2.0f32, 8.0] {
+                let t = ToneMap::camera_hdr(&curve, c, w, b, peak);
+                assert_eq!(t.chroma_lut(), sdr.chroma_lut());
+                let mut prev = -1.0;
+                for i in 0..2400 {
+                    let y = 1e-5 * 1.01f32.powi(i);
+                    let o = t.apply(y);
+                    assert!((0.0..=peak).contains(&o), "{peak} at {y}: {o}");
+                    assert!(o >= prev - 1e-6, "{peak} at {y}: {o} < {prev}");
+                    prev = o;
+                    // the camera's midtones, not the generic HDR curve's (issue: dark HDR exports)
+                    if y <= GREY * 2f32.powf(HDR_FROM_EV - 0.01) {
+                        assert!((o - sdr.apply(y)).abs() < 1e-6, "midtones differ at {y}: {o} vs {}", sdr.apply(y));
+                    }
+                }
+                assert!(t.apply(4.0) > 1.0 && t.apply(4.0) > sdr.apply(4.0) + 0.5, "{peak}: highlights lifted");
+            }
+        }
     }
 
     #[test]

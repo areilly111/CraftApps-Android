@@ -104,6 +104,37 @@ fn reflect_and_shear_tools() {
     assert!((b.width() - 150.0).abs() < 1e-6, "{b:?}");
 }
 
+/// Reflect and Shear return an error for an `axis` they don't take (Reflect's names it and also
+/// takes an angle): nothing moves and no undo step is recorded. A null `axis` counts as not given: Reflect
+/// then reflects across the vertical axis and Shear shears along the horizontal one.
+#[test]
+fn reflect_and_shear_reject_unknown_axes_without_changing_state() {
+    let mut s = session();
+    let a = rect(&mut s, 10.0, 20.0, 30.0, 10.0);
+    let n = undo_len(&s);
+    let reflect = "axis must be \"vertical\", \"horizontal\" or an angle in degrees";
+    let shear = "`axis` must be one of horizontal, vertical";
+    for (cmd, p, msg) in [
+        ("object.reflect", json!({"axis": "diagonal", "origin": [0, 0]}), format!("{reflect}, not `diagonal`")),
+        ("object.reflect", json!({"axis": "45", "origin": [0, 0]}), format!("{reflect}, not `45`")),
+        ("object.reflect", json!({"axis": true, "origin": [0, 0]}), format!("{reflect}, not `true`")),
+        ("object.shear", json!({"angle": 30, "axis": "diagonal"}), shear.to_string()),
+        ("object.shear", json!({"angle": 30, "axis": 90}), shear.to_string()),
+    ] {
+        let e = s.execute(cmd, &p).expect_err(&format!("{cmd} {p}"));
+        assert_eq!(e.to_string(), format!("invalid parameters for `{cmd}`: {msg}"));
+    }
+    assert!(close(bounds(&s, a), Rect::new(10.0, 20.0, 40.0, 30.0)), "nothing moved: {:?}", bounds(&s, a));
+    assert_eq!(undo_len(&s), n, "no undo step");
+    s.execute("object.reflect", &json!({"axis": null, "origin": [0, 0]})).unwrap();
+    assert!(close(bounds(&s, a), Rect::new(-40.0, 20.0, -10.0, 30.0)), "across the vertical axis: {:?}", bounds(&s, a));
+    s.execute("object.reflect", &json!({"axis": 0, "origin": [0, 0]})).unwrap();
+    assert!(close(bounds(&s, a), Rect::new(-40.0, -30.0, -10.0, -20.0)), "an angle still reflects: {:?}", bounds(&s, a));
+    s.execute("object.shear", &json!({"angle": 45, "axis": null, "origin": [0, 0]})).unwrap();
+    let b = bounds(&s, a);
+    assert!((b.y0 + 30.0).abs() < 1e-6 && (b.y1 + 20.0).abs() < 1e-6 && b.width() > 30.0, "along the horizontal axis: {b:?}");
+}
+
 #[test]
 fn distort_command_maps_corners() {
     let mut s = session();
@@ -595,4 +626,33 @@ fn distort_rejects_malformed_coordinates_and_ids_without_editing_art() {
     }
     s.execute("object.distort", &json!({"corners": corners, "from": [0, 0, 100, 100], "ids": [a.0]})).unwrap();
     assert_eq!(undo_len(&s), history + 1);
+}
+
+/// `artboard.move` and `artboard.delete` take several artboards at once (#1139): one undo step
+/// each, the art on each moving with it, and one artboard always left.
+#[test]
+fn several_artboards_move_and_delete_together() {
+    let mut s = session();
+    s.execute("artboard.new", &json!({"x": 1000, "y": 0, "width": 200, "height": 200})).unwrap();
+    s.execute("artboard.new", &json!({"x": 1400, "y": 0, "width": 200, "height": 200})).unwrap();
+    let r = rect(&mut s, 1050.0, 50.0, 50.0, 50.0);
+    let before: Vec<Rect> = s.doc().unwrap().doc.artboards.iter().map(|a| a.rect).collect();
+    let out = s.execute("artboard.move", &json!({"indices": [2, 1], "dx": 10, "dy": 20, "moveArt": true})).unwrap();
+    assert_eq!(out["indices"], json!([1, 2]));
+    let d = &s.doc().unwrap().doc;
+    assert_eq!(d.artboards[0].rect, before[0]);
+    assert_eq!(
+        (d.artboards[1].rect, d.artboards[2].rect),
+        (before[1] + vectorcraft_geom::Vec2::new(10.0, 20.0), before[2] + vectorcraft_geom::Vec2::new(10.0, 20.0))
+    );
+    assert_eq!(d.node(r).unwrap().geometric_bounds().unwrap().x0, 1060.0, "the art on artboard 2 moved with it");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.artboards[2].rect, before[2], "one undo step");
+    for bad in [json!({"indices": [1, 9]}), json!({"indices": []}), json!({"indices": [-1]}), json!({"indices": "1"})] {
+        assert!(s.execute("artboard.move", &json!({"indices": bad["indices"], "dx": 1})).is_err(), "{bad}");
+    }
+    assert!(s.execute("artboard.delete", &json!({"indices": [0, 1, 2]})).is_err(), "one is always left");
+    s.execute("artboard.delete", &json!({"indices": [2, 0]})).unwrap();
+    let d = &s.doc().unwrap().doc;
+    assert_eq!(d.artboards.iter().map(|a| a.rect).collect::<Vec<_>>(), [before[1]]);
 }

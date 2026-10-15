@@ -229,7 +229,7 @@ fn masked(d: &Document) -> Vec<(&ImageBlob, Option<MaskImage<'_>>)> {
         .iter()
         .filter_map(|n| {
             let NodeKind::Image(im) = &n.kind else { return None };
-            let mask = n.mask.as_ref().map(|m| match &m.art.kind {
+            let mask = n.extras().mask.as_ref().map(|m| match &m.art.kind {
                 NodeKind::Image(a) => (&d.images[&a.key], a.width, a.height),
                 other => panic!("mask art is an image: {other:?}"),
             });
@@ -266,7 +266,7 @@ fn masked_cmyk_images_keep_their_inks_and_carry_the_mask_as_an_opacity_mask() {
     // The mask art covers the image exactly.
     let NodeKind::Layer { children, .. } = &r.document.layers[0].kind else { panic!() };
     let img = children.iter().find(|n| matches!(n.kind, NodeKind::Image(_))).unwrap();
-    assert_eq!(img.geometric_bounds(), img.mask.as_ref().unwrap().art.geometric_bounds());
+    assert_eq!(img.geometric_bounds(), img.extras().mask.as_ref().unwrap().art.geometric_bounds());
     // Written as CMYK with the mask in grey; it opens with the same inks.
     let out = export_with_report(&r.document, &opts(json!({}))).unwrap();
     let w = written(&out.bytes);
@@ -291,7 +291,7 @@ fn all_images(d: &Document) -> Vec<&ImageBlob> {
         if let NodeKind::Image(im) = &n.kind {
             keys.push(im.key.clone());
         }
-        if let Some(m) = &n.mask {
+        if let Some(m) = &n.extras().mask {
             m.art.walk(&mut |a| {
                 if let NodeKind::Image(im) = &a.kind {
                     keys.push(im.key.clone());
@@ -307,7 +307,7 @@ fn image_doc(blob: ImageBlob, w: u32, h: u32) -> Document {
     let mut d = Document::new_with_mode(100.0, 100.0, ColorMode::Cmyk);
     d.images.insert("img".into(), blob);
     let image = ImageObject { key: "img".into(), width: w, height: h, xf: Affine::scale(40.0 / w as f64), link: None, placement: Default::default() };
-    let n = Node::new(d.alloc_id(), NodeKind::Image(image));
+    let n = Node::new(d.alloc_id(), NodeKind::Image(Box::new(image)));
     let l = d.layers[0].id;
     d.insert(Some(l), 0, n).unwrap();
     d

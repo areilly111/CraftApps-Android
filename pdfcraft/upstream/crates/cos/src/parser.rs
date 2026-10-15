@@ -11,7 +11,8 @@ use crate::{Bytes, CosError};
 
 const MAX_DEPTH: usize = 128;
 
-pub(crate) fn is_whitespace(b: u8) -> bool {
+/// One of the six PDF whitespace characters (ISO 32000-2 §7.2.3, Table 1).
+pub fn is_whitespace(b: u8) -> bool {
     matches!(b, b'\0' | b'\t' | b'\n' | b'\x0C' | b'\r' | b' ')
 }
 

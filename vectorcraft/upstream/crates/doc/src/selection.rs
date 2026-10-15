@@ -1,6 +1,6 @@
-//! Selection state (objects and, for direct selection, individual anchors; ruler guides).
+//! Selection state (objects and, for direct selection, anchors and segments; ruler guides).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,15 +8,24 @@ use crate::{Document, NodeId};
 
 /// (subpath index, anchor index) inside a path.
 pub type AnchorRef = (usize, usize);
+/// (subpath index, segment index) inside a path.
+pub type SegmentRef = (usize, usize);
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Selection {
     /// Selected objects in selection order.
     pub objects: Vec<NodeId>,
-    /// Direct-selected anchors per path. A path in `objects` with no entry here is fully selected.
+    /// Direct-selected anchors, or a selected segment's endpoints used for movement. A path in
+    /// `objects` with no entry here is fully selected; `segments` distinguishes segment picks.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub anchors: BTreeMap<NodeId, BTreeSet<AnchorRef>>,
-    /// Key object for Align.
+    /// Explicitly selected segments. Their endpoints in `anchors` move with them, but are not
+    /// selected anchor points: Delete cuts connections and their anchor squares stay hollow.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub segments: BTreeMap<NodeId, BTreeSet<SegmentRef>>,
+    /// Key object for Align, one object of a selection of two or more. [`Selection::prune`] clears
+    /// it when every selected object is the key or lies inside it, as when one object is left
+    /// selected or when the key is a group selected with only its own members.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<NodeId>,
     /// The object, group or layer targeted through its target circle in the Layers panel, which
@@ -53,6 +62,7 @@ impl Selection {
     pub fn clear(&mut self) {
         self.objects.clear();
         self.anchors.clear();
+        self.segments.clear();
         self.key = None;
         self.target = None;
         self.slices.clear();
@@ -60,9 +70,9 @@ impl Selection {
     }
     pub fn set(&mut self, ids: impl IntoIterator<Item = NodeId>) {
         self.clear();
-        for id in ids {
-            self.add(id);
-        }
+        // What `add` per id does after a clear, without its linear duplicate check per id.
+        let mut seen = std::collections::HashSet::new();
+        self.objects.extend(ids.into_iter().filter(|id| seen.insert(*id)));
     }
     pub fn add(&mut self, id: NodeId) {
         self.target = None;
@@ -76,6 +86,7 @@ impl Selection {
         self.slices.clear();
         self.objects.retain(|x| *x != id);
         self.anchors.remove(&id);
+        self.segments.remove(&id);
         if self.key == Some(id) {
             self.key = None;
         }
@@ -114,18 +125,58 @@ impl Selection {
     pub fn partial(&self, id: NodeId) -> Option<&BTreeSet<AnchorRef>> {
         self.anchors.get(&id)
     }
+    /// Which direction handles belong to selected segments; both for an anchor selection.
+    pub fn handle_sides(&self, id: NodeId, si: usize, ai: usize, sp: &vectorcraft_geom::SubPath) -> (bool, bool) {
+        let Some(segments) = self.segments.get(&id) else { return (true, true) };
+        let previous = ai.checked_sub(1).or_else(|| sp.closed.then_some(sp.segment_count()).and_then(|n| n.checked_sub(1)));
+        (previous.is_some_and(|i| segments.contains(&(si, i))), segments.contains(&(si, ai)))
+    }
     /// Drop ids that no longer exist or are no longer editable.
     pub fn prune(&mut self, doc: &Document) {
-        self.objects.retain(|id| doc.node(*id).is_some());
-        self.anchors.retain(|id, _| doc.node(*id).is_some());
-        if self.key.is_some_and(|k| doc.node(k).is_none()) {
+        // Every id this looks up, found in one walk of the tree.
+        let ids = self.objects.iter().chain(self.anchors.keys()).chain(self.segments.keys()).copied().chain(self.key).chain(self.target);
+        let found = doc.index_paths(ids);
+        self.objects.retain(|id| found.contains_key(id));
+        self.anchors.retain(|id, _| found.contains_key(id));
+        self.segments.retain(|id, refs| {
+            let Some(path) = found.get(id).and_then(|p| doc.node_at(p)).and_then(|n| n.path_data()) else { return false };
+            refs.retain(|&(si, seg)| path.subpaths.get(si).is_some_and(|sp| seg < sp.segment_count()));
+            !refs.is_empty() && self.objects.contains(id) && self.anchors.contains_key(id)
+        });
+        // The key object stays while another selected object lies outside it.
+        let keep = self.key.and_then(|k| found.get(&k)).and_then(|p| doc.node_at(p)).is_some_and(|n| {
+            let mut inside = BTreeSet::new();
+            n.walk(&mut |c| {
+                inside.insert(c.id);
+            });
+            self.objects.iter().any(|o| !inside.contains(o))
+        });
+        if !keep {
             self.key = None;
         }
-        if self.target.is_some_and(|t| doc.node(t).is_none()) {
+        if self.target.is_some_and(|t| !found.contains_key(&t)) {
             self.target = None;
         }
         self.slices.retain(|id| doc.is_slice(*id));
-        self.guides.retain(|i| *i < doc.guides.len());
+        // Guides on a hidden or locked layer can't stay selected.
+        self.guides.retain(|i| doc.guides.get(*i).is_some_and(|g| doc.guide_editable(g)));
+    }
+    /// Deselect the objects that are hidden or locked, themselves or through a group or layer
+    /// around them (and so the key object when it is one): hidden or locked art can't stay
+    /// selected.
+    pub fn deselect_uneditable(&mut self, doc: &Document) {
+        let uneditable: HashSet<NodeId> = self.objects.iter().copied().filter(|o| !doc.is_editable(*o)).collect();
+        if uneditable.is_empty() {
+            return;
+        }
+        self.target = None;
+        self.slices.clear();
+        self.objects.retain(|o| !uneditable.contains(o));
+        self.anchors.retain(|id, _| !uneditable.contains(id));
+        self.segments.retain(|id, _| !uneditable.contains(id));
+        if self.key.is_some_and(|k| uneditable.contains(&k)) {
+            self.key = None;
+        }
     }
     /// Target `id` (see [`Selection::target`]): a layer gets its visible, unlocked art selected
     /// (the art of its sublayers too), anything else is selected itself.
@@ -165,61 +216,4 @@ impl Selection {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn basic_ops() {
-        let mut s = Selection::default();
-        s.add(NodeId(1));
-        s.add(NodeId(1));
-        s.toggle(NodeId(2));
-        assert_eq!(s.objects, vec![NodeId(1), NodeId(2)]);
-        s.toggle(NodeId(1));
-        assert_eq!(s.objects, vec![NodeId(2)]);
-        s.clear();
-        assert!(s.is_empty());
-    }
-
-    #[test]
-    fn guides_are_selected_on_their_own() {
-        let mut s = Selection::default();
-        s.add(NodeId(1));
-        s.set_guides([2, 0, 2]);
-        assert_eq!((s.objects.clone(), s.guides.clone()), (vec![], vec![2, 0]));
-        assert!(s.has_objects_or_guides() && s.is_empty());
-        // Shift-adding an object keeps them; a new selection doesn't.
-        s.add(NodeId(1));
-        assert_eq!(s.guides, vec![2, 0]);
-        s.set([NodeId(1)]);
-        assert!(s.guides.is_empty());
-        // Toggled, a guide joins (or leaves) the selected objects.
-        s.toggle_guide(0);
-        assert_eq!((s.objects.clone(), s.guides.clone()), (vec![NodeId(1)], vec![0]));
-        s.toggle_guide(0);
-        assert_eq!((s.objects.clone(), s.guides.clone()), (vec![NodeId(1)], vec![]));
-        // Pruning drops guides the document no longer has.
-        let mut d = Document::new(100.0, 100.0);
-        d.guides.push(crate::Guide::new(true, 10.0));
-        s.set_guides([0, 1]);
-        s.prune(&d);
-        assert_eq!(s.guides, vec![0]);
-    }
-
-    #[test]
-    fn selection_changes_clear_the_target() {
-        let mut s = Selection::default();
-        s.set([NodeId(2), NodeId(3)]);
-        s.target = Some(NodeId(1));
-        assert_eq!(s.subjects(), &[NodeId(1)]);
-        s.add(NodeId(4));
-        assert_eq!(s.target, None);
-        assert_eq!(s.subjects(), &[NodeId(2), NodeId(3), NodeId(4)]);
-        s.target = Some(NodeId(1));
-        s.remove(NodeId(2));
-        assert_eq!(s.target, None);
-        s.target = Some(NodeId(1));
-        s.set([NodeId(3)]);
-        assert_eq!(s.target, None);
-    }
-}
+mod tests;

@@ -3,8 +3,10 @@
 use serde_json::{Value, json};
 use vectorcraft_color::{Color, Paint};
 use vectorcraft_doc::Node;
+use vectorcraft_tools::{PointerEvent, PointerKind};
 
 use super::*;
+use crate::tooling::ViewInfo;
 
 fn session() -> Session {
     let mut s = Session::new();
@@ -99,6 +101,38 @@ fn edit_colors_reach_mesh_points() {
     assert_eq!(mesh_colors(&s, m), pts, "a mesh's points are fill colours");
 }
 
+/// Clicking a gradient mesh's point with the Mesh tool or Direct Selection picks it: a solid fill
+/// colour then recolours that point alone (#1050).
+#[test]
+fn a_clicked_mesh_point_takes_the_fill_colour() {
+    let mut s = session();
+    let m = mesh(&mut s);
+    let before = mesh_colors(&s, m);
+    let v = ViewInfo::default();
+    let click = |s: &mut Session, i: usize| {
+        let NodeKind::Mesh(g) = &s.doc().unwrap().doc.node(m).unwrap().kind else { panic!("not a mesh") };
+        let q = g.points[i].p;
+        for kind in [PointerKind::Down, PointerKind::Up] {
+            s.pointer(&PointerEvent::new(kind, q.x, q.y), v).unwrap();
+        }
+    };
+    // The Mesh tool selects the mesh whose point it clicks.
+    s.execute("select.none", &json!({})).unwrap();
+    s.select_tool("mesh", v).unwrap();
+    click(&mut s, 1);
+    assert_eq!(s.doc().unwrap().selection.objects, [m]);
+    s.execute("paint.setFill", &json!({"color": "#0000ff"})).unwrap();
+    let after = mesh_colors(&s, m);
+    assert_eq!(after[1].to_hex(), "#0000ff", "the clicked point takes the colour");
+    assert_eq!((after[0], after[2], after[3]), (before[0], before[2], before[3]), "the other points keep theirs");
+    s.select_tool("directSelection", v).unwrap();
+    click(&mut s, 2);
+    s.execute("paint.setFill", &json!({"color": "#ffff00"})).unwrap();
+    let after = mesh_colors(&s, m);
+    assert_eq!((after[1].to_hex(), after[2].to_hex()), ("#0000ff".to_string(), "#ffff00".to_string()));
+    assert_eq!((after[0], after[3]), (before[0], before[3]));
+}
+
 #[test]
 fn blend_moves_a_mesh_to_the_blended_colour() {
     let mut s = session();
@@ -145,7 +179,7 @@ fn image_node(s: &mut Session) -> NodeId {
             link: None,
             placement: Default::default(),
         };
-        d.insert(d.default_layer(), 0, Node::new(id, NodeKind::Image(im)))?;
+        d.insert(d.default_layer(), 0, Node::new(id, NodeKind::Image(Box::new(im))))?;
         sel.set([id]);
         Ok(id)
     })

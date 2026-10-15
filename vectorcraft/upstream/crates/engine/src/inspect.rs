@@ -138,6 +138,8 @@ pub fn document_opts(s: &Session, opts: SummaryOpts) -> Value {
         "selectionRotation": d.bbox_angle(&st.selection.objects),
         // The layer, group or object targeted through the Layers panel (`layer.target`).
         "target": st.selection.target.map(|t| t.0),
+        // The key object Align aligns to and Distribute Spacing spaces from (`select.key`).
+        "key": st.selection.key.map(|k| k.0),
         "history": st.history.undo.iter().map(|h| h.label.clone()).collect::<Vec<_>>(),
         "redo": st.history.redo.iter().rev().map(|h| h.label.clone()).collect::<Vec<_>>(),
         "objects": d.node_count(),

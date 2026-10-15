@@ -67,7 +67,7 @@ fn composite(doc: &Document, r: Rect, factor: u32) -> Vec<[f32; 4]> {
 /// The channel view of `r` (document pixels, sampled every `factor` px) as premultiplied pixels,
 /// or `None` when the plain composite is all there is to show. `in_color` shows single colour
 /// channels tinted instead of grayscale (Photoshop's "Show Channels in Color").
-pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: bool) -> Option<Vec<Color32>> {
+pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: bool, active: Option<photocraft_doc::LayerId>) -> Option<Vec<Color32>> {
     if v.is_plain(doc) || r.is_empty() {
         return None;
     }
@@ -92,11 +92,26 @@ pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: b
     let (w, h) = (r.width().div_ceil(factor), r.height().div_ceil(factor));
     let n = (w * h) as usize;
     let mut overlays: Vec<&AlphaChannel> = (0..doc.channels.len()).filter(|i| v.alpha_shown(*i)).map(|i| &doc.channels[i]).collect();
-    // Premultiplied RGBA accumulator.
+    let gray = |s: &Surface| sample(s, r, factor).into_iter().map(|g| [g, g, g, 1.0]).collect();
+    // Premultiplied RGBA accumulator. With no colour channel left, the channel being edited
+    // (alpha, Quick Mask, or layer mask) is the picture — grayscale, not a rubylith over nothing.
+    let mut solo_quick = false;
+    let mut solo_mask = false;
     let mut out: Vec<[f32; 4]> = if vis == 0 {
-        // No colour channel visible: the first visible alpha channel in grayscale.
-        let first = (!overlays.is_empty()).then(|| overlays.remove(0))?;
-        sample(&first.surface, r, factor).into_iter().map(|g| [g, g, g, 1.0]).collect()
+        if !overlays.is_empty() {
+            let first = overlays.remove(0);
+            gray(&first.surface)
+        } else if let Some(q) = doc.quick_mask.as_ref().filter(|_| !v.quick_mask_hidden) {
+            solo_quick = true;
+            gray(&q.surface)
+        } else if let Some((m, _)) = layer_mask {
+            solo_mask = true;
+            gray(&m.surface)
+        } else {
+            let m = active.and_then(|id| doc.layer(id)).and_then(|l| l.mask.as_ref())?;
+            solo_mask = true;
+            gray(&m.surface)
+        }
     } else if vis < colors {
         let fmt = doc.pixel_format();
         let mode = fmt.mode;
@@ -113,8 +128,10 @@ pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: b
                 }
                 for (k, x) in native[..colors].iter_mut().enumerate() {
                     if !v.color_visible(k) {
-                        // Hidden channels contribute nothing (Lab: neutral a/b).
-                        *x = if mode == ColorMode::Lab && k > 0 { 0.5 } else { 0.0 };
+                        // Hidden channels contribute nothing (Lab: neutral a/b, and a neutral
+                        // Lightness under Show Channels in Color, so an isolated a/b channel
+                        // tints over mid gray instead of black, as Photoshop does).
+                        *x = if mode == ColorMode::Lab && (k > 0 || in_color) { 0.5 } else { 0.0 };
                     }
                 }
                 let c = to_rgba(&fmt, &native);
@@ -135,7 +152,7 @@ pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: b
             o[3] = a + o[3] * (1.0 - a);
         }
     };
-    let quick = doc.quick_mask.as_ref().filter(|_| !v.quick_mask_hidden);
+    let quick = doc.quick_mask.as_ref().filter(|_| !v.quick_mask_hidden && !solo_quick);
     for ch in overlays.into_iter().chain(quick) {
         let (color, opacity) = match ch.spot {
             // Spot inks show more solid as solidity rises.
@@ -146,7 +163,7 @@ pub fn render(doc: &Document, v: &ChannelView, r: Rect, factor: u32, in_color: b
     }
     // ⇧⌥-click mask view (#196): the layer mask as Quick Mask's red over the hidden areas
     // (Photoshop's Layer Mask Display Options default).
-    if let Some((m, MaskViewMode::Overlay)) = layer_mask {
+    if !solo_mask && let Some((m, MaskViewMode::Overlay)) = layer_mask {
         tint(sample(&m.surface, r, factor), AlphaChannel::DEFAULT_COLOR, 0.5, &|x| 1.0 - x);
     }
     Some(out.into_iter().map(|p| Color32::from_rgba_premultiplied(q(p[0]), q(p[1]), q(p[2]), q(p[3]))).collect())
@@ -193,6 +210,7 @@ fn view_key(v: &ChannelView, in_color: bool) -> u64 {
 pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Option<egui::TextureId> {
     let st = app.session.documents().get(idx)?;
     let view = st.channel_view.clone();
+    let active = st.active_layer;
     let (revision, last_damage) = (st.revision, st.last_damage);
     let id = st.doc.id.0;
     if view.is_plain(&st.doc) {
@@ -205,7 +223,10 @@ pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Optio
     // otherwise an opaque grayscale mask hides the stroke until it is committed (#2078).
     // The plain-composite path above needs no preview work.
     let (doc, preview_key) = crate::canvas::display_doc(app, idx);
-    let in_color = false;
+    // Interface ▸ Show Channels in Color tints single colour channel views on the canvas too,
+    // not just the panel thumbnails (#2385). The view key carries the flag, so toggling it
+    // rebuilds the texture.
+    let in_color = app.session.prefs().interface.show_channels_in_color;
     let key = view_key(&view, in_color);
     // Never exceed what the GPU accepts (egui panics on oversized textures).
     let max_side = (ctx.input(|i| i.max_texture_side) as u32).clamp(256, MAX_SIDE);
@@ -233,7 +254,7 @@ pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Optio
         let d = d.intersect(&doc.bounds());
         let r = Rect::new(d.x0.div_euclid(f) * f, d.y0.div_euclid(f) * f, d.x1, d.y1).intersect(&doc.bounds());
         if !r.is_empty()
-            && let Some(px) = render(&doc, &view, r, factor, in_color)
+            && let Some(px) = render(&doc, &view, r, factor, in_color, active)
         {
             let img = egui::ColorImage::new([r.width().div_ceil(factor) as usize, r.height().div_ceil(factor) as usize], px);
             c.tex.set_partial([(r.x0 / f) as usize, (r.y0 / f) as usize], img, TextureOptions::LINEAR);
@@ -243,7 +264,7 @@ pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Optio
         return Some(c.tex.id());
     }
     let b = doc.bounds();
-    let px = render(&doc, &view, b, factor, in_color)?;
+    let px = render(&doc, &view, b, factor, in_color, active)?;
     let size = [b.width().div_ceil(factor) as usize, b.height().div_ceil(factor) as usize];
     let img = egui::ColorImage::new(size, px);
     match app.channel_views.get_mut(&id) {
@@ -280,7 +301,7 @@ mod tests {
     fn plain_composite_draws_nothing() {
         let s = session();
         let st = s.active().unwrap();
-        assert!(render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false).is_none());
+        assert!(render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).is_none());
     }
 
     #[test]
@@ -289,9 +310,38 @@ mod tests {
         s.execute("select.rect", json!({"x": 0, "y": 0, "width": 4, "height": 4})).unwrap();
         s.execute("select.editInQuickMaskMode", json!({})).unwrap();
         let st = s.active().unwrap();
-        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false).unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
         assert_eq!(px[0], Color32::TRANSPARENT, "selected: no overlay");
         assert_eq!(px[6], Color32::from_rgba_premultiplied(128, 0, 0, 128), "masked: 50% red");
+    }
+
+    #[test]
+    fn quick_mask_without_selection_shows_no_overlay_in_either_mode() {
+        // #2743: nothing selected is a colourless mask, whichever way the colour reads.
+        for (before, after) in [(None, Some("selected")), (Some("selected"), None), (Some("selected"), Some("masked"))] {
+            let mut s = session();
+            if let Some(i) = before {
+                s.execute("channel.options", json!({"channel": "quickMask", "indicates": i})).unwrap();
+            }
+            s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+            let st = s.active().unwrap();
+            let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+            assert!(px.iter().all(|p| *p == Color32::TRANSPARENT), "{before:?}");
+            if let Some(i) = after {
+                s.execute("channel.options", json!({"channel": "quickMask", "indicates": i})).unwrap();
+                let st = s.active().unwrap();
+                let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+                assert!(px.iter().all(|p| *p == Color32::TRANSPARENT), "{before:?} → {i}");
+            }
+        }
+        // Selected Areas with Select All: the whole canvas is coloured.
+        let mut s = session();
+        s.execute("channel.options", json!({"channel": "quickMask", "indicates": "selected"})).unwrap();
+        s.execute("select.all", json!({})).unwrap();
+        s.execute("select.editInQuickMaskMode", json!({})).unwrap();
+        let st = s.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+        assert!(px.iter().all(|p| *p == Color32::from_rgba_premultiplied(128, 0, 0, 128)));
     }
 
     #[test]
@@ -305,14 +355,14 @@ mod tests {
         s.execute("view.layerMask", json!({"mode": "gray"})).unwrap();
         let st = s.active().unwrap();
         let b = st.doc.bounds();
-        let full = render(&st.doc, &st.channel_view, b, 1, false).unwrap();
+        let full = render(&st.doc, &st.channel_view, b, 1, false, st.active_layer).unwrap();
         assert!(full[0].r() < 10 && full[36].r() > 245 && full[0].a() == 255, "opaque grayscale ramp");
         // A sub-rect starting on the factor grid matches the same pixels of the full render.
         for f in [1u32, 2, 3] {
-            let all = render(&st.doc, &st.channel_view, b, f, false).unwrap();
+            let all = render(&st.doc, &st.channel_view, b, f, false, st.active_layer).unwrap();
             let w = b.width().div_ceil(f) as usize;
             let r = Rect::new(3 * f as i32, 2 * f as i32, 30, 19);
-            let part = render(&st.doc, &st.channel_view, r, f, false).unwrap();
+            let part = render(&st.doc, &st.channel_view, r, f, false, st.active_layer).unwrap();
             let pw = r.width().div_ceil(f) as usize;
             for (i, p) in part.iter().enumerate() {
                 assert_eq!(*p, all[(i / pw + 2) * w + i % pw + 3], "factor {f}, pixel {i}");
@@ -320,7 +370,7 @@ mod tests {
         }
         s.execute("view.layerMask", json!({"mode": "overlay"})).unwrap();
         let st = s.active().unwrap();
-        let px = render(&st.doc, &st.channel_view, b, 1, false).unwrap();
+        let px = render(&st.doc, &st.channel_view, b, 1, false, st.active_layer).unwrap();
         assert!(px[0].r() >= 124 && px[0].g() == 0 && px[0].a() >= 124, "about 50% red over the hidden end: {:?}", px[0]);
         assert!(px[36].a() <= 4, "next to nothing over the revealed end: {:?}", px[36]);
     }
@@ -342,13 +392,71 @@ mod tests {
             let mut best = f64::MAX;
             for _ in 0..8 {
                 let t = std::time::Instant::now();
-                let px = render(&st.doc, &st.channel_view, st.doc.bounds(), factor, false).unwrap();
+                let px = render(&st.doc, &st.channel_view, st.doc.bounds(), factor, false, st.active_layer).unwrap();
                 let img = egui::ColorImage::new([3000, 2000], px);
                 std::hint::black_box(img);
                 best = best.min(t.elapsed().as_secs_f64() * 1000.0);
             }
             println!("24 MP mask view {mode}: {best:.1} ms (render at 1/{factor})");
         }
+    }
+
+    /// Interface ▸ Show Channels in Color (#2385): a solo RGB / CMYK channel tints the canvas
+    /// instead of staying gray, like the panel thumbnails wired in #1986.
+    #[test]
+    fn show_channels_in_color_tints_the_canvas() {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 4, "height": 4, "mode": "rgb"})).unwrap();
+        s.execute("edit.fill", json!({"color": "#4080c0"})).unwrap();
+        s.execute("channel.target", json!({"channel": "green"})).unwrap();
+        let st = s.active().unwrap();
+        let b = st.doc.bounds();
+        assert_eq!(render(&st.doc, &st.channel_view, b, 1, false, st.active_layer).unwrap()[0], Color32::from_gray(128));
+        assert_eq!(render(&st.doc, &st.channel_view, b, 1, true, st.active_layer).unwrap()[0], Color32::from_rgb(0, 128, 0));
+
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 4, "height": 4, "mode": "cmyk"})).unwrap();
+        s.execute("edit.fill", json!({"color": "#4080c0"})).unwrap();
+        s.execute("channel.target", json!({"channel": "cyan"})).unwrap();
+        let st = s.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, true, st.active_layer).unwrap()[0];
+        assert!(px.r() < 100 && px.g() > 150 && px.b() > 150, "cyan ink, not gray: {px:?}");
+        let gray = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap()[0];
+        assert_eq!(gray.r(), gray.g(), "off stays grayscale");
+    }
+
+    /// Lab: a and b tint over a neutral Lightness; Lightness itself stays gray (Adobe's exception).
+    #[test]
+    fn show_channels_in_color_lab_lightness_stays_gray() {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 4, "height": 4, "mode": "lab"})).unwrap();
+        s.execute("edit.fill", json!({"color": "#4080c0"})).unwrap();
+        let b = s.active().unwrap().doc.bounds();
+        s.execute("channel.target", json!({"channel": {"color": 0}})).unwrap();
+        let st = s.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, b, 1, true, st.active_layer).unwrap()[0];
+        let spread = px.r().max(px.g().max(px.b())) as i32 - px.r().min(px.g().min(px.b())) as i32;
+        assert!(spread <= 3, "Lightness stays gray: {px:?}");
+        s.execute("channel.target", json!({"channel": {"color": 1}})).unwrap();
+        let st = s.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, b, 1, true, st.active_layer).unwrap()[0];
+        assert!(px.r() != px.g() || px.g() != px.b(), "a channel is tinted, not gray: {px:?}");
+    }
+
+    /// The canvas texture cache is keyed by the preference, so toggling it rebuilds the view.
+    #[test]
+    fn ensure_honours_show_channels_in_color() {
+        let mut app = PhotocraftApp::new(Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+        app.sync_views();
+        app.run("channel.target", json!({"channel": "green"})).unwrap();
+        let ctx = egui::Context::default();
+        assert!(ensure(&mut app, &ctx, 0).is_some());
+        let key_off = app.channel_views.values().next().unwrap().key;
+        app.session.execute("prefs.set", json!({"values": {"interface.showChannelsInColor": true}})).unwrap();
+        assert!(ensure(&mut app, &ctx, 0).is_some());
+        let key_on = app.channel_views.values().next().unwrap().key;
+        assert_ne!(key_off, key_on, "the preference changes the cached view key");
     }
 
     #[test]
@@ -359,18 +467,48 @@ mod tests {
         s.execute("channel.new", json!({"fill": "selection"})).unwrap();
         let st = s.active().unwrap();
         assert_eq!(st.channel_view.target, ChannelTarget::Alpha(0));
-        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false).unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
         assert_eq!((px[0], px[5]), (Color32::WHITE, Color32::BLACK));
         // Green alone: grayscale of the green channel; with blue hidden only.
         s.execute("channel.target", json!({"channel": "green"})).unwrap();
         let st = s.active().unwrap();
-        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false).unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
         assert_eq!(px[0], Color32::from_gray(128));
         s.execute("channel.target", json!({"channel": "composite"})).unwrap();
         s.execute("channel.setVisible", json!({"channel": "red", "visible": false})).unwrap();
         let st = s.active().unwrap();
-        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 2, false).unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 2, false, st.active_layer).unwrap();
         assert_eq!(px.len(), 4 * 2);
         assert_eq!(px[0], Color32::from_rgb(0, 128, 0));
+    }
+
+    #[test]
+    fn rgb_off_shows_alpha_quick_mask_or_the_layer_mask() {
+        let mut s = session();
+        s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        s.execute("channel.new", json!({"fill": "white"})).unwrap();
+        s.execute("channel.setVisible", json!({"channel": "composite", "visible": true})).unwrap();
+        s.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+        let st = s.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+        assert_eq!(px[0], Color32::WHITE, "Alpha alone is the channel, not the red image");
+
+        let mut q = session();
+        q.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        q.execute("select.editInQuickMaskMode", json!({})).unwrap();
+        q.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+        let st = q.active().unwrap();
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+        assert_eq!(px[0], Color32::WHITE, "Quick Mask alone is grayscale, not the red composite");
+
+        let mut m = session();
+        m.execute("layer.new.layer", json!({})).unwrap();
+        m.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        m.execute("layer.layerMask.hideAll", json!({})).unwrap();
+        m.execute("channel.setVisible", json!({"channel": "composite", "visible": false})).unwrap();
+        let st = m.active().unwrap();
+        assert_eq!(st.channel_view.visible_colors(3), 0);
+        let px = render(&st.doc, &st.channel_view, st.doc.bounds(), 1, false, st.active_layer).unwrap();
+        assert_eq!(px[0], Color32::BLACK, "the hidden mask reads black, not the red layer");
     }
 }

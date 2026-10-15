@@ -611,7 +611,7 @@ impl LayerRecord {
         out.put_len(self.blending_ranges.data.len() as u64, false)?;
         out.put(&self.blending_ranges.data);
         write_pascal(out, &self.name, 4);
-        write_blocks(out, &self.blocks, version)?;
+        write_blocks(out, &self.blocks, version, 2)?;
         out.put(&self.extra_trailing);
         out.end_len(at, false)
     }
@@ -684,15 +684,25 @@ impl LayerInfo {
     /// block in 4-byte units (psd-tools) misread the blocks after a body that
     /// is only padded to even.
     pub fn pad_to(&mut self, version: Version, align: u64) -> Result<()> {
-        let align = align.max(1);
-        let len = self.unpadded_len(version)?;
-        self.padding = Some(vec![0; ((align - len % align) % align) as usize]);
+        self.padding = Some(vec![0; self.pad_len(version, align)?]);
         Ok(())
     }
 
-    /// Serializes the body (without a length field).
-    pub(crate) fn write_body(&self, out: &mut Vec<u8>, version: Version) -> Result<()> {
-        let start = out.len();
+    /// Number of zero bytes [`Self::pad_to`] would set, without touching `self`.
+    pub(crate) fn pad_len(&self, version: Version, align: u64) -> Result<usize> {
+        let align = align.max(1);
+        let len = self.unpadded_len(version)?;
+        Ok(((align - len % align) % align) as usize)
+    }
+
+    /// Bytes of channel data and their compression fields: the part of the body worth reserving up
+    /// front (the records are small next to the pixels). Saturates instead of overflowing.
+    pub(crate) fn channel_data_len(&self) -> usize {
+        self.layers.iter().flat_map(|l| &l.channels).filter(|c| c.compression.is_some()).fold(0usize, |n, c| n.saturating_add(2).saturating_add(c.data.len()))
+    }
+
+    /// Serializes the body without any trailing padding (the padding field is ignored).
+    pub(crate) fn write_unpadded(&self, out: &mut Vec<u8>, version: Version) -> Result<()> {
         let n = i16::try_from(self.layers.len()).map_err(|_| PsdError::LimitExceeded("more than 32767 layers"))?;
         out.put_i16(if self.merged_alpha { -n } else { n });
         for l in &self.layers {
@@ -706,6 +716,13 @@ impl LayerInfo {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Serializes the body (without a length field).
+    pub(crate) fn write_body(&self, out: &mut Vec<u8>, version: Version) -> Result<()> {
+        let start = out.len();
+        self.write_unpadded(out, version)?;
         match &self.padding {
             Some(p) => out.put(p),
             None => {
@@ -1020,6 +1037,37 @@ mod tests {
         let info = LayerInfo { layers: vec![rec], ..Default::default() };
         rt(&info, Version::Psd);
         assert_eq!(info.layers[0].decode_channel(0, 8, Version::Psd).unwrap(), Vec::<u8>::new());
+    }
+
+    /// Padding without cloning the layers writes the same bytes as `pad_to` on a clone, and the
+    /// channel data length hint is exact.
+    #[test]
+    fn unpadded_write_matches_pad_to_on_a_clone() {
+        use crate::{ColorMode, Compression, testgen};
+        for version in [Version::Psd, Version::Psb] {
+            for depth in [8u16, 16, 32] {
+                for compression in [Compression::Raw, Compression::Rle] {
+                    let file = testgen::layered(version, ColorMode::Rgb, depth, compression);
+                    let mut info = file.layer_info.clone().unwrap();
+                    for align in [1u64, 2, 4, 8] {
+                        let mut cloned = info.clone();
+                        cloned.pad_to(version, align).unwrap();
+                        let mut want = Vec::new();
+                        cloned.write_body(&mut want, version).unwrap();
+                        let pad = info.pad_len(version, align).unwrap();
+                        let mut got = Vec::new();
+                        info.write_unpadded(&mut got, version).unwrap();
+                        assert!(got.len() >= info.channel_data_len());
+                        got.resize(got.len() + pad, 0);
+                        assert_eq!(got, want, "{version:?} {depth} {compression:?} align {align}");
+                    }
+                    info.padding = Some(vec![7, 7]);
+                    let mut with_padding = Vec::new();
+                    info.write_body(&mut with_padding, version).unwrap();
+                    assert!(with_padding.ends_with(&[7, 7]));
+                }
+            }
+        }
     }
 
     #[test]

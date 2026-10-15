@@ -3,7 +3,7 @@
 //! ([`photocraft_algo::vanishing`]). The edit lands on the active pixel layer, or on a new layer
 //! with `"newLayer": true` (Photoshop's advice for non-destructive Vanishing Point work).
 
-use photocraft_algo::vanishing::{Edge, Scene, VpPlane, clone_stroke, paste};
+use photocraft_algo::vanishing::{Edge, PlaneCheck, Scene, VpPlane, clone_stroke, paste};
 use photocraft_doc::{Document, Layer, LayerContent, LayerId};
 use photocraft_geom::Rect;
 use photocraft_raster::Surface;
@@ -34,12 +34,22 @@ pub fn scene(p: &Value, canvas: Rect) -> Result<Scene> {
         let a = v.get("corners")?.as_array()?;
         Some([pt(a.first()?)?, pt(a.get(1)?)?, pt(a.get(2)?)?, pt(a.get(3)?)?])
     };
-    let first = corners(&planes[0]).ok_or_else(|| bad("the first plane needs four `corners`"))?;
+    // A drawn quad must be convex (Photoshop's red plane): a bow-tie or dented quad has no
+    // perspective to paste or clone along.
+    let drawn = |i: usize, c: [[f64; 2]; 4]| -> Result<VpPlane> {
+        let pl = VpPlane { corners: c };
+        if pl.check(center) == PlaneCheck::Invalid {
+            return Err(bad(format!("plane {i}: the four corners must form a convex quad")));
+        }
+        Ok(pl)
+    };
+    let first = planes.first().and_then(corners).ok_or_else(|| bad("the first plane needs four `corners`"))?;
+    let first = drawn(0, first)?;
     let focal = p.get("focalLength").and_then(Value::as_f64).filter(|f| *f > 0.0);
-    let mut sc = Scene::new(VpPlane { corners: first }, center, focal, canvas.width().max(canvas.height()) as f64);
+    let mut sc = Scene::new(first, center, focal, canvas.width().max(canvas.height()) as f64);
     for (i, pl) in planes.iter().enumerate().skip(1) {
         if let Some(c) = corners(pl) {
-            sc.planes.push(VpPlane { corners: c });
+            sc.planes.push(drawn(i, c)?);
             continue;
         }
         let from = pl
@@ -145,7 +155,7 @@ fn vanishing_point(s: &mut Session, p: &Value) -> Result<Value> {
         }
         let surf = l.surface_mut().ok_or_else(|| EngineError::Other("Vanishing Point needs a pixel layer".into()))?;
         for (plane, src, rect, at, width) in &pastes {
-            if let Some(out) = paste(&sc, *plane, src, *rect, *at, *width) {
+            if let Some(out) = paste(&sc, *plane, src, *rect, *at, *width)? {
                 over(surf, &out);
             }
         }
@@ -256,5 +266,20 @@ mod tests {
         assert!(s.execute(VP, json!({"planes": [{"corners": [[0, 0], [1, 1]]}]})).is_err());
         let r = s.execute(VP, json!({"planes": planes, "newLayer": true})).unwrap();
         assert_ne!(r["layer"].as_u64().unwrap(), floor.0);
+    }
+
+    #[test]
+    fn rejects_planes_that_are_not_convex() {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 200, "height": 200, "depth": 16})).unwrap();
+        s.execute("layer.new.layer", json!({})).unwrap();
+        let bowtie = json!([[20, 20], [180, 180], [180, 20], [20, 180]]);
+        let dent = json!([[20, 20], [180, 20], [60, 60], [20, 180]]);
+        let square = json!([[20, 20], [180, 20], [180, 180], [20, 180]]);
+        for planes in [json!([{"corners": bowtie}]), json!([{"corners": square}, {"corners": dent}])] {
+            let e = s.execute(VP, json!({"planes": planes})).unwrap_err().to_string();
+            assert!(e.contains("convex"), "{e}");
+        }
+        assert!(s.execute(VP, json!({"planes": [{"corners": square}]})).is_ok());
     }
 }

@@ -138,7 +138,8 @@ impl Prepared {
                         size: 0.5,
                         opacity: 1.0,
                         anchor: Anchor::Center,
-                        inset: 0.0,
+                        inset_x: 0.0,
+                        inset_y: 0.0,
                         color: [32; 3],
                         shadow: false,
                         ..Default::default()
@@ -305,7 +306,8 @@ mod tests {
                 size: 0.5,
                 opacity: 1.0,
                 anchor: Anchor::Center,
-                inset: 0.0,
+                inset_x: 0.0,
+                inset_y: 0.0,
                 color: [32; 3],
                 shadow: false,
                 ..Default::default()
@@ -320,7 +322,8 @@ mod tests {
                 size: 0.5,
                 opacity: 1.0,
                 anchor: Anchor::Center,
-                inset: 0.0,
+                inset_x: 0.0,
+                inset_y: 0.0,
                 color: [32; 3],
                 shadow: false,
                 ..Default::default()

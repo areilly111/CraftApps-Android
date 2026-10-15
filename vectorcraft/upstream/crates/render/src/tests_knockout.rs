@@ -77,7 +77,7 @@ fn opacity_defines_the_knockout_shape() {
             let blue = Arc::make_mut(&mut g.children_mut().unwrap()[1]);
             blue.opacity = 1.0;
             blue.knockout_shape = shape;
-            blue.mask = Some(Box::new(vectorcraft_doc::OpacityMask::new(white, true)));
+            blue.extras_mut().mask = Some(Box::new(vectorcraft_doc::OpacityMask::new(white, true)));
         }));
         let want = if shape { HALF_KNOCKED } else { BLUE_OVER_WHITE };
         // A mid-grey mask is ~50% (luminance 0.5, not gamma-corrected): allow a little more slack.

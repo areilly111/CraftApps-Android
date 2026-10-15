@@ -2,22 +2,27 @@
 //!
 //! Marked content (MCIDs) that applying redactions changed is found by comparing each MCID's
 //! operators before and after. Elements owning such content lose their alternate text, actual
-//! text and expansion (which may spell out the removed words); references to marked content that
-//! is now empty are dropped from the element.
+//! text and expansion (which may spell out the removed words);
+//! references to marked content that is now empty are dropped from the element.
 
 use std::collections::{HashMap, HashSet};
 
 use pdfcraft_cos::{Dict, Document, ObjRef, Object};
 
 /// Each MCID's operators (serialized), and whether anything is still drawn inside it.
-fn by_mcid(data: &[u8]) -> HashMap<i64, (Vec<u8>, bool)> {
+fn by_mcid(doc: &Document, resources: &Dict, data: &[u8]) -> HashMap<i64, (Vec<u8>, bool)> {
     let mut out: HashMap<i64, (Vec<u8>, bool)> = HashMap::new();
     let mut stack: Vec<Option<i64>> = Vec::new();
     for op in pdfcraft_content::parse(data).ops {
         match op.op.as_slice() {
             b"BDC" => {
                 let id = match op.operands.get(1) {
-                    Some(Object::Dict(d)) => d.get(b"MCID").and_then(Object::as_int),
+                    Some(Object::Name(n)) => resources.get(b"Properties").and_then(|p| {
+                        let props = doc.resolve(p);
+                        let prop = doc.resolve(props.as_dict()?.get(n)?);
+                        prop.as_dict()?.int(b"MCID")
+                    }),
+                    Some(p) => doc.resolve(p).as_dict().and_then(|d| d.int(b"MCID")),
                     _ => None,
                 };
                 if let Some(id) = id {
@@ -56,8 +61,8 @@ fn by_mcid(data: &[u8]) -> HashMap<i64, (Vec<u8>, bool)> {
 }
 
 /// The MCIDs whose content changed between `before` and `after`, and those left empty.
-pub(crate) fn touched(before: &[u8], after: &[u8]) -> (HashSet<i64>, HashSet<i64>) {
-    let (b, a) = (by_mcid(before), by_mcid(after));
+pub(crate) fn touched(doc: &Document, resources: &Dict, before: &[u8], after: &[u8]) -> (HashSet<i64>, HashSet<i64>) {
+    let (b, a) = (by_mcid(doc, resources, before), by_mcid(doc, resources, after));
     let mut changed = HashSet::new();
     let mut empty = HashSet::new();
     for (id, (ops, _)) in &b {
@@ -79,20 +84,27 @@ pub(crate) fn touched(before: &[u8], after: &[u8]) -> (HashSet<i64>, HashSet<i64
     (changed, empty)
 }
 
-fn mcid_of(o: &Object, page: Option<ObjRef>, target: ObjRef) -> Option<i64> {
-    match o {
-        Object::Int(n) if page == Some(target) => Some(*n),
+fn mcid_of(doc: &Document, o: &Object, page: Option<ObjRef>, target: ObjRef, stream: Option<(ObjRef, ObjRef)>) -> Option<i64> {
+    match &*doc.resolve(o) {
+        Object::Int(n) if page == Some(target) && stream.is_none() => Some(*n),
         Object::Dict(m) if m.name(b"Type") == Some(b"MCR") => {
             let pg = m.get(b"Pg").and_then(Object::as_ref).or(page);
-            (pg == Some(target)).then(|| m.get(b"MCID").and_then(Object::as_int)).flatten()
+            let stm = m.get(b"Stm").and_then(Object::as_ref);
+            (pg == Some(target) && stm == stream.map(|s| s.0)).then(|| m.int(b"MCID")).flatten()
         }
         _ => None,
     }
 }
 
 /// Clean the elements owning `changed` marked content on `page`; returns how many changed.
-pub(crate) fn clean(doc: &mut Document, page: ObjRef, changed: &HashSet<i64>, empty: &HashSet<i64>) -> Result<usize, pdfcraft_cos::CosError> {
-    if changed.is_empty() {
+pub(crate) fn clean(
+    doc: &mut Document,
+    page: ObjRef,
+    stream: Option<(ObjRef, ObjRef)>,
+    changed: &HashSet<i64>,
+    empty: &HashSet<i64>,
+) -> Result<usize, pdfcraft_cos::CosError> {
+    if changed.is_empty() && stream.is_none() {
         return Ok(0);
     }
     let Some(root) = doc
@@ -105,7 +117,7 @@ pub(crate) fn clean(doc: &mut Document, page: ObjRef, changed: &HashSet<i64>, em
     // Indirect elements with the page they inherit.
     let mut todo: Vec<(Object, Option<ObjRef>)> = root.get(b"K").map(|k| vec![(k.clone(), None)]).unwrap_or_default();
     let mut seen = HashSet::new();
-    let mut hits: Vec<(ObjRef, Dict, Option<ObjRef>)> = Vec::new();
+    let mut hits: Vec<(ObjRef, Dict, Option<ObjRef>, bool)> = Vec::new();
     while let Some((k, pg)) = todo.pop() {
         match k {
             Object::Array(a) => todo.extend(a.into_iter().map(|x| (x, pg))),
@@ -113,18 +125,27 @@ pub(crate) fn clean(doc: &mut Document, page: ObjRef, changed: &HashSet<i64>, em
                 if !seen.insert(r) || seen.len() > 2_000_000 {
                     continue;
                 }
-                let Some(d) = doc.get(r).as_dict().cloned() else { continue };
+                let object = doc.get(r);
+                if let Object::Array(a) = &*object {
+                    todo.extend(a.iter().cloned().map(|x| (x, pg)));
+                    continue;
+                }
+                let Some(d) = object.as_dict().cloned() else { continue };
                 if !d.contains(b"S") {
                     continue;
                 }
                 let pg = d.get(b"Pg").and_then(Object::as_ref).or(pg);
-                let kids: Vec<Object> = match d.get(b"K") {
-                    Some(Object::Array(a)) => a.clone(),
-                    Some(o) => vec![o.clone()],
+                let kids: Vec<Object> = match d.get(b"K").map(|k| doc.resolve(k)) {
+                    Some(o) => match &*o {
+                        Object::Array(a) => a.clone(),
+                        _ => d.get(b"K").cloned().into_iter().collect(),
+                    },
                     None => Vec::new(),
                 };
-                if kids.iter().any(|x| mcid_of(x, pg, page).is_some_and(|m| changed.contains(&m))) {
-                    hits.push((r, d.clone(), pg));
+                let sensitive = kids.iter().any(|x| mcid_of(doc, x, pg, page, stream).is_some_and(|m| changed.contains(&m)));
+                let remap = stream.is_some() && kids.iter().any(|x| mcid_of(doc, x, pg, page, stream).is_some());
+                if sensitive || remap {
+                    hits.push((r, d.clone(), pg, sensitive));
                 }
                 todo.extend(kids.into_iter().map(|x| (x, pg)));
             }
@@ -132,25 +153,52 @@ pub(crate) fn clean(doc: &mut Document, page: ObjRef, changed: &HashSet<i64>, em
         }
     }
     let mut n = 0;
-    for (r, d, pg) in hits {
-        let kids = d.get(b"K").cloned();
-        doc.update_dict(r, |e| {
-            for key in [&b"Alt"[..], b"ActualText", b"E"] {
-                e.remove(key);
+    for (r, d, pg, sensitive) in hits {
+        let kids = d.get(b"K").map(|k| doc.resolve(k));
+        let array = kids.as_ref().is_some_and(|k| matches!(&**k, Object::Array(_)));
+        let list = match kids.as_deref() {
+            Some(Object::Array(a)) => a.clone(),
+            Some(_) => d.get(b"K").cloned().into_iter().collect(),
+            None => Vec::new(),
+        };
+        let mut keep = Vec::new();
+        for mut kid in list {
+            let mcid = mcid_of(doc, &kid, pg, page, stream);
+            if mcid.is_some_and(|m| empty.contains(&m)) {
+                continue;
             }
-            // Marked content that is now empty no longer belongs to the element.
-            match kids {
-                Some(Object::Array(a)) => {
-                    let keep: Vec<Object> = a.into_iter().filter(|x| !mcid_of(x, pg, page).is_some_and(|m| empty.contains(&m))).collect();
-                    e.set(b"K".to_vec(), Object::Array(keep));
+            if let Some((original, replacement)) = stream.filter(|_| mcid.is_some()) {
+                if let Some(reference) = kid.as_ref() {
+                    doc.update_dict(reference, |m| {
+                        m.set(b"Stm".to_vec(), Object::Ref(replacement));
+                        if m.get(b"StmOwn").and_then(Object::as_ref) == Some(original) {
+                            m.set(b"StmOwn".to_vec(), Object::Ref(replacement));
+                        }
+                    })?;
+                } else if let Object::Dict(m) = &mut kid {
+                    m.set(b"Stm".to_vec(), Object::Ref(replacement));
+                    if m.get(b"StmOwn").and_then(Object::as_ref) == Some(original) {
+                        m.set(b"StmOwn".to_vec(), Object::Ref(replacement));
+                    }
                 }
-                Some(o) if mcid_of(&o, pg, page).is_some_and(|m| empty.contains(&m)) => {
-                    e.remove(b"K");
+            }
+            keep.push(kid);
+        }
+        doc.update_dict(r, |e| {
+            if sensitive {
+                for key in [&b"Alt"[..], b"ActualText", b"E"] {
+                    e.remove(key);
                 }
-                _ => {}
+            }
+            if array {
+                e.set(b"K".to_vec(), Object::Array(keep));
+            } else if let Some(k) = keep.into_iter().next() {
+                e.set(b"K".to_vec(), k);
+            } else {
+                e.remove(b"K");
             }
         })?;
-        n += 1;
+        n += usize::from(sensitive && doc.get(r).as_dict() != Some(&d));
     }
     Ok(n)
 }

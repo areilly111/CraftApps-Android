@@ -1164,6 +1164,7 @@ fn run_here(script: &str, event: &Event, doc: &DocInfo, fields: &[FieldState], d
 
 pub mod formcalc;
 pub mod xfa;
+pub mod xfa_session;
 
 #[cfg(test)]
 mod tests;

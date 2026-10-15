@@ -105,8 +105,8 @@ pub fn write_artboard(a: &Artboard, guides: &[i32]) -> Vec<u8> {
 /// Indices of the document guides (vertical first, then horizontal, as in resource 1032) that
 /// lie inside `r`.
 pub fn guides_in(guides: &Guides, r: Rect) -> Vec<i32> {
-    let v = guides.vertical.iter().map(|x| (*x as f64) > f64::from(r.x0) && (*x as f64) < f64::from(r.x1));
-    let h = guides.horizontal.iter().map(|y| (*y as f64) > f64::from(r.y0) && (*y as f64) < f64::from(r.y1));
+    let v = guides.vertical.iter().map(|x| *x > f64::from(r.x0) && *x < f64::from(r.x1));
+    let h = guides.horizontal.iter().map(|y| *y > f64::from(r.y0) && *y < f64::from(r.y1));
     v.chain(h).enumerate().filter(|(_, inside)| *inside).map(|(i, _)| i as i32).collect()
 }
 
@@ -376,6 +376,9 @@ mod tests {
         });
         d.last_applied_comp = Some(7);
         let res = write_comps_resource(&d).unwrap();
+        // `list` is a length-4 string id, as Photoshop writes it, never a code.
+        assert!(res.windows(8).any(|w| w == b"\0\0\0\x04list"));
+        assert!(!res.windows(8).any(|w| w == b"\0\0\0\0list"));
         let cm = write_cmls(&d.layer_comps, None, d.layer(lid).unwrap(), 3).unwrap();
         // Attach as Photoshop would: shmd with cmls plus another item.
         let mut raw = vec![(*b"shmd", write_shmd(&[MetadataItem::new(*b"cust", vec![1, 2])]))];

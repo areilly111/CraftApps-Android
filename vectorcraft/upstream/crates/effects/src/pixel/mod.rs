@@ -1,4 +1,4 @@
-//! Photoshop-style raster effects (Effect › Blur › Radial Blur and Smart Blur, Brush Strokes ›
+//! Photoshop-style raster effects (Effect › Artistic › Film Grain, Blur › Radial Blur and Smart Blur, Brush Strokes ›
 //! Accented Edges, Angled Strokes, Crosshatch, Dark Strokes, Ink Outlines, Spatter, Sprayed Strokes
 //! and Sumi-e, Distort › Diffuse Glow, Glass and Ocean Ripple, Pixelate › Color Halftone,
 //! Crystallize, Mezzotint and Pointillize, Sharpen › Unsharp Mask, Stylize › Glowing Edges, Texture
@@ -12,6 +12,7 @@
 //!   cost doesn't grow with the radius, and sample counts come from the effect's quality.
 //! - Beyond the raster's edges is transparency.
 
+mod artistic;
 mod blur;
 mod brushstrokes;
 mod distort;
@@ -32,7 +33,8 @@ pub use pixelate::{MEZZOTINT_TYPES, Mezzotint};
 pub use texture::{GRAIN_TYPES, Grain, LIGHT_DIRECTIONS, Light, TEXTURES, Texture};
 
 /// The Photoshop-style effect ids (all raster effects, see [`crate::is_raster`]).
-pub const PIXEL_EFFECTS: [&str; 27] = [
+pub const PIXEL_EFFECTS: [&str; 28] = [
+    "artistic.filmGrain",
     "blur.radial",
     "blur.smart",
     "brushStrokes.accentedEdges",
@@ -66,6 +68,9 @@ pub const PIXEL_EFFECTS: [&str; 27] = [
 /// are in document units.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PixelFx {
+    /// Artistic › Film Grain: monochrome grain in shadows and midtones, a wider bright
+    /// highlight area (0..20), and tonal intensity (0..10), preserving coverage.
+    FilmGrain { grain: f64, highlight: f64, intensity: f64 },
     /// Blur › Radial Blur around the object's centre: along arcs (spin, an arc of `amount`°) or
     /// along rays (zoom, the content scaled by up to about ±`amount`/2 %), averaging 2^`passes` samples.
     RadialBlur { amount: f64, zoom: bool, passes: u32 },
@@ -192,6 +197,11 @@ pub(crate) fn parse(id: &str, p: &Value) -> Option<PixelFx> {
         levels.iter().find(|(name, _)| name.eq_ignore_ascii_case(q)).map_or(default, |(_, v)| *v)
     };
     Some(match id {
+        "artistic.filmGrain" => PixelFx::FilmGrain {
+            grain: num(p, "grain", 4.0).clamp(0.0, 20.0),
+            highlight: num(p, "highlightArea", 0.0).clamp(0.0, 20.0),
+            intensity: num(p, "intensity", 10.0).clamp(0.0, 10.0),
+        },
         "blur.radial" => PixelFx::RadialBlur {
             amount: num(p, "amount", 10.0).clamp(1.0, 100.0),
             zoom: text(p, "method", "spin").eq_ignore_ascii_case("zoom"),
@@ -338,7 +348,8 @@ impl PixelFx {
             PixelFx::OceanRipple { size, magnitude } => distort::ripple_shift(size, magnitude),
             PixelFx::UnsharpMask { .. } => 0.0,
             PixelFx::GlowingEdges { width, smoothness, .. } => width.max(smoothness * 3.0),
-            PixelFx::ColorHalftone { .. }
+            PixelFx::FilmGrain { .. }
+            | PixelFx::ColorHalftone { .. }
             | PixelFx::Mezzotint { .. }
             | PixelFx::Craquelure { .. }
             | PixelFx::Grain { .. }
@@ -378,7 +389,7 @@ impl PixelFx {
             // The cells around the pixel's, and the cells around theirs.
             PixelFx::ColorHalftone { max_radius, .. } => Some(3.0 * std::f64::consts::SQRT_2 * max_radius),
             PixelFx::Crystallize { cell } => Some(1.5 * cell),
-            PixelFx::Mezzotint { .. } => Some(0.0),
+            PixelFx::FilmGrain { .. } | PixelFx::Mezzotint { .. } => Some(0.0),
             // The dots' points, and the softened colour around them.
             PixelFx::Pointillize { cell } => Some(2.5 * cell),
             // The softened tones around the pixel.
@@ -399,6 +410,7 @@ impl PixelFx {
         let Some(px) = pixels(data, w, h) else { return };
         let to_px = |len: f64| len / space.px.max(1e-9);
         match *self {
+            PixelFx::FilmGrain { grain, highlight, intensity } => artistic::film_grain(px, w, h, space, grain, highlight, intensity),
             PixelFx::RadialBlur { amount, zoom, passes } => blur::radial(px, w, h, space, amount, zoom, passes),
             PixelFx::SmartBlur { radius, threshold, samples } => blur::smart(px, w, h, to_px(radius), threshold, samples),
             PixelFx::AccentedEdges { width, brightness, smoothness } => brushstrokes::accented_edges(px, w, h, space, width, brightness, smoothness),

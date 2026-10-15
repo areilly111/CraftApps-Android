@@ -1372,6 +1372,23 @@ fn spanish_text_gets_spanish_hyphenation() {
 }
 
 #[test]
+fn portuguese_text_gets_portuguese_hyphenation() {
+    let text = "matemática matemática matemática matemática matemática matemática";
+    let (mut d, sid, _) = doc_with(text, Rect::new(36.0, 36.0, 76.0, 700.0), ParaAttrs::default());
+    let st = d.story_mut(sid).unwrap();
+    let n = st.len();
+    st.format_chars(0..n, |f| f.over.language = Some("Portuguese: Brazilian".into()));
+    let cs = compose_story(&d, sid, &ComposeOptions::default());
+    let breaks: Vec<&str> = all_lines(&cs).into_iter().filter(|l| l.hyphenated).map(|l| text[l.range.clone()].trim_end()).collect();
+    assert!(!breaks.is_empty(), "Portuguese text is hyphenated");
+    // Portuguese syllables: ma-te-má-tica.
+    for b in breaks {
+        let tail = b.rsplit(' ').next().unwrap_or(b);
+        assert!(["ma", "mate", "matemá"].contains(&tail), "{b:?}");
+    }
+}
+
+#[test]
 fn cjk_aki_adds_space_without_scaling_outlines() {
     let (mut d, sid, _) = doc_with("AB", Rect::new(0.0, 0.0, 300.0, 100.0), ParaAttrs::default());
     let old = compose_story(&d, sid, &ComposeOptions::default());

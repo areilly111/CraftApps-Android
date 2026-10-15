@@ -457,9 +457,29 @@ pub struct Views3D {
     /// Edited view cameras (views not present use their defaults).
     #[serde(default)]
     pub cams: BTreeMap<View3D, ViewCam>,
+    /// The views of the extra panes of a 2- or 4-view layout (pane 1 to 3, i.e. index 0 to 2);
+    /// panes not present show their default ([`Views3D::DEFAULT_PANES`]).
+    #[serde(default)]
+    pub panes: Vec<View3D>,
 }
 
 impl Views3D {
+    /// Views the extra panes of a multi-view layout start with: Top, Front and Right.
+    pub const DEFAULT_PANES: [View3D; 3] = [View3D::Top, View3D::Front, View3D::Right];
+    /// The view of extra pane `i` (0 = the first beside the main view).
+    pub fn pane(&self, i: usize) -> View3D {
+        self.panes.get(i).or_else(|| Self::DEFAULT_PANES.get(i)).copied().unwrap_or_default()
+    }
+    /// Choose the view of extra pane `i` (ignored past the third).
+    pub fn set_pane(&mut self, i: usize, v: View3D) {
+        if i >= Self::DEFAULT_PANES.len() {
+            return;
+        }
+        while self.panes.len() <= i {
+            self.panes.push(Self::DEFAULT_PANES[self.panes.len()]);
+        }
+        self.panes[i] = v;
+    }
     pub fn cam(&self, v: View3D, w: f64, h: f64) -> ViewCam {
         self.cams.get(&v).copied().unwrap_or_else(|| default_view_cam(v, w, h))
     }

@@ -5,17 +5,22 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-mod arabic;
 mod craft;
+pub mod embedding;
 mod encodings;
 pub mod pdf;
 mod script;
-pub use arabic::{ShapedCluster, arabic_glyph, arabic_has, shape_arabic};
+mod shaping;
+pub mod source_shaping;
 pub use craft::{
-    CRAFT_FONTS, CraftFont, SHIPPORI_MINCHO, document_arabic_font, document_japanese_font, document_japanese_font_for_style,
-    document_japanese_fonts_for_style, ui_arabic_fonts, ui_chinese_fonts, ui_cjk_fonts, ui_japanese_fonts, ui_telugu_fonts,
+    CRAFT_FONTS, CraftFont, SHIPPORI_MINCHO, document_arabic_font, document_hebrew_font, document_japanese_font, document_japanese_font_for_style,
+    document_japanese_fonts_for_style, document_thai_font, ui_arabic_fonts, ui_chinese_fonts, ui_cjk_fonts, ui_hebrew_fonts, ui_japanese_fonts,
+    ui_telugu_fonts, ui_thai_fonts,
 };
-pub use script::{GlyphError, GlyphOutline, MAX_SIGNATURE_CHARS, ScriptOutline, japanese_glyph, japanese_glyph_from, script_outline};
+pub use script::{
+    GlyphError, GlyphOutline, INTER_REGULAR, MAX_SIGNATURE_CHARS, ScriptOutline, japanese_glyph, japanese_glyph_from, script_missing, script_outline,
+};
+pub use shaping::{ShapedCluster, ShapedScript, arabic_glyph, arabic_has, shape_arabic, shape_thai, shaped_glyph, thai_has};
 
 /// Approximate advance of `s` in Helvetica (or Arial) at `size` points.
 pub fn helvetica_width(s: &str, size: f64) -> f64 {
@@ -151,7 +156,17 @@ impl UnicodeCMap {
         })
     }
 
-    /// Encode `s`; tabs become spaces, and characters UCS-2 can't hold become `?`.
+    /// The first character of `s` this encoding can't hold, which [`Self::encode`] would write as
+    /// `?`: a character beyond U+FFFF in UCS-2 (`𠀋`). UTF-16, UTF-8 and UTF-32 hold every one.
+    pub fn first_unencodable(self, s: &str) -> Option<char> {
+        match self {
+            Self::Ucs2 => s.chars().find(|c| u16::try_from(u32::from(*c)).is_err()),
+            Self::Utf16 | Self::Utf8 | Self::Utf32 => None,
+        }
+    }
+
+    /// Encode `s`; tabs become spaces, and characters UCS-2 can't hold become `?` (check them
+    /// first with [`Self::first_unencodable`]: PdfCraft refuses such text rather than write `?`).
     pub fn encode(self, s: &str) -> Vec<u8> {
         let mut out = Vec::with_capacity(s.len().saturating_mul(2));
         let mut units = [0u16; 2];
@@ -186,6 +201,47 @@ pub fn first_non_win_ansi(s: &str) -> Option<char> {
     s.chars().find(|c| !win_ansi_encodable(*c))
 }
 
+/// The first character of `s` the standard fonts (Helvetica and the rest of the standard 14, in
+/// WinAnsiEncoding) can't draw, so that a generated appearance would show it as `?`. Line breaks
+/// don't count: appearances lay lines out themselves. PdfCraft refuses such text with
+/// [`undrawable_message`] instead of writing `?` (AGENTS.md §4: never lose work silently).
+pub fn first_undrawable(s: &str) -> Option<char> {
+    s.chars().find(|c| !matches!(c, '\n' | '\r') && !win_ansi_encodable(*c))
+}
+
+/// The error for text the standard fonts can't draw ([`first_undrawable`]): which character, in
+/// what (`"the comment"`, `"the reason"`), and what can be written instead. One wording for every
+/// path that writes text in the standard fonts, so agents and users can act on it the same way.
+pub fn undrawable_message(what: &str, c: char) -> String {
+    format!(
+        "the standard fonts can't draw \"{}\" (U+{:04X}) in {what}; only Western European characters can be written there for now",
+        c.escape_debug(),
+        u32::from(c)
+    )
+}
+
+/// The private key on an annotation (a comment or a form field's widget) whose appearance PdfCraft
+/// drew with `?` in place of characters its fonts can't draw: a text string holding the first
+/// such character. The text itself (a field's `/V`, a comment's `/Contents`) is stored as typed;
+/// the mark lets flattening refuse to make that `?` permanent, lets an edit report it, and tells
+/// such an appearance apart from one another program drew with a font that has those characters.
+pub const UNDRAWN_MARK: &[u8] = b"PCUndrawn";
+
+/// The character [`UNDRAWN_MARK`] records on `d`, if PdfCraft drew its appearance with `?`.
+pub fn undrawn_mark(d: &pdfcraft_cos::Dict) -> Option<char> {
+    d.get(UNDRAWN_MARK).and_then(pdfcraft_cos::Object::as_string).and_then(|s| s.to_text().chars().next())
+}
+
+/// Record (`Some`) or clear (`None`) [`UNDRAWN_MARK`] on `d`, for the appearance just drawn.
+pub fn set_undrawn_mark(d: &mut pdfcraft_cos::Dict, c: Option<char>) {
+    match c {
+        Some(c) => d.set(UNDRAWN_MARK.to_vec(), pdfcraft_cos::PdfString::text(&c.to_string())),
+        None => {
+            d.remove(UNDRAWN_MARK);
+        }
+    }
+}
+
 /// Bytes as a PDF literal string, `(` … `)`, with delimiters escaped.
 pub fn literal(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len() + 2);
@@ -216,6 +272,30 @@ mod tests {
         }
         assert_eq!(first_non_win_ansi("Café — 5€"), None);
         assert_eq!(first_non_win_ansi("Dvořák"), Some('ř'));
+        // Line breaks are laid out, not drawn; other controls would be written as `?`.
+        assert_eq!(first_undrawable("Café\r\n— 5€\tok"), None);
+        assert_eq!(first_undrawable("签名 Ada"), Some('签'));
+        assert_eq!(first_undrawable("a\u{7}b"), Some('\u{7}'));
+        assert_eq!(first_undrawable("𠀋"), Some('𠀋'));
+        let m = undrawable_message("the comment", '签');
+        assert_eq!(m, "the standard fonts can't draw \"签\" (U+7B7E) in the comment; only Western European characters can be written there for now");
+        assert!(undrawable_message("the reason", '\u{7}').contains("\"\\u{7}\" (U+0007)"));
+        assert!(undrawable_message("x", '𠀋').contains("(U+2000B)"));
+    }
+
+    #[test]
+    fn the_undrawn_mark_records_one_character_and_clears() {
+        let mut d = pdfcraft_cos::Dict::new();
+        assert_eq!(undrawn_mark(&d), None);
+        set_undrawn_mark(&mut d, Some('𠀋'));
+        assert_eq!(undrawn_mark(&d), Some('𠀋'), "beyond U+FFFF, as a UTF-16 text string");
+        set_undrawn_mark(&mut d, Some('签'));
+        assert_eq!(undrawn_mark(&d), Some('签'));
+        set_undrawn_mark(&mut d, None);
+        assert!(!d.contains(UNDRAWN_MARK));
+        // Another value under the key is not a character: no mark.
+        d.set(UNDRAWN_MARK.to_vec(), pdfcraft_cos::Object::Bool(true));
+        assert_eq!(undrawn_mark(&d), None);
     }
 
     #[test]
@@ -261,6 +341,12 @@ mod tests {
         assert_eq!(UnicodeCMap::Utf16.encode("令A"), [0x4e, 0xe4, 0x00, 0x41]);
         assert_eq!(UnicodeCMap::Utf16.encode("𠀋"), [0xd8, 0x40, 0xdc, 0x0b]);
         assert_eq!(UnicodeCMap::Ucs2.encode("𠀋\t"), [0x00, b'?', 0x00, b' ']);
+        // That `?` is never written silently: callers check first.
+        assert_eq!(UnicodeCMap::Ucs2.first_unencodable("令和𠀋"), Some('𠀋'));
+        assert_eq!(UnicodeCMap::Ucs2.first_unencodable("令和"), None);
+        for cmap in [UnicodeCMap::Utf16, UnicodeCMap::Utf8, UnicodeCMap::Utf32] {
+            assert_eq!(cmap.first_unencodable("令和𠀋"), None, "{cmap:?}");
+        }
         assert_eq!(UnicodeCMap::Utf8.encode("令"), "令".as_bytes());
         assert_eq!(UnicodeCMap::Utf32.encode("令"), [0, 0, 0x4e, 0xe4]);
         assert_eq!(cjk_width("令和", 10.0), 20.0);

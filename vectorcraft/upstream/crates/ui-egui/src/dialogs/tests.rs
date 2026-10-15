@@ -40,6 +40,8 @@ fn kinds_map_to_their_dialogs() {
         ("newDocument", DialogKind::NewDocument),
         ("roundedRectangle", DialogKind::Shape),
         ("lineSegment", DialogKind::Shape),
+        ("rectangularGrid", DialogKind::Shape),
+        ("polarGrid", DialogKind::Shape),
         ("shear", DialogKind::Transform),
         ("splitIntoGrid", DialogKind::PathOp),
         ("artboardOptions", DialogKind::ArtboardOptions),
@@ -52,7 +54,6 @@ fn kinds_map_to_their_dialogs() {
         assert_eq!(DialogKind::of(kind), Some(want), "{kind}");
     }
     assert_eq!(DialogKind::of("nope"), None);
-    assert!(spec("allTools").ok.is_none());
     assert!(spec("effect").preview && spec("recolor").preview && !spec("move").preview);
     assert!(spec("preferences").window.is_some() && spec("rectangle").window.is_none());
 }
@@ -79,9 +80,21 @@ fn every_dialog_draws() {
         app.ui.dialog = None;
         let _ = app.session.cancel_interaction();
     }
-    for kind in
-        ["rectangle", "roundedRectangle", "ellipse", "polygon", "star", "lineSegment", "rotate", "reflect", "scale", "shear", "artboardOptions"]
-    {
+    for kind in [
+        "rectangle",
+        "roundedRectangle",
+        "ellipse",
+        "polygon",
+        "star",
+        "lineSegment",
+        "rectangularGrid",
+        "polarGrid",
+        "rotate",
+        "reflect",
+        "scale",
+        "shear",
+        "artboardOptions",
+    ] {
         open_tool_dialog(&mut app, kind, json!({"x": 5, "y": 5, "index": 0}));
         assert!(app.ui.dialog.as_ref().is_some_and(|d| d.kind == kind), "{kind}");
         frame(&mut app, Default::default());
@@ -89,7 +102,6 @@ fn every_dialog_draws() {
     for (kind, fields) in [
         ("move", json!({"dx": "0 pt", "dy": "0 pt"})),
         ("average", json!({"axis": "both"})),
-        ("allTools", json!({})),
         (crate::unsaved::KIND, json!({"index": 0, "name": "Untitled-1", "then": "close"})),
         ("newWorkspace", json!({"name": "Mine"})),
         ("shortcuts", json!({})),
@@ -107,10 +119,6 @@ fn enter_confirms_through_the_dialog_spec() {
     frame(&mut app, enter());
     assert!(app.ui.dialog.is_none());
     assert_eq!(objects(&app), 1);
-    // All Tools has no OK: Enter leaves it open.
-    open(&mut app, "allTools", json!({}));
-    frame(&mut app, enter());
-    assert!(app.ui.dialog.is_some());
     // An unregistered kind still closes on OK without running anything.
     open(&mut app, "unregistered", json!({}));
     assert_eq!(confirm(&mut app), Ok(serde_json::Value::Null));
@@ -386,6 +394,89 @@ fn given_headings_are_shown_as_they_are() {
     assert_eq!((spec(&d.kind).heading)(&d), "Black");
 }
 
+/// A plug-in dialog with one whole-number field `seed` in `min..=max`, driven by egui events.
+struct PluginIntField {
+    ctx: egui::Context,
+    d: Dialog,
+    specs: Vec<(String, vectorcraft_plugins::ParamSpec)>,
+    pos: egui::Pos2,
+}
+
+impl PluginIntField {
+    fn new(min: i64, max: i64, start: i64) -> Self {
+        let ctx = egui::Context::default();
+        theme::install_fonts(&ctx);
+        theme::apply(&ctx, Default::default());
+        let specs = vec![("seed".into(), vectorcraft_plugins::ParamSpec::Int { min, max, default: 0 })];
+        let mut f = PluginIntField { ctx, d: Dialog::new(plugin::KIND, json!({ "seed": start })), specs, pos: egui::Pos2::ZERO };
+        fn number_rect(shape: &egui::Shape, text: &str) -> Option<egui::Rect> {
+            match shape {
+                egui::Shape::Text(t) if t.galley.text() == text => Some(t.visual_bounding_rect()),
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| number_rect(s, text)),
+                _ => None,
+            }
+        }
+        let out = f.run(vec![]);
+        f.pos = out.shapes.iter().find_map(|s| number_rect(&s.shape, &start.to_string())).unwrap().center();
+        f
+    }
+
+    fn run(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
+        let (d, specs) = (&mut self.d, &self.specs);
+        let mut out = self.ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            form::schema_fields(ui, d, specs);
+        });
+        out.textures_delta.clear();
+        out
+    }
+
+    /// Clicks the field, sends `events`, presses Enter and returns the field's value.
+    fn commit(&mut self, events: Vec<egui::Event>) -> serde_json::Value {
+        use egui::{Event, Key, Modifiers, PointerButton};
+        let (pos, button) = (self.pos, PointerButton::Primary);
+        self.run(vec![Event::PointerMoved(pos), Event::PointerButton { pos, button, pressed: true, modifiers: Modifiers::default() }]);
+        self.run(vec![Event::PointerButton { pos, button, pressed: false, modifiers: Modifiers::default() }]);
+        self.run(events);
+        self.run(vec![Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::default() }]);
+        self.d.fields["seed"].clone()
+    }
+
+    /// Replaces the field's text with `text` and commits it.
+    fn type_text(&mut self, text: &str) -> serde_json::Value {
+        let all = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+        self.commit(vec![
+            egui::Event::Key { key: egui::Key::A, physical_key: None, pressed: true, repeat: false, modifiers: all },
+            egui::Event::Text(text.into()),
+        ])
+    }
+}
+
+#[test]
+fn plugin_integer_field_preserves_precision_and_clamps_exactly() {
+    let (min, max) = (-9007199254740995_i64, 9007199254740995_i64);
+    let mut f = PluginIntField::new(min, max, 0);
+    for (text, expected) in [
+        ("9007199254740993", 9007199254740993_i64),
+        ("9007199254740996", max),
+        ("-9007199254740996", min),
+        ("invalid", min),
+        ("1.5", min),
+        ("9223372036854775808", min),
+    ] {
+        assert_eq!(f.type_text(text), json!(expected), "{text}");
+    }
+}
+
+#[test]
+fn plugin_integer_field_with_small_bounds_keeps_numeric_editing() {
+    let mut f = PluginIntField::new(1, 16, 3);
+    let up = egui::Event::Key { key: egui::Key::ArrowUp, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+    assert_eq!(f.commit(vec![up]), json!(4));
+    for (text, expected) in [("7", 7), ("2 + 3", 5), ("17", 16)] {
+        assert_eq!(f.type_text(text), json!(expected), "{text}");
+    }
+}
+
 #[test]
 fn a_dialog_opens_with_its_first_field_focused_so_typing_and_enter_apply() {
     let mut app = app();
@@ -545,4 +636,88 @@ fn artboard_options_position_moves_art_only_with_the_tool_option_on() {
         app.run("edit.undo", json!({})).unwrap();
         assert_eq!(*app.session.doc().unwrap().doc, *before);
     }
+}
+
+/// Zig Zag's dialog has Size and Ridges per segment sliders, and Relative / Absolute and Smooth /
+/// Corner as radio buttons, not dropdowns (#1133).
+#[test]
+fn zig_zag_has_sliders_and_radio_buttons() {
+    let mut app = app();
+    app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap();
+    app.run("effect.dialog", json!({"effect": "distort.zigZag"})).unwrap();
+    let text = crate::tests_labels::painted_text(&mut app, |app, ui| show(app, ui.ctx()));
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    for want in ["Size:", "Relative", "Absolute", "Ridges per segment:", "Points", "Smooth", "Corner"] {
+        assert!(lines.contains(&want), "no {want:?} in {lines:?}");
+    }
+    assert!(!lines.contains(&"Ridges:"), "{lines:?}");
+}
+
+#[test]
+fn polar_grid_shared_canvas_click_defaults_units_counts_and_history() {
+    use vectorcraft_doc::NodeId;
+    use vectorcraft_tools::{PointerEvent, PointerKind};
+    let mut app = app();
+    app.select_tool("polarGrid");
+    app.run("tool.setOption", json!({"tool": "polarGrid", "values": {"concentric": 2, "radial": 3}})).unwrap();
+    let before = app.session.doc().unwrap().doc.clone();
+    let undo = app.session.doc().unwrap().history.undo.len();
+    for kind in [PointerKind::Down, PointerKind::Up] {
+        crate::canvas::dispatch(&mut app, &PointerEvent::new(kind, 30.0, 40.0), Default::default());
+    }
+    assert_eq!(DialogKind::of("polarGrid"), Some(DialogKind::Shape));
+    let d = app.ui.dialog.as_mut().expect("canvas click opens the shared shape form");
+    assert_eq!(d.fields["width"], json!("100 pt"));
+    assert_eq!(d.fields["height"], json!("100 pt"));
+    assert_eq!((d.fields["concentric"].clone(), d.fields["radial"].clone()), (json!(2), json!(3)));
+    d.fields.insert("width".into(), json!("25.4 mm"));
+    d.fields.insert("height".into(), json!("0.5 in"));
+    frame(&mut app, Default::default());
+    let result = confirm(&mut app).unwrap();
+    assert!(app.ui.dialog.is_none());
+    let s = app.session.doc().unwrap();
+    let group = s.doc.node(NodeId(result["id"].as_u64().unwrap())).unwrap();
+    let children = group.children().unwrap();
+    assert_eq!(children.len(), 6);
+    assert_eq!(children.iter().filter(|n| n.path_data().unwrap().is_closed()).count(), 3);
+    assert_eq!(s.history.undo.len(), undo + 1);
+    let made = s.doc.clone();
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(app.session.doc().unwrap().doc, before);
+    app.run("edit.redo", json!({})).unwrap();
+    assert_eq!(app.session.doc().unwrap().doc, made);
+}
+
+#[test]
+fn polar_grid_shared_cancel_reopen_zero_counts_and_failed_creation() {
+    let mut app = app();
+    app.run("tool.setOption", json!({"tool": "polarGrid", "values": {"concentric": 2, "radial": 3}})).unwrap();
+    let before = app.session.doc().unwrap().doc.clone();
+    open_tool_dialog(&mut app, "polarGrid", json!({"x": 10, "y": 20}));
+    let d = app.ui.dialog.as_mut().expect("shared Polar Grid form opens");
+    d.fields.insert("concentric".into(), json!(8));
+    cancel(&mut app);
+    assert_eq!(app.session.doc().unwrap().doc, before);
+    open_tool_dialog(&mut app, "polarGrid", json!({"x": 10, "y": 20}));
+    assert_eq!(app.ui.dialog.as_ref().unwrap().fields["concentric"], json!(2));
+    for key in ["concentric", "radial"] {
+        app.ui.dialog.as_mut().unwrap().fields.insert(key.into(), json!(0));
+    }
+    let result = confirm(&mut app).unwrap();
+    let group = app.session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(result["id"].as_u64().unwrap())).unwrap();
+    assert_eq!(group.children().unwrap().len(), 1);
+    assert!(group.children().unwrap()[0].path_data().unwrap().is_closed());
+    open_tool_dialog(&mut app, "polarGrid", json!({"x": 10, "y": 20}));
+    assert_eq!(app.ui.dialog.as_ref().unwrap().fields["radial"], json!(0));
+    cancel(&mut app);
+    let layer = app.session.doc().unwrap().doc.layers[0].id;
+    app.run("layer.setProps", json!({"ids": [layer.0], "locked": true})).unwrap();
+    let options = app.session.tool_options_of("polarGrid");
+    let before = app.session.doc().unwrap().doc.clone();
+    open_tool_dialog(&mut app, "polarGrid", json!({"x": 10, "y": 20}));
+    app.ui.dialog.as_mut().unwrap().fields.insert("radial".into(), json!(9));
+    assert!(confirm(&mut app).is_err());
+    assert!(app.ui.dialog.is_none());
+    assert_eq!(app.session.tool_options_of("polarGrid"), options);
+    assert_eq!(app.session.doc().unwrap().doc, before);
 }

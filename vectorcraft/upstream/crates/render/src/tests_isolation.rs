@@ -138,7 +138,7 @@ fn a_masked_object_blends_with_the_backdrop() {
         let mut g = group(d, vec![m], 1.0, Blend::Normal, false);
         // A 50% grey mask over the whole group.
         let art = rect(d, Rect::new(0.0, 0.0, 100.0, 100.0), [0.5; 3]);
-        g.mask = Some(Box::new(vectorcraft_doc::OpacityMask::new(art, true)));
+        g.extras_mut().mask = Some(Box::new(vectorcraft_doc::OpacityMask::new(art, true)));
         g
     });
     assert_near(render(&d).pixel(50, 50), lerp(B, blend_rgb(Blend::Multiply, B, S), 0.5), "masked multiply");

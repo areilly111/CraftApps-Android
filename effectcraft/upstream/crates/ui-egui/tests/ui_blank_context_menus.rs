@@ -1,6 +1,6 @@
 //! Right-click actions in the blank Project and Timeline areas, and on Timeline property names.
 use effectcraft_engine::Session;
-use effectcraft_ui_egui::{Dialog, EffectcraftApp};
+use effectcraft_ui_egui::{Dialog, EffectcraftApp, dock::PanelKind};
 use egui::{Event, Modifiers, PointerButton, Pos2, Rect, pos2, vec2};
 use egui_kittest::{Harness, kittest::Queryable as _};
 use serde_json::json;
@@ -132,6 +132,23 @@ fn timeline_blank_menu_opens_composition_settings() {
     assert_eq!(h.state().dialog, Some(Dialog::CompSettings));
 }
 
+#[test]
+fn timeline_blank_menu_opens_current_comp_in_essential_graphics() {
+    for graph in [false, true] {
+        let mut h = harness();
+        let comp = h.state().session.active_comp_id().unwrap();
+        let area = rect(&h, "timeline.layerMarquee");
+        let p = if graph { pos2(area.max.x + 150.0, area.center().y) } else { area.center() };
+        right_click(&mut h, p);
+        let target = if graph { "timeline.context.graph.essentialGraphics" } else { "timeline.context.outline.essentialGraphics" };
+        assert!(h.state().auto.find(target).is_some());
+        h.get_by_label("Open in Essential Graphics").click();
+        h.run_steps(3);
+        assert_eq!(h.state().session.state.essential_primary, Some(comp));
+        assert!(h.state().ui.dock.contains(PanelKind::EssentialGraphics));
+    }
+}
+
 /// #407: right-clicking a property's name in the Timeline opens After Effects' property menu:
 /// Reset, Edit Value…, Separate Dimensions (Position only, checked once separated), Add or
 /// Remove Expression and Add Property to Essential Graphics.
@@ -194,4 +211,18 @@ fn timeline_property_names_have_the_property_menu() {
     menu(&mut h, scale);
     choose(&mut h, scale, "editValue");
     assert_eq!(h.state().dialog, Some(Dialog::Form));
+}
+
+/// The rows of a context menu touch: a gap between two entries highlighted neither and
+/// swallowed a click there.
+#[test]
+fn context_menu_rows_leave_no_gap_between_them() {
+    let mut h = harness();
+    let p = rect(&h, "project.empty").center();
+    right_click(&mut h, p);
+    let rows = ["newComp", "newFolder", "import"].map(|key| rect(&h, &format!("project.context.{key}")));
+    for pair in rows.windows(2) {
+        assert!((pair[1].top() - pair[0].bottom()).abs() < 0.5, "gap between {:?} and {:?}", pair[0], pair[1]);
+    }
+    snapshot(&mut h, "project-rows");
 }

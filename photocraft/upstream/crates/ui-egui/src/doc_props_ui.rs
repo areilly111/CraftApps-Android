@@ -3,15 +3,16 @@
 //! Rulers & Grids toggles. Every edit dispatches an engine or view command, so the panel stays thin.
 
 use egui::{Align2, Rect, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
-use photocraft_doc::{ColorMode, Document, Layer, LayerContent, LayerId, SampleType};
+use photocraft_doc::{ColorMode, Document, Layer, LayerId, SampleType};
 use serde_json::{Value, json};
 
 use crate::theme::Tokens;
 use crate::{PhotocraftApp, icons, widgets};
 
-/// Photoshop's Background layer: the locked, opaque raster layer at the bottom of the stack.
+/// Photoshop's Background layer: the locked, opaque raster layer at the bottom of the stack,
+/// whatever its (localized) name ([`Document::background`]).
 pub fn is_background(doc: &Document, l: &Layer) -> bool {
-    l.name == "Background" && l.locks.transparency && matches!(l.content, LayerContent::Raster(_)) && doc.layers.first().is_some_and(|b| b.id == l.id)
+    doc.is_background(l.id)
 }
 
 /// Does the Properties panel show the Document view? (No layer selected, or the Background layer.)
@@ -94,16 +95,22 @@ fn field_label(ui: &mut egui::Ui, s: &str, w: f32) {
 }
 
 /// A number field that only reports a committed value (drag released, Enter, focus lost).
-fn committed_field(ui: &mut egui::Ui, id: &str, current: f32, suffix: &str) -> Option<f32> {
+fn committed_field(ui: &mut egui::Ui, id: &str, current: f32, u: crate::layer_props_ui::LenUnit) -> Option<f32> {
     let key = egui::Id::new(("doc-props-field", id));
-    let mut v = ui.data(|d| d.get_temp::<f32>(key)).unwrap_or(current);
-    let r = widgets::value_field(ui, &mut v, 1.0..=300_000.0, suffix, 74.0);
+    // Shown in the ruler unit (cm when the rulers are in centimeters); 100% is the current size.
+    let extent = f64::from(current);
+    let mut v = ui.data(|d| d.get_temp::<f32>(key)).unwrap_or_else(|| u.shown(extent, extent));
+    let r = widgets::value_field(ui, &mut v, 0.01..=300_000.0, u.unit.suffix(), 74.0);
     if r.dragged() || r.has_focus() {
         ui.data_mut(|d| d.insert_temp(key, v));
         return None;
     }
     ui.data_mut(|d| d.remove::<f32>(key));
-    (r.drag_stopped() || r.lost_focus() || r.changed()).then_some(v).filter(|v| (*v - current).abs() >= 0.5)
+    if !(r.drag_stopped() || r.lost_focus() || r.changed()) {
+        return None;
+    }
+    let px = (u.px(v, extent) as f32).clamp(1.0, 300_000.0);
+    ((px - current).abs() >= 0.5).then_some(px)
 }
 
 /// A disabled-looking field (Photoshop greys Canvas X/Y for documents without artboards).
@@ -119,6 +126,7 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let Some(st) = app.session.active() else { return };
     let (w, h, mode, depth, dpi) = (st.doc.size.width, st.doc.size.height, st.doc.mode, st.doc.depth, st.doc.resolution_dpi);
     let has_bg = st.doc.layers.first().is_some_and(|l| is_background(&st.doc, l));
+    let lu = crate::layer_props_ui::LenUnit::of(app);
     let mut run: Vec<(String, Value)> = Vec::new();
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::hover());
@@ -144,7 +152,7 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     field_label(ui, "W", 18.0);
-                    if let Some(v) = committed_field(ui, "w", w as f32, "px") {
+                    if let Some(v) = committed_field(ui, "w", w as f32, lu) {
                         run.extend(canvas_resize_params((w, h), Some(v), None, linked).map(|p| ("image.canvasSize".to_string(), p)));
                     }
                     field_label(ui, "X", 22.0);
@@ -152,7 +160,7 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 });
                 ui.horizontal(|ui| {
                     field_label(ui, "H", 18.0);
-                    if let Some(v) = committed_field(ui, "h", h as f32, "px") {
+                    if let Some(v) = committed_field(ui, "h", h as f32, lu) {
                         run.extend(canvas_resize_params((w, h), None, Some(v), linked).map(|p| ("image.canvasSize".to_string(), p)));
                     }
                     field_label(ui, "Y", 22.0);

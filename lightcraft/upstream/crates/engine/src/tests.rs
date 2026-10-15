@@ -37,6 +37,33 @@ fn changing_one_wb_control_resolves_as_shot_without_stale_tint() {
     }
 }
 
+/// Reset Edits on a raw goes back to its import defaults, capture sharpening and colour noise
+/// reduction included (#763: reset left both at 0 while import sets 40 / 25); a rendered file
+/// keeps none.
+#[test]
+fn reset_edits_restores_a_raws_import_defaults() {
+    use lightcraft_catalog::{Photo, PhotoId, Source};
+    use lightcraft_develop::DevelopSettings;
+    let mut s = demo();
+    for (id, format, raw) in [(200u64, "NEF", true), (201, "JPG", false)] {
+        let name = format!("p{id}.{format}");
+        let mut p = Photo::new(PhotoId(id), Source::File { path: name.clone() }, &name, format, 16, 16, "");
+        if raw {
+            p.as_shot_wb = Some((5200.0, 4.0));
+            p.develop = std::sync::Arc::new(DevelopSettings::for_raw(5200.0, 4.0));
+        }
+        s.catalog.apply(lightcraft_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    }
+    for (id, want) in [(200, (40.0, 25.0)), (201, (0.0, 0.0))] {
+        s.execute("library.select", &json!({"ids": [id], "active": id})).unwrap();
+        s.execute("develop.set", &json!({"control": "detail.sharpenAmount", "value": 90})).unwrap();
+        s.execute("develop.set", &json!({"control": "detail.nrColor", "value": 70})).unwrap();
+        s.execute("develop.reset", &json!({})).unwrap();
+        let d = active_dev(&s);
+        assert_eq!((d.detail.sharpen_amount, d.detail.nr_color), want, "photo {id}");
+    }
+}
+
 #[test]
 fn demo_library_loads() {
     let mut s = demo();
@@ -528,6 +555,36 @@ fn crop_drag_keeps_a_locked_ratio_on_every_handle() {
         let g = active_dev(&s).crop.geometry.rect;
         assert!((g.aspect() - want).abs() < 1e-6, "{handle}: {} vs {want}", g.aspect());
     }
+}
+
+// Feature: Shift while dragging keeps the current proportions (issue 614)
+#[test]
+fn crop_drag_keep_ratio_holds_the_shape_with_the_lock_off() {
+    let mut s = demo();
+    s.execute("crop.set", &json!({"rect": [0.1, 0.2, 0.7, 0.6]})).unwrap();
+    assert!(active_dev(&s).crop.aspect.is_none(), "lock is off");
+    let r = active_dev(&s).crop.geometry.rect;
+    let want = r.aspect();
+    for (handle, to) in [("left", [r.x0 + 0.1, 0.5]), ("top", [0.5, r.y0 + 0.05]), ("bottomRight", [1.3, 1.3]), ("right", [0.9, 0.5])] {
+        s.execute("crop.drag", &json!({"handle": handle, "from": [0.5, 0.5], "to": to, "start": [r.x0, r.y0, r.x1, r.y1], "keepRatio": true}))
+            .unwrap();
+        let g = active_dev(&s).crop.geometry.rect;
+        assert!((g.aspect() - want).abs() < 1e-6, "{handle}: {} vs {want}", g.aspect());
+        assert!(active_dev(&s).crop.aspect.is_none(), "the lock toggle is untouched");
+    }
+}
+
+#[test]
+fn crop_drag_without_keep_ratio_and_lock_off_is_free() {
+    let mut s = demo();
+    s.execute("crop.set", &json!({"rect": [0.1, 0.2, 0.7, 0.6]})).unwrap();
+    let r = active_dev(&s).crop.geometry.rect;
+    let want = r.aspect();
+    s.execute("crop.drag", &json!({"handle": "right", "from": [0.7, 0.4], "to": [0.9, 0.4], "start": [r.x0, r.y0, r.x1, r.y1]})).unwrap();
+    assert!((active_dev(&s).crop.geometry.rect.aspect() - want).abs() > 1e-3, "ratio changes freely");
+    s.execute("crop.drag", &json!({"handle": "right", "from": [0.7, 0.4], "to": [0.9, 0.4], "start": [r.x0, r.y0, r.x1, r.y1], "keepRatio": false}))
+        .unwrap();
+    assert!((active_dev(&s).crop.geometry.rect.aspect() - want).abs() > 1e-3, "keepRatio false is the same");
 }
 
 #[test]
@@ -1105,4 +1162,19 @@ fn undo_and_redo_show_the_photo_they_change() {
     let before = s.selection.clone();
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.selection, before, "a step over several photos keeps the selection");
+}
+
+#[test]
+fn hdr_edits_render_with_their_hdr_histogram() {
+    let mut s = demo();
+    let id = s.active().unwrap();
+    let plain = s.loupe_job(id, 200, 200, true).unwrap().run().rendered.unwrap();
+    assert!(plain.histogram.hdr.is_none(), "SDR edits: the image's histogram");
+    s.execute("develop.hdr", &json!({"enabled": true, "maxEv": 3})).unwrap();
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 1.0})).unwrap();
+    let r = s.loupe_job(id, 200, 200, true).unwrap().run().rendered.unwrap();
+    let bins = r.histogram.hdr.expect("an HDR edit's histogram");
+    assert_eq!(bins.stops, lightcraft_develop::Hdr::MAX_EV_LIMIT as f32, "a fixed scale");
+    assert!(r.histogram.above_sdr() > 0.0);
+    assert!(r.deep.is_none(), "the preview itself stays the 8-bit SDR rendition");
 }

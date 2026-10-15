@@ -177,13 +177,13 @@ impl Document {
     }
     /// Is `id` a user slice or an object with slice options?
     pub fn is_slice(&self, id: NodeId) -> bool {
-        self.slice(id).is_some() || self.node(id).is_some_and(|n| n.slice.is_some())
+        self.slice(id).is_some() || self.node(id).is_some_and(|n| n.extras().slice.is_some())
     }
     /// The options of slice `id` (user or object).
     pub fn slice_options(&self, id: NodeId) -> Option<&SliceOptions> {
         match self.slice(id) {
             Some(s) => Some(&s.options),
-            None => self.node(id)?.slice.as_deref(),
+            None => self.node(id)?.extras().slice.as_deref(),
         }
     }
     /// The rectangle of slice `id` before clipping: a user slice's own, an object slice's object's
@@ -191,14 +191,14 @@ impl Document {
     pub fn slice_bounds(&self, id: NodeId) -> Option<Rect> {
         match self.slice(id) {
             Some(s) => Some(s.rect),
-            None => self.node(id).filter(|n| n.slice.is_some())?.visual_bounds(),
+            None => self.node(id).filter(|n| n.extras().slice.is_some())?.visual_bounds(),
         }
     }
     /// The visible objects with slice options and their visual bounds, in paint order.
     pub fn object_slices(&self) -> Vec<(NodeId, Rect)> {
         fn walk(nodes: &[Arc<Node>], out: &mut Vec<(NodeId, Rect)>) {
             for n in nodes.iter().filter(|n| n.visible) {
-                if n.slice.is_some()
+                if n.extras().slice.is_some()
                     && let Some(b) = n.visual_bounds()
                 {
                     out.push((n.id, b));

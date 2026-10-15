@@ -37,3 +37,15 @@ fn duotone_exports_the_inks_as_rgb() {
     let px = back.layers[0].surface().unwrap().rgba(0, 0);
     assert!(px[0] > px[2] + 0.05, "warm: {px:?}");
 }
+
+#[test]
+fn indexed_png_keeps_the_document_resolution() {
+    // #3047: the palette PNG lost its pHYs chunk and reopened at 72 ppi.
+    let mut d = doc(ColorMode::Indexed);
+    d.resolution_dpi = 300.0;
+    d.color_table = Some(ColorTable { colors: vec![[0, 0, 0], [255, 0, 0]], transparent: None });
+    let r = photocraft_io::export(&d, "x.png", &Default::default()).unwrap();
+    assert_eq!(r.bytes[25], 3, "still a palette PNG");
+    let back = photocraft_io::import("x.png", &r.bytes).unwrap().document;
+    assert!((back.resolution_dpi - 300.0).abs() < 0.01, "{}", back.resolution_dpi);
+}

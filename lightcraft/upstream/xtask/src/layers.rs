@@ -46,7 +46,10 @@ pub const TABLE: &[(&str, Class)] = &[
     ("codecs", Class::Layer(1)),
     ("meta", Class::Layer(1)),
     ("develop", Class::Layer(1)),
+    ("lensdb", Class::Layer(2)),
+    ("inpaint", Class::Layer(1)),
     ("faces", Class::Layer(1)),
+    ("geocode", Class::Layer(1)),
     ("scenes", Class::Layer(1)),
     ("pipeline", Class::Layer(2)),
     ("gpu", Class::Layer(3)),
@@ -61,7 +64,6 @@ pub const TABLE: &[(&str, Class)] = &[
     ("testkit", Class::Testkit),
     // L6 apps and tooling
     ("lightcraft", Class::Exempt),
-    ("android", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
     ("xtask", Class::Exempt),
@@ -91,7 +93,7 @@ fn intra_layer_allowed(from: &str, to: &str) -> bool {
 
 /// External crates that constitute a UI toolkit / windowing dependency.
 /// Entries ending in `*` are prefixes.
-pub const UI_CRATES: &[&str] = &["egui", "eframe", "winit", "egui_kittest", "rfd", "bevy*"];
+pub const UI_CRATES: &[&str] = &["craft-ui", "egui", "eframe", "winit", "egui_kittest", "rfd", "bevy*"];
 
 /// First layer allowed to use UI crates.
 pub const UI_MIN_LAYER: u8 = 5;
@@ -292,7 +294,7 @@ mod tests {
 
     #[test]
     fn ui_crates_forbidden_below_l5() {
-        for dep in ["egui", "eframe", "winit", "rfd"] {
+        for dep in ["craft-ui", "egui", "eframe", "winit", "rfd"] {
             let v = check(&[c("lightcraft-engine", &[(dep, Normal, false)])]);
             assert!(matches!(v[..], [Violation::UiBelowL5 { .. }]), "{dep}");
         }

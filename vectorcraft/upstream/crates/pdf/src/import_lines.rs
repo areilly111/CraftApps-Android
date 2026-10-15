@@ -45,7 +45,7 @@ fn outline_stroke(nodes: &[Arc<Node>], ink: &[Rect]) -> Option<AppearanceItem> {
         let NodeKind::Path { path, clipping: false, guide: false, live: None, .. } = &n.kind else { return false };
         let b = path.to_bezpath().bounding_box();
         n.appearance == first.appearance
-            && n.mask.is_none()
+            && n.extras().mask.is_none()
             && n.opacity >= 0.999
             && n.blend == BlendMode::Normal
             && [(b.x0, r.x0), (b.y0, r.y0), (b.x1, r.x1), (b.y1, r.y1)].iter().all(|(a, b)| (a - b).abs() <= tol)
@@ -87,7 +87,7 @@ fn join_strokes(nodes: &mut Vec<Arc<Node>>, lines: &HashMap<NodeId, LineFacts>) 
 /// `n` as a line that can be part of area type: horizontal point type, with what its line told.
 fn line<'a>(n: &'a Node, lines: &'a HashMap<NodeId, LineFacts>) -> Option<(&'a TextObject, &'a LineFacts)> {
     let NodeKind::Text(t) = &n.kind else { return None };
-    let point = matches!(t.kind, TextKind::Point) && !t.vertical && n.mask.is_none() && !t.runs.is_empty();
+    let point = matches!(t.kind, TextKind::Point) && !t.vertical && n.extras().mask.is_none() && !t.runs.is_empty();
     point.then_some(())?;
     Some((t, lines.get(&n.id)?))
 }

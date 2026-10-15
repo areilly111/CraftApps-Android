@@ -17,6 +17,14 @@
 # To remove your names, delete your entry (or set fields empty) in a PR. The next
 # contributors.py run, and the next build, drop them.
 
+[people.jonathanwxh-cell]
+display_name = "jonathnwxh"
+sync_github_name = false
+
+[people.Skyfuller1303]
+display_name = "Skyfuller"
+sync_github_name = true
+
 [people.AlanRockefeller]
 sync_github_name = true
 
@@ -74,3 +82,45 @@ sync_github_name = true
 real_name = "Ahmed Moussa"
 display_name = "Ahmed Moussa"
 sync_github_name = false
+
+[people.alexanderalber]
+real_name = "Alexander Alber"
+display_name = "Alexander Alber"
+sync_github_name = false
+
+[people.Erica4fr]
+sync_github_name = true
+
+[people.itsF4LCON]
+real_name = "Ran Geerts"
+display_name = "Ran Geerts"
+sync_github_name = false
+
+[people.vangel76]
+sync_github_name = true
+
+[people.FinnNk]
+sync_github_name = true
+
+[people.TheTeslak]
+sync_github_name = true
+
+[people.timothydaly1]
+display_name = "SyntaxError"
+
+[people.atoslins]
+real_name = "Atos Lins"
+display_name = "Atos Lins"
+sync_github_name = false
+
+[people.axlecoffee]
+sync_github_name = true
+
+[people.Losminek]
+sync_github_name = true
+
+[people.FredApps]
+sync_github_name = true
+
+[people.arthurdeka]
+sync_github_name = true

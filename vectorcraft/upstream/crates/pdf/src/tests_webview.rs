@@ -49,7 +49,7 @@ fn doc(n: usize, image: bool, on_first: bool) -> Document {
             let xf = Affine::translate((x + 60.0, 60.0)) * Affine::scale(4.0);
             let img = ImageObject { key: "img".into(), width: 8, height: 8, xf, link: None, placement: Default::default() };
             let id = d.alloc_id();
-            d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(img))).unwrap();
+            d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(Box::new(img)))).unwrap();
         }
     }
     d

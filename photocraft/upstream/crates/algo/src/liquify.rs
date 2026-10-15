@@ -116,7 +116,8 @@ pub struct LiquifyStroke {
     /// Brush diameter (px).
     #[serde(default = "d_size")]
     pub size: f64,
-    /// Edge feathering, 0 (hard) ..100 (soft).
+    /// How far the full effect reaches toward the brush edge, 0 (only the centre; feathered)
+    /// ..100 (most of the brush). It always fades to nothing at the edge ([`falloff`]).
     #[serde(default = "d_density")]
     pub density: f64,
     /// Overall strength, 0..100.
@@ -153,7 +154,7 @@ impl LiquifyStroke {
 }
 
 /// The displacement field plus the freeze mask, over `bounds` (document pixels).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LiquifyField {
     pub bounds: Rect,
     /// Document pixels per field node.
@@ -164,6 +165,38 @@ pub struct LiquifyField {
     pub d: Vec<[f32; 2]>,
     /// Freeze mask per node (0 = free, 1 = frozen).
     pub freeze: Vec<f32>,
+    /// Where the brush stroke in progress stands, so dab spacing runs on across its segments.
+    cursor: Option<StrokeCursor>,
+}
+
+/// Two fields are equal when their displacement and freeze mask are: the stroke cursor is
+/// transient brush state, not part of the result.
+impl PartialEq for LiquifyField {
+    fn eq(&self, o: &Self) -> bool {
+        self.bounds == o.bounds && self.cell == o.cell && self.w == o.w && self.h == o.h && self.d == o.d && self.freeze == o.freeze
+    }
+}
+
+/// The brush stroke in progress: the point its last segment ended at, its last dab and how far
+/// the brush has travelled along the path since that dab.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StrokeCursor {
+    end: [f64; 2],
+    last_dab: [f64; 2],
+    carry: f64,
+}
+
+/// Distance between dabs along a stroke for brush radius `r`: a twentieth of the radius, so a
+/// drag is many small pushes and its edge stays smooth.
+fn dab_spacing(r: f64) -> f64 {
+    (r * 0.05).max(0.5)
+}
+
+/// Per-dab strength of a stationary tool (Twirl, Pucker, Bloat, Reconstruct, Smooth, Freeze,
+/// Thaw) while it moves: scaled to the spacing so its effect per distance travelled stays what it
+/// was with dabs a fifth of the radius apart.
+fn moving_weight(r: f64) -> f64 {
+    dab_spacing(r) / (r * 0.2).max(0.5)
 }
 
 /// The default field resolution for `bounds`: 2 px per node up to 4 MP, 4 px beyond.
@@ -176,7 +209,7 @@ impl LiquifyField {
         let cell = cell.clamp(1.0, 64.0);
         let w = (f64::from(bounds.width()) / cell).ceil() as usize + 2;
         let h = (f64::from(bounds.height()) / cell).ceil() as usize + 2;
-        LiquifyField { bounds, cell, w, h, d: vec![[0.0; 2]; w * h], freeze: vec![0.0; w * h] }
+        LiquifyField { bounds, cell, w, h, d: vec![[0.0; 2]; w * h], freeze: vec![0.0; w * h], cursor: None }
     }
 
     /// Document position of node (i, j) (node 0 sits on the first pixel centre).
@@ -219,6 +252,7 @@ impl LiquifyField {
 
     /// Applies one stroke. Returns the document rectangle whose output changed.
     pub fn apply_stroke(&mut self, s: &LiquifyStroke) -> Rect {
+        self.cursor = None;
         match s.tool {
             LiquifyTool::LassoMask => return self.apply_lasso(s),
             LiquifyTool::ReconstructAll => {
@@ -305,77 +339,120 @@ impl LiquifyField {
     /// callers use this plus [`Self::stroke_segment`] per new point, which is exactly what
     /// [`Self::apply_stroke`] does with the whole point list.
     pub fn stroke_begin(&mut self, s: &LiquifyStroke, p: [f64; 3]) -> Rect {
-        if s.tool.is_stationary() && !s.tool.is_global() { self.dab(s, [p[0], p[1]], [0.0, 0.0], p[2].clamp(0.0, 1.0)) } else { Rect::EMPTY }
+        self.cursor = Some(StrokeCursor { end: [p[0], p[1]], last_dab: [p[0], p[1]], carry: 0.0 });
+        if s.tool.is_stationary() && !s.tool.is_global() { self.dab(s, [p[0], p[1]], [0.0, 0.0], p[2].clamp(0.0, 1.0), 1.0) } else { Rect::EMPTY }
     }
 
-    /// Continues a stroke from `a` to `b`: dabs every fifth of the brush radius (a stationary
-    /// tool held still dabs once at `b`).
+    /// Continues a stroke from `a` to `b`. Dabs fall every [`dab_spacing`] of distance travelled
+    /// along the whole stroke, carried from one segment to the next, so the result is the same
+    /// however finely the pointer path was sampled (a fast and a slow mouse give one warp). A
+    /// stationary tool held still dabs once at `b`. When `a` is not where the previous segment
+    /// ended, the stroke starts afresh at `a`.
     pub fn stroke_segment(&mut self, s: &LiquifyStroke, a: [f64; 3], b: [f64; 3]) -> Rect {
+        self.walk_segment(s, a, b, true)
+    }
+
+    /// [`Self::stroke_segment`]; `skip` leaves out the dabs that cannot reach a field node (they
+    /// would change nothing), which tests compare with the full walk.
+    fn walk_segment(&mut self, s: &LiquifyStroke, a: [f64; 3], b: [f64; 3], skip: bool) -> Rect {
         let mut dirty = Rect::EMPTY;
         let (pa, pb) = (a[2].clamp(0.0, 1.0), b[2].clamp(0.0, 1.0));
-        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let stationary = s.tool.is_stationary();
+        let cur = match self.cursor {
+            Some(c) if c.end == [a[0], a[1]] => c,
+            _ => StrokeCursor { end: [a[0], a[1]], last_dab: [a[0], a[1]], carry: 0.0 },
+        };
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len = dx.hypot(dy);
         if len == 0.0 {
-            return if s.tool.is_stationary() { self.dab(s, [b[0], b[1]], [0.0, 0.0], pb) } else { dirty };
+            self.cursor = Some(cur);
+            return if stationary { self.dab(s, [b[0], b[1]], [0.0, 0.0], pb, 1.0) } else { dirty };
+        }
+        // NaN or a length that overflowed: nothing sensible to walk; the next segment restarts.
+        if !len.is_finite() {
+            self.cursor = None;
+            return dirty;
         }
         let r = (s.size / 2.0).max(0.5);
-        let spacing = (r * 0.2).max(0.5);
-        let steps = (len / spacing).ceil().max(1.0) as usize;
-        // Walk only the steps whose dab can reach a field node: the rest return from `dab` before
-        // touching anything, and a segment to a far-off point has trillions of them (#937).
-        let Some((k0, k1)) = self.reachable_steps(a, b, steps, r, s.tool.is_stationary()) else { return dirty };
-        for k in k0..=k1 {
-            let t0 = (k - 1) as f64 / steps as f64;
-            let t1 = k as f64 / steps as f64;
-            let c = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1];
-            let delta = [(b[0] - a[0]) * (t1 - t0), (b[1] - a[1]) * (t1 - t0)];
-            let pr = pa + (pb - pa) * t1;
-            // Forward Warp centres the dab where the brush was (it drags what is under it).
-            let centre = if s.tool.is_stationary() { c } else { [c[0] - delta[0], c[1] - delta[1]] };
-            dirty = dirty.union(&self.dab(s, centre, delta, pr));
+        let spacing = dab_spacing(r);
+        let weight = if stationary { moving_weight(r) } else { 1.0 };
+        // Distance along this segment of its first dab, then one every `spacing`.
+        let first = (spacing - cur.carry).clamp(0.0, spacing);
+        // Distances are compared with a little slack: a dab that rounding puts a hair past the
+        // segment's end still falls on it, so cutting one segment in two never adds or drops a dab.
+        let slack = spacing * 1e-6;
+        if first > len + slack {
+            self.cursor = Some(StrokeCursor { end: [b[0], b[1]], last_dab: cur.last_dab, carry: cur.carry + len });
+            return dirty;
         }
+        let last_k = ((len - first + slack) / spacing).floor().max(0.0);
+        let at = |dist: f64| [a[0] + dx * dist / len, a[1] + dy * dist / len];
+        let (mut k0, mut k1) = (0.0f64, last_k);
+        if skip {
+            match self.reachable_span(a, [dx, dy], len, r) {
+                // A dragging dab is centred one spacing behind its position: pad by that and a step.
+                Some((d0, d1)) => {
+                    k0 = k0.max(((d0 - spacing - first) / spacing).floor() - 1.0);
+                    k1 = k1.min(((d1 + spacing - first) / spacing).ceil() + 1.0);
+                }
+                None => k1 = -1.0,
+            }
+        }
+        if k0 <= k1 {
+            let mut prev = if k0 > 0.0 { at(first + (k0 - 1.0) * spacing) } else { cur.last_dab };
+            for k in (k0 as u64)..=(k1 as u64) {
+                let dist = (first + k as f64 * spacing).min(len);
+                let c = at(dist);
+                let delta = [c[0] - prev[0], c[1] - prev[1]];
+                // Forward Warp centres the dab where the brush was (it drags what is under it).
+                let centre = if stationary { c } else { prev };
+                dirty = dirty.union(&self.dab(s, centre, delta, pa + (pb - pa) * dist / len, weight));
+                prev = c;
+            }
+        }
+        let last = (first + last_k * spacing).min(len);
+        self.cursor = Some(StrokeCursor { end: [b[0], b[1]], last_dab: at(last), carry: (len - last).clamp(0.0, spacing) });
         dirty
     }
 
-    /// The steps `k0..=k1` of a segment walked in `steps` whose dab can touch a field node, or
-    /// `None` when none can. Step `k` centres its dab at `a + (b - a)·(k - o)/steps`, with `o` = 1
-    /// for the dragging tools and 0 for the stationary ones (see `stroke_segment`). A dab reaches a
-    /// node only when its centre is within `r` plus a node of the node grid, so the window below
-    /// pads that by another node and a step: the dabs it leaves out would each change nothing.
-    fn reachable_steps(&self, a: [f64; 3], b: [f64; 3], steps: usize, r: f64, stationary: bool) -> Option<(usize, usize)> {
+    /// The distances along a segment from `a` (direction `dir`, length `len`) whose points lie
+    /// within a dab radius `r` plus two nodes of the node grid, or `None` when none do. Only dabs
+    /// near that span can touch a node; a segment to a far-off point has trillions of others
+    /// (#937).
+    fn reachable_span(&self, a: [f64; 3], dir: [f64; 2], len: f64, r: f64) -> Option<(f64, f64)> {
         if self.w == 0 || self.h == 0 {
             return None;
         }
         let pad = r + 2.0 * self.cell;
         let lo = [f64::from(self.bounds.x0) + 0.5 - pad, f64::from(self.bounds.y0) + 0.5 - pad];
         let hi = [lo[0] + (self.w - 1) as f64 * self.cell + 2.0 * pad, lo[1] + (self.h - 1) as f64 * self.cell + 2.0 * pad];
-        let (n, o) = (steps as f64, if stationary { 0.0 } else { 1.0 });
-        let (mut k0, mut k1) = (1.0f64, n);
+        let (mut u0, mut u1) = (0.0f64, 1.0f64);
         for ax in 0..2 {
-            let d = b[ax] - a[ax];
+            let d = dir[ax];
             if d == 0.0 {
                 if a[ax].is_nan() || a[ax] < lo[ax] || a[ax] > hi[ax] {
                     return None;
                 }
                 continue;
             }
-            let (u0, u1) = ((lo[ax] - a[ax]) / d, (hi[ax] - a[ax]) / d);
-            k0 = k0.max((u0.min(u1) * n + o).floor() - 1.0);
-            k1 = k1.min((u0.max(u1) * n + o).ceil() + 1.0);
+            let (v0, v1) = ((lo[ax] - a[ax]) / d, (hi[ax] - a[ax]) / d);
+            u0 = u0.max(v0.min(v1));
+            u1 = u1.min(v0.max(v1));
         }
-        // NaN: a segment whose length overflowed.
-        if k0.is_nan() || k1.is_nan() || k0 > k1 {
+        if u0.is_nan() || u1.is_nan() || u0 > u1 {
             return None;
         }
-        Some((k0 as usize, k1 as usize))
+        Some((u0 * len, u1 * len))
     }
 
-    /// One dab at `c` with brush motion `delta`. Returns the document rect it affected.
-    fn dab(&mut self, s: &LiquifyStroke, c: [f64; 2], delta: [f64; 2], point_pressure: f64) -> Rect {
+    /// One dab at `c` with brush motion `delta`, its strength scaled by `weight`. Returns the
+    /// document rect it affected.
+    fn dab(&mut self, s: &LiquifyStroke, c: [f64; 2], delta: [f64; 2], point_pressure: f64, weight: f64) -> Rect {
         if s.tool == LiquifyTool::LassoMask {
             return Rect::EMPTY; // the lasso is polygon-only; never a brush dab
         }
         let r = (s.size / 2.0).max(0.5);
-        let strength = (s.pressure / 100.0).clamp(0.0, 1.0) * point_pressure;
+        let strength = (s.pressure / 100.0).clamp(0.0, 1.0) * point_pressure * weight;
         let rate = (s.rate / 100.0).clamp(0.0, 1.0);
         let density = (s.density / 100.0).clamp(0.0, 1.0);
         if strength <= 0.0 {
@@ -420,8 +497,7 @@ impl LiquifyField {
                 if t2 >= 1.0 {
                     continue;
                 }
-                let soft = (1.0 - t2) * (1.0 - t2);
-                let fall = (1.0 - density) + density * soft;
+                let fall = falloff(t2, density);
                 let idx = j * self.w + i;
                 let k_raw = strength * fall;
                 if s.tool == LiquifyTool::Freeze || s.tool == LiquifyTool::Thaw {
@@ -524,6 +600,23 @@ impl LiquifyField {
         let j1 = (gy1.ceil() as isize + 2).clamp(0, self.h as isize - 1) as usize;
         (j0..=j1).any(|j| self.d[j * self.w + i0..=j * self.w + i1].iter().any(|v| v[0] != 0.0 || v[1] != 0.0))
     }
+}
+
+/// A dab's strength at squared distance `t2` (in brush radii, 0..1) for Density `density` (0..1):
+/// 1 at the centre, and down to 0 at the rim with a flat slope at every density, as in
+/// Photoshop, where Density sets how far the full effect reaches toward the edge (0: only the
+/// centre, the rest feathered; 1: most of the brush) but the effect always fades out at it.
+/// A brush that stopped short of 0 at its rim moved the pixels inside it and left those just
+/// outside, tearing the image along every dab's circle (#2606).
+pub fn falloff(t2: f64, density: f64) -> f64 {
+    let t2 = t2.clamp(0.0, 1.0);
+    let density = if density.is_nan() { 0.5 } else { density.clamp(0.0, 1.0) };
+    // Feathered: (1 - t²)³. Dense: (1 - t⁴)², flat in the middle. Both are 0 with zero slope at
+    // t = 1, and their slopes stay small enough that a dab every fifth of the radius never folds
+    // the image over itself.
+    let feathered = (1.0 - t2).powi(3);
+    let dense = (1.0 - t2 * t2).powi(2);
+    feathered + (dense - feathered) * density
 }
 
 fn bilinear(d: &[[f32; 2]], w: usize, h: usize, gx: f64, gy: f64) -> [f64; 2] {
@@ -680,6 +773,8 @@ pub struct ProxyImage {
     pub px: Vec<[f32; 4]>,
 }
 
+const MAX_FULL_RES_SOURCE_PIXELS: usize = 8 * 1024 * 1024;
+
 impl ProxyImage {
     /// Box-downsamples `src` over `bounds` so the longer side is at most `max_side`.
     pub fn new(src: &Surface, bounds: Rect, max_side: usize) -> Self {
@@ -760,6 +855,130 @@ impl ProxyImage {
         rows.chunks_mut(self.w).enumerate().for_each(|(i, line)| row(y0 + i, line));
     }
 
+    /// Renders a document-pixel-resolution preview for `region` into the corresponding part of
+    /// `out`, whose dimensions cover `bounds`. Source reads are limited to the dirty region plus
+    /// the displacement range that can affect it, so zoomed-in brush updates do not flatten the
+    /// whole layer. `source_scratch` is reused by the caller between updates.
+    pub fn render_full_resolution(
+        src: &Surface,
+        field: &LiquifyField,
+        bounds: Rect,
+        region: Rect,
+        out: &mut [[u8; 4]],
+        source_scratch: &mut Vec<[f32; 4]>,
+    ) -> bool {
+        let bounds = bounds.intersect(&field.bounds);
+        let region = region.intersect(&bounds);
+        let (width, height) = (bounds.width() as usize, bounds.height() as usize);
+        let Some(out_len) = width.checked_mul(height) else { return false };
+        if region.is_empty() || out.len() != out_len || width == 0 || height == 0 {
+            return false;
+        }
+
+        // Bilinear field interpolation is a convex combination of its surrounding nodes. The
+        // extrema of those nodes therefore bound every source sample in this output rectangle.
+        let (mut min_dx, mut min_dy, mut max_dx, mut max_dy) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+        let (gx0, gy0) = field.to_grid(f64::from(region.x0) + 0.5, f64::from(region.y0) + 0.5);
+        let (gx1, gy1) = field.to_grid(f64::from(region.x1) - 0.5, f64::from(region.y1) - 0.5);
+        let (i0, j0) = (gx0.floor().max(0.0) as usize, gy0.floor().max(0.0) as usize);
+        let (i1, j1) = (gx1.ceil().max(0.0) as usize, gy1.ceil().max(0.0) as usize);
+        for j in j0..=j1.min(field.h.saturating_sub(1)) {
+            for i in i0..=i1.min(field.w.saturating_sub(1)) {
+                let Some(v) = j.checked_mul(field.w).and_then(|row| row.checked_add(i)).and_then(|idx| field.d.get(idx)) else { continue };
+                min_dx = min_dx.min(v[0]);
+                min_dy = min_dy.min(v[1]);
+                max_dx = max_dx.max(v[0]);
+                max_dy = max_dy.max(v[1]);
+            }
+        }
+        if !min_dx.is_finite() || !min_dy.is_finite() || !max_dx.is_finite() || !max_dy.is_finite() {
+            return false;
+        }
+
+        // Source coordinates are pixel centres. Add one sample on each side for bilinear
+        // interpolation, then clamp to the document just as the regular proxy renderer does.
+        let x0 = (f64::from(region.x0) + f64::from(min_dx)).floor() - 1.0;
+        let y0 = (f64::from(region.y0) + f64::from(min_dy)).floor() - 1.0;
+        let x1 = (f64::from(region.x1 - 1) + f64::from(max_dx)).ceil() + 2.0;
+        let y1 = (f64::from(region.y1 - 1) + f64::from(max_dy)).ceil() + 2.0;
+        let canvas = field.bounds;
+        let src_rect = Rect::new(
+            x0.max(f64::from(canvas.x0)).min(f64::from(canvas.x1)) as i32,
+            y0.max(f64::from(canvas.y0)).min(f64::from(canvas.y1)) as i32,
+            x1.max(f64::from(canvas.x0)).min(f64::from(canvas.x1)) as i32,
+            y1.max(f64::from(canvas.y0)).min(f64::from(canvas.y1)) as i32,
+        );
+        if src_rect.is_empty() {
+            return false;
+        }
+        let (sw, sh) = (src_rect.width() as usize, src_rect.height() as usize);
+        let Some(source_len) = sw.checked_mul(sh) else { return false };
+        if source_len > MAX_FULL_RES_SOURCE_PIXELS {
+            return false;
+        }
+        if source_scratch.try_reserve(source_len.saturating_sub(source_scratch.len())).is_err() {
+            return false;
+        }
+        source_scratch.resize(source_len, [0.0; 4]);
+        src.read_rgba_into(src_rect, source_scratch);
+        if !src.format().alpha {
+            for pixel in source_scratch.iter_mut() {
+                pixel[3] = 1.0;
+            }
+        }
+        for pixel in source_scratch.iter_mut() {
+            let alpha = pixel[3];
+            pixel[0] *= alpha;
+            pixel[1] *= alpha;
+            pixel[2] *= alpha;
+        }
+
+        let x0 = (region.x0 - bounds.x0) as usize;
+        let x1 = (region.x1 - bounds.x0) as usize;
+        let y0 = (region.y0 - bounds.y0) as usize;
+        let y1 = (region.y1 - bounds.y0) as usize;
+        let source_at = |x: f64, y: f64| -> [f32; 4] {
+            let fx = (x - 0.5).clamp(f64::from(canvas.x0), f64::from(canvas.x1 - 1));
+            let fy = (y - 0.5).clamp(f64::from(canvas.y0), f64::from(canvas.y1 - 1));
+            let ix = fx.floor();
+            let iy = fy.floor();
+            let (tx, ty) = ((fx - ix) as f32, (fy - iy) as f32);
+            let sx0 = (ix as i32).clamp(src_rect.x0, src_rect.x1 - 1);
+            let sy0 = (iy as i32).clamp(src_rect.y0, src_rect.y1 - 1);
+            let sx1 = (sx0 + 1).min(src_rect.x1 - 1);
+            let sy1 = (sy0 + 1).min(src_rect.y1 - 1);
+            let at = |sx: i32, sy: i32| -> [f32; 4] {
+                let ox = (sx - src_rect.x0) as usize;
+                let oy = (sy - src_rect.y0) as usize;
+                source_scratch.get(oy * sw + ox).copied().unwrap_or([0.0; 4])
+            };
+            let (a, b, c, d) = (at(sx0, sy0), at(sx1, sy0), at(sx0, sy1), at(sx1, sy1));
+            std::array::from_fn(|channel| (a[channel] * (1.0 - tx) + b[channel] * tx) * (1.0 - ty) + (c[channel] * (1.0 - tx) + d[channel] * tx) * ty)
+        };
+        let render_rows = |first_y: usize, rows: &mut [[u8; 4]]| {
+            for (offset, row) in rows.chunks_mut(width).enumerate() {
+                let y = bounds.y0 + (first_y + offset) as i32;
+                let Some(dest) = row.get_mut(x0..x1) else { continue };
+                for (offset_x, pixel) in dest.iter_mut().enumerate() {
+                    let x = bounds.x0 + (x0 + offset_x) as i32;
+                    let p = [f64::from(x) + 0.5, f64::from(y) + 0.5];
+                    let d = field.sample(p[0], p[1]);
+                    let rgba = source_at(p[0] + d[0], p[1] + d[1]);
+                    *pixel = rgba.map(|v| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+                }
+            }
+        };
+        let Some(rows) = out.get_mut(y0 * width..y1 * width) else { return false };
+        #[cfg(not(target_arch = "wasm32"))]
+        if (x1 - x0).saturating_mul(y1 - y0) > 150_000 {
+            use rayon::prelude::*;
+            rows.par_chunks_mut(width).enumerate().for_each(|(offset, line)| render_rows(y0 + offset, line));
+            return true;
+        }
+        rows.chunks_mut(width).enumerate().for_each(|(offset, line)| render_rows(y0 + offset, line));
+        true
+    }
+
     /// The proxy pixel rectangle covering document rect `r`.
     pub fn proxy_rect(&self, r: Rect) -> [usize; 4] {
         let s = self.scale;
@@ -778,21 +997,9 @@ mod tests {
     use super::*;
     use photocraft_color::{ColorMode, PixelFormat, SampleType};
 
-    /// The segment walk before #937: every step, whether or not its dab can reach the field.
+    /// The segment walk before #937: every dab, whether or not it can reach the field.
     fn full_walk(f: &mut LiquifyField, s: &LiquifyStroke, a: [f64; 3], b: [f64; 3]) -> Rect {
-        let mut dirty = Rect::EMPTY;
-        let (pa, pb) = (a[2].clamp(0.0, 1.0), b[2].clamp(0.0, 1.0));
-        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
-        let r = (s.size / 2.0).max(0.5);
-        let steps = (len / (r * 0.2).max(0.5)).ceil().max(1.0) as usize;
-        for k in 1..=steps {
-            let (t0, t1) = ((k - 1) as f64 / steps as f64, k as f64 / steps as f64);
-            let c = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1];
-            let delta = [(b[0] - a[0]) * (t1 - t0), (b[1] - a[1]) * (t1 - t0)];
-            let centre = if s.tool.is_stationary() { c } else { [c[0] - delta[0], c[1] - delta[1]] };
-            dirty = dirty.union(&f.dab(s, centre, delta, pa + (pb - pa) * t1));
-        }
-        dirty
+        f.walk_segment(s, a, b, false)
     }
 
     #[test]
@@ -802,7 +1009,7 @@ mod tests {
         // every result bit-identical to the full walk.
         use LiquifyTool::*;
         let bounds = Rect::new(-7, 3, 89, 67);
-        let segments: [([f64; 3], [f64; 3]); 9] = [
+        let segments: [([f64; 3], [f64; 3]); 10] = [
             ([10.0, 20.0, 1.0], [70.0, 50.0, 0.5]),        // inside
             ([-900.0, 30.0, 1.0], [40.0, 31.0, 1.0]),      // in from far left
             ([40.0, 30.0, 1.0], [40.0, 4000.0, 0.2]),      // out downwards
@@ -812,6 +1019,7 @@ mod tests {
             ([88.5, -50.0, 1.0], [88.5, 120.0, 1.0]),      // vertical, along the right edge
             ([200.0, 200.0, 1.0], [201.0, 900.0, 1.0]),    // entirely outside
             ([0.0, 0.0, 1.0], [0.25, 0.1, 1.0]),           // shorter than one step
+            ([60.0, 40.0, 1.0], [-2000.0, 45.0, 1.0]),     // continues the stroke before it, out left
         ];
         for tool in [ForwardWarp, PushLeft, Reconstruct, Smooth, TwirlCw, TwirlCcw, Pucker, Bloat, Freeze, Thaw] {
             for size in [6.0, 40.0] {
@@ -828,6 +1036,81 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The same path sampled by `parts` pointer events per corner-to-corner leg, unevenly.
+    fn sampled(path: &[[f64; 3]], parts: usize) -> Vec<Vec<f64>> {
+        let mut out = vec![path[0].to_vec()];
+        for w in path.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            // Uneven steps, as a real pointer gives: t grows quadratically.
+            for k in 1..=parts {
+                let t = (k * k) as f64 / (parts * parts) as f64;
+                out.push((0..3).map(|i| a[i] + (b[i] - a[i]) * t).collect());
+            }
+        }
+        out
+    }
+
+    /// #2606: dabs restarted at every pointer event, so a fast mouse (few far-apart events) and a
+    /// slow one (many close ones) warped the same path differently. Spacing now runs on along the
+    /// whole stroke: any sampling of a path gives the same field.
+    #[test]
+    fn the_result_does_not_depend_on_how_finely_the_path_was_sampled() {
+        use LiquifyTool::*;
+        let path = [[20.0, 20.0, 1.0], [62.0, 26.0, 0.6], [70.0, 50.0, 0.9], [28.0, 55.0, 1.0], [30.0, 30.0, 1.0]];
+        for tool in [ForwardWarp, PushLeft, TwirlCw, Bloat, Reconstruct, Smooth, Freeze] {
+            for size in [12.0, 40.0] {
+                let field = |parts: usize| {
+                    let mut warp = LiquifyStroke::new(ForwardWarp, 30.0);
+                    warp.points = vec![vec![30.0, 30.0], vec![50.0, 40.0]];
+                    let mut s = LiquifyStroke::new(tool, size);
+                    s.points = sampled(&path, parts);
+                    // Some displacement first, so Reconstruct and Smooth have something to change.
+                    LiquifyField::from_strokes(bounds(), 2.0, &[warp, s])
+                };
+                let coarse = field(1);
+                for parts in [3, 17, 60] {
+                    let fine = field(parts);
+                    let dd = coarse.d.iter().zip(&fine.d).map(|(p, q)| (p[0] - q[0]).abs().max((p[1] - q[1]).abs())).fold(0.0f32, f32::max);
+                    let df = coarse.freeze.iter().zip(&fine.freeze).map(|(p, q)| (p - q).abs()).fold(0.0f32, f32::max);
+                    assert!(dd < 1e-3 && df < 1e-4, "{tool:?} {size}px, {parts} events per leg: field differs by {dd} px, mask by {df}");
+                }
+            }
+        }
+    }
+
+    /// A long drag whose events land exactly on dab positions, along a diagonal: rounding must not
+    /// add or drop the dab at a segment's end, or the deep displacement a long Forward Warp builds
+    /// up differs by a whole dab between a slow and a fast pointer.
+    #[test]
+    fn a_long_diagonal_drag_gives_one_field_at_any_event_spacing() {
+        let field = |step: f64| {
+            let mut s = LiquifyStroke::new(LiquifyTool::ForwardWarp, 40.0);
+            s.points = (0..=(300.0 / step) as usize).map(|k| vec![40.0 + k as f64 * step * 0.6, 20.0 + k as f64 * step * 0.8]).collect();
+            LiquifyField::from_strokes(Rect::new(0, 0, 320, 300), 2.0, &[s])
+        };
+        let (slow, fast) = (field(2.0), field(60.0));
+        let dd = slow.d.iter().zip(&fast.d).map(|(p, q)| (p[0] - q[0]).abs().max((p[1] - q[1]).abs())).fold(0.0f32, f32::max);
+        assert!(slow.max_displacement() > 50.0, "the drag builds up a deep displacement");
+        assert!(dd < 1e-3, "slow and fast pointer fields differ by {dd} px");
+    }
+
+    #[test]
+    fn a_stroke_interrupted_by_a_jump_restarts_its_spacing() {
+        // A segment that does not start where the last one ended begins a new run of dabs there.
+        let s = LiquifyStroke::new(LiquifyTool::ForwardWarp, 20.0);
+        let mut f = LiquifyField::new(bounds(), 2.0);
+        f.stroke_begin(&s, [10.0, 10.0, 1.0]);
+        f.stroke_segment(&s, [10.0, 10.0, 1.0], [10.3, 10.0, 1.0]);
+        let mut g = LiquifyField::new(bounds(), 2.0);
+        f.stroke_segment(&s, [40.0, 30.0, 1.0], [50.0, 30.0, 1.0]);
+        g.stroke_begin(&s, [40.0, 30.0, 1.0]);
+        g.stroke_segment(&s, [40.0, 30.0, 1.0], [50.0, 30.0, 1.0]);
+        assert_eq!(f, g);
+        // Hostile points: nothing panics and the next segment starts afresh.
+        f.stroke_segment(&s, [f64::NAN, 3.0, 1.0], [4.0, f64::INFINITY, 1.0]);
+        f.stroke_segment(&s, [4.0, 3.0, f64::NAN], [9.0, 3.0, 1.0]);
     }
 
     #[test]
@@ -941,6 +1224,57 @@ mod tests {
     }
 
     #[test]
+    fn the_brush_fades_to_nothing_at_its_rim_at_every_density() {
+        for density in [0.0, 0.25, 0.5, 0.75, 1.0, f64::NAN, -3.0, 7.0] {
+            assert_eq!(falloff(0.0, density), 1.0, "full strength at the centre ({density})");
+            assert_eq!(falloff(1.0, density), 0.0, "nothing at the rim ({density})");
+            // Flat at the rim: the last 2 % of the radius moves at most a couple of percent.
+            assert!(falloff(0.98f64.powi(2), density) < 0.02, "{density}: {}", falloff(0.98f64.powi(2), density));
+            let mut prev = 1.0;
+            for k in 1..=100 {
+                let v = falloff(k as f64 / 100.0, density);
+                assert!(v <= prev && v >= 0.0, "{density}: not falling at t² = {k}%");
+                prev = v;
+            }
+        }
+        // Density widens the strong core: more strength at every radius, as in Photoshop.
+        for k in 1..100 {
+            let t2 = k as f64 / 100.0;
+            assert!(falloff(t2, 1.0) >= falloff(t2, 0.5) && falloff(t2, 0.5) >= falloff(t2, 0.0), "t² = {t2}");
+        }
+        assert!(falloff(0.5, 1.0) > 0.5 && falloff(0.5, 0.0) < 0.2);
+    }
+
+    /// #2606: the dab's strength used to stop at 1 - Density at its rim, so a Forward Warp moved
+    /// everything just inside the brush and nothing just outside, tearing the image along every
+    /// dab's circle (a hard-edged block at Density 0, half strength at the default 50).
+    #[test]
+    fn forward_warp_leaves_the_brush_rim_in_place() {
+        // A drag of one dab spacing (a twentieth of the radius): one dab, centred where it started.
+        let (r, drag) = (20.0, 1.0);
+        for density in [0.0, 50.0, 100.0] {
+            let mut s = LiquifyStroke::new(LiquifyTool::ForwardWarp, 2.0 * r);
+            s.density = density;
+            s.points = vec![vec![48.0, 32.0], vec![48.0 + drag, 32.0]];
+            let f = LiquifyField::from_strokes(bounds(), 1.0, &[s]);
+            let mut rim = 0;
+            for j in 0..f.h {
+                for i in 0..f.w {
+                    let p = f.node_pos(i, j);
+                    let t = (p[0] - 48.0).hypot(p[1] - 32.0) / r;
+                    if (0.97..1.0).contains(&t) {
+                        let d = f.d[j * f.w + i];
+                        assert!(f64::from(d[0].hypot(d[1])) < 0.03 * drag, "density {density}: a node at {t:.3} r moved {d:?}");
+                        rim += 1;
+                    }
+                }
+            }
+            assert!(rim > 20, "{rim} rim nodes");
+            assert!(f.sample(48.0, 32.0)[0] < -0.9 * drag, "density {density}: the centre follows the brush");
+        }
+    }
+
+    #[test]
     fn no_strokes_is_identity_at_every_depth() {
         for st in [SampleType::U8, SampleType::U16, SampleType::F32] {
             let s = sample(st);
@@ -952,6 +1286,34 @@ mod tests {
             st0.points = vec![vec![40.0, 30.0], vec![60.0, 30.0]];
             let f = LiquifyField::from_strokes(bounds(), 2.0, &[st0]);
             assert!(f.is_identity());
+        }
+    }
+
+    #[test]
+    fn full_resolution_preview_matches_the_unit_scale_proxy_and_partial_updates() {
+        let canvas = Rect::new(0, 0, 96, 64);
+        for sample_type in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            let source = sample(sample_type);
+            let mut stroke = LiquifyStroke::new(LiquifyTool::ForwardWarp, 32.0);
+            stroke.points = vec![vec![38.0, 30.0, 1.0], vec![52.0, 34.0, 0.8]];
+            let mut field = LiquifyField::from_strokes(canvas, 2.0, &[stroke]);
+
+            let proxy = ProxyImage::new(&source, canvas, 96);
+            assert_eq!(proxy.scale, 1.0);
+            let mut want = vec![[0; 4]; proxy.w * proxy.h];
+            proxy.render(&field, [0, 0, proxy.w, proxy.h], &mut want);
+
+            let mut got = vec![[0; 4]; proxy.w * proxy.h];
+            let mut scratch = Vec::new();
+            assert!(ProxyImage::render_full_resolution(&source, &field, canvas, canvas, &mut got, &mut scratch));
+            assert_eq!(got, want, "full-resolution render at {sample_type:?}");
+
+            let mut more = LiquifyStroke::new(LiquifyTool::Bloat, 16.0);
+            more.points = vec![vec![43.0, 32.0, 1.0]];
+            let dirty = field.apply_stroke(&more);
+            proxy.render(&field, proxy.proxy_rect(dirty), &mut want);
+            assert!(ProxyImage::render_full_resolution(&source, &field, canvas, dirty, &mut got, &mut scratch));
+            assert_eq!(got, want, "partial update at {sample_type:?}");
         }
     }
 
@@ -990,7 +1352,7 @@ mod tests {
         assert!(f.max_displacement() < before * 0.2, "{} vs {before}", f.max_displacement());
         // Frozen area doesn't move.
         let mut fr = LiquifyStroke::new(LiquifyTool::Freeze, 60.0);
-        fr.density = 0.0;
+        fr.density = 100.0;
         fr.points = vec![vec![40.0, 32.0]];
         let mut g = LiquifyField::new(bounds(), 2.0);
         g.apply_stroke(&fr);

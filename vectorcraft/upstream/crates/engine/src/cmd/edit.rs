@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use vectorcraft_doc::{Document, Node, NodeId, Unit};
-use vectorcraft_geom::{Affine, Vec2};
+use vectorcraft_geom::{Affine, Point, Vec2};
 
 use super::clipboard::SwatchChoices;
 use super::*;
@@ -37,8 +37,45 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             set_units
         ),
+        cmd!(query "document.rulerOrigin", "Ruler Origin", [], None, "{} → {x, y} the rulers' zero point, in absolute document points", has_doc, |s, _| Ok(json!(s.doc()?.doc.ruler_origin))),
+        cmd!(
+            "document.setRulerOrigin",
+            "Ruler Origin",
+            [],
+            None,
+            "{x, y} set the rulers' zero point in absolute document points; art, guides and command coordinates stay in place",
+            has_doc,
+            set_ruler_origin
+        ),
+        cmd!(
+            "document.resetRulerOrigin",
+            "Reset Ruler Origin",
+            [],
+            None,
+            "{artboard?: index=0} reset the rulers' zero point to that artboard's top-left corner",
+            has_doc,
+            reset_ruler_origin
+        ),
         cmd!("edit.undo", "Undo", ["Edit"], Some("Cmd+Z"), "{}", can_undo, undo),
         cmd!("edit.redo", "Redo", ["Edit"], Some("Cmd+Shift+Z"), "{}", can_redo, redo),
+        cmd!(
+            "edit.undoGroup.begin",
+            "Begin Undo Group",
+            [],
+            None,
+            "{label?: string} until edit.undoGroup.end, the edits made in the active document are one undo step, named `label` (else after its first edit): for automation, such as MCP command_batch with `atomic` (#1163)",
+            has_doc,
+            undo_group_begin
+        ),
+        cmd!(
+            "edit.undoGroup.end",
+            "End Undo Group",
+            [],
+            None,
+            "{cancel?: bool} close the undo group: its edits stay one undo step or, with `cancel`, are undone",
+            has_doc,
+            undo_group_end
+        ),
         cmd!("edit.cut", "Cut", ["Edit"], Some("Cmd+X"), "{} (the Artboard tool chosen: artboard.cut)", has_selection_or_artboard_tool, cut),
         cmd!("edit.copy", "Copy", ["Edit"], Some("Cmd+C"), "{} (the Artboard tool chosen: artboard.copy)", has_selection_or_artboard_tool, copy),
         cmd!(
@@ -162,9 +199,54 @@ fn set_units(s: &mut Session, p: &Value) -> Result<Value> {
     ok()
 }
 
+fn set_ruler_origin(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "document.setRulerOrigin";
+    let origin = Point::new(f64_req(p, "x", C)?, f64_req(p, "y", C)?);
+    change_ruler_origin(s, origin, "Ruler Origin")
+}
+
+fn reset_ruler_origin(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "document.resetRulerOrigin";
+    let index = match p.get("artboard") {
+        None => 0,
+        Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| bad(C, "index out of range"))?,
+    };
+    let ab = s.doc()?.doc.artboards.get(index).ok_or_else(|| bad(C, "index out of range"))?;
+    change_ruler_origin(s, Point::new(ab.rect.x0, ab.rect.y0), "Reset Ruler Origin")
+}
+
+fn change_ruler_origin(s: &mut Session, origin: Point, label: &str) -> Result<Value> {
+    if !origin.is_finite() || origin.x.abs() > crate::MAX_COORD || origin.y.abs() > crate::MAX_COORD {
+        return Err(EngineError::Other("result would exceed the canvas (coordinates out of range)".into()));
+    }
+    if s.doc()?.doc.ruler_origin != origin {
+        s.edit(label, |d, _| {
+            d.ruler_origin = origin;
+            Ok(())
+        })?;
+    }
+    Ok(json!(origin))
+}
+
 /// A typing session in progress (the Type tool previews the whole session as one interaction).
 pub(crate) fn typing_in_progress(s: &Session) -> bool {
     s.active().and_then(|d| d.interaction.as_ref()).is_some_and(|it| it.label == "Typing" && it.preview.is_some())
+}
+
+fn undo_group_begin(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "edit.undoGroup.begin";
+    let label = match p.get("label") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(l)) if !l.trim().is_empty() && l.chars().count() <= 200 => Some(l.trim().to_string()),
+        Some(_) => return Err(bad(C, "`label` must be a non-empty name of at most 200 characters")),
+    };
+    s.begin_named_undo_group(label);
+    ok()
+}
+
+fn undo_group_end(s: &mut Session, p: &Value) -> Result<Value> {
+    s.end_undo_group(bool_or(p, "cancel", false));
+    ok()
 }
 
 fn undo(s: &mut Session, _: &Value) -> Result<Value> {
@@ -180,12 +262,13 @@ fn undo(s: &mut Session, _: &Value) -> Result<Value> {
     let st = s.doc_mut()?;
     let e = st.history.undo.pop().ok_or_else(|| EngineError::Other("nothing to undo".into()))?;
     let label = e.label.clone();
+    let costs = e.costs();
     let editing = st.doc.mask_edit.map(|m| m.layer);
-    st.history.redo.push(crate::HistoryEntry {
-        label: e.label,
-        doc: std::mem::replace(&mut st.doc, e.doc),
-        selection: std::mem::replace(&mut st.selection, e.selection),
-    });
+    let doc = std::mem::replace(&mut st.doc, e.doc);
+    let selection = std::mem::replace(&mut st.selection, Arc::unwrap_or_clone(e.selection));
+    let selection = shared_selection(selection, st.history.redo.last());
+    st.history.redo.push(crate::HistoryEntry::turned(e.label, doc, selection, &st.doc, costs));
+    st.history.trim();
     st.revision += 1;
     st.selection.prune(&st.doc);
     super::maskedit::follow_history(st, editing);
@@ -196,16 +279,25 @@ fn redo(s: &mut Session, _: &Value) -> Result<Value> {
     let st = s.doc_mut()?;
     let e = st.history.redo.pop().ok_or_else(|| EngineError::Other("nothing to redo".into()))?;
     let label = e.label.clone();
+    let costs = e.costs();
     let editing = st.doc.mask_edit.map(|m| m.layer);
-    st.history.undo.push(crate::HistoryEntry {
-        label: e.label,
-        doc: std::mem::replace(&mut st.doc, e.doc),
-        selection: std::mem::replace(&mut st.selection, e.selection),
-    });
+    let doc = std::mem::replace(&mut st.doc, e.doc);
+    let selection = std::mem::replace(&mut st.selection, Arc::unwrap_or_clone(e.selection));
+    let selection = shared_selection(selection, st.history.undo.last());
+    st.history.undo.push(crate::HistoryEntry::turned(e.label, doc, selection, &st.doc, costs));
+    st.history.trim();
     st.revision += 1;
     st.selection.prune(&st.doc);
     super::maskedit::follow_history(st, editing);
     Ok(json!({ "redone": label }))
+}
+
+/// `selection` for an undo (redo) step, sharing that of `like`, the step beside it, when the same.
+fn shared_selection(selection: vectorcraft_doc::Selection, like: Option<&crate::HistoryEntry>) -> Arc<vectorcraft_doc::Selection> {
+    match like {
+        Some(l) if *l.selection == selection => l.selection.clone(),
+        _ => Arc::new(selection),
+    }
 }
 
 /// Selected top-level objects in paint order, dropping any whose ancestor is also selected.
@@ -217,22 +309,29 @@ pub(crate) fn selected_roots(s: &Session) -> Result<Vec<NodeId>> {
 /// The top-level objects among `ids` (in paint order): compound-path members stand for their
 /// compound, and ids whose ancestor is also listed, and layers, are dropped.
 pub(crate) fn roots_of(doc: &Document, ids: Vec<NodeId>) -> Vec<NodeId> {
+    // Every id's place in the tree, found in one walk (a lookup per id is a walk per id).
+    let paths = doc.index_paths(ids.iter().copied());
     // A compound-path member acts as its compound (compounds are one object).
-    let mut sel: Vec<NodeId> = ids
+    let mut sel: Vec<(NodeId, Option<Vec<usize>>)> = ids
         .into_iter()
-        .map(|id| match doc.parent_of(id).and_then(|p| doc.node(p).map(|n| (p, n))) {
-            Some((p, n)) if matches!(n.kind, vectorcraft_doc::NodeKind::Compound { .. }) => p,
-            _ => id,
+        .map(|id| {
+            let path = paths.get(&id);
+            let parent = path.and_then(|p| p.split_last()).map(|(_, up)| up).filter(|up| !up.is_empty());
+            match parent.and_then(|up| doc.node_at(up).map(|n| (up, n))) {
+                Some((up, n)) if matches!(n.kind, vectorcraft_doc::NodeKind::Compound { .. }) => (n.id, Some(up.to_vec())),
+                _ => (id, path.cloned()),
+            }
         })
         .collect();
-    sel.dedup();
+    sel.dedup_by_key(|(id, _)| *id);
+    let listed: std::collections::HashSet<NodeId> = sel.iter().map(|(id, _)| *id).collect();
     sel.iter()
-        .copied()
-        .filter(|id| {
-            let anc = doc.ancestry(*id).unwrap_or_default();
-            !anc[..anc.len().saturating_sub(1)].iter().any(|a| sel.contains(a))
+        .filter(|(_, path)| {
+            let anc = path.as_deref().and_then(|p| doc.ancestry_at(p)).unwrap_or_default();
+            !anc[..anc.len().saturating_sub(1)].iter().any(|a| listed.contains(a))
         })
-        .filter(|id| doc.node(*id).is_some_and(|n| !n.is_layer()))
+        .filter(|(_, path)| path.as_deref().and_then(|p| doc.node_at(p)).is_some_and(|n| !n.is_layer()))
+        .map(|(id, _)| *id)
         .collect()
 }
 
@@ -259,7 +358,7 @@ fn cut(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn clear(s: &mut Session, p: &Value) -> Result<Value> {
     let explicit = if p.get("ids").is_some() { Some(checked_ids_param(s, p, "ids", "edit.clear")?) } else { None };
-    // Direct-selected anchors: delete those anchors instead of whole objects.
+    // Direct-selected anchors or segments: remove those components instead of whole objects.
     if explicit.is_none() && !s.doc()?.selection.anchors.is_empty() {
         return super::path::delete_anchors(s, p);
     }

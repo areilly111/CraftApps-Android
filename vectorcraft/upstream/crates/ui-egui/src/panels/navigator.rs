@@ -1,6 +1,9 @@
-//! Navigator panel: a thumbnail of the document (rendered with `Renderer::render_region`, cached by
-//! document revision) with the red view box you drag to pan, zoom out/in buttons, a zoom slider
+//! Navigator panel: a thumbnail of the document (rendered with `Renderer::render_region_with`,
+//! cached by document revision, off the UI thread for heavy documents and not during drags: see
+//! [`crate::thumb_worker`]) with the red view box you drag to pan, zoom out/in buttons, a zoom slider
 //! and a zoom field.
+
+use std::sync::Arc;
 
 use egui::{Color32, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use serde_json::json;
@@ -9,17 +12,133 @@ use vectorcraft_geom::{Point, Rect as DRect};
 use super::{pstate, set_pstate};
 use crate::VectorcraftApp;
 use crate::theme::Tokens;
+use crate::thumb_worker::{Settle, ThumbWorker};
 use crate::widgets::{self, menu_item};
+
+/// What a navigator image shows: document `uid` at `revision`, `w`×`h` pixels, the artboards only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ImageKey {
+    uid: u64,
+    revision: u64,
+    w: u32,
+    h: u32,
+    artboard_only: bool,
+}
 
 #[derive(Default)]
 struct Cache {
-    renderer: Option<vectorcraft_render::Renderer>,
-    key: Option<(usize, u64, u32, u32, bool)>,
+    /// Renders heavy documents' images (None: on this thread).
+    worker: Option<ThumbWorker<(), (ImageKey, DRect)>>,
+    worker_started: bool,
+    /// The region shown for (uid, revision, artboard only): the art bounds walk the whole document.
+    region: Option<((u64, u64, bool), DRect)>,
+    /// The image shown: what it shows and the document rect it covers.
+    shown: Option<(ImageKey, DRect)>,
     tex: Option<egui::TextureHandle>,
+    /// The image the worker is making.
+    pending: Option<ImageKey>,
+    /// How long the last image took: past [`HEAVY_MS`] the next goes to the worker.
+    last_ms: f64,
+    settle: Settle,
+    /// Images made (tests count them).
+    renders: u64,
 }
+
+/// An image that took longer than this (ms) makes the next one render off the UI thread.
+const HEAVY_MS: f64 = 8.0;
 
 thread_local! {
     static CACHE: crate::graphics::TexCache<Cache> = crate::graphics::TexCache::default();
+}
+
+impl Cache {
+    /// Upload image `r` showing `key` over `region`.
+    fn upload(&mut self, ctx: &egui::Context, key: ImageKey, region: DRect, r: &vectorcraft_render::Rendered, ms: f64) {
+        let img = egui::ColorImage::from_rgba_premultiplied([r.width as usize, r.height as usize], &r.pixels);
+        match &mut self.tex {
+            Some(tx) => tx.set(img, egui::TextureOptions::LINEAR),
+            None => self.tex = Some(ctx.load_texture("navigator", img, egui::TextureOptions::LINEAR)),
+        }
+        self.shown = Some((key, region));
+        self.last_ms = ms;
+        self.renders += 1;
+    }
+
+    /// The region (artboards, and the art unless `artboard_only`, with a margin) to show
+    /// `doc` (`uid` at `revision`) in. While `busy` (a drag) the last one of the document stays,
+    /// rather than walking the whole document every frame.
+    fn region(&mut self, doc: &vectorcraft_doc::Document, uid: u64, revision: u64, artboard_only: bool, busy: bool) -> DRect {
+        let key = (uid, revision, artboard_only);
+        if let Some((k, r)) = self.region
+            && (k == key || (busy && k.0 == uid && k.2 == artboard_only))
+        {
+            return r;
+        }
+        let mut region = doc.artboards.iter().map(|a| a.rect).reduce(|a, b| a.union(b)).unwrap_or(DRect::new(0.0, 0.0, 612.0, 792.0));
+        if !artboard_only && let Some(b) = doc.art_bounds() {
+            region = region.union(b);
+        }
+        let region = region.inflate(region.width() * 0.04 + 4.0, region.height() * 0.04 + 4.0);
+        self.region = Some((key, region));
+        region
+    }
+
+    /// Bring the image up to `key` (`doc` over `region`): heavy documents render on the worker
+    /// while the last image stays, and nothing renders during a drag (`busy`) or before the
+    /// document has settled, unless there's no image of it yet.
+    fn update(&mut self, ctx: &egui::Context, doc: &Arc<vectorcraft_doc::Document>, key: ImageKey, region: DRect, busy: bool) {
+        if !self.worker_started {
+            self.worker_started = true;
+            self.worker = ThumbWorker::spawn(ctx, "navigator");
+        }
+        let done = match self.worker.as_ref().map(ThumbWorker::poll) {
+            Some(Some(done)) => done,
+            Some(None) => {
+                // The thread is gone: render here from now on.
+                (self.worker, self.pending) = (None, None);
+                vec![]
+            }
+            None => vec![],
+        };
+        for d in done {
+            if self.pending == Some(d.key.0) {
+                self.pending = None;
+            }
+            if let Some(img) = d.img {
+                self.upload(ctx, d.key.0, d.key.1, &img, d.ms);
+            }
+        }
+        let shown = self.shown.map(|(k, _)| k);
+        if shown == Some(key) || self.pending == Some(key) {
+            return;
+        }
+        let have = self.tex.is_some() && shown.is_some_and(|k| k.uid == key.uid);
+        let now = ctx.input(|i| i.time);
+        if have && (busy || !self.settle.settled(ctx, key.uid, key.revision, now)) {
+            return;
+        }
+        let s = (key.w as f64 / region.width()).min(key.h as f64 / region.height());
+        // As exported (template layers and guides left out), transparent; images far smaller than
+        // they are sample their mip levels.
+        let opts = vectorcraft_render::RenderOptions { skip_templates: true, image_mips: true, ..Default::default() };
+        let heavy = self.last_ms > HEAVY_MS && have;
+        if heavy && let Some(w) = &self.worker {
+            let (doc, opts) = (doc.clone(), opts.clone());
+            if w.submit((), (key, region), Box::new(move |r| Some(r.render_region_with(&doc, region, s, &opts)))) {
+                self.pending = Some(key);
+                return;
+            }
+            self.worker = None;
+        }
+        let t0 = crate::now_ms();
+        let img = NAV_RENDERER.with(|r| r.borrow_mut().render_region_with(doc, region, s, &opts));
+        self.upload(ctx, key, region, &img, crate::now_ms() - t0);
+    }
+}
+
+thread_local! {
+    /// Renders light documents' images on the UI thread.
+    static NAV_RENDERER: std::cell::RefCell<vectorcraft_render::Renderer> = std::cell::RefCell::new(vectorcraft_render::Renderer::new());
 }
 
 /// Map a document point into the thumbnail rect (region → rect, aspect preserved).
@@ -54,33 +173,25 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
     };
     let artboard_only: bool = pstate(ui.ctx(), "nav-ab-only");
     let doc = st.doc.clone();
-    let rev = st.revision;
-    let doc_idx = app.session.documents().iter().position(|d| std::sync::Arc::ptr_eq(&d.doc, &doc)).unwrap_or(0);
-    let mut region = doc.artboards.iter().map(|a| a.rect).reduce(|a, b| a.union(b)).unwrap_or(DRect::new(0.0, 0.0, 612.0, 792.0));
-    if !artboard_only && let Some(b) = doc.art_bounds() {
-        region = region.union(b);
-    }
-    let region = region.inflate(region.width() * 0.04 + 4.0, region.height() * 0.04 + 4.0);
+    let (uid, revision) = (st.uid, st.revision);
+    // A drag in progress: every pointer move makes a new revision. The image waits for its end.
+    let busy = st.interaction.is_some() || app.session.tool_busy();
+    let region = CACHE.with(|c| c.borrow_mut().region(&doc, uid, revision, artboard_only, busy));
     let w = ui.available_width();
     let h = (w * 0.72).clamp(100.0, 200.0);
     let (thumb, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click_and_drag());
     ui.painter().rect_filled(thumb, 0.0, t.pasteboard);
     let ppp = ui.ctx().pixels_per_point();
     let (pw, ph) = ((w * ppp) as u32, (h * ppp) as u32);
-    let key = (doc_idx, rev, pw, ph, artboard_only);
-    let tex = CACHE.with(|c| {
+    let key = ImageKey { uid, revision, w: pw, h: ph, artboard_only };
+    let (tex, tex_region) = CACHE.with(|c| {
         let mut c = c.borrow_mut();
-        if c.key != Some(key) || c.tex.is_none() {
-            let s = (pw as f64 / region.width()).min(ph as f64 / region.height());
-            let r = c.renderer.get_or_insert_with(vectorcraft_render::Renderer::new).render_region(&doc, region, s, false);
-            let img = egui::ColorImage::from_rgba_premultiplied([r.width as usize, r.height as usize], &r.pixels);
-            match &mut c.tex {
-                Some(tx) => tx.set(img, egui::TextureOptions::LINEAR),
-                None => c.tex = Some(ui.ctx().load_texture("navigator", img, egui::TextureOptions::LINEAR)),
-            }
-            c.key = Some(key);
+        c.update(ui.ctx(), &doc, key, region, busy);
+        // Never another document's image.
+        match c.shown {
+            Some((k, r)) if k.uid == uid => (c.tex.clone(), r),
+            _ => (None, region),
         }
-        c.tex.clone()
     });
     // Artboards (white) under the art thumbnail, like the canvas.
     for a in &doc.artboards {
@@ -88,8 +199,8 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         ui.painter().rect_filled(r, 0.0, Color32::WHITE);
     }
     if let Some(tex) = tex {
-        let tl = doc_to_thumb(region, thumb, region.origin());
-        let br = doc_to_thumb(region, thumb, Point::new(region.x1, region.y1));
+        let tl = doc_to_thumb(region, thumb, tex_region.origin());
+        let br = doc_to_thumb(region, thumb, Point::new(tex_region.x1, tex_region.y1));
         ui.painter().image(tex.id(), Rect::from_min_max(tl, br), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
     // The view box.
@@ -163,5 +274,43 @@ mod tests {
         assert!((zoom_to_slider(3.13)).abs() < 1e-9);
         assert!((zoom_to_slider(64000.0) - 1.0).abs() < 1e-9);
         assert!((slider_to_zoom(zoom_to_slider(100.0)) - 100.0).abs() < 1e-6);
+    }
+
+    /// The navigator images made on this thread so far.
+    fn renders() -> u64 {
+        CACHE.with(|c| c.borrow().renders)
+    }
+
+    #[test]
+    fn no_image_is_rendered_during_a_drag_and_one_is_after_it() {
+        use vectorcraft_engine::Session;
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.session.execute("file.new", &json!({"width": 200, "height": 200})).unwrap();
+        app.session.execute("shape.rectangle", &json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap();
+        // One context, so its clock runs on (1/60 s a pass) and the document can settle.
+        let ctx = egui::Context::default();
+        let frame = |app: &mut VectorcraftApp| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| show(app, ui));
+            out.textures_delta.clear();
+        };
+        frame(&mut app);
+        let first = renders();
+        assert!(first >= 1, "the first image renders at once");
+        // A move drag: every preview is a new revision.
+        app.session.begin_interaction("Move").unwrap();
+        for i in 1..=20 {
+            app.session.preview("object.transform", &json!({"matrix": [1, 0, 0, 1, i, 0]})).unwrap();
+            frame(&mut app);
+        }
+        assert_eq!(renders(), first, "nothing renders while the drag goes on");
+        app.session.commit_interaction().unwrap();
+        frame(&mut app);
+        assert_eq!(renders(), first, "the document settles first");
+        for _ in 0..12 {
+            frame(&mut app);
+        }
+        assert_eq!(renders(), first + 1, "one image after the drag");
+        let shown = CACHE.with(|c| c.borrow().shown.map(|(k, _)| k.revision));
+        assert_eq!(shown, Some(app.session.active().unwrap().revision));
     }
 }

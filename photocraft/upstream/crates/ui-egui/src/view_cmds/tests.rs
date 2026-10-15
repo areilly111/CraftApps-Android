@@ -130,6 +130,19 @@ fn arrange_layouts_floating_windows_and_matching() {
 }
 
 #[test]
+fn two_up_and_stacked_cells_keep_their_existing_boundaries() {
+    let rect = egui::Rect::from_min_max(egui::pos2(40.0, 75.0), egui::pos2(940.0, 675.0));
+    let region = |left, top, right, bottom| egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, bottom));
+    assert_eq!(cells("twoUpVertical", rect, 2).unwrap(), vec![region(40.0, 75.0, 490.0, 675.0), region(490.0, 75.0, 940.0, 675.0)]);
+    assert_eq!(cells("twoUpHorizontal", rect, 2).unwrap(), vec![region(40.0, 75.0, 940.0, 375.0), region(40.0, 375.0, 940.0, 675.0)]);
+    assert_eq!(
+        cells("threeUpStacked", rect, 3).unwrap(),
+        vec![region(40.0, 75.0, 490.0, 675.0), region(490.0, 75.0, 940.0, 375.0), region(490.0, 375.0, 940.0, 675.0)]
+    );
+    assert!(cells("twoUpVertical", rect, 1).is_none());
+}
+
+#[test]
 fn window_panels_select_dock_tabs() {
     let (mut app, ctx) = app_with(1);
     menu(&mut app, &ctx, "window.panel.info", json!({})).unwrap();
@@ -188,6 +201,7 @@ fn engine_commands_open_their_dialogs() {
     assert_eq!(app.session.active().unwrap().doc.guides.vertical, vec![0.0, 22.5, 32.5, 55.0]);
     app.run("type.create", json!({"x": 5, "y": 40, "text": "Warp", "size": 20})).unwrap();
     let d = menu(&mut app, &ctx, "type.warpText", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    app.ui.dialog_mut(d).unwrap().fields.insert("style".into(), json!("arc"));
     crate::dialogs::confirm(&mut app, d).unwrap();
     assert!(app.run("type.info", json!({})).unwrap()["warp"]["style"] == "warpArc");
     // Batch needs a recorded action.
@@ -276,4 +290,82 @@ fn lookup_export_dialog_uses_the_current_adjustment_selection() {
     let direct = app.run("file.export.colorLookupTables", json!({"size": 3, "scope": "selected"})).unwrap();
     assert_eq!(direct["layerCount"], 1);
     assert!(direct["cube"].as_str().unwrap().contains("LUT_3D_SIZE 3"));
+}
+
+/// Float in Window takes the document and the screen position a dragged-off tab was dropped at
+/// (#3733); bad params are errors, not panics.
+#[test]
+fn float_in_window_takes_a_document_and_position() {
+    let (mut app, ctx) = app_with(3);
+    let r = menu(&mut app, &ctx, "window.arrange.floatInWindow", json!({"document": 1, "position": [1950.0, 40.5]})).unwrap();
+    let w = app.ui.windows.last().unwrap();
+    assert_eq!(r, json!({"window": w.id}));
+    assert_eq!((w.document, w.position), (1, Some([1950.0, 40.5])));
+    assert_eq!(app.session.active_index(), Some(1));
+    menu(&mut app, &ctx, "window.arrange.floatInWindow", json!({})).unwrap();
+    assert_eq!(app.ui.windows.last().map(|w| (w.document, w.position)), Some((1, None)), "defaults: the active document, placed by the OS");
+    for bad in [
+        json!({"document": 3}),
+        json!({"document": -1}),
+        json!({"document": "b"}),
+        json!({"position": [1.0]}),
+        json!({"position": [1.0, "x"]}),
+        json!({"position": [1.0e30, 0.0]}),
+        json!({"position": 5}),
+    ] {
+        assert!(menu(&mut app, &ctx, "window.arrange.floatInWindow", bad.clone()).is_err(), "{bad}");
+    }
+    assert_eq!(app.ui.windows.len(), 2, "rejected params open no window");
+}
+
+#[test]
+fn save_selection_opens_its_dialog_and_saves_on_confirm() {
+    // #3713: Select › Save Selection… asks for the channel, name and operation first.
+    let (mut app, ctx) = app_with(1);
+    app.run("select.all", json!({})).unwrap();
+    let revision = app.session.active().unwrap().revision;
+    let dialog = menu(&mut app, &ctx, "select.saveSelection", json!({})).unwrap()["dialog"].as_u64().expect("Save Selection opens a dialog");
+    assert_eq!(app.session.active().unwrap().revision, revision, "saved before confirmation");
+    assert!(app.session.active().unwrap().doc.channels.is_empty());
+    let fields = &mut app.ui.dialog_mut(dialog).unwrap().fields;
+    assert_eq!(fields["__command"], "select.saveSelection");
+    assert_eq!(fields["channel"], "new");
+    assert_eq!(fields["__choices"]["operation"], json!(["new", "replace", "add", "subtract", "intersect"]));
+    fields.insert("name".into(), json!("Keep"));
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
+    let names: Vec<_> = app.session.active().unwrap().doc.channels.iter().map(|c| c.name.clone()).collect();
+    assert_eq!(names, ["Keep"]);
+    // A second save lists the new channel as a destination.
+    let dialog = menu(&mut app, &ctx, "select.saveSelection", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    assert_eq!(app.ui.dialog_mut(dialog).unwrap().fields["__choices"]["channel"], json!(["new", "Keep"]));
+}
+
+#[test]
+fn load_selection_opens_its_dialog_and_loads_on_confirm() {
+    // #3713: Select › Load Selection… used to fail with "missing `channel`".
+    let (mut app, ctx) = app_with(1);
+    app.run("select.all", json!({})).unwrap();
+    app.run("select.saveSelection", json!({"name": "Keep"})).unwrap();
+    app.run("select.deselect", json!({})).unwrap();
+    let dialog = menu(&mut app, &ctx, "select.loadSelection", json!({})).unwrap()["dialog"].as_u64().expect("Load Selection opens a dialog");
+    assert!(app.session.active().unwrap().doc.selection.is_none(), "loaded before confirmation");
+    let fields = &app.ui.dialog_mut(dialog).unwrap().fields;
+    assert_eq!(fields["__command"], "select.loadSelection");
+    assert_eq!(fields["channel"], "Keep");
+    assert_eq!(fields["invert"], false);
+    assert_eq!(fields["operation"], "new");
+    let channels = fields["__choices"]["channel"].as_array().unwrap();
+    assert!(channels.contains(&json!("Keep")) && channels.contains(&json!("transparency")));
+    // The layer has no mask, so its mask is not offered.
+    assert!(!channels.contains(&json!("mask")), "{channels:?}");
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
+    assert!(app.session.active().unwrap().doc.selection.is_some());
+}
+
+#[test]
+fn load_selection_without_alpha_channels_offers_the_composite() {
+    let (mut app, ctx) = app_with(1);
+    let dialog = menu(&mut app, &ctx, "select.loadSelection", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    assert_eq!(app.ui.dialog_mut(dialog).unwrap().fields["channel"], "RGB");
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
 }

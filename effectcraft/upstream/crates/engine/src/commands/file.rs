@@ -43,9 +43,19 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let text = String::from_utf8(bytes).map_err(|_| EngineError::Other("not a text project file".into()))?;
     // XML copies (File ▸ Save a Copy As XML…) open like the JSON project.
     let text = if crate::xml_project::is_xml(&text) { crate::xml_project::from_xml(&text).map_err(EngineError::Other)? } else { text };
-    let proj = Project::from_json(&text).map_err(|e| EngineError::Other(format!("{path} is not a project EffectCraft can open: {e}")))?;
+    let (mut proj, repaired) =
+        Project::from_json_repaired(&text).map_err(|e| EngineError::Other(format!("{path} is not a project EffectCraft can open: {e}")))?;
+    resolve_relative_footage(&mut proj, path, s.services.as_ref());
     s.replace_project(proj, Some(path.to_string()));
+    s.restore_view(&effectcraft_project::saved_view(&text));
     s.note_project_path(path);
+    // Values past the limits (a corrupt or hostile file) were brought within them (#788).
+    if !repaired.is_empty() {
+        let more = repaired.len().saturating_sub(3);
+        let shown = repaired.iter().take(3).cloned().collect::<Vec<_>>().join("; ");
+        let more = if more > 0 { format!(" and {more} more") } else { String::new() };
+        s.toast(format!("This project had values outside EffectCraft's limits, corrected when it opened: {shown}{more}."));
+    }
     // Written by a newer EffectCraft: what this version doesn't know would be lost on saving.
     let saved_by = effectcraft_project::saved_by(&text);
     if let Some(v) = saved_by.as_deref().filter(|v| effectcraft_project::is_newer_version(v, effectcraft_project::APP_VERSION)) {
@@ -59,14 +69,36 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     if s.check_footage_on_open {
         crate::footage_check::start(s, None, false)?;
     }
-    Ok(json!({"path": path, "savedBy": saved_by}))
+    Ok(json!({"path": path, "savedBy": saved_by, "repaired": repaired}))
+}
+
+/// Footage saved with a relative path (imported by the CLI or an agent as `clip.mp4`, or written
+/// by hand) is found next to the project file, as After Effects looks for footage relative to
+/// the project. It used to be looked up from the working directory: the CLI started in the
+/// project's folder found it, the desktop app (started from the Finder, Explorer or a launcher,
+/// in another folder) showed and rendered nothing (#652). A path that exists from the working
+/// directory is kept.
+fn resolve_relative_footage(p: &mut Project, project_path: &str, services: &dyn crate::Services) {
+    use std::path::Path;
+    let Some(dir) = Path::new(project_path).parent().filter(|d| !d.as_os_str().is_empty()) else { return };
+    let beside = |f: &str| dir.join(f).to_string_lossy().to_string();
+    for item in p.items.values_mut() {
+        let ItemKind::Footage(f) = &mut item.kind else { continue };
+        if f.path.is_empty() || !Path::new(&f.path).is_relative() || services.exists(&f.path) || !services.exists(&beside(&f.path)) {
+            continue;
+        }
+        f.path = beside(&f.path);
+        for frame in f.sequence.iter_mut().filter(|q| Path::new(q.as_str()).is_relative()) {
+            *frame = beside(frame);
+        }
+    }
 }
 
 /// The project file's text for `path`: `.ecproj` JSON, or XML for `.ecprojx` / `.xml` (a
 /// project opened from an XML copy saves as XML again). Fails, writing nothing, when the project
 /// wouldn't read back.
 pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
-    let json = s.project.to_file_json()?;
+    let json = s.project.to_file_json_with_view(&s.saved_view())?;
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
 }
 

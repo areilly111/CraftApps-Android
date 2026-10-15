@@ -25,7 +25,8 @@ fn run(s: &mut Session, p: Value) {
 
 fn corners(s: &Session, id: NodeId) -> ([f64; 4], [CornerKind; 4], usize) {
     let n = s.doc().unwrap().doc.node(id).unwrap();
-    let NodeKind::Path { live: Some(LiveShape::Rectangle { radii, kinds, .. }), path, .. } = &n.kind else { panic!("not a live rectangle") };
+    let NodeKind::Path { live: Some(l), path, .. } = &n.kind else { panic!("not a live shape") };
+    let LiveShape::Rectangle { radii, kinds, .. } = &**l else { panic!("not a live rectangle") };
     (*radii, *kinds, path.anchor_count())
 }
 
@@ -157,7 +158,7 @@ fn corners_of_a_non_square_rectangle_are_alike_circles() {
         let d = std::sync::Arc::make_mut(&mut s.doc_mut().unwrap().doc);
         let NodeKind::Path { path, live: Some(live), .. } = &mut d.node_mut(id).unwrap().kind else { panic!("not live") };
         let xf = Affine::translate((10.0, 10.0)) * Affine::scale_non_uniform(2.0, 1.0);
-        *live = LiveShape::Rectangle { w: 50.0, h: 60.0, radii: [10.0; 4], kinds: Default::default(), xf };
+        **live = LiveShape::Rectangle { w: 50.0, h: 60.0, radii: [10.0; 4], kinds: Default::default(), xf };
         *path = live.to_path();
     }
     assert_eq!(spans(&s, id)[0], (20.0, 10.0));
@@ -178,7 +179,7 @@ fn star(s: &mut Session) -> NodeId {
 
 fn node_path(s: &Session, id: NodeId) -> (vectorcraft_geom::PathData, Option<LiveShape>) {
     let NodeKind::Path { path, live, .. } = &s.doc().unwrap().doc.node(id).unwrap().kind else { panic!("not a path") };
-    (path.clone(), live.clone())
+    (path.clone(), live.as_deref().cloned())
 }
 
 /// The radius and kind every corner of `id` shares, and how many corners it has.
@@ -307,7 +308,10 @@ fn an_ellipse_takes_pie_angles_and_inverts() {
     s.execute("file.new", &json!({"width": 300, "height": 300})).unwrap();
     let id = NodeId(s.execute("shape.ellipse", &json!({"x": 0, "y": 0, "width": 200, "height": 100})).unwrap()["id"].as_u64().unwrap());
     let pie = |s: &Session| match &s.doc().unwrap().doc.node(id).unwrap().kind {
-        NodeKind::Path { live: Some(LiveShape::Ellipse { pie, .. }), path, .. } => (*pie, path.bounds().unwrap()),
+        NodeKind::Path { live: Some(l), path, .. } => match &**l {
+            LiveShape::Ellipse { pie, .. } => (*pie, path.bounds().unwrap()),
+            k => panic!("{k:?}"),
+        },
         k => panic!("{k:?}"),
     };
     s.execute("object.setLiveShape", &json!({"pieStart": 0, "pieEnd": 90})).unwrap();
@@ -335,7 +339,7 @@ fn a_polygon_takes_its_angle_radius_side_length_and_equal_sides() {
     s.execute("file.new", &json!({"width": 400, "height": 400})).unwrap();
     let id = NodeId(s.execute("shape.polygon", &json!({"cx": 200, "cy": 200, "radius": 50, "sides": 6})).unwrap()["id"].as_u64().unwrap());
     let live = |s: &Session| match &s.doc().unwrap().doc.node(id).unwrap().kind {
-        NodeKind::Path { live: Some(l @ LiveShape::Polygon { .. }), path, .. } => (l.clone(), path.bounds().unwrap()),
+        NodeKind::Path { live: Some(l), path, .. } if matches!(**l, LiveShape::Polygon { .. }) => ((**l).clone(), path.bounds().unwrap()),
         k => panic!("{k:?}"),
     };
     let close = |a: f64, b: f64| (a - b).abs() < 1e-6;

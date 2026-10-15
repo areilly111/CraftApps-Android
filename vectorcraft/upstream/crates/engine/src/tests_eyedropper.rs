@@ -60,6 +60,8 @@ fn picking_up_without_weight_keeps_the_target_weight() {
     assert_eq!(s.paint.stroke_width, weight, "new art keeps its weight too");
     // Applying no transparency (one call) keeps the target's opacity; undo is one step per copy.
     s.execute("transparency.set", &json!({"opacity": 100, "ids": [dst.0]})).unwrap();
+    // A green fill, which the copy turns red again.
+    s.execute("paint.setFill", &json!({"color": "#00ff00", "ids": [dst.0]})).unwrap();
     let undo = s.doc().unwrap().history.undo.len();
     s.execute("appearance.copyFrom", &json!({"source": src.0, "apply": {"appearance": {"transparency": false}}})).unwrap();
     assert_eq!((node(&s, dst).opacity, s.doc().unwrap().history.undo.len()), (1.0, undo + 1));
@@ -126,7 +128,7 @@ fn shift_alt_click_appends_the_appearance() {
     let mut s = session();
     let (_, dst) = source_and_target(&mut s);
     click(&mut s, 325.0, 35.0, Mods { alt: true, shift: true, ..Default::default() });
-    let items = node(&s, dst).appearance.items;
+    let items = node(&s, dst).appearance.items.clone();
     assert_eq!(items.len(), 4, "the source's fill and stroke on top of the target's");
     assert_eq!((items[0].paint().color().unwrap().to_hex(), items[2].paint().color().unwrap().to_hex()), ("#ffffff".into(), "#ff0000".into()));
 }
@@ -159,7 +161,7 @@ fn clicking_an_image_samples_its_pixel() {
         let id = d.alloc_id();
         let xf = vectorcraft_geom::Affine::translate((300.0, 0.0)) * vectorcraft_geom::Affine::scale(100.0);
         let im = ImageObject { key: "px".into(), width: 2, height: 1, xf, link: None, placement: Default::default() };
-        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(im))).map_err(|e| crate::EngineError::Other(e.to_string()))
+        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(Box::new(im)))).map_err(|e| crate::EngineError::Other(e.to_string()))
     })
     .unwrap();
     let dst = rect(&mut s, 10.0);

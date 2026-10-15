@@ -32,10 +32,11 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("Українська", "uk"),
     ("Español", "es"),
     ("Português (Brasil)", "pt-br"),
+    ("Русский", "ru"),
+    ("Français", "fr"),
+    ("Deutsch", "de"),
+    ("Čeština", "cs"),
 ];
-
-/// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).
-pub const UI_SCALES: &[(&str, &str)] = &[("75%", "75"), ("100%", "100"), ("125%", "125"), ("150%", "150"), ("175%", "175"), ("200%", "200")];
 
 /// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).
 pub const WINDOW_GRAPHICS: &[(&str, &str)] = &[("Automatic", "auto"), ("OpenGL (compatibility)", "gl")];
@@ -175,6 +176,8 @@ page!(Appearance {
     dark_theme: String = "dark".into(),
     /// The theme used in light appearance: `light`.
     light_theme: String = "light".into(),
+    /// Theme shortcuts in the appearance context menu.
+    favorite_themes: Vec<String> = Vec::new(),
     /// User interface brightness, -1 (darker) … 1 (lighter).
     brightness: f64 = 0.0,
     /// The size of the whole interface in percent (75–200), on top of the display's own scale.
@@ -335,6 +338,42 @@ pub struct LabelPref {
     pub color: String,
 }
 
+/// A Composition Settings preset the user saved (Composition Settings ▸ Preset ▸ Save): the
+/// frame size, pixel aspect and frame rate, as in After Effects' own presets.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompPreset {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub pixel_aspect: f64,
+    pub frame_rate: f64,
+}
+
+impl CompPreset {
+    /// Longest preset name kept.
+    pub const MAX_NAME: usize = 128;
+
+    /// Values a composition accepts (a hand-edited settings file can hold anything).
+    pub fn is_valid(&self) -> bool {
+        let size = 4..=30000;
+        !self.name.trim().is_empty()
+            && self.name.chars().count() <= Self::MAX_NAME
+            && size.contains(&self.width)
+            && size.contains(&self.height)
+            && self.pixel_aspect.is_finite()
+            && (0.01..=100.0).contains(&self.pixel_aspect)
+            && self.frame_rate.is_finite()
+            && (1.0..=999.0).contains(&self.frame_rate)
+    }
+}
+
+/// Saved composition presets, skipping entries that don't parse instead of losing the list.
+fn lenient_comp_presets<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<CompPreset>, D::Error> {
+    let v = Vec::<Value>::deserialize(d)?;
+    Ok(v.into_iter().filter_map(|x| serde_json::from_value(x).ok()).collect())
+}
+
 fn default_labels() -> Vec<LabelPref> {
     Label::ALL.iter().skip(1).map(|l| LabelPref { name: l.name().to_string(), color: hex(l.rgb()) }).collect()
 }
@@ -393,6 +432,9 @@ pub struct Prefs {
     pub preview: crate::preview::PreviewSettings,
     /// View ▸ Simulate Output ▸ My Custom RGB.
     pub custom_rgb: crate::viewer::CustomRgb,
+    /// Composition Settings presets the user saved, in the order saved.
+    #[serde(deserialize_with = "lenient_comp_presets")]
+    pub comp_presets: Vec<CompPreset>,
     /// Top-level keys this version doesn't know (kept for newer versions).
     #[serde(flatten)]
     pub extra: Extra,
@@ -428,6 +470,7 @@ impl Default for Prefs {
             recent_fonts: vec![],
             preview: crate::preview::PreviewSettings::default(),
             custom_rgb: crate::viewer::CustomRgb::default(),
+            comp_presets: vec![],
             extra: Extra::new(),
         }
     }
@@ -553,6 +596,7 @@ impl Prefs {
     /// Clamp values into their valid ranges and fill missing labels.
     pub fn normalize(&mut self) {
         self.version = PREFS_VERSION;
+        self.comp_presets.retain(CompPreset::is_valid);
         if !is_choice(WINDOW_GRAPHICS, &self.startup.window_graphics) {
             self.startup.window_graphics = Startup::default().window_graphics;
         }
@@ -567,6 +611,8 @@ impl Prefs {
         a.interval_minutes = a.interval_minutes.clamp(1, 240);
         a.max_versions = a.max_versions.clamp(1, 99);
         let ap = &mut self.appearance;
+        let mut seen = std::collections::BTreeSet::new();
+        ap.favorite_themes.retain(|id| is_choice(THEMES, id) && seen.insert(id.clone()));
         if !is_choice(APPEARANCE_MODES, &ap.appearance_mode) {
             ap.appearance_mode = Appearance::default().appearance_mode;
         }
@@ -623,6 +669,23 @@ impl Prefs {
             let all: Vec<&str> = c.iter().map(|(_, v)| *v).collect();
             return Err(format!("`{key}` expects one of {}", all.join(", ")));
         }
+        let favorites = if key == "appearance.favoriteThemes" {
+            Some(&value)
+        } else if key == "appearance" {
+            value.get("favoriteThemes")
+        } else {
+            None
+        };
+        if let Some(favorites) = favorites {
+            let values = favorites.as_array().ok_or("favorite themes must be a list")?;
+            let mut seen = std::collections::BTreeSet::new();
+            for value in values {
+                let id = value.as_str().ok_or("favorite theme must be a string")?;
+                if !is_choice(THEMES, id) || !seen.insert(id) {
+                    return Err("unknown or duplicate favorite theme".into());
+                }
+            }
+        }
         // Older clients set the single theme (by key, or inside the page object): it still picks
         // a visible theme, fixing the mode to its family.
         let legacy_theme = key == "appearance.theme" || (key == "appearance" && value.get("theme").is_some() && value.get("appearanceMode").is_none());
@@ -642,8 +705,8 @@ impl Prefs {
         Ok(())
     }
 
-    /// Reset one page (`general`, `labels`, `autoSave`…) or everything (`None`). Open Recent is
-    /// kept.
+    /// Reset one page (`general`, `labels`, `autoSave`…) or everything (`None`). Open Recent and
+    /// the saved composition presets are kept.
     pub fn reset(&mut self, page: Option<&str>) -> Result<(), String> {
         let d = Prefs::default();
         let Some(page) = page else {
@@ -653,6 +716,7 @@ impl Prefs {
                 recent_presets: std::mem::take(&mut self.recent_presets),
                 recent_fonts: std::mem::take(&mut self.recent_fonts),
                 preview: std::mem::take(&mut self.preview),
+                comp_presets: std::mem::take(&mut self.comp_presets),
                 ..d
             };
             return Ok(());
@@ -1170,7 +1234,7 @@ pub fn pages() -> Vec<Page> {
                 s("appearance.lightTheme", "Light Theme", Kind::Choice(LIGHT_THEMES), true),
                 s("appearance.darkTheme", "Dark Theme", Kind::Choice(DARK_THEMES), true),
                 s("appearance.brightness", "Brightness", Kind::Slider(-1.0, 1.0), true),
-                s("appearance.uiScale", "UI Scale", Kind::Choice(UI_SCALES), true),
+                s("appearance.uiScale", "UI Scale", Kind::Int(75, 200, "%"), true),
                 Section("Labels and Colors"),
                 s("appearance.useLabelColorForHandles", "Use Label Color for Layer Handles and Paths", B, true),
                 s("appearance.useLabelColorForTabs", "Use Label Color for Related Tabs", B, true),

@@ -31,5 +31,6 @@ effectcraft-raster = { workspace = true }
 effectcraft-time = { workspace = true }
 effectcraft-interchange = { workspace = true }
 image = { workspace = true }
+gif = { workspace = true }
 exr = { workspace = true }
 rayon = { workspace = true }

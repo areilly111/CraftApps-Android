@@ -530,8 +530,10 @@ impl Tool for TypeTool {
                 self.anchor = if word { edit::prev_word(&text, self.caret) } else { edit::prev_char(&text, self.caret) };
                 self.replace(cx, "", None)
             }
+            // Backspace takes back one character (a mistyped Thai tone mark, say); Delete, the
+            // Left and Right arrows a whole cluster.
             ToolKey::Delete if self.caret < len => {
-                self.anchor = if word { edit::next_word(&text, self.caret) } else { edit::next_char(&text, self.caret) };
+                self.anchor = if word { edit::next_word(&text, self.caret) } else { edit::next_cluster(&text, self.caret) };
                 self.replace(cx, "", None)
             }
             ToolKey::Left => {
@@ -549,7 +551,7 @@ impl Tool for TypeTool {
                     if lay.glyphs.iter().any(|g| g.rtl) {
                         vectorcraft_text::caret_horizontal(&lay, self.caret, false)
                     } else {
-                        edit::prev_char(&text, self.caret)
+                        edit::prev_cluster(&text, self.caret)
                     }
                 };
                 self.move_to(to, mods.shift)
@@ -569,7 +571,7 @@ impl Tool for TypeTool {
                     if lay.glyphs.iter().any(|g| g.rtl) {
                         vectorcraft_text::caret_horizontal(&lay, self.caret, true)
                     } else {
-                        edit::next_char(&text, self.caret)
+                        edit::next_cluster(&text, self.caret)
                     }
                 };
                 self.move_to(to, mods.shift)

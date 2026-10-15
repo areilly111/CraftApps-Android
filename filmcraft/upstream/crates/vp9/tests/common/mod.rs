@@ -91,6 +91,8 @@ pub const FIXTURES: &[Fixture] = &[
     fx!("error_resilient", "testsrc2", 352, 288, 16, NOISE, P420, ["-b:v", "600k", "-error-resilient", "1"]),
     fx!("odd_size", "testsrc2", 347, 251, 10, NOISE, P420, ["-b:v", "600k", "-frame-parallel", "0"]),
     fx!("tiny_odd", "testsrc2", 33, 17, 8, NOISE, P420, ["-b:v", "200k", "-frame-parallel", "0"]),
+    // Two superblock columns and twelve rows: the loop filter wavefront waits for whole rows.
+    fx!("narrow_tall", "testsrc2", 120, 720, 6, NOISE, P420, ["-b:v", "400k", "-frame-parallel", "0"]),
     fx!("row_mt", "testsrc2", 640, 360, 10, NOISE, P420, ["-b:v", "1M", "-row-mt", "1", "-tile-columns", "1", "-frame-parallel", "0"]),
     fx!("speed0", "mandelbrot", 176, 144, 8, NOISE, P420, ["2pass", "-b:v", "300k", "-speed", "0", "-frame-parallel", "0"]),
     fx!("speed1", "testsrc2", 352, 288, 10, NOISE, P420, ["-b:v", "600k", "-speed", "1", "-frame-parallel", "0"]),

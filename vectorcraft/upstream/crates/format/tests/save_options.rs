@@ -29,7 +29,7 @@ fn linked_doc() -> Document {
         link: Some(LinkInfo::new("/art/photo.png")),
         placement: Default::default(),
     };
-    d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(im))).unwrap();
+    d.insert(Some(layer), 0, Node::new(id, NodeKind::Image(Box::new(im)))).unwrap();
     let mut blob = ImageBlob::new("image/png", vec![1, 2, 3, 4, 5, 6]);
     blob.proxy = Some(Arc::new(vec![9, 9]));
     d.images.insert("k".into(), blob);

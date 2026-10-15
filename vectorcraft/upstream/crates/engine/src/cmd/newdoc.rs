@@ -565,6 +565,7 @@ pub(crate) fn file_new(s: &mut Session, p: &Value) -> Result<Value> {
         settings.name = "Custom".into();
     }
     let mut d = settings.document();
+    d.grid = s.prefs.grid();
     d.title = match str_param(p, "name").or(str_param(p, "title")).map(str::trim).filter(|t| !t.is_empty()) {
         // New Document offers the next untitled name: taking it uses it up.
         Some(t) if t == s.peek_untitled() => s.next_untitled(),

@@ -53,7 +53,7 @@ fn images(s: &Session) -> Vec<ImageObject> {
     let mut out = vec![];
     s.documents()[s.active_index().unwrap()].doc.walk(|n| {
         if let NodeKind::Image(im) = &n.kind {
-            out.push(im.clone());
+            out.push((**im).clone());
         }
     });
     out

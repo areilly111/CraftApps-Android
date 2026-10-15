@@ -3,7 +3,7 @@
   EffectCraft installer wizard: original dialogs built from Windows Installer's own controls and
   events (no WixUI library), included by effectcraft.wxs with <UIRef Id="EffectcraftUI" />.
 
-    fresh install:  DestDlg (folder, Change... opens BrowseDlg) -> ReadyDlg -> ProgressDlg -> ExitDlg
+    fresh install:  DestDlg (folder, Change... opens BrowseDlg, desktop shortcut) -> ReadyDlg -> ProgressDlg -> ExitDlg
     upgrade:        ReadyDlg (the installed copy's folder, not editable) -> ProgressDlg -> ExitDlg
     already there:  MaintDlg (Repair or Remove) -> ProgressDlg -> ExitDlg
 
@@ -29,6 +29,7 @@
         <Control Id="ChangeFolder" Type="PushButton" X="290" Y="99" Width="60" Height="20" Text="&amp;Change...">
           <Publish Event="SpawnDialog" Value="BrowseDlg" />
         </Control>
+        <Control Id="DesktopShortcut" Type="CheckBox" X="20" Y="132" Width="330" Height="17" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back" Disabled="yes" />
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">

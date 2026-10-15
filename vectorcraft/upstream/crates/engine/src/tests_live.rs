@@ -413,7 +413,8 @@ fn envelope_options_and_edit_contents() {
     let e = id_of(&s.execute("object.envelope.makeWithWarp", &json!({"style": "arc", "bend": 50})).unwrap());
     s.execute("object.envelope.options", &json!({"fidelity": 90, "bend": -30})).unwrap();
     match &node(&s, e).kind {
-        NodeKind::Envelope { fidelity, kind: EnvelopeKind::Warp { bend, style, .. }, .. } => {
+        NodeKind::Envelope { fidelity, kind, .. } => {
+            let EnvelopeKind::Warp { bend, style, .. } = &**kind else { panic!("{kind:?}") };
             assert!(close(*fidelity, 90.0) && close(*bend, -30.0) && style == "arc");
         }
         k => panic!("{k:?}"),

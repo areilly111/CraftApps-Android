@@ -189,6 +189,44 @@ mod in_the_loupe {
         assert!(w >= 1300 && hh >= 700, "it covers the canvas: {w}×{hh}");
     }
 
+    // Given a mask selected with its overlay shown at 1:1 (issue #547), the zoomed view keeps its
+    // zoom and pan and stays a canvas-sized frame plus a native window carrying the overlay, as
+    // without it, instead of a whole-frame render at the zoomed size; hiding or showing the
+    // overlay swaps the window for one with the other look
+    #[test]
+    fn a_mask_overlay_at_one_to_one_is_a_window_and_keeps_zoom_and_pan() {
+        let (mut h, native) = detail();
+        for (command, params) in [("panel.masking", json!({})), ("mask.add", json!({"kind": "radial", "center": [0.4, 0.5], "rx": 0.2, "ry": 0.2}))] {
+            let r = h.request("engine.execute", json!({"command": command, "params": params}), T);
+            assert_eq!(r["ok"], true, "{command}: {r}");
+        }
+        h.request("engine.execute", json!({"command": "view.zoom100"}), T);
+        h.app.ui.pan = (0.3, 0.4);
+        h.app.ui.mask_overlay = false;
+        h.settle(SETTLE);
+        let (zoom, pan) = (h.app.ui.zoom, h.app.ui.pan);
+        assert_eq!(zoom, crate::state::Zoom::Percent(100.0));
+        let plain = h.app.region_view.expect("a window render without the overlay");
+
+        h.app.ui.mask_overlay = true;
+        h.settle(SETTLE);
+        let id = h.app.session.active().expect("a photo");
+        let d = h.app.session.develop_of(id).expect("settings");
+        assert!(matches!(crate::panels::detail::view_overlay(&h.app, &d), lightcraft_pipeline::Overlay::Mask { .. }), "the mask overlay is shown");
+        assert_eq!((h.app.ui.zoom, h.app.ui.pan), (zoom, pan), "showing the overlay keeps zoom and pan");
+        let main = rendered_long_edge(&h);
+        assert!(main <= 2560 && main < native, "native {native}: the whole-frame render is {main}");
+        let shown = h.app.region_view.expect("a window render with the overlay");
+        assert_eq!(shown.full.0.max(shown.full.1), native, "cut from the photo's own pixels");
+        assert_eq!(shown.window, plain.window, "the same part of the photo");
+        assert_ne!(shown.settings, plain.settings, "the overlay is part of the window's look");
+
+        h.app.ui.mask_overlay = false;
+        h.settle(SETTLE);
+        assert_eq!((h.app.ui.zoom, h.app.ui.pan), (zoom, pan), "hiding it keeps them too");
+        assert_eq!(h.app.region_view.map(|r| r.settings), Some(plain.settings), "back to the plain window");
+    }
+
     // Given the user capped the preview at 1600 px, then 1:1 is rendered no larger than that
     #[test]
     fn an_explicit_limit_still_caps_one_to_one() {
@@ -723,5 +761,132 @@ mod in_the_loupe {
         }
         assert_eq!(h.app.renderer.memory()["stageCaches"]["trimmed"], 0);
         assert!(held(&h) > before / 3, "and they are still there");
+    }
+
+    /// Compare view of the demo library at `zoom`, settled.
+    fn compare_at(zoom: crate::state::Zoom) -> Headless {
+        let (mut h, _) = detail();
+        let r = h.request("engine.execute", json!({"command": "view.compare"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::Compare);
+        h.app.ui.zoom = zoom;
+        h.settle(SETTLE);
+        h
+    }
+
+    fn native_of(h: &Headless, id: lightcraft_catalog::PhotoId) -> usize {
+        let p = h.app.session.catalog.photo(id).expect("in the catalog");
+        p.width.max(p.height) as usize
+    }
+
+    // Given two photos in Compare, when I zoom to 1:1 to check focus, then each pane shows a window
+    // cut from its own photo's pixels, not the 2560 px whole-frame render magnified
+    #[test]
+    fn compare_at_one_to_one_gets_a_sharp_window_per_pane() {
+        let h = compare_at(crate::state::Zoom::Percent(100.0));
+        let (sel, cand) = h.app.ui.compare.map(|(a, b)| (lightcraft_catalog::PhotoId(a), lightcraft_catalog::PhotoId(b))).expect("a pair");
+        for (i, id) in [(0u8, sel), (1u8, cand)] {
+            let whole = h.app.renderer.textures.get(&Slot::Compare(i)).expect("the whole-frame render");
+            assert!(whole.size[0].max(whole.size[1]) <= 2560, "pane {i}: the whole frame stays small");
+            let w = h.app.compare_windows[i as usize].unwrap_or_else(|| panic!("pane {i} asked for a window"));
+            assert_eq!(w.photo, id);
+            assert_eq!(w.full.0.max(w.full.1), native_of(&h, id), "pane {i}: 1:1 is the photo's own pixels");
+            let tex = h.app.renderer.textures.get(&Slot::CompareRegion(i)).unwrap_or_else(|| panic!("pane {i}: its texture"));
+            assert_eq!(tex.photo, id);
+            assert!(tex.size[0] >= 600 && tex.size[1] >= 600, "pane {i}: it covers the pane: {:?}", tex.size);
+            assert!(h.app.session.media.has_source(id, lightcraft_engine::SourceLevel::Full), "pane {i}: both originals stay decoded");
+        }
+    }
+
+    // Given Compare at fit, nothing more is rendered than before windows
+    #[test]
+    fn compare_at_fit_makes_no_window() {
+        let h = compare_at(crate::state::Zoom::Fit);
+        assert_eq!(h.app.compare_windows, [None, None]);
+        assert!(!h.app.renderer.textures.contains_key(&Slot::CompareRegion(0)) && !h.app.renderer.textures.contains_key(&Slot::CompareRegion(1)));
+    }
+
+    // Given Compare at 1:1, when I zoom back to fit or go back to Detail, then the windows' textures
+    // are freed, and back in Detail only one original is kept decoded
+    #[test]
+    fn leaving_a_zoomed_compare_frees_its_windows() {
+        let mut h = compare_at(crate::state::Zoom::Percent(100.0));
+        assert!(h.app.renderer.textures.contains_key(&Slot::CompareRegion(1)));
+        h.app.ui.zoom = crate::state::Zoom::Fit;
+        h.settle(SETTLE);
+        assert!(!h.app.renderer.textures.contains_key(&Slot::CompareRegion(1)), "fit: no window");
+        h.app.ui.zoom = crate::state::Zoom::Percent(100.0);
+        h.settle(SETTLE);
+        assert!(h.app.renderer.textures.contains_key(&Slot::CompareRegion(0)));
+        let r = h.request("ui.set", json!({"view": "detail"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!(h.app.compare_windows, [None, None]);
+        assert!(!h.app.renderer.textures.contains_key(&Slot::CompareRegion(0)) && !h.app.renderer.textures.contains_key(&Slot::CompareRegion(1)));
+        assert!(h.app.session.media.usage().2.count <= 1, "one original in Detail");
+    }
+
+    // A pane's window is drawn where it belongs: its pixels agree with the pane's whole-frame render
+    // at the same place of the frame, and it is painted over that render, inside the pane
+    #[test]
+    fn a_compare_window_lines_up_with_its_pane() {
+        let (mut h, _) = detail();
+        h.app.renderer.keep_pixels = true;
+        h.request("engine.execute", json!({"command": "view.compare"}), T);
+        h.app.ui.zoom = crate::state::Zoom::Percent(100.0);
+        h.settle(SETTLE);
+        h.step();
+        for i in 0..2u8 {
+            let view = h.app.compare_windows[i as usize].expect("a window");
+            let tile = h.app.renderer.textures.get(&Slot::CompareRegion(i)).and_then(|t| t.pixels.clone()).expect("tile pixels");
+            let main = h.app.renderer.textures.get(&Slot::Compare(i)).and_then(|t| t.pixels.clone()).expect("pane pixels");
+            let (mut sum, mut n) = (0.0f32, 0.0f32);
+            for j in (8..tile.size[1] - 8).step_by(37) {
+                for x in (8..tile.size[0] - 8).step_by(37) {
+                    let u = (view.window.x + x) as f32 / view.full.0 as f32;
+                    let v = (view.window.y + j) as f32 / view.full.1 as f32;
+                    let (mx, my) =
+                        (((u * main.size[0] as f32) as usize).min(main.size[0] - 1), ((v * main.size[1] as f32) as usize).min(main.size[1] - 1));
+                    let (a, b) = (tile.pixels[j * tile.size[0] + x], main.pixels[my * main.size[0] + mx]);
+                    sum += (0..3).map(|k| (a.to_array()[k] as f32 - b.to_array()[k] as f32).abs()).sum::<f32>() / 3.0;
+                    n += 1.0;
+                }
+            }
+            assert!(sum / n < 6.0, "pane {i}: mean difference {:.2} / 255 between the window and the pane's render", sum / n);
+            let (whole, window) = (drawn(&h, Slot::Compare(i)), drawn(&h, Slot::CompareRegion(i)));
+            assert!(!whole.is_empty() && !window.is_empty(), "pane {i}: both are painted");
+            assert!(window[0].0 > whole[0].0, "pane {i}: the window is painted over the whole-frame render");
+            assert!(window[0].1.width() < h.size.x * 0.6, "pane {i}: clipped to its pane, {:?}", window[0].1);
+        }
+        // the two panes' clips don't overlap
+        let (a, b) = (drawn(&h, Slot::CompareRegion(0))[0].1, drawn(&h, Slot::CompareRegion(1))[0].1);
+        assert!(a.right() <= b.left() + 0.5, "{a:?} / {b:?}");
+    }
+
+    // Given Reference view at 1:1, the reference and the active photo both get windows; a slider
+    // drag on the active photo asks for no new window until it ends
+    #[test]
+    fn reference_view_at_one_to_one_gets_windows_and_a_drag_keeps_them() {
+        let (mut h, _) = detail();
+        let r = h.request("engine.execute", json!({"command": "photo.setReference"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        let r = h.request("ui.key", json!({"key": "r", "shift": true}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::Reference);
+        h.app.ui.zoom = crate::state::Zoom::Percent(100.0);
+        h.settle(SETTLE);
+        let before = h.app.compare_windows[1].expect("the active photo's window");
+        assert!(h.app.compare_windows[0].is_some(), "the reference's window");
+        h.app.session.begin_interaction("Exposure").unwrap();
+        h.request("engine.execute", json!({"command": "develop.set", "params": {"control": "light.exposure", "value": 0.8}}), T);
+        for _ in 0..5 {
+            h.step();
+        }
+        assert_eq!(h.app.compare_windows[1], Some(before), "no window per drag tick");
+        assert!(!h.app.renderer.is_pending(Slot::CompareRegion(1)));
+        h.app.session.end_interaction().unwrap();
+        h.settle(SETTLE);
+        let after = h.app.compare_windows[1].expect("a window for the new look");
+        assert_ne!(after.settings, before.settings);
     }
 }

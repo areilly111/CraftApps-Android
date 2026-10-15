@@ -543,13 +543,24 @@ fn weekday(y: i32, m: u32, d: u32) -> usize {
     (y + y / 4 - y / 100 + y / 400 + t + i64::from(d)).rem_euclid(7) as usize
 }
 
-/// The order of the year/month/day fields in a format, as letters.
-fn order(fmt: &str) -> Vec<char> {
-    let mut out = Vec::new();
+/// The order of the year/month/day fields in a format, as letters. A run of literal digits
+/// (the fixed year in "dd.mm.26") is `'#'` with its value; the others carry 0.
+fn order(fmt: &str) -> Vec<(char, u32)> {
+    let mut out: Vec<(char, u32)> = Vec::new();
     // Weekday names (ddd, dddd) are shown, not typed: leave them out.
     let mut cleaned = fmt.replace("dddd", " ");
     cleaned = cleaned.replace("ddd", " ");
+    let mut prev = ' ';
     for c in cleaned.chars() {
+        if let Some(digit) = c.to_digit(10) {
+            match out.last_mut() {
+                Some(('#', n)) if prev.is_ascii_digit() => *n = n.saturating_mul(10).saturating_add(digit),
+                _ => out.push(('#', digit)),
+            }
+            prev = c;
+            continue;
+        }
+        prev = c;
         let k = match c {
             'y' => 'y',
             'm' => 'm',
@@ -559,8 +570,8 @@ fn order(fmt: &str) -> Vec<char> {
             's' => 's',
             _ => continue,
         };
-        if out.last() != Some(&k) {
-            out.push(k);
+        if out.last().map(|&(l, _)| l) != Some(k) {
+            out.push((k, 0));
         }
     }
     out
@@ -607,10 +618,17 @@ pub fn parse_date(text: &str, fmt: &str) -> Option<DateTime> {
     }
     flush(&mut cur, &mut nums, &mut month_name);
     let mut dt = DateTime { y: 0, m: 1, d: 1, hh: 0, mm: 0, ss: 0 };
-    let mut it = nums.into_iter();
+    let mut it = nums.into_iter().peekable();
     let mut have_y = false;
-    for k in order(fmt) {
+    for (k, literal) in order(fmt) {
         match k {
+            // Literal digits in the format may be typed or left out ("15.05.26" or "15.05"
+            // for "dd.mm.26"); a different number there is left over and rejected below.
+            '#' => {
+                if it.peek() == Some(&literal) {
+                    it.next();
+                }
+            }
             'm' => {
                 dt.m = match month_name {
                     Some(m) => m,
@@ -805,7 +823,8 @@ pub fn format_value(f: &Format, value: &str) -> String {
 /// (numbers are normalised), or Acrobat's message.
 pub fn keystroke(f: &Format, field: &str, value: &str) -> Result<String, String> {
     let bad = || format!("The value entered does not match the format of the field [ {field} ]");
-    if value.trim().is_empty() {
+    // Blank input clears a formatted field; without a format, whitespace is text like any other.
+    if *f != Format::None && value.trim().is_empty() {
         return Ok(String::new());
     }
     match f {
@@ -1027,6 +1046,9 @@ mod tests {
             keystroke(&n(2, 0, 0, "$", true), "Total", "ten"),
             Err("The value entered does not match the format of the field [ Total ]".into())
         );
+        // Blank input clears a formatted field (#1323); without a format it is text like any other.
+        assert_eq!(keystroke(&n(2, 0, 0, "$", true), "Total", " \t"), Ok(String::new()));
+        assert_eq!(keystroke(&Format::None, "Name", " \t"), Ok(" \t".into()));
     }
 
     #[test]
@@ -1038,6 +1060,13 @@ mod tests {
         assert_eq!(format_value(&Format::Date("dd-mmm-yy".into()), "5-Mar-21"), "05-Mar-21", "month names are read");
         assert!(keystroke(&d, "Due", "2/30/2024").is_err(), "no 30 February");
         assert!(keystroke(&d, "Due", "13/1/2024").is_err());
+        // Literal digits in the format (a leave form fixing the year as "dd.mm.26").
+        let fixed = Format::Date("dd.mm.26".into());
+        assert_eq!(keystroke(&fixed, "Von", "15.05.26"), Ok("15.05.26".into()));
+        assert_eq!(format_value(&fixed, "15.05.26"), "15.05.26");
+        assert_eq!(format_value(&fixed, "3.1"), "03.01.26", "the literal may be left out");
+        assert!(keystroke(&fixed, "Von", "15.05.27").is_err(), "a different number there is not the literal");
+        assert!(keystroke(&fixed, "Von", "32.05.26").is_err());
         assert_eq!(format_value(&Format::Time("h:MM tt".into()), "14:05"), "2:05 pm");
         assert_eq!(format_value(&Format::Time("HH:MM".into()), "2:05 pm"), "14:05");
         assert_eq!(format_value(&Format::Special(2), "5551234567"), "(555) 123-4567");

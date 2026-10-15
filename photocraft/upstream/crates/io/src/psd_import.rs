@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use photocraft_color::{BlendMode, ColorMode, PixelFormat, SampleType};
-use photocraft_doc::{AlphaChannel, Document, Effects, FillCache, Group, Layer, LayerContent, LayerMask, ShapeLayer, SmartObject, SmartSource, TextLayer};
+use photocraft_doc::{
+    AlphaChannel, Document, Effects, FillCache, Group, Layer, LayerContent, LayerMask, ShapeLayer, SmartContentsId, SmartObject, SmartSource, TextLayer,
+};
 use photocraft_geom::{Rect, Size, TILE_SIZE};
 use photocraft_psd::layer::{CHANNEL_REAL_USER_MASK, CHANNEL_TRANSPARENCY, CHANNEL_USER_MASK};
 use photocraft_psd::resources::ids;
@@ -55,6 +57,8 @@ pub(crate) struct Ctx<'a> {
     pub txt2: Option<photocraft_text::engine_data::Value>,
     /// Smart-filter caches from the global `FEid`/`FXid` blocks (filter masks, by placed id).
     pub filter_effects: Vec<photocraft_psd::filter_effects::FilterEffectsItem>,
+    /// Placed layers naming the same source share editable contents, not their placement.
+    pub smart_contents: std::collections::HashMap<String, SmartContentsId>,
     /// Cancellation and progress for background opens (checked per layer record).
     pub ctl: photocraft_raster::Interrupt<'a>,
     /// Layer records decoded so far, out of `total` (progress).
@@ -303,6 +307,7 @@ impl Ctx<'_> {
             });
             if let Some(txt2) = &self.txt2 {
                 photocraft_text::psd::apply_txt2(&mut t, &data, txt2);
+                photocraft_text::psd::apply_txt2_frame(&mut t, &data, txt2);
             }
             // Photoshop's pixels are the cache only when the file has some: ag-psd, GIMP and
             // other writers leave type layers without image data (Photoshop re-renders them on
@@ -317,6 +322,8 @@ impl Ctx<'_> {
             LayerContent::Text(t)
         } else if let Some(k) = smart_key {
             let (id, transform) = rec.block(k).map(|b| blocks::parse_smart(k, &b.data)).unwrap_or_default();
+            let contents_id =
+                if id.is_empty() { SmartContentsId::fresh() } else { *self.smart_contents.entry(id.clone()).or_insert_with(SmartContentsId::fresh) };
             // Smart filters (`filterFX` in the placed-layer data) and their mask (`FEid`).
             let placed = rec.block(b"SoLd").or_else(|| rec.block(b"SoLE")).and_then(|b| crate::smart_map::parse_sold(&b.data));
             let stack = placed.as_ref().and_then(|p| p.stack.clone()).unwrap_or_default();
@@ -325,6 +332,7 @@ impl Ctx<'_> {
                 _ => None,
             };
             LayerContent::Smart(SmartObject {
+                contents_id,
                 source: SmartSource::Linked { path: id },
                 transform,
                 smart_filters: stack.filters,
@@ -475,6 +483,15 @@ fn apply_link_groups(nodes: &[LayerNode], layers: &mut [Layer], ids: &[u16]) {
     rec(nodes, layers, ids, 0);
 }
 
+/// Rejects a file whose groups nest deeper than the document model's cap, with the actionable
+/// limit error. Nesting past the cap could never be saved (.pcraft refuses it).
+pub(crate) fn check_group_depth(file: &PsdFile) -> Result<(), crate::IoError> {
+    if group_depth(file) > photocraft_doc::MAX_GROUP_DEPTH {
+        return Err(crate::IoError::Unsupported(format!("layer groups nested deeper than {}", photocraft_doc::MAX_GROUP_DEPTH)));
+    }
+    Ok(())
+}
+
 /// Deepest group nesting of the file's layer records (a layer inside this many groups is the
 /// deepest), computed like `layer_tree`'s stack — iteratively, so no file can make it recurse.
 pub(crate) fn group_depth(file: &PsdFile) -> usize {
@@ -521,7 +538,7 @@ fn parse_guides(data: &[u8], doc: &mut Document) {
     for i in 0..count as usize {
         let at = 16 + i * 5;
         let (Some(loc), Some(&dir)) = (rd(at), data.get(at + 4)) else { break };
-        let pos = loc as i32 as f32 / 32.0;
+        let pos = f64::from(loc as i32) / 32.0;
         if dir == 1 {
             doc.guides.horizontal.push(pos);
         } else {
@@ -601,6 +618,15 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
     for b in &file.global_blocks {
         doc.metadata.psd_global_blocks.push((b.signature, b.key, Arc::new(b.data.clone())));
     }
+    // A 16/32-bit file whose layer block can't be parsed would otherwise open as a flattened
+    // file without a word (#2700). The raw block is kept, but a PSD save writes the document's
+    // own layers in its place (see `psd_export`).
+    if let Some((b, e)) = file.unreadable_layer_block() {
+        warnings.push(format!(
+            "the layers ({} block) could not be read ({e}); only the merged image was opened. Saving as PSD replaces the unreadable layer data",
+            b.key_str()
+        ));
+    }
     doc.patterns = crate::pattern_map::from_global_blocks(&doc);
     // Notes (`Anno`) and the measurement scale (resource 1074); raw data stays for verbatim export.
     doc.notes = crate::annotations_map::notes_from_blocks(&doc);
@@ -623,6 +649,7 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
         dpi: doc.resolution_dpi,
         txt2: file.global_blocks.iter().find(|b| &b.key == b"Txt2").and_then(|b| photocraft_text::psd::parse_txt2(&b.data)),
         filter_effects: Vec::new(),
+        smart_contents: Default::default(),
         ctl: *ctl,
         done: 0,
         total: file.layers().len(),
@@ -673,8 +700,23 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
             cx.warn(format!("Multichannel documents have no layers: {} layer records were not imported", file.layers().len()));
         }
     } else if layered {
-        let tree = file.layer_tree();
-        doc.layers = cx.build(&tree, 0);
+        // Capped like `build` (#2940): a group past the document's nesting cap keeps no children,
+        // so no file can make this tree, or anything walking or dropping it, recurse deeper.
+        let tree = file.layer_tree_max_depth(photocraft_doc::MAX_GROUP_DEPTH);
+        // Colours stored in the document's CMYK space (Gradient Map stops…) convert through
+        // its own profile, as the compositor and the PSD writer read them.
+        let space = photocraft_compose::cmyk_space(&doc);
+        doc.layers = photocraft_color::convert::with_cmyk_space(space.as_ref(), || cx.build(&tree, 0));
+        // Photoshop's Background: the bottom record, a transparency-protected pixel layer stored
+        // without a transparency channel (-1). It is also position-locked, whatever its
+        // (localized) name and whether or not the file carries an `lspf` block.
+        if let (Some(rec), Some(bottom)) = (file.layers().first(), doc.layers.first_mut())
+            && rec.flags.transparency_protected()
+            && !rec.channels.iter().any(|c| c.id == -1)
+            && matches!(bottom.content, LayerContent::Raster(_))
+        {
+            bottom.locks.position = true;
+        }
         // Layer › Link Layers: resource 1026 holds one group id per layer record (0 = unlinked).
         if let Some(Ok(photocraft_psd::resources::ResourceData::LayerGroupInfo(groups))) =
             file.resources.iter().find(|r| r.id == ids::LAYER_GROUP_INFO).and_then(photocraft_psd::resources::ImageResource::parsed)
@@ -780,6 +822,9 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
         let first = cc + usize::from(file.merged_has_alpha());
         let plane = h.row_bytes() * hh;
         let names = file.resource(1045).map(|r| unicode_names(&r.data)).unwrap_or_default();
+        // Photoshop lists every extra channel, the merged transparency first when there is one.
+        let skip = usize::from(file.merged_has_alpha() && names.len() == usize::from(h.channels).saturating_sub(cc));
+        let names = names.get(skip..).unwrap_or_default();
         for (k, idx) in (first..usize::from(h.channels)).enumerate() {
             let Some(p) = all.get(idx * plane..(idx + 1) * plane) else { break };
             let mut s = Surface::new(cx.mask_fmt);
@@ -790,9 +835,9 @@ pub fn psd_to_document_with(file: &PsdFile, ctl: &photocraft_raster::Interrupt) 
         }
         // Channel options (overlay colour, opacity, colour indicates) and spot inks.
         if let Some(r) = file.resource(crate::channel_map::DISPLAY_INFO) {
-            crate::channel_map::apply_display_info(&r.data, true, &mut doc.channels);
+            crate::channel_map::apply_display_info(&r.data, true, skip, &mut doc.channels);
         } else if let Some(r) = file.resource(crate::channel_map::DISPLAY_INFO_OLD) {
-            crate::channel_map::apply_display_info(&r.data, false, &mut doc.channels);
+            crate::channel_map::apply_display_info(&r.data, false, skip, &mut doc.channels);
         }
         // Saved in Quick Mask mode: that channel becomes the document's Quick Mask again.
         if let Some(r) = file.resource(crate::channel_map::QUICK_MASK_INFO)

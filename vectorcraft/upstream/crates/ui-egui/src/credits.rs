@@ -87,11 +87,14 @@ impl SortKey {
         SortKey::LastCommit,
     ];
 
-    /// Menu label and table header, in the UI language (the short count headers stay as they are).
+    /// Menu label and table header, in the UI language (the symbolic count headers stay as they are).
     pub fn label(self) -> (&'static str, &'static str) {
         match self {
             SortKey::Name => (tl!("Name (A–Z)"), tl!("Name")),
-            SortKey::Prs => (tl!("Merged PRs"), "PRs"),
+            SortKey::Prs => {
+                let header = "PRs";
+                (tl!("Merged PRs"), tl!(header))
+            }
             SortKey::Commits => (tl!("Commits"), tl!("Commits")),
             SortKey::LinesAdded => (tl!("Lines added"), "+LOC"),
             SortKey::LinesDeleted => (tl!("Lines deleted"), "−LOC"),
@@ -125,18 +128,24 @@ impl Contributor {
 
     /// One line with everything we know, for tooltips.
     pub fn summary(&self) -> String {
-        format!(
-            "@{}: {} PRs, {} commits, +{} / −{} lines (Δ {}), +{} / −{} binary assets, {} – {}",
-            self.login,
-            self.prs,
-            self.commits,
-            group(self.lines_added),
-            group(self.lines_deleted),
-            signed(self.lines_delta()),
-            self.binary_added,
-            self.binary_deleted,
-            day(self.first_commit),
-            day(self.last_commit),
+        let lang = crate::i18n::current();
+        let template = "@{login}: {prs}, {commits}, +{added} / −{deleted} lines (Δ {delta}), +{binary_added} / −{binary_deleted} binary assets, {first} – {last}";
+        let prs = crate::i18n::trn(lang, self.prs, "{n} PR", "{n} PRs");
+        let commits = crate::i18n::trn(lang, self.commits, "{n} commit", "{n} commits");
+        crate::i18n::fmt(
+            tl!(template),
+            &[
+                ("login", self.login),
+                ("prs", &prs),
+                ("commits", &commits),
+                ("added", &group(self.lines_added)),
+                ("deleted", &group(self.lines_deleted)),
+                ("delta", &signed(self.lines_delta())),
+                ("binary_added", &self.binary_added.to_string()),
+                ("binary_deleted", &self.binary_deleted.to_string()),
+                ("first", day(self.first_commit)),
+                ("last", day(self.last_commit)),
+            ],
         )
     }
 }

@@ -112,14 +112,14 @@ fn image_doc(effects: Vec<Effect>) -> Document {
     d.images.insert("red".into(), ImageBlob::new("image/png", png));
     let mut n = Node::new(
         NodeId(0),
-        NodeKind::Image(ImageObject {
+        NodeKind::Image(Box::new(ImageObject {
             key: "red".into(),
             width: 30,
             height: 30,
             xf: Affine::translate((20.0, 20.0)),
             link: None,
             placement: Default::default(),
-        }),
+        })),
     );
     n.appearance.effects = effects;
     doc_with(d, n)

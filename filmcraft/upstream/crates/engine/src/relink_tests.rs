@@ -201,3 +201,72 @@ fn explicit_folder_remaps_normalize_both_prefixes_and_respect_boundaries() {
     assert_eq!(apply_remap("C:/shoot/Media/a.mov", r"C:\shoot\Media", r"D:\archive\Media"), Some("D:/archive/Media/a.mov".into()));
     assert_eq!(apply_remap("C:/shoot/Media2/a.mov", r"C:\shoot\Media", r"D:\archive\Media"), None);
 }
+
+/// #1054: an export (or a rendered frame) that draws the offline slate names the offline items it
+/// used, with their status, so a headless caller can tell placeholder frames from real ones. Media
+/// outside the exported range is not reported.
+#[test]
+fn export_names_the_offline_media_it_rendered() {
+    let root = tmp_dir("relink-export-offline");
+    let (path, items) = saved_project(&root);
+    let out = |name: &str| root.join(name).to_string_lossy().into_owned();
+    let mut s = open(&path);
+    let r = s
+        .execute("file.exportMedia", json!({"path": out("on.png"), "format": "png", "range": "custom", "startSeconds": 0, "endSeconds": 0.05, "wait": true}))
+        .unwrap();
+    assert_eq!(r["offlineMedia"], json!([]), "{r}");
+    std::fs::remove_file(root.join("Media/a.mov")).unwrap();
+    let mut s = open(&path);
+    // b.mov (frames 12..24) is still there
+    let r = s
+        .execute("file.exportMedia", json!({"path": out("b.png"), "format": "png", "range": "custom", "startSeconds": 0.6, "endSeconds": 0.65, "wait": true}))
+        .unwrap();
+    assert_eq!(r["offlineMedia"], json!([]), "{r}");
+    let r = s.execute("file.exportMedia", json!({"path": out("all.wav"), "format": "wav", "wait": true})).unwrap();
+    let off = r["offlineMedia"].as_array().unwrap();
+    assert_eq!(off.len(), 1, "{r}");
+    assert_eq!(off[0]["item"], json!(items[0].0));
+    assert_eq!(off[0]["name"], json!("a.mov"));
+    assert_eq!(off[0]["status"], json!("missing"));
+    assert!(off[0]["path"].as_str().unwrap().ends_with("a.mov"), "{r}");
+    // made offline on purpose
+    s.execute("media.makeOffline", json!({"items": [items[1].0]})).unwrap();
+    let r = s
+        .execute("file.exportMedia", json!({"path": out("b2.png"), "format": "png", "range": "custom", "startSeconds": 0.6, "endSeconds": 0.65, "wait": true}))
+        .unwrap();
+    assert_eq!(
+        r["offlineMedia"].as_array().map(|a| a.iter().map(|o| (o["item"].clone(), o["status"].clone())).collect::<Vec<_>>()),
+        Some(vec![(json!(items[1].0), json!("offline"))]),
+        "{r}"
+    );
+    // the queue reports it per item
+    let r = s
+        .execute(
+            "export.queue.add",
+            json!({"path": out("q.png"), "format": "png", "range": "custom", "startSeconds": 0.6, "endSeconds": 0.65, "start": true, "wait": true}),
+        )
+        .unwrap();
+    assert_eq!(r["items"][0]["offlineMedia"][0]["status"], json!("offline"), "{r}");
+    // one rendered frame
+    let (_, off) = s.try_render_program_with_offline_at(0.5, s.sequence_rate().tick_of(3)).unwrap();
+    assert_eq!(off.iter().map(|o| (o.item, o.status)).collect::<Vec<_>>(), [(items[0].0, "missing")]);
+    let (_, off) = s.try_render_program_with_offline_at(0.5, s.sequence_rate().tick_of(30)).unwrap();
+    assert!(off.is_empty(), "nothing on the timeline there: {off:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// #1054: `jobs.list` carries an export job's `offlineMedia`, for callers that poll the job (the
+/// bridge and MCP long exports) instead of waiting in `file.exportMedia`.
+#[test]
+fn jobs_list_reports_an_exports_offline_media() {
+    let root = tmp_dir("relink-jobs-offline");
+    let (path, items) = saved_project(&root);
+    std::fs::remove_file(root.join("Media/b.mov")).unwrap();
+    let mut s = open(&path);
+    let out = root.join("all.wav").to_string_lossy().into_owned();
+    let job = s.execute("file.exportMedia", json!({"path": out, "format": "wav", "wait": true})).unwrap()["job"].clone();
+    let jobs = s.execute("jobs.list", json!({})).unwrap();
+    let j = jobs.as_array().unwrap().iter().find(|j| j["id"] == job).unwrap();
+    assert_eq!(j["offlineMedia"][0]["item"], json!(items[1].0), "{j}");
+    let _ = std::fs::remove_dir_all(&root);
+}

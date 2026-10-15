@@ -22,7 +22,7 @@ monitors are missing, and two GPU start-up failures are open.
 | Video output devices | Mercury Transmit to AJA, Blackmagic, second display | second preview window only (Video Preview) | same | same | — | No SDI/HDMI device output |
 | HDR display | HDR monitoring on EDR / HDR displays | tone-mapped SDR view; no EDR output | no HDR output | no | no | Colour engine handles HDR maths (Rec. 2100 PQ/HLG output files) |
 | Pen tablets (pressure, tilt) | yes, for Paint and Roto | Brushes panel has pressure options, but no tablet pressure is read | same | same | same | Paint strokes store pressure per vertex; input never fills it |
-| Multiple monitors | panels and windows across screens | floating panels within one window only | same | same (#486) | — | gap 20 |
+| Multiple monitors | panels and windows across screens | panels move into their own native windows on any screen (Move Panel to New Window; desktop builds) | same | same (#486) | — | gap 20 |
 | Touch / trackpad gestures | pinch zoom in viewers | egui pointer and scroll; no pinch-to-zoom audited | — | — | — | — |
 | Audio hardware | Core Audio / ASIO / WASAPI, device choice, latency | cpal output; preview sound late on Linux (#554) and after a start offset (#504) | cpal | cpal (ALSA) | Web Audio | No input or device latency settings |
 | Machine learning acceleration | Apple Neural Engine / GPU for Object Matte, Roto Brush 3 | CPU inference (pure Rust, rayon) | CPU | CPU | CPU | No GPU inference for MobileSAM or MediaPipe |

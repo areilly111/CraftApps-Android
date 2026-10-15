@@ -317,3 +317,85 @@ fn tracking_runs_in_the_background_and_can_be_cancelled() {
     assert!(n < 48, "stopped early ({n} keyframes)");
     assert!(s.execute("masks.track", json!({"direction": "backward"})).is_err(), "nothing before the first frame");
 }
+
+/// #813: a rectangle mask with rounded corners (created rounded, or rounded afterwards) cuts the
+/// clip's corners away while the edges stay where they were; one undo step, every keyframe.
+#[test]
+fn rounded_rectangle_masks_cut_their_corners() {
+    let (mut s, clip) = demo();
+    // a 960×540 opacity mask in the middle of the 1920×1080 frame, rounded by 200 px
+    s.execute("masks.add", json!({"clip": clip.0, "shape": "rectangle", "center": [960, 540], "size": [960, 540], "cornerRadius": 200})).unwrap();
+    s.execute("masks.set", json!({"feather": 0})).unwrap();
+    let list = s.execute("masks.list", json!({})).unwrap();
+    assert_eq!(list["masks"][0]["path"]["vertices"].as_array().unwrap().len(), 8);
+    let img = s.render_program(0.25).unwrap();
+    // just inside the rectangle's corner: cut away; middle of an edge and the centre: kept
+    let corner = px(&img, 0.26, 0.26);
+    assert!(corner[0] + corner[1] + corner[2] < 1e-4, "rounded corner cut: {corner:?}");
+    assert!(px(&img, 0.5, 0.26)[3] > 0.99, "top edge kept");
+    assert!(px(&img, 0.5, 0.5)[3] > 0.99, "inside kept");
+
+    // round an existing 4-point mask: same picture, one undo step back to sharp corners
+    s.undo();
+    s.undo();
+    s.execute("masks.add", json!({"clip": clip.0, "shape": "polygon", "center": [960, 540], "size": [960, 540]})).unwrap();
+    s.execute("masks.set", json!({"feather": 0})).unwrap();
+    let sharp = s.render_program(0.25).unwrap();
+    assert!(px(&sharp, 0.26, 0.26)[3] > 0.99, "a sharp corner keeps the clip");
+    let r = s.execute("masks.roundCorners", json!({"radius": 200})).unwrap();
+    assert_eq!(r["corners"], 4);
+    assert_eq!(s.render_program(0.25).unwrap().px, img.px, "rounding afterwards = creating rounded");
+    // nothing left to round; bad radii are refused without changing the mask
+    assert!(s.execute("masks.roundCorners", json!({"radius": 50})).is_err());
+    for radius in [json!(0), json!(-5), json!("big"), json!(null)] {
+        assert!(s.execute("masks.roundCorners", json!({"radius": radius})).is_err(), "{radius}");
+    }
+    s.undo();
+    assert_eq!(s.render_program(0.25).unwrap().px, sharp.px, "one undo step restores the sharp corners");
+}
+
+#[test]
+fn rounding_an_animated_mask_rounds_every_keyframe_and_only_the_chosen_corners() {
+    let (mut s, clip) = demo();
+    let it = s.active_sequence().unwrap().find_item(clip).unwrap().1.clone();
+    s.set_playhead(it.start);
+    s.execute("masks.add", json!({"effect": "opacity", "shape": "polygon", "center": [400, 400], "size": [200, 200]})).unwrap();
+    s.execute("effects.toggleAnimation", json!({"clip": clip.0, "effect": "opacity", "mask": 0, "param": "path"})).unwrap();
+    let rate = s.active_sequence().unwrap().settings.frame_rate;
+    s.set_playhead(it.start + rate.tick_of(10));
+    s.execute("masks.translate", json!({"delta": [300, 0]})).unwrap();
+    // only vertices 0 and 2 (top-left, bottom-right), out-of-range indices ignored
+    let r = s.execute("masks.roundCorners", json!({"radius": 30, "vertices": [0, 2, 99]})).unwrap();
+    assert_eq!(r["corners"], 2);
+    let m = &s.active_sequence().unwrap().find_item(clip).unwrap().1.effects.iter().find(|e| e.effect == "opacity").unwrap().masks[0];
+    assert_eq!(m.path.keyframes.len(), 2);
+    for k in &m.path.keyframes {
+        let filmcraft_project::ParamValue::Path(p) = &k.value else { panic!("path keyframe") };
+        assert_eq!(p.len(), 6, "both keyframes rounded the same corners");
+        assert_eq!(p.vertices.iter().filter(|v| v.is_corner()).count(), 2, "vertices 1 and 3 stay sharp");
+    }
+    // halfway the path still interpolates (equal vertex counts)
+    let l = s.execute("masks.list", json!({"time": (it.start + rate.tick_of(5)).0})).unwrap();
+    let v = l["masks"][0]["path"]["vertices"].as_array().unwrap();
+    assert_eq!(v.len(), 6);
+    assert!((v[0]["p"][0].as_f64().unwrap() - 450.0).abs() < 1e-6, "{}", v[0]);
+}
+
+/// `path_to_json` → `path_from_json` keeps the Bézier tangents (they used to come back as zero, so
+/// a pen mask's dragged-out curves were committed as corners; #853).
+#[test]
+fn path_json_round_trip_keeps_tangents() {
+    use filmcraft_geom::Vec2;
+    use filmcraft_project::mask::{MaskPath, MaskVertex};
+    let path = MaskPath {
+        vertices: vec![
+            MaskVertex { p: Vec2::new(10.0, 20.0), t_in: Vec2::new(-5.0, 0.0), t_out: Vec2::new(5.0, 0.0) },
+            MaskVertex::corner(Vec2::new(80.0, 20.0)),
+            MaskVertex { p: Vec2::new(40.0, 90.0), t_in: Vec2::new(3.0, -4.0), t_out: Vec2::new(-3.0, 4.0) },
+        ],
+        closed: true,
+    };
+    assert_eq!(crate::masks::path_from_json(&crate::masks::path_to_json(&path)), Some(path.clone()));
+    // the serialized project form still parses
+    assert_eq!(crate::masks::path_from_json(&serde_json::to_value(&path).unwrap()), Some(path));
+}

@@ -556,7 +556,7 @@ impl VtEncoder {
             VtRate::Cbr { kbps } => {
                 // true constant bitrate where the OS offers it (macOS 13+); otherwise an average
                 // with a one-second ceiling at the same rate
-                if !cbr_key.is_some_and(|key| set_value(session, key, CFNumber::new_i32(bps(kbps)).as_ref()) == 0) {
+                if cbr_key.is_none_or(|key| set_value(session, key, CFNumber::new_i32(bps(kbps)).as_ref()) != 0) {
                     require(set_value(session, avg_key, CFNumber::new_i32(bps(kbps)).as_ref()), "the bitrate")?;
                     let limits = CFArray::<CFType>::from_objects(&[CFNumber::new_i32(bps(kbps) / 8).as_ref(), CFNumber::new_f64(1.0).as_ref()]);
                     let _ = set_value(session, limits_key, limits.as_ref());

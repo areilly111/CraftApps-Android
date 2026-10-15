@@ -431,6 +431,61 @@ fn remote_forwards_methods() {
 }
 
 #[test]
+fn remote_does_not_replay_when_edit_reply_is_lost() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let h = std::thread::spawn(move || {
+        let timeout = std::time::Duration::from_secs(5);
+        let mut backend = Headless::with_document();
+        let base = backend.call("document.inspect", json!({})).unwrap()["objects"].as_u64().unwrap();
+        for connection in 0..2 {
+            let deadline = std::time::Instant::now() + timeout;
+            let stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline => std::thread::yield_now(),
+                    Err(e) => panic!("accept failed: {e}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream.set_read_timeout(Some(timeout)).unwrap();
+            stream.set_write_timeout(Some(timeout)).unwrap();
+            let mut out = stream.try_clone().unwrap();
+            let mut reader = BufReader::new(stream);
+            for _ in 0..2 {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let msg: Value = serde_json::from_str(&line).unwrap();
+                let method = msg["method"].as_str().unwrap();
+                let result = backend.call(method, msg["params"].clone()).unwrap();
+                if connection == 0 {
+                    assert_eq!(method, "engine.execute");
+                    break;
+                }
+                let reply = json!({"id": msg["id"], "ok": true, "result": result});
+                writeln!(out, "{reply}").unwrap();
+                if method == "document.inspect" {
+                    return result["objects"].as_u64().unwrap() - base;
+                }
+                assert_eq!(method, "engine.execute");
+            }
+        }
+        panic!("document.inspect was not received");
+    });
+
+    let mut remote = Remote::connect(&addr).unwrap();
+    let first = remote.call("engine.execute", json!({"command": "shape.rectangle", "params": {"x": 10, "y": 10, "width": 20, "height": 20}}));
+    let next = remote.call("document.inspect", json!({}));
+    let edits = h.join().unwrap();
+
+    assert_eq!(edits, 1, "a lost reply must not duplicate the edit");
+    let error = first.expect_err("the lost reply must report uncertainty");
+    assert!(error.contains("operation may have completed"), "{error}");
+    assert!(next.is_ok(), "the next call must reconnect: {next:?}");
+}
+
+#[test]
 fn remote_connect_fails_fast() {
     // A port this test holds, bound but not listening, so connecting to it is refused. (A port
     // bound and dropped could be taken by another process or test before the connect.)
@@ -577,6 +632,30 @@ fn shift_marquee_gesture_toggles_the_selection() {
         let want = if tool == "selection" { json!([a, c]) } else { json!([a, b]) };
         assert_eq!(*sel, want, "{tool}");
     }
+}
+
+/// A click on one of two selected objects makes it the key object: `pointer_gesture` replies
+/// with it as `key` and `inspect_document` lists it, and a click on the key again lets it go.
+#[test]
+fn pointer_gestures_report_the_key_object() {
+    let mut s = server();
+    let square = |s: &mut Server, id: u64, x: u64| {
+        let r = call(s, id, "draw_shape", json!({"shape": "rectangle", "x": x, "y": 100, "width": 50, "height": 50, "fill": "#ff0000"}));
+        serde_json::from_str::<Value>(&text_of(&r)).unwrap()["id"].as_u64().unwrap()
+    };
+    let (a, b) = (square(&mut s, 1, 100), square(&mut s, 2, 200));
+    let r = call(&mut s, 3, "run_command", json!({"command": "select.set", "params": {"ids": [a, b]}}));
+    assert_eq!(r["isError"], false, "{r}");
+    let click = |s: &mut Server, id: u64| {
+        let events = json!([{"kind": "down", "x": 225, "y": 125}, {"kind": "up", "x": 225, "y": 125}]);
+        let r = call(s, id, "pointer_gesture", json!({"tool": "selection", "events": events}));
+        assert_eq!(r["isError"], false, "{r}");
+        serde_json::from_str::<Value>(&text_of(&r)).unwrap().get("key").cloned()
+    };
+    assert_eq!(click(&mut s, 4), Some(json!(b)), "a click on a selected object makes it the key");
+    let doc: Value = serde_json::from_str(&text_of(&call(&mut s, 5, "inspect_document", json!({})))).unwrap();
+    assert_eq!(doc.get("key"), Some(&json!(b)));
+    assert_eq!(click(&mut s, 6), Some(Value::Null), "a click on the key again lets it go");
 }
 
 /// Preferences › Type › Show Font Names in English (#394): agents set it with `prefs.set`;

@@ -40,6 +40,12 @@ fn is_pdf_like(path: &str, bytes: &[u8]) -> bool {
     effectcraft_pdf::sniff(bytes).is_some() && (effectcraft_pdf::EXTENSIONS.contains(&ext.as_str()) || bytes.starts_with(b"%PDF"))
 }
 
+/// Whether `bytes` (the first 64 KiB suffice) are a Photoshop or vector file [`probe`] handles.
+#[cfg_attr(not(any(unix, windows)), allow(dead_code))]
+pub(crate) fn sniff(path: &str, bytes: &[u8]) -> bool {
+    effectcraft_psd::is_psd(bytes) || is_svg(path, bytes) || is_pdf_like(path, bytes)
+}
+
 /// Footage for a Photoshop or vector file (`None` for other formats).
 pub(crate) fn probe(path: &str, bytes: &[u8]) -> Result<Option<Footage>> {
     if effectcraft_psd::is_psd(bytes) {
@@ -81,7 +87,7 @@ pub(crate) fn decode(path: &str, bytes: &[u8], footage: &Footage, op: AlphaOp) -
                 let inner = effectcraft_psd::Psd::parse(data.to_vec()).map_err(|e| MediaError::Decode(format!("{path} (smart object): {e}")))?;
                 inner.composite().map_err(|e| MediaError::Decode(format!("{path} (smart object): {e}")))?
             } else {
-                let img = image::load_from_memory(data).map_err(|e| MediaError::Decode(format!("{path} (smart object): {e}")))?;
+                let img = crate::probe::load_oriented(data, None).map_err(|e| MediaError::Decode(format!("{path} (smart object): {e}")))?;
                 let rgba = img.to_rgba32f();
                 effectcraft_psd::Pixels { width: rgba.width(), height: rgba.height(), data: rgba.pixels().map(|p| p.0).collect() }
             };

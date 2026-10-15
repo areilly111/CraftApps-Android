@@ -31,6 +31,14 @@ pub struct Workspace {
     pub floating_flyouts: Vec<FloatingFlyout>,
     /// Panels dragged out of the dock, where they float (built-in workspaces: none).
     pub floating_panels: Vec<FloatingPanels>,
+    /// Custom docking tree, including floating tab groups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docking: Option<craft_ui::docking::Layout<String>>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub docking_hidden: std::collections::BTreeMap<String, craft_ui::docking::Location<String>>,
+    /// Panels whose saved return destination is the iconic rail.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub docking_icons: std::collections::BTreeSet<String>,
     /// Where the Tools panel floats (built-in workspaces: docked).
     pub toolbar_pos: Option<[f32; 2]>,
 }
@@ -128,6 +136,9 @@ pub fn capture(ui: &UiState, name: &str) -> Workspace {
         status_bar: ui.status_bar,
         floating_flyouts: ui.floating_flyouts.clone(),
         floating_panels: ui.floating_panels.clone(),
+        docking: ui.docking.clone(),
+        docking_hidden: ui.docking_hidden.clone(),
+        docking_icons: ui.docking_icons.clone(),
         toolbar_pos: ui.toolbar_pos,
     }
 }
@@ -147,6 +158,11 @@ pub fn apply(ui: &mut UiState, w: &Workspace) {
     ui.status_bar = w.status_bar;
     ui.floating_flyouts = w.floating_flyouts.clone();
     ui.floating_panels = w.floating_panels.clone();
+    ui.docking_generation = ui.docking_generation.wrapping_add(1);
+    ui.docking = w.docking.clone().filter(crate::panel_docking::valid);
+    ui.docking_hidden = w.docking_hidden.clone();
+    ui.docking_icons =
+        w.docking_icons.iter().filter(|id| crate::state::ICON_PANELS.iter().any(|entry| entry.0 == id.as_str())).take(64).cloned().collect();
     ui.toolbar_pos = w.toolbar_pos;
     FloatingPanels::sanitize(&mut ui.floating_panels, &mut ui.toolbar_pos);
     ui.flyout = None;

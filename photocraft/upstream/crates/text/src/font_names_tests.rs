@@ -148,3 +148,43 @@ fn installed_yoon_numeric_faces() {
         }
     }
 }
+
+/// A copy of `source` whose name table spells the family in English and in Japanese.
+fn localized_font(source: &[u8], english: &str, japanese: &str) -> Vec<u8> {
+    let mut bytes = source.to_vec();
+    let count = u16::from_be_bytes(bytes[4..6].try_into().unwrap()) as usize;
+    let name_record = (0..count).map(|i| 12 + i * 16).find(|r| &bytes[*r..r + 4] == b"name").unwrap();
+    let ps = english.replace(' ', "");
+    let names = [(0x409u16, 1u16, english), (0x409, 2, "Regular"), (0x409, 6, ps.as_str()), (0x409, 16, english), (0x411, 1, japanese), (0x411, 16, japanese)];
+    let mut table = Vec::new();
+    let mut strings = Vec::new();
+    for value in [0u16, names.len() as u16, (6 + names.len() * 12) as u16] {
+        table.extend(value.to_be_bytes());
+    }
+    for (lang, id, value) in names {
+        let encoded: Vec<_> = value.encode_utf16().flat_map(u16::to_be_bytes).collect();
+        for n in [3, 1, lang, id, encoded.len() as u16, strings.len() as u16] {
+            table.extend(n.to_be_bytes());
+        }
+        strings.extend(encoded);
+    }
+    table.extend(strings);
+    let offset = bytes.len() as u32;
+    bytes[name_record + 8..name_record + 12].copy_from_slice(&offset.to_be_bytes());
+    bytes[name_record + 12..name_record + 16].copy_from_slice(&(table.len() as u32).to_be_bytes());
+    bytes.extend(table);
+    bytes
+}
+
+/// Show Font Names in English off: a font that names its family in Japanese is listed by that
+/// name, keyed by the English family the menus and documents keep; English-only fonts are not.
+#[test]
+fn localized_family_names_map_english_families_to_native_names() {
+    let mut db = FontDb::new();
+    assert_eq!(db.register_font_data(localized_font(&INTER_REGULAR, "Gothic Test", "ゴシック テスト")), ["Gothic Test"]);
+    assert!(db.families().iter().any(|f| f == "Gothic Test"));
+    let local = db.localized_family_names();
+    assert_eq!(local.get("Gothic Test").map(String::as_str), Some("ゴシック テスト"));
+    assert!(!local.contains_key(DEFAULT_FAMILY));
+    assert!(local.values().all(|v| !v.is_empty()));
+}

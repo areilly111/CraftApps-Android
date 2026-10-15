@@ -45,7 +45,10 @@ impl MenuNode {
 
 /// User-defined names in parameterized menus are data, not message keys.
 pub fn display_item_label<'a>(id: &str, params: &Value, label: &'a str) -> &'a str {
-    if matches!(id, "metadata.applyPreset" | "album.addPhotos" | "label.applySet") || (id == "app.export" && params.get("preset").is_some()) {
+    if matches!(id, "metadata.applyPreset" | "album.addPhotos" | "label.applySet")
+        || (id == "app.export" && params.get("preset").is_some())
+        || (id == "app.openLibrary" && params.get("path").is_some())
+    {
         label
     } else {
         crate::i18n::tr(label)
@@ -66,7 +69,9 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "file.addFolder",
             "@Import from Device",
             "---",
+            "app.newLibrary",
             "app.openLibrary",
+            "@Open Recent Library",
             "file.backupLibrary",
             "file.restoreLibrary",
             "---",
@@ -124,14 +129,17 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "view.people",
             "---",
             "view.leftPanel",
+            "@Sidebar Sections",
             "view.photoCounts",
             "view.faceBoxes",
             "view.filmstrip",
             "view.histogram",
             "view.navigator",
             "view.infoOverlay",
+            "@Appearance",
             "---",
             "view.fullScreenPreview",
+            "view.lightsOut",
             "view.enterFullScreen",
             "---",
             "view.showOriginal",
@@ -320,6 +328,7 @@ pub fn checked(app: &LightcraftApp, id: &str) -> Option<bool> {
         "view.filterBar" => Some(u.filter_bar),
         "view.navigator" => Some(u.navigator),
         "view.fullScreenPreview" => Some(u.fullscreen),
+        "view.lightsOut" => Some(u.lights_out != crate::state::LightsOut::On),
         "view.enterFullScreen" => Some(app.window_is_fullscreen),
         "panel.edit" => panel(RightPanel::Edit),
         "panel.profiles" => panel(RightPanel::Profiles),
@@ -460,6 +469,42 @@ fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>> {
             v.push(item("dialog.labelNames", Value::Null, "Edit Label Names…", None, true, None));
             v
         }
+        "Sidebar Sections" => {
+            // one checkable item per section, in the order the sidebar lists them
+            let layout = &app.ui.sidebar;
+            let mut v: Vec<MenuNode> = layout
+                .sections()
+                .iter()
+                .filter(|s| s.id.available())
+                .map(|s| item("view.sidebarSection", json!({"section": s.id.id()}), s.id.title(), None, true, Some(!s.hidden)))
+                .collect();
+            v.push(MenuNode::Separator);
+            v.push(item("view.sidebarReset", Value::Null, "Reset Sidebar Sections", None, !layout.is_default(), None));
+            v
+        }
+        "Appearance" => {
+            use crate::state::AppearanceMode;
+            use crate::theme::ThemeKind;
+            let s = &app.ui.settings;
+            let mut v: Vec<MenuNode> = [
+                ("auto", "Sync with System", AppearanceMode::Auto),
+                ("light", "Light Mode", AppearanceMode::Light),
+                ("dark", "Dark Mode", AppearanceMode::Dark),
+            ]
+            .into_iter()
+            .map(|(mode, label, m)| item("view.appearance", json!({"mode": mode}), label, None, true, Some(s.appearance_mode == m)))
+            .collect();
+            v.push(item("view.appearance", Value::Null, "Next Appearance Mode", None, true, None));
+            // the saved theme of each family is checked
+            for group in [[ThemeKind::Charcoal, ThemeKind::Midnight], [ThemeKind::Silver, ThemeKind::Paper]] {
+                v.push(MenuNode::Separator);
+                for k in group {
+                    let on = if k.is_dark() { s.dark_theme.kind() == k } else { s.light_theme.kind() == k };
+                    v.push(item("view.theme", json!({"theme": k.id()}), k.label(), None, true, Some(on)));
+                }
+            }
+            v
+        }
         "Grid Info" => ["filename", "exposure", "date"]
             .into_iter()
             .zip(["File Name", "Exposure (shutter · aperture · ISO)", "Capture Date"])
@@ -509,6 +554,30 @@ fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>> {
                 ("No Date Groups", GroupBy::None, "none"),
             ];
             v.extend(groups.into_iter().map(|(label, g, k)| item("library.sort", json!({"group": k}), label, None, true, Some(cur.group == g))));
+            v
+        }
+        "Open Recent Library" => {
+            let can = !crate::lightroom_import::is_running(app);
+            let open = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
+            let mut v: Vec<MenuNode> = app
+                .ui
+                .settings
+                .recent_libraries
+                .iter()
+                .map(|r| {
+                    let d = std::path::Path::new(r);
+                    // a missing library (moved, drive disconnected) is shown greyed out
+                    let label =
+                        format!("{} — {}", crate::panels::settings::library_name(d), d.parent().map(|p| p.display().to_string()).unwrap_or_default());
+                    item("app.openLibrary", json!({"path": r}), label, None, can && d.is_dir(), Some(open.as_deref() == Some(d)))
+                })
+                .collect();
+            if v.is_empty() {
+                v.push(item("app.clearRecentLibraries", Value::Null, "No Recent Libraries", None, false, None));
+            } else {
+                v.push(MenuNode::Separator);
+                v.push(item("app.clearRecentLibraries", Value::Null, "Clear Recent Libraries", None, true, None));
+            }
             v
         }
         "Import from Device" => {
@@ -573,15 +642,23 @@ fn expanded(app: &LightcraftApp, name: &str) -> Option<Vec<MenuNode>> {
             v
         }
         "Add to Album" => {
-            let sel = !app.session.selection.ids.is_empty() || has;
-            let mut albums: Vec<_> = app.session.catalog.albums().filter(|a| !a.folder && !a.is_smart()).map(|a| (a.name.clone(), a.id.0)).collect();
-            albums.sort_by_key(|(n, _)| n.to_lowercase());
-            let mut v: Vec<MenuNode> =
-                albums.into_iter().map(|(name, id)| item("album.addPhotos", json!({"id": id}), name, None, sel, None)).collect();
-            if !v.is_empty() {
+            let targets = app.session.targets(&Value::Null);
+            let sel = !targets.is_empty();
+            // albums hold library photos (issue #684): a Local-only selection is told what to do first
+            let local_only = crate::panels::grid::local_only(app, &targets);
+            let mut v: Vec<MenuNode> = vec![];
+            if local_only {
+                v.push(item("photo.addToLibrary", Value::Null, crate::i18n::tr("Add to My Photos First"), None, false, None));
                 v.push(MenuNode::Separator);
             }
-            v.push(item("dialog.newAlbum", Value::Null, "New Album…", None, true, None));
+            let mut albums: Vec<_> = app.session.catalog.albums().filter(|a| !a.folder && !a.is_smart()).map(|a| (a.name.clone(), a.id.0)).collect();
+            albums.sort_by_key(|(n, _)| n.to_lowercase());
+            let any = !albums.is_empty();
+            v.extend(albums.into_iter().map(|(name, id)| item("album.addPhotos", json!({"id": id}), name, None, sel && !local_only, None)));
+            if any {
+                v.push(MenuNode::Separator);
+            }
+            v.push(item("dialog.newAlbum", Value::Null, "New Album…", None, !local_only, None));
             v
         }
         _ => return None,

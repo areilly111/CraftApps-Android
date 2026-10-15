@@ -87,6 +87,24 @@ fn replaces_and_creates() {
     assert_no_temp(&d.0);
 }
 
+/// #3389: a large write reports how far it has got, chunk by chunk, up to 1.0, and writes the
+/// same bytes as a plain atomic write.
+#[test]
+fn reports_write_progress() {
+    let d = TempDir::new("progress");
+    let p = d.0.join("big.psd");
+    let bytes: Vec<u8> = (0..WRITE_CHUNK * 2 + 123).map(|i| (i % 251) as u8).collect();
+    let seen = std::sync::Mutex::new(Vec::new());
+    atomic_write_progress(&p, &bytes, &|f| seen.lock().unwrap().push(f)).unwrap();
+    let seen = seen.into_inner().unwrap();
+    assert_eq!(seen.len(), 3, "one report per chunk: {seen:?}");
+    assert!(seen.windows(2).all(|w| w[0] < w[1]), "monotonic: {seen:?}");
+    assert!(seen[0] > 0.0 && seen[0] < 0.6, "{seen:?}");
+    assert_eq!(seen.last().copied(), Some(1.0));
+    assert!(std::fs::read(&p).unwrap() == bytes, "the file holds the bytes");
+    assert_no_temp(&d.0);
+}
+
 #[test]
 fn creates_missing_parent_folders() {
     let d = TempDir::new("parent");

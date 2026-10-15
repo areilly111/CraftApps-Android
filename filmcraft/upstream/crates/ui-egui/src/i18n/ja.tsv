@@ -805,6 +805,7 @@
 	Relink others automatically	他のクリップを自動的に再リンク
 	Search in:	検索場所:
 	Browse…	参照…
+	A file dialog is already open	ファイルダイアログはすでに開いています
 	Exact name matches only	名前の完全一致のみ
 	No candidates yet — Search a folder or Locate the file.	候補はまだありません。フォルダーを検索するか、ファイルの場所を指定してください。
 	✔ same file	✔ 同じファイル
@@ -1819,7 +1820,7 @@
 	Hard Limiter	ハードリミッター
 	Hard Mix	ハードミックス
 	Hardware decoding	ハードウェアデコード
-	Hardware decoding: Auto uses the system's video decoder (VideoToolbox on macOS, Media Foundation on Windows, VA-API for H.264 and HEVC on Linux) for the streams it supports, and FilmCraft's own decoder for everything else or if the hardware fails. Media that is already open keeps its decoder until it is reopened.	ハードウェアデコード: 「自動」では、対応しているストリームにはシステムのビデオデコーダー (macOS では VideoToolbox、Windows では Media Foundation、Linux では H.264・HEVC 用の VA-API) を使用し、それ以外のストリームや、ハードウェアで失敗した場合は FilmCraft 独自のデコーダーを使用します。すでに開いているメディアは、開き直すまで現在のデコーダーを使い続けます。
+	Hardware decoding: Auto uses the system's video decoder (VideoToolbox on macOS, Media Foundation on Windows, VA-API or NVDEC for H.264 and HEVC on Linux) for the streams it supports, and FilmCraft's own decoder for everything else or if the hardware fails. Media that is already open keeps its decoder until it is reopened.	ハードウェアデコード: 「自動」では、対応しているストリームにはシステムのビデオデコーダー (macOS では VideoToolbox、Windows では Media Foundation、Linux では H.264・HEVC 用の VA-API または NVDEC) を使用し、それ以外のストリームや、ハードウェアで失敗した場合は FilmCraft 独自のデコーダーを使用します。すでに開いているメディアは、開き直すまで現在のデコーダーを使い続けます。
 	Head Size	頭部サイズ
 	Heart	ハート
 	Height	高さ
@@ -2282,7 +2283,7 @@
 	Repeat Edge Pixels	エッジピクセルを繰り返す
 	Replace Color	置換後の色
 	Replace With Clip From Source Monitor	ソースモニターのクリップで置換
-	Replicate	複製
+	Replicate	レプリケート
 	Responsive Design - Position	レスポンシブデザイン - 位置
 	Responsive Design - Time	レスポンシブデザイン - 時間
 	Restore open sequences when opening projects	プロジェクトを開くときに、開いていたシーケンスを復元する
@@ -2793,8 +2794,8 @@
 	Ignore Audio	オーディオを無視
 	Ignore Video	ビデオを無視
 	Apply a cut at each detected cut point	検出したカット点ごとにカットを適用
-	Create a subclip for each detected cut point	検出したカット点ごとにサブクリップを作成
-	Generate clip markers at each detected cut point	検出したカット点ごとにクリップマーカーを生成
+	Create a bin of subclips from each detected cut point	検出したカット点ごとにサブクリップのビンを作成
+	Create a clip marker at each detected cut point	検出したカット点ごとにクリップマーカーを作成
 	Sensitivity:	感度:
 	Normalize Mix Track to:	ミックストラックのノーマライズ値:
 	Disabled clips	無効なクリップ
@@ -2839,7 +2840,7 @@
 	Keyboard: US	キーボード: US 配列
 	Save preset as:	保存するプリセット名:
 	Commands:	コマンド:
-	{panel} Panel	{panel}パネル
+	{panel} Panel	{panel} パネル
 	Application shortcuts work whatever panel has focus	アプリケーションのショートカットは、どのパネルにフォーカスがあっても機能します
 	Panel shortcuts override application shortcuts while that panel has focus	パネルのショートカットは、そのパネルにフォーカスがある間、アプリケーションのショートカットより優先されます
 	Modifier held / selected	押下中 / 選択中の修飾キー
@@ -2963,9 +2964,18 @@
 	Step Forward 1 Frame	1 フレーム進む
 	Match Playhead	再生ヘッドに合わせる
 	Gang to Program	プログラムと連動
+	AAC Audio	AAC Audio
+	AAC Audio 48 kHz 320 kbps	AAC Audio 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	MPEG-4 オーディオ (.m4a)、ステレオ 48 kHz AAC-LC 320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16-bit
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF、ステレオ 48 kHz 16-bit PCM
+	FLAC	FLAC
+	FLAC 48 kHz 24-bit	FLAC 48 kHz 24-bit
+	FLAC, stereo 48 kHz 24-bit, lossless	FLAC、ステレオ 48 kHz 24-bit、ロスレス
+	FLAC (lossless)	FLAC (ロスレス)
+	Compression Level	圧縮レベル
+	0 fastest, 8 smallest	0 が最速、8 が最小
 	APV	APV
 	APV 422-10	APV 422-10
 	APV 422-12	APV 422-12
@@ -2978,7 +2988,7 @@
 	Apple ProRes 422 LT	Apple ProRes 422 LT
 	Apple ProRes 422 Proxy	Apple ProRes 422 Proxy
 	Apple ProRes 4444	Apple ProRes 4444
-	Apple ProRes 4444 with Alpha	Apple ProRes 4444（アルファ付き）
+	Apple ProRes 4444 with Alpha	Apple ProRes 4444 (アルファ付き)
 	Apple ProRes 4444 XQ	Apple ProRes 4444 XQ
 	Application	アプリケーション
 	Apply Guide Template	ガイドテンプレートを適用
@@ -3171,6 +3181,9 @@
 	Numbered JPEG stills (quality 90)	連番 JPEG 静止画 (品質 90)
 	Numbered Targa stills (24-bit, uncompressed)	連番 Targa 静止画 (24-bit、非圧縮)
 	Numbered DPX stills (10-bit RGB)	連番 DPX 静止画 (10-bit RGB)
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	OpenEXR 連番画像
+	Numbered OpenEXR stills (half float, linear, uncompressed)	連番 OpenEXR 静止画 (16-bit 浮動小数点、リニア、非圧縮)
 	Numbered PNG stills at the sequence's frame size	シーケンスと同じフレームサイズの連番 PNG 静止画
 	Numbered TIFF stills (RGB, 8-bit)	連番 TIFF 静止画 (RGB、8-bit)
 	Opacity 0 → 100 % over the first second	最初の 1 秒で不透明度を 0 → 100 % に変化
@@ -3481,6 +3494,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	クリックで選択します。何もない場所からドラッグすると範囲選択になります。Shift、Alt、Ctrl キーを併用すると、ほかのオプションも使えます。
 	Click to zoom in; Alt-click to zoom out.	クリックでズームイン、Alt+クリックでズームアウトします。
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	ドラッグ: 移動 · Alt+クリック: スムーズ/コーナー · Ctrl+クリック: 削除
+	Drag inward to round the corners	内側にドラッグして角を丸める
 	Include Alpha Channel	アルファチャンネルを含める
 	Sequence Settings	シーケンス設定
 	Color Management	カラーマネジメント
@@ -3531,10 +3545,52 @@
 	Text to Speech	テキスト読み上げ
 	Edit Narration	ナレーションを編集
 	Clear Transition	トランジションを消去
-	Set Transition Duration	トランジションのデュレーションを設定
+	Set Transition Duration	トランジションの長さを設定
 	Refresh Changed Media	変更されたメディアを更新
 	Project Notes	プロジェクトメモ
 	Get Project Notes	プロジェクトメモを取得
 	Edit Project Notes	プロジェクトメモを編集
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	このプロジェクトのメモ: やること、指示、フレーム番号など… プロジェクトと一緒に保存されます。
 	GPU acceleration is unavailable; preview renders on the CPU	GPU アクセラレーションを利用できません。プレビューは CPU でレンダリングされます
+
+	Appearance Settings…	外観設定…
+
+	Add to favorites	お気に入りに追加
+
+	Remove from favorites	お気に入りから削除
+	Compression	圧縮
+	ZIP (1 scan line)	ZIP（1 スキャンライン）
+	ZIP (16 scan lines)	ZIP（16 スキャンライン）
+
+	Caption Tracks	キャプショントラック
+	Delete Caption Track	キャプショントラックを削除
+	Delete Caption Tracks	キャプショントラックを削除
+	Delete Empty Caption Tracks	空のキャプショントラックを削除
+	Dock Panel	パネルをドッキング
+	Undock Panel	パネルのドッキングを解除
+	Docking Action	ドッキング操作
+	Resize floating panel	フローティングパネルのサイズを変更
+	Eyedropper (pick a color from the Program monitor)	スポイト (プログラムモニターから色を取得)
+	Eyedropper: no picture to sample	スポイト: 色を取得できる画像がありません
+	In	イン
+	Out	アウト
+	More transport controls	その他の再生コントロール
+	Ripple Trim In	リップルトリム (イン)
+	Ripple Trim Out	リップルトリム (アウト)
+	Roll Edit	ロール編集
+	Trim In	トリム (イン)
+	Trim Out	トリム (アウト)
+	Use Effect Shutter Angle	エフェクトのシャッター角度を使用
+	Safe graphics mode: {mode}	セーフグラフィックモード: {mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	以前の起動がデフォルトのグラフィックで失敗しました。グラフィックドライバーを更新すると、通常は解決します。
+	Use Default Graphics	デフォルトのグラフィックを使用
+	The default graphics are used from the next start.	次回の起動からデフォルトのグラフィックが使用されます。
+	DirectX 12 only	DirectX 12 のみ
+	software rendering	ソフトウェアレンダリング
+	Label Color Presets	ラベルカラープリセット
+	{name} (Modified)	{name} (変更あり)
+	Revert to the preset's colors and names	プリセットのカラーと名前に戻す
+	Import a preset file…	プリセットファイルを読み込み…
+	Export the labels to a preset file…	ラベルをプリセットファイルに書き出し…
+	Show the presets folder	プリセットフォルダーを表示
+	Delete this preset	このプリセットを削除

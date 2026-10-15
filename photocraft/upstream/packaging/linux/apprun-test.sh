@@ -48,6 +48,7 @@ expected_exec="Exec=\"$(readlink -f "$APPIMAGE")\" %F"
 grep -Fxq "$expected_exec" "$DESKTOP" || fail "Exec not rewritten: $(grep '^Exec=' "$DESKTOP")"
 grep -q '^TryExec=' "$DESKTOP" && fail "TryExec kept, the entry would be hidden"
 grep -Fxq "Icon=$APP_ID" "$DESKTOP" || fail "Icon line lost"
+grep -Fxq "X-AppImage-Integrate=false" "$DESKTOP" || fail "X-AppImage-Integrate=false missing (#3623)"
 grep -Fxq 'Categories=Graphics;2DGraphics;RasterGraphics;Photography;' "$DESKTOP" || fail "metadata lines lost"
 if command -v desktop-file-validate >/dev/null; then
   desktop-file-validate "$DESKTOP" || fail "generated desktop entry is invalid"
@@ -71,23 +72,40 @@ export APPIMAGE="$TMP/moved.AppImage"
 "$APPDIR/AppRun" >/dev/null || fail "launch after move exited non-zero"
 grep -Fxq "Exec=\"$(readlink -f "$APPIMAGE")\" %F" "$DESKTOP" || fail "Exec not refreshed after move"
 
-# 6. Opt-out installs nothing.
+# 6. External AppImage integrator (#3623): if another .desktop file in $XDG_DATA_HOME/applications
+#    already launches this AppImage (e.g. AppImageLauncher's appimagekit-*.desktop), AppRun removes
+#    its own duplicate .desktop entry while keeping the hicolor icons installed.
+ext_desktop="$XDG_DATA_HOME/applications/appimagekit-photocraft.desktop"
+printf '[Desktop Entry]\nType=Application\nName=PhotoCraft\nExec="%s" %%F\nIcon=%s\n' "$(readlink -f "$APPIMAGE")" "$APP_ID" >"$ext_desktop"
+"$APPDIR/AppRun" >/dev/null || fail "launch with external integrator desktop entry exited non-zero"
+[ ! -e "$DESKTOP" ] || fail "duplicate desktop entry kept alongside external integrator entry"
+[ -f "$ext_desktop" ] || fail "external integrator desktop entry removed"
+[ -f "$XDG_DATA_HOME/icons/hicolor/256x256/apps/$APP_ID.png" ] || fail "icons missing with external integrator"
+rm -f "$ext_desktop"
+
+# 7. DESKTOPINTEGRATION set by an external integrator skips creating a second .desktop entry.
+rm -rf "$XDG_DATA_HOME"
+DESKTOPINTEGRATION=AppImageLauncher "$APPDIR/AppRun" >/dev/null || fail "DESKTOPINTEGRATION launch exited non-zero"
+[ ! -e "$DESKTOP" ] || fail "DESKTOPINTEGRATION still wrote duplicate desktop entry"
+[ -f "$XDG_DATA_HOME/icons/hicolor/256x256/apps/$APP_ID.png" ] || fail "icons not installed under DESKTOPINTEGRATION"
+
+# 8. Opt-out installs nothing.
 rm -rf "$XDG_DATA_HOME"
 PHOTOCRAFT_NO_DESKTOP_INTEGRATION=1 "$APPDIR/AppRun" >/dev/null || fail "opt-out launch exited non-zero"
 [ ! -e "$XDG_DATA_HOME" ] || fail "opt-out still integrated"
 
-# 7. An unwritable data dir never blocks the launch.
+# 9. An unwritable data dir never blocks the launch.
 mkdir -p "$TMP/ro" && chmod a-w "$TMP/ro"
 out="$(XDG_DATA_HOME="$TMP/ro/data" "$APPDIR/AppRun" out.txt)" || fail "launch blocked by unwritable data dir"
 [ "$out" = "stub: out.txt" ] || fail "stub not run against unwritable data dir: $out"
 chmod u+w "$TMP/ro"
 
-# 8. No $APPIMAGE (extracted AppDir): launch only, nothing installed.
+# 10. No $APPIMAGE (extracted AppDir): launch only, nothing installed.
 rm -rf "$XDG_DATA_HOME"
 env -u APPIMAGE "$APPDIR/AppRun" >/dev/null || fail "extracted-AppDir launch exited non-zero"
 [ ! -e "$XDG_DATA_HOME" ] || fail "integrated without $APPIMAGE"
 
-# 9. A path that would need Exec escaping (here a `$`): launch only, nothing installed.
+# 11. A path that would need Exec escaping (here a `$`): launch only, nothing installed.
 rm -rf "$XDG_DATA_HOME"
 odd="$TMP/odd\$(id).AppImage"
 : >"$odd"

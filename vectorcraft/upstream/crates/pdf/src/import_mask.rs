@@ -39,7 +39,7 @@ fn cover(n: &Node, page: Rect) -> Option<(Color, f32)> {
     let Paint::Solid { color, .. } = &f.paint else { return None };
     let b = path.to_bezpath();
     let covers = page.area() > 1.0 && contains(b.bounding_box(), page.inset(-0.5)) && is_rectangle(&b);
-    (covers && n.mask.is_none()).then_some((*color, f.opacity * n.opacity))
+    (covers && n.extras().mask.is_none()).then_some((*color, f.opacity * n.opacity))
 }
 
 /// An opaque white rectangle covering `page`, filled only.

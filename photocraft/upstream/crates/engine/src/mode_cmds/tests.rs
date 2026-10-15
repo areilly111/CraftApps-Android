@@ -82,6 +82,48 @@ fn rotate_arbitrary_other_modes() {
 }
 
 #[test]
+fn rotate_arbitrary_rotates_grouped_locked_children_and_preserves_lock() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 16, "height": 16, "background": "white"})).unwrap();
+    s.execute("layer.new.layer", json!({"name": "Paint"})).unwrap();
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("layer.setProps", json!({"locks": {"position": true}})).unwrap();
+    s.execute("layer.groupLayers", json!({})).unwrap();
+
+    // 1. 30 degree rotation succeeds and canvas grows to 22x22.
+    let r30 = s.execute("image.rotation.arbitrary", json!({"angle": 30, "interpolation": "nearest"})).unwrap();
+    assert_eq!((r30["width"].as_u64(), r30["height"].as_u64()), (Some(22), Some(22)));
+
+    // 2. Child remains position-locked after canvas rotation.
+    let d = doc(&s);
+    let group = &d.layers[1];
+    let photocraft_doc::LayerContent::Group(g) = &group.content else { panic!("expected group") };
+    assert_eq!(g.children.len(), 1);
+    let child = &g.children[0];
+    assert_eq!(child.name, "Paint");
+    assert!(child.locks.position, "position lock must be preserved on child");
+
+    // 3. Free Transform of the child alone still refuses with lock error.
+    let child_id = child.id.0;
+    s.execute("layer.select", json!({"layer": child_id})).unwrap();
+    let err = s.execute("edit.transform", json!({"matrix": [1, 0, 0, 1, 0, 0]})).unwrap_err();
+    assert!(err.to_string().contains("locked"), "child Free Transform must remain refused");
+
+    // 4. Undo restores 16x16 size.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(doc(&s).size, Size::new(16, 16));
+
+    // 5. 90 degree rotation also succeeds and composite matches dedicated 90cw turn.
+    let r90 = s.execute("image.rotation.arbitrary", json!({"angle": 90, "direction": "cw", "interpolation": "nearest"})).unwrap();
+    assert_eq!((r90["width"].as_u64(), r90["height"].as_u64()), (Some(16), Some(16)));
+    let d_arb = doc(&s).clone();
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("image.imageRotation.90cw", json!({})).unwrap();
+    let d_cw = doc(&s);
+    assert_eq!(photocraft_compose::flatten(&d_arb).px, photocraft_compose::flatten(d_cw).px);
+}
+
+#[test]
 fn flattened_mode_pixels_match_the_allocating_conversion_at_every_channel_count() {
     let px = [[0.0, 0.25, 0.75, 0.0], [0.9, 0.3, 0.2, 0.2], [0.1, 0.7, 0.4, 0.7], [1.0; 4]];
     for mode in [ColorMode::Indexed, ColorMode::Bitmap, ColorMode::Duotone] {
@@ -193,6 +235,35 @@ fn color_table_presets_and_entries() {
 }
 
 #[test]
+fn clearing_color_table_transparency_restores_indexed_pixels() {
+    let pixel = |s: &mut Session| -> [f32; 4] { serde_json::from_value(s.execute("document.pixel", json!({"x": 5, "y": 8})).unwrap()).unwrap() };
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 16, "height": 16, "background": "#ff0000"})).unwrap();
+    s.execute("image.mode.indexedColor", json!({"palette": "exact", "colors": 2, "forced": "none", "dither": "none"})).unwrap();
+    assert_eq!(doc(&s).color_table.as_ref().unwrap().colors, vec![[255, 0, 0]]);
+    assert_eq!(pixel(&mut s), [1.0, 0.0, 0.0, 1.0]);
+
+    s.execute("image.mode.colorTable", json!({"transparent": 0})).unwrap();
+    assert_eq!(pixel(&mut s), [0.0; 4]);
+    s.execute("image.mode.colorTable", json!({"transparent": null})).unwrap();
+    assert_eq!(doc(&s).layers[0].surface().unwrap().rgba(5, 8), [1.0, 0.0, 0.0, 1.0], "clearing the transparent palette entry should restore the stored pixel");
+    assert_eq!(pixel(&mut s), [1.0, 0.0, 0.0, 1.0]);
+    s.execute("image.mode.rgb", json!({})).unwrap();
+    assert_eq!(pixel(&mut s), [1.0, 0.0, 0.0, 1.0]);
+
+    let mut control = Session::new();
+    control.execute("file.new", json!({"width": 16, "height": 16, "background": "#ff0000"})).unwrap();
+    control.execute("image.mode.indexedColor", json!({"palette": "exact", "colors": 2, "forced": "none", "dither": "none"})).unwrap();
+    control.execute("image.mode.colorTable", json!({"entries": {"0": "#0000ff"}})).unwrap();
+    let blue: [f32; 4] = serde_json::from_value(control.execute("document.pixel", json!({"x": 5, "y": 8})).unwrap()).unwrap();
+    assert_eq!(blue, [0.0, 0.0, 1.0, 1.0]);
+    control.execute("image.mode.colorTable", json!({"transparent": 0})).unwrap();
+    control.execute("edit.undo", json!({})).unwrap();
+    let restored: [f32; 4] = serde_json::from_value(control.execute("document.pixel", json!({"x": 5, "y": 8})).unwrap()).unwrap();
+    assert_eq!(restored, [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
 fn bitmap_methods_need_grayscale() {
     let mut s = session(32, 32, 16, "rgb");
     assert!(!s.is_enabled("image.mode.bitmap"));
@@ -258,4 +329,83 @@ fn modes_round_trip_through_pcraft() {
     let back = photocraft_format::load_from_bytes(&bytes).unwrap();
     assert_eq!(back.color_table, doc(&s).color_table);
     assert_eq!(back.mode, ColorMode::Indexed);
+}
+
+/// Leaving Duotone for a colour mode keeps the printed look (#2383): the converted pixels are
+/// the displayed ink colours, through the destination profile. Grayscale drops the inks.
+#[test]
+fn duotone_to_colour_modes_keeps_the_ink_colours() {
+    use photocraft_cms::{Builtin, Transform};
+    let configs = [
+        json!({"type": "duotone"}),
+        json!({"type": "monotone", "inks": [{"name": "Orange", "color": "#ff8000", "curve": [[0, 0], [100, 100]]}]}),
+        json!({"type": "quadtone"}),
+    ];
+    for depth in [8, 16, 32] {
+        for cfg in &configs {
+            for mode in ["rgb", "cmyk", "lab", "grayscale"] {
+                let ctx = format!("{depth}-bit {cfg} → {mode}");
+                let mut s = session(16, 2, depth, "gray");
+                paint(&mut s, |x, _| {
+                    let v = x as f32 / 15.0;
+                    [v, v, v, 1.0]
+                });
+                s.execute("image.mode.duotone", cfg.clone()).unwrap();
+                let before = s.active().unwrap().doc.clone();
+                let gray: Vec<f32> = (0..16).map(|x| before.layers[0].surface().unwrap().pixel(x, 1)[0]).collect();
+                let shown = photocraft_compose::render(&display_document(&before).unwrap(), Rect::from_xywh(0, 1, 16, 1)).px;
+                s.execute(&format!("image.mode.{mode}"), json!({})).unwrap();
+                let d = doc(&s);
+                assert!(d.duotone.is_none(), "{ctx}");
+                let surf = d.layers[0].surface().unwrap();
+                let target = match mode {
+                    "rgb" => ColorMode::Rgb,
+                    "cmyk" => ColorMode::Cmyk,
+                    "lab" => ColorMode::Lab,
+                    _ => ColorMode::Grayscale,
+                };
+                assert_eq!(d.mode, target, "{ctx}");
+                let srgb = Builtin::Srgb.profile();
+                let dst = crate::color_cmds::working_profile(target);
+                let t = Transform::new(srgb, &dst, s.color.settings.intent(), s.color.settings.bpc).unwrap();
+                for x in 0..16 {
+                    let got = surf.pixel(x, 1);
+                    let want: Vec<f32> = if target == ColorMode::Grayscale {
+                        vec![gray[x as usize]]
+                    } else {
+                        let mut o = [0.0f32; 16];
+                        t.eval(&shown[x as usize][..3], &mut o);
+                        o[..target.color_channels()].to_vec()
+                    };
+                    // The display's gradient map samples the inks at 33 stops; dark CMYK
+                    // separations magnify that a little.
+                    let tol = if target == ColorMode::Cmyk { 0.03 } else { 0.02 };
+                    for (g, w) in got.iter().zip(&want) {
+                        assert!((g - w).abs() < tol, "{ctx} x={x}: got {got:?}, want {want:?}");
+                    }
+                }
+                // Undo brings back the inks and the gray pixels.
+                s.execute("edit.undo", json!({})).unwrap();
+                let back = doc(&s);
+                assert_eq!((back.mode, &back.duotone), (ColorMode::Duotone, &before.duotone), "{ctx}");
+                assert_eq!(back.layers[0].surface().unwrap().pixel(7, 1), before.layers[0].surface().unwrap().pixel(7, 1), "{ctx}");
+            }
+        }
+    }
+}
+
+/// Colours stored in a Duotone document (fill layers) take the ink colours too.
+#[test]
+fn duotone_to_rgb_inks_fill_layer_colours() {
+    let mut s = session(4, 4, 8, "gray");
+    s.execute("image.mode.duotone", json!({"type": "monotone", "inks": [{"name": "Orange", "color": "#ff8000"}]})).unwrap();
+    s.execute("layer.newFillLayer.solidColor", json!({"color": "#808080"})).unwrap();
+    s.execute("image.mode.rgb", json!({})).unwrap();
+    let d = doc(&s);
+    let Some(LayerContent::Fill(photocraft_doc::Fill::Solid(c))) = d.layers.last().map(|l| &l.content) else { panic!("no fill layer") };
+    assert_eq!(c.mode, ColorMode::Rgb);
+    // Gray 0.5 is half-density orange: (1, 0.75, 0.5).
+    for (g, w) in c.c[..3].iter().zip([1.0, 0.75, 0.5]) {
+        assert!((g - w).abs() < 0.02, "{c:?}");
+    }
 }

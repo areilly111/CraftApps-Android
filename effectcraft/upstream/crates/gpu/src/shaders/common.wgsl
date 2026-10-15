@@ -235,7 +235,7 @@ fn separable(mode: u32, cb: f32, cs: f32) -> f32 {
             if (cs <= 0.0) {
                 return 0.0;
             }
-            return max(1.0 - (1.0 - cb) / cs, 0.0);
+            return 1.0 - (1.0 - cb) / cs;
         }
         case 7u: { return max(cb + cs - 1.0, 0.0); }
         case 9u, 14u: { return cb + cs; }
@@ -343,7 +343,7 @@ fn non_separable(mode: u32, cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
 
 fn supports_hdr(mode: u32) -> bool {
     switch mode {
-        case 0u, 1u, 2u, 3u, 4u, 7u, 8u, 9u, 10u, 11u, 14u, 15u, 23u, 24u, 26u, 27u, 32u, 33u, 34u, 35u, 36u, 37u: { return true; }
+        case 0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 14u, 15u, 16u, 23u, 24u, 25u, 26u, 27u, 31u, 32u, 33u, 34u, 35u, 36u, 37u: { return true; }
         default: { return false; }
     }
 }
@@ -388,8 +388,18 @@ fn blend_pixel(mode: u32, dst: vec4<f32>, src: vec4<f32>, noise: f32) -> vec4<f3
         cs = clamp(cs, vec3<f32>(0.0), vec3<f32>(1.0));
         cb = clamp(cb, vec3<f32>(0.0), vec3<f32>(1.0));
     }
-    let b = non_separable(mode, cb, cs);
     let ao = sa + da - sa * da;
+    // Classic Color Dodge / Difference (neutral 0) and Classic Color Burn (neutral 1): the
+    // source fades toward the neutral colour by its coverage, then the formula applies.
+    if (mode == 13u || mode == 24u || mode == 6u) {
+        var neutral = 0.0;
+        if (mode == 6u) {
+            neutral = 1.0;
+        }
+        let bc = non_separable(mode, cb, neutral + sa * (cs - neutral));
+        return vec4<f32>((1.0 - da) * src.xyz + da * bc, ao);
+    }
+    let b = non_separable(mode, cb, cs);
     return vec4<f32>((1.0 - da) * src.xyz + (1.0 - sa) * dst.xyz + sa * da * b, ao);
 }
 

@@ -1,24 +1,12 @@
 //! The ArtCraft wordmark (first-party trademark, used with permission; see `docs/brand/` and
 //! AGENTS.md §1.8), decoded once and kept as a texture.
-//!
-//! On Android the wordmark is not drawn (trademark compliance for unofficial
-//! ports); callers get `None` and should fall back to plain text.
 
 const LOGO_LIGHT_INK: &[u8] = include_bytes!("../../../docs/brand/artcraft-logo-white.png");
 const LOGO_DARK_INK: &[u8] = include_bytes!("../../../docs/brand/artcraft-logo.png");
 
 /// The wordmark for a dark (`dark = true`) or light UI: light ink on dark themes. Its aspect
 /// ratio is width / height of the returned texture.
-///
-/// Returns `None` on Android (trademark compliance).
 pub fn wordmark(ctx: &egui::Context, dark: bool) -> Option<egui::TextureHandle> {
-    #[cfg(target_os = "android")]
-    {
-        let _ = (ctx, dark);
-        return None;
-    }
-    #[cfg(not(target_os = "android"))]
-    {
     let id = egui::Id::new(("artcraft-wordmark", dark));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(t);
@@ -31,7 +19,6 @@ pub fn wordmark(ctx: &egui::Context, dark: bool) -> Option<egui::TextureHandle> 
     let tex = ctx.load_texture("artcraft-wordmark", color, egui::TextureOptions::LINEAR);
     ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
     Some(tex)
-    } // cfg(not(target_os = "android"))
 }
 
 /// Draw the wordmark `height` points tall with its left edge at `left_center` (vertically centred).

@@ -126,12 +126,18 @@ impl Driver {
     }
 
     fn drag(&mut self, from: (f64, f64), by: (f64, f64)) {
-        self.ok("ui.drag", json!({"from": {"x": from.0, "y": from.1}, "to": {"x": from.0 + by.0, "y": from.1 + by.1}, "steps": 6}));
+        // Control gestures use explicit modifiers and isolate ambient native keyboard state.
+        let m = self.harness.ctx.input(|input| input.modifiers);
+        self.ok(
+            "ui.drag",
+            json!({"from": {"x": from.0, "y": from.1}, "to": {"x": from.0 + by.0, "y": from.1 + by.1}, "steps": 6,
+            "modifiers": {"shift":m.shift,"alt":m.alt,"ctrl":m.ctrl,"command":m.command}}),
+        );
         self.frames(4);
     }
 
-    /// Press or let go of Shift, as a keyboard reports it (the control channel's drags carry
-    /// modifiers only on their press and release).
+    /// Press or let go of Shift as a keyboard reports it. The drag fixture then explicitly
+    /// forwards the held modifiers to the control gesture.
     fn hold_shift(&mut self, on: bool) {
         let m = if on { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
         self.harness.input_mut().events.push(egui::Event::ModifiersChanged(m));
@@ -322,6 +328,24 @@ fn type_tool_drag_makes_paragraph_text_and_a_click_point_text() {
     let list = d.exec("graphics.list", json!({"clip": clip}));
     assert_eq!(list["layers"][1]["textType"], "point");
     assert_eq!(list["layers"][1]["box"], json!(null));
+}
+
+/// Chinese, Japanese and Korean input methods hand over the finished text as `Ime(Commit)`, not
+/// `Text`; it is typed into the text being edited on the monitor (#1083).
+#[test]
+fn text_committed_by_an_input_method_is_typed_on_the_monitor() {
+    let mut d = Driver::new();
+    d.ok("ui.set", json!({"tool": "Type"}));
+    d.frames(3);
+    let pic = d.rect("program.picture");
+    d.ok("ui.click", json!({"x": pic[0] + pic[2] * 0.3, "y": pic[1] + pic[3] * 0.2}));
+    d.ok("ui.type", json!({"text": "A"}));
+    // the events Microsoft Pinyin sends for "ni hao" picked as 你好
+    let preedit = |text: &str| egui::Event::Ime(egui::ImeEvent::Preedit { text: text.into(), active_range_chars: None });
+    d.harness.input_mut().events.extend([preedit("ni hao"), preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("你好".into()))]);
+    d.frames(4);
+    let list = d.exec("graphics.list", json!({}));
+    assert_eq!(list["layers"][0]["text"], "A你好");
 }
 
 #[test]
@@ -538,4 +562,29 @@ fn a_hidden_layer_has_no_box_and_cannot_be_clicked() {
     d.ok("ui.click", json!({"x": r[0] + r[2] * 0.75, "y": inside.1}));
     d.frames(4);
     assert_eq!(ids(&mut d).len(), 14);
+}
+
+/// A double-click on a text layer edits it with all its text selected, so typing replaces it; while
+/// it is edited, Select All selects the text again, not the timeline clips, as in Premiere (#1102).
+#[test]
+fn double_click_and_select_all_select_the_text_being_edited() {
+    let mut d = Driver::new();
+    let (clip, pre) = d.point_text();
+    let (a, b) = (d.handle(&pre, 0), d.handle(&pre, 2));
+    d.ok("ui.click", json!({"x": (a.0 + b.0) / 2.0, "y": (a.1 + b.1) / 2.0, "count": 2}));
+    d.frames(4);
+    let edit = |d: &Driver| d.harness.state().ui.gfx_edit.as_ref().map(|e| (e.clip, e.layer, e.anchor, e.caret));
+    assert_eq!(edit(&d), Some((clip, 0, 0, "Title".len())), "the double-click selects the whole text");
+
+    // caret at the end, then Select All as the native macOS menu sends it (it takes Cmd+A first)
+    if let Some(e) = d.harness.state_mut().ui.gfx_edit.as_mut() {
+        (e.anchor, e.caret) = (5, 5);
+    }
+    let selection = d.harness.state().session.state.selection.clone();
+    let (tx, rx) = channel();
+    d.harness.state_mut().command_inbox = Some(rx);
+    tx.send("edit.selectAll".to_string()).unwrap();
+    d.frames(2);
+    assert_eq!(edit(&d), Some((clip, 0, 0, 5)), "Select All selects the text being edited");
+    assert_eq!(d.harness.state().session.state.selection, selection, "and leaves the timeline selection alone");
 }

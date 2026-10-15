@@ -32,8 +32,8 @@ pub fn crop_marks_art(n: &Node) -> Option<Node> {
     g.opacity = std::mem::replace(&mut object.opacity, 1.0);
     g.blend = std::mem::take(&mut object.blend);
     g.isolate = std::mem::take(&mut object.isolate);
-    g.mask = object.mask.take();
-    g.attrs = object.attrs.take();
+    g.extras_mut().mask = object.extras_mut().mask.take();
+    g.extras_mut().attrs = object.extras_mut().attrs.take();
     if let Some(ch) = g.children_mut() {
         *ch = vec![Arc::new(object), Arc::new(marks)];
     }

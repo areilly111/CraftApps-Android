@@ -1,4 +1,4 @@
-use crate::cache::{Cache, CacheKey};
+use crate::cache::{Cache, CacheKey, DecodedImageCache};
 use crate::color::ColorSpace;
 use crate::convert::convert_transform;
 use crate::font::{Font, StandardFont};
@@ -120,6 +120,9 @@ pub(crate) fn take_nested_paint(depth: u32) -> bool {
 pub struct InterpreterCache<'a> {
     pub(crate) font_cache: Rc<RefCell<HashMap<u128, Option<Font<'a>>>>>,
     pub(crate) object_cache: Cache,
+    /// PdfCraft patch: decoded images, shared by every render through this cache so a tile
+    /// no longer decodes its page's images again.
+    pub(crate) decoded_cache: DecodedImageCache,
 }
 
 impl<'a> Default for InterpreterCache<'a> {
@@ -134,6 +137,7 @@ impl<'a> InterpreterCache<'a> {
         Self {
             font_cache: Rc::new(RefCell::new(HashMap::new())),
             object_cache: Cache::new(),
+            decoded_cache: DecodedImageCache::new(),
         }
     }
 }

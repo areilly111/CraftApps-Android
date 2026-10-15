@@ -47,13 +47,7 @@ pub fn app_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
             }
             ui.add_space(2.0);
             // With the macOS menu bar the menus are at the top of the screen instead.
-            let menus_end = if app.services.native_menu.is_some() {
-                let full = ui.max_rect();
-                ui.painter().text(full.center(), egui::Align2::CENTER_CENTER, "VectorCraft", egui::FontId::proportional(13.5), t.text);
-                ui.cursor().min.x
-            } else {
-                menus::menu_bar(app, ui)
-            };
+            let menus_end = if app.services.native_menu.is_some() { ui.cursor().min.x } else { menus::menu_bar(app, ui) };
             // The right-side group fills the space after the menus from the right; when it runs
             // short, Discord goes first (it is also under Help), then the search icon (the palette
             // stays under its shortcut), then the workspace switcher narrows.
@@ -96,6 +90,14 @@ pub fn app_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
             if discord {
                 ui.add_space(10.0);
                 crate::community::discord_button(app, ui, false);
+            }
+            if app.services.native_menu.is_some() {
+                let title = ui.painter().layout_no_wrap("VectorCraft".into(), egui::FontId::proportional(13.5), t.text);
+                let title_rect = egui::Rect::from_center_size(full.center(), title.size());
+                // Keep the title centered only while the interactive groups leave room for it.
+                if title_rect.left() >= menus_end + 8.0 && title_rect.right() <= ui.min_rect().left() - 8.0 {
+                    ui.painter().galley(title_rect.min, title, t.text);
+                }
             }
         });
     });
@@ -153,7 +155,9 @@ pub enum AnchorControls {
 
 /// Which anchor controls show for the selection and the active tool.
 pub fn anchor_controls(app: &VectorcraftApp) -> AnchorControls {
-    let Some(st) = app.session.active() else { return AnchorControls::None };
+    let Some(st) = app.session.active() else {
+        return AnchorControls::None;
+    };
     if !st.selection.anchors.is_empty() {
         return AnchorControls::All;
     }
@@ -229,7 +233,9 @@ pub fn control_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
                 let first = sel.first().and_then(|id| st.doc.node(*id)).cloned();
                 let anchors = anchor_controls(app);
                 let label = match &first {
-                    Some(_) if sel.len() == 1 && anchors != AnchorControls::None => tl!("Anchor Point"),
+                    Some(_) if sel.len() == 1 && anchors != AnchorControls::None => {
+                        tl!("Anchor Point")
+                    }
                     Some(vectorcraft_doc::Node { kind: NodeKind::Image(im), .. }) if sel.len() == 1 => {
                         if im.link.is_some() {
                             tl!("Linked File")
@@ -237,7 +243,9 @@ pub fn control_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
                             tl!("Embedded")
                         }
                     }
-                    Some(n) if sel.len() == 1 && crate::panels::image_trace::is_trace(n) => tl!("Image Tracing"),
+                    Some(n) if sel.len() == 1 && crate::panels::image_trace::is_trace(n) => {
+                        tl!("Image Tracing")
+                    }
                     _ => tl!(crate::panels::appearance::object_label(app)),
                 };
                 ui.label(egui::RichText::new(label).font(theme::semibold(12.0)).color(t.text));
@@ -305,15 +313,21 @@ pub fn control_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
                     && ui.available_width() >= INLINE_TRANSFORM_WIDTH
                 {
                     let c = b.center();
+                    let origin = app.ruler_origin();
                     let link = app.session.prefs.constrain_proportions;
-                    for (k, lbl, v) in [("x", "X:", c.x), ("y", "Y:", c.y), ("width", "W:", b.rect.width()), ("height", "H:", b.rect.height())] {
+                    for (k, lbl, v, offset) in [
+                        ("x", "X:", c.x, origin.x),
+                        ("y", "Y:", c.y, origin.y),
+                        ("width", "W:", b.rect.width(), 0.0),
+                        ("height", "H:", b.rect.height(), 0.0),
+                    ] {
                         // The W/H link sits between W and H.
                         if k == "height" {
                             crate::panels::transform::constrain_link(app, ui);
                         }
                         widgets::field_label(ui, egui::RichText::new(tl!(lbl)).size(12.0).color(t.text_dim));
-                        if let Some(nv) = widgets::num_field(ui, ("cb", k), Some(v), units, 80.0) {
-                            app.run("object.setBounds", json!({k: nv, "reference": 4, "proportional": link})).ok();
+                        if let Some(nv) = widgets::num_field(ui, ("cb", k), Some(v - offset), units, 80.0) {
+                            app.run("object.setBounds", json!({k: nv + offset, "reference": 4, "proportional": link})).ok();
                         }
                     }
                 }
@@ -554,8 +568,12 @@ pub fn status_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(format!(
-                            "render {:.1} ms · ui {:.1} ms · {:.0} fps",
-                            app.perf.render_ms, app.perf.frame_ms, app.perf.fps
+                            "{} {:.1} ms · {} {:.1} ms · {:.0} fps",
+                            crate::i18n::tr_ctx(crate::i18n::current(), "diagnostics", "render"),
+                            app.perf.render_ms,
+                            crate::i18n::tr_ctx(crate::i18n::current(), "diagnostics", "ui"),
+                            app.perf.frame_ms,
+                            app.perf.fps
                         ))
                         .size(10.5)
                         .color(t.text_disabled),
@@ -566,16 +584,19 @@ pub fn status_bar(app: &mut VectorcraftApp, ui: &mut Ui) {
                             egui::RichText::new(format!("X: {}  Y: {}", u.readout(p.x), u.readout(p.y))).font(theme::mono(10.5)).color(t.text_dim),
                         );
                     }
-                    // Background saves and exports in progress, else the last message.
-                    if let Some(job) = app.background.jobs.first() {
-                        let more = app.background.jobs.len() - 1;
-                        let label = crate::i18n::msg(&job.label);
+                    // Background saves, exports and opens in progress, else the last message.
+                    let busy: Vec<&str> =
+                        app.background.jobs.iter().map(|j| j.label.as_str()).chain(app.opening.pending.iter().map(|p| p.label.as_str())).collect();
+                    if let Some(job) = busy.first() {
+                        let more = busy.len() - 1;
+                        let label = crate::i18n::msg(job);
                         let text = if more > 0 { format!("{label}… (+{more})") } else { format!("{label}…") };
-                        ui.label(egui::RichText::new(text).size(11.0).color(t.text));
                         ui.add(egui::Spinner::new().size(12.0).color(t.accent));
+                        ui.add(egui::Label::new(egui::RichText::new(text).size(11.0).color(t.text)).truncate());
                     } else if !app.ui.status.is_empty() {
                         // The message stays English in `ui.status` (agents and tests read it).
-                        ui.label(egui::RichText::new(crate::i18n::msg(&app.ui.status)).size(11.0).color(t.text));
+                        let message = crate::i18n::msg(&app.ui.status);
+                        ui.add(egui::Label::new(egui::RichText::new(message).size(11.0).color(t.text)).truncate());
                     }
                 });
             });
@@ -1072,5 +1093,163 @@ mod tests {
         app.run("file.new", json!({"width": 100, "height": 100, "name": "foo.svg"})).unwrap();
         super::sync_window_title(&mut app, &ctx);
         assert_eq!(app.last_window_title, "foo.svg \u{2014} VectorCraft");
+    }
+}
+
+#[cfg(test)]
+mod visual_regressions {
+    use super::*;
+
+    fn scaled_input(size: egui::Vec2, scale: f32) -> egui::RawInput {
+        let mut input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)), ..Default::default() };
+        input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(scale);
+        input
+    }
+
+    struct NativeMenus;
+    impl crate::native_menu::Backend for NativeMenus {
+        fn sync(&mut self, _: &crate::native_menu::MenuBar) {}
+        fn drain(&mut self) -> Vec<crate::native_menu::Event> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn capture_chrome_visual_fixtures() {
+        let Some(directory) = std::env::var_os("CRAFT_UI_VISUAL_FIXTURES").map(std::path::PathBuf::from) else {
+            return;
+        };
+        std::fs::create_dir_all(&directory).unwrap();
+        for brightness in theme::Brightness::ALL {
+            for width in [800.0, 1280.0] {
+                for scale in [1.0, 1.5, 2.0] {
+                    let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+                    app.services.native_menu = Some(crate::native_menu::NativeMenu::new(Box::new(NativeMenus)));
+                    app.ui.status = format!("Saved /Users/example/Documents/{}/illustration.svg", "long-folder-name/".repeat(10));
+                    let mut ready = false;
+                    let mut harness =
+                        egui_kittest::Harness::builder().with_size(vec2(width, 200.0)).with_pixels_per_point(scale).wgpu().build_ui_state(
+                            move |ui, app: &mut VectorcraftApp| {
+                                if !ready {
+                                    egui_extras::install_image_loaders(ui.ctx());
+                                    theme::install_fonts(ui.ctx());
+                                    theme::apply(ui.ctx(), brightness);
+                                    ready = true;
+                                    return;
+                                }
+                                app_bar(app, ui);
+                                status_bar(app, ui);
+                            },
+                            app,
+                        );
+                    harness.input_mut().max_texture_side = Some(8192);
+                    harness.run_steps(4);
+                    let stem = format!("vectorcraft-chrome-{brightness:?}-{width}-{scale}x");
+                    harness.render().unwrap().save(directory.join(format!("{stem}.png"))).unwrap();
+                    let mut regions = serde_json::Map::new();
+                    for id in ["app_bar", "status_bar"] {
+                        let rect = egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id)).unwrap().outer_rect;
+                        regions.insert(id.into(), json!([rect.left(), rect.top(), rect.width(), rect.height()]));
+                    }
+                    let dynamic: Vec<_> = harness
+                        .output()
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Text(text) if text.galley.job.text.contains(" fps") => {
+                                let r = text.visual_bounding_rect();
+                                Some(json!([r.left(), r.top(), r.width(), r.height()]))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    std::fs::write(
+                        directory.join(format!("{stem}.json")),
+                        serde_json::to_vec_pretty(&json!({
+                            "screen": [width, 200.0], "scale": scale, "regions": regions, "native_dynamic_text_regions": dynamic
+                        }))
+                        .unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_title_does_not_overlap_header_controls() {
+        for brightness in theme::Brightness::ALL {
+            for width in [800.0, 1280.0] {
+                for scale in [1.0, 1.5, 2.0] {
+                    let ctx = egui::Context::default();
+                    egui_extras::install_image_loaders(&ctx);
+                    theme::install_fonts(&ctx);
+                    theme::apply(&ctx, brightness);
+                    let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+                    app.services.native_menu = Some(crate::native_menu::NativeMenu::new(Box::new(NativeMenus)));
+                    let mut output = ctx.run_ui(scaled_input(vec2(width, 640.0), scale), |ui| app_bar(&mut app, ui));
+                    output.textures_delta.clear();
+                    assert_eq!(ctx.content_rect().size(), vec2(width, 640.0));
+                    assert_eq!(ctx.pixels_per_point(), scale);
+                    let texts: Vec<_> = output
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Text(text) => Some(text),
+                            _ => None,
+                        })
+                        .collect();
+                    let title = texts.iter().find(|text| text.galley.job.text == "VectorCraft");
+                    if width >= 1280.0 {
+                        assert!(title.is_some(), "the title remains visible when the header has room");
+                    }
+                    if let Some(title) = title {
+                        for text in texts.iter().filter(|text| text.galley.job.text != "VectorCraft") {
+                            assert!(
+                                !title.visual_bounding_rect().intersects(text.visual_bounding_rect()),
+                                "{width}: title overlaps {:?}",
+                                text.galley.job.text
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn long_status_stays_between_navigation_and_performance_readouts() {
+        for brightness in theme::Brightness::ALL {
+            for width in [800.0, 1280.0] {
+                for scale in [1.0, 1.5, 2.0] {
+                    let ctx = egui::Context::default();
+                    egui_extras::install_image_loaders(&ctx);
+                    theme::install_fonts(&ctx);
+                    theme::apply(&ctx, brightness);
+                    let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+                    app.ui.status = format!("Saved /Users/example/Documents/{}/illustration.svg", "long-folder-name/".repeat(10));
+                    let mut output = ctx.run_ui(scaled_input(vec2(width, 640.0), scale), |ui| status_bar(&mut app, ui));
+                    output.textures_delta.clear();
+                    assert_eq!(ctx.content_rect().size(), vec2(width, 640.0));
+                    assert_eq!(ctx.pixels_per_point(), scale);
+                    let texts: Vec<_> = output
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Text(text) => Some(text),
+                            _ => None,
+                        })
+                        .collect();
+                    let status = texts.iter().find(|text| text.galley.job.text.starts_with("Saved ")).expect("status stays visible");
+                    assert_eq!(status.galley.rows.len(), 1, "status is one line");
+                    assert!(status.galley.elided, "long status retains the full text for the label tooltip");
+                    let bounds = status.visual_bounding_rect();
+                    assert!(bounds.left() >= 0.0 && bounds.right() <= width, "{width}: {bounds:?}");
+                    for text in texts.iter().filter(|text| !text.galley.job.text.starts_with("Saved ")) {
+                        assert!(!bounds.intersects(text.visual_bounding_rect()), "{width}: status overlaps {:?}", text.galley.job.text);
+                    }
+                }
+            }
+        }
     }
 }

@@ -208,7 +208,7 @@ pub fn media_browser(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if resp.drag_started() && !e.is_dir && e.kind.is_some() {
             egui::DragAndDrop::set_payload(&ctx, DragPayload::Files(vec![e.path.clone()]));
         }
-        resp.context_menu(|ui| {
+        crate::widgets::context_menu(&resp, |ui| {
             if !e.is_dir && ui.button(tr("Import")).clicked() {
                 actions.push(("mediaBrowser.import", json!({"paths": [e.path]})));
                 ui.close();

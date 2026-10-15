@@ -119,7 +119,7 @@ fn prefix(key: &str) -> String {
 /// `n` and every descendant, opacity-mask art included.
 fn walk_all<'a>(n: &'a Node, f: &mut impl FnMut(&'a Node)) {
     f(n);
-    if let Some(m) = &n.mask {
+    if let Some(m) = &n.extras().mask {
         walk_all(&m.art, f);
     }
     for c in n.children().into_iter().flatten() {
@@ -129,11 +129,19 @@ fn walk_all<'a>(n: &'a Node, f: &mut impl FnMut(&'a Node)) {
 
 /// The roots of `d`'s art: layers, symbol definitions and pattern swatches.
 fn roots(d: &Document) -> impl Iterator<Item = &Arc<Node>> {
-    d.layers.iter().chain(d.symbols.iter().map(|s| &s.art)).chain(d.patterns.iter().flat_map(|p| &p.art))
+    d.layers
+        .iter()
+        .chain(d.symbols.iter().map(|s| &s.art))
+        .chain(d.graph_designs.iter().map(|g| &g.art))
+        .chain(d.patterns.iter().flat_map(|p| &p.art))
 }
 
 fn roots_mut(d: &mut Document) -> impl Iterator<Item = &mut Arc<Node>> {
-    d.layers.iter_mut().chain(d.symbols.iter_mut().map(|s| &mut s.art)).chain(d.patterns.iter_mut().flat_map(|p| &mut p.art))
+    d.layers
+        .iter_mut()
+        .chain(d.symbols.iter_mut().map(|s| &mut s.art))
+        .chain(d.graph_designs.iter_mut().map(|g| &mut g.art))
+        .chain(d.patterns.iter_mut().flat_map(|p| &mut p.art))
 }
 
 impl Document {
@@ -176,7 +184,7 @@ impl Document {
             }
             // The art shown may hold placed documents too.
             let n = Arc::make_mut(n);
-            if let Some(m) = &mut n.mask {
+            if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
                 update(&mut m.art);
             }
             for c in n.children_mut().into_iter().flatten() {
@@ -202,11 +210,11 @@ impl Document {
                 && keys.contains(&p.key)
             {
                 if let Some(im) = images.get(&p.key).and_then(|b| p.preview_image(&b.bytes)) {
-                    n.kind = NodeKind::Image(im);
+                    n.kind = NodeKind::Image(Box::new(im));
                 }
                 return;
             }
-            if let Some(m) = &mut n.mask {
+            if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
                 update(&mut m.art, keys, images);
             }
             for c in n.children_mut().into_iter().flatten() {
@@ -398,7 +406,7 @@ fn read_preview(p: &PlacedDocument, bytes: &Arc<Vec<u8>>) -> Option<Arc<ReadDocu
     doc.images.insert("preview".into(), ImageBlob { mime: mime.into(), bytes: bytes.clone(), proxy: None });
     let xf = Affine::scale_non_uniform(frame.width() / w as f64, frame.height() / h as f64);
     let im = ImageObject { key: "preview".into(), width: w, height: h, xf, link: None, placement: Default::default() };
-    let art = Node::new(art_id(), NodeKind::Group { children: vec![Arc::new(Node::new(art_id(), NodeKind::Image(im)))], clip: false });
+    let art = Node::new(art_id(), NodeKind::Group { children: vec![Arc::new(Node::new(art_id(), NodeKind::Image(Box::new(im))))], clip: false });
     let e = Arc::new(ReadDocument { key: p.key.clone(), preview: true, bytes: bytes.clone(), frame, art: Arc::new(art), doc: Arc::new(doc) });
     cache().insert(e.clone());
     Some(e)
@@ -424,7 +432,7 @@ fn art_id() -> crate::NodeId {
 /// Visit `n` and every descendant (opacity-mask art included) mutably.
 fn each_mut(n: &mut Node, f: &mut impl FnMut(&mut Node)) {
     f(n);
-    if let Some(m) = &mut n.mask {
+    if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
         each_mut(Arc::make_mut(&mut m.art), f);
     }
     for c in n.children_mut().into_iter().flatten() {
@@ -495,7 +503,10 @@ impl Document {
             let prefix = prefix(&p.key);
             add_resources(&mut d, &e.doc, &prefix);
             // The placed documents in that art, under their names here.
-            let inner = std::iter::once(&e.art).chain(e.doc.symbols.iter().map(|s| &s.art)).chain(e.doc.patterns.iter().flat_map(|p| &p.art));
+            let inner = std::iter::once(&e.art)
+                .chain(e.doc.symbols.iter().map(|s| &s.art))
+                .chain(e.doc.graph_designs.iter().map(|g| &g.art))
+                .chain(e.doc.patterns.iter().flat_map(|p| &p.art));
             for root in inner {
                 walk_all(root, &mut |n| {
                     if let NodeKind::PlacedDocument(q) = &n.kind {
@@ -579,7 +590,14 @@ mod tests {
         d.layers.clear();
         let art = Node::new(
             NodeId(50),
-            NodeKind::Image(ImageObject { key: "pic".into(), width: 1, height: 1, xf: Affine::IDENTITY, link: None, placement: Default::default() }),
+            NodeKind::Image(Box::new(ImageObject {
+                key: "pic".into(),
+                width: 1,
+                height: 1,
+                xf: Affine::IDENTITY,
+                link: None,
+                placement: Default::default(),
+            })),
         );
         d.symbols.push(Symbol { name: "Star".into(), art: Arc::new(art) });
         d.images.insert("pic".into(), ImageBlob::new("image/png", vec![1, 2, 3]));

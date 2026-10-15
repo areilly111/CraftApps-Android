@@ -1,4 +1,4 @@
-//! Path dialogs: Average, Offset Path (with Preview), Simplify and Split Into Grid.
+//! Path dialogs: Average, Offset Path and Simplify (with Preview), and Split Into Grid.
 
 use serde_json::{Value, json};
 
@@ -31,14 +31,38 @@ fn command(d: &Dialog) -> (&'static str, Value) {
 
 fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     form::grid(ui, d, app.session.general_unit());
-    if d.kind == "offsetPath" {
+    if matches!(d.kind.as_str(), "offsetPath" | "simplify") {
         let (id, params) = command(d);
-        form::preview(app, ui, d, "Offset Path", id, params);
+        if d.fields.get(form::PREVIEWED) != Some(&params) || !d.bool("preview") {
+            d.fields.remove("__counts");
+        }
+        let label = if d.kind == "simplify" { "Simplify" } else { "Offset Path" };
+        if let Some(r) = form::preview_result(app, ui, d, label, id, params)
+            && d.kind == "simplify"
+        {
+            d.fields.insert("__counts".into(), json!({"before": r["before"], "after": r["after"]}));
+        }
+        if d.kind == "simplify"
+            && d.bool("preview")
+            && let Some(counts) = d.fields.get("__counts")
+            && let (Some(before), Some(after)) = (counts["before"].as_u64(), counts["after"].as_u64())
+        {
+            ui.label(format!("{}: {before} → {after}", tl!("Anchor Points")));
+        }
     }
     false
 }
 
 fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
     let (id, params) = command(d);
-    if d.kind == "offsetPath" { form::commit_preview(app, id, params) } else { run_and_close(app, id, params) }
+    if !matches!(d.kind.as_str(), "offsetPath" | "simplify") {
+        return run_and_close(app, id, params);
+    }
+    let r = form::commit_preview(app, id, params)?;
+    // The fields as the dialog held them, so they show as typed when it opens again.
+    if d.kind == "offsetPath" {
+        let kept = ["offset", "joins", "miterLimit"].into_iter().filter_map(|k| Some((k.to_string(), d.fields.get(k)?.clone())));
+        app.ui.offset_path = Value::Object(kept.collect());
+    }
+    Ok(r)
 }

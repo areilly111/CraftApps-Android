@@ -67,7 +67,7 @@ impl TraceView {
 impl Node {
     /// The View of an Image Trace object (the tracing result for anything else, or an unknown id).
     pub fn trace_view(&self) -> TraceView {
-        self.trace.as_deref().map(TraceView::of).unwrap_or_default()
+        self.extras().trace.as_deref().map(TraceView::of).unwrap_or_default()
     }
 }
 
@@ -84,9 +84,9 @@ mod tests {
         }
         let mut g = Node::group(crate::NodeId(1), vec![]);
         assert_eq!(g.trace_view(), TraceView::Result);
-        g.trace = Some(Box::new(serde_json::json!({"view": "outlines"})));
+        g.extras_mut().trace = Some(Box::new(serde_json::json!({"view": "outlines"})));
         assert_eq!(g.trace_view(), TraceView::Outlines);
-        g.trace = Some(Box::new(serde_json::json!({"view": "sepia"})));
+        g.extras_mut().trace = Some(Box::new(serde_json::json!({"view": "sepia"})));
         assert_eq!(g.trace_view(), TraceView::Result);
     }
 }

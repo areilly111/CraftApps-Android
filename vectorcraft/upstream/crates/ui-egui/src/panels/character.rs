@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use vectorcraft_doc::{CharStyle, NodeId, NodeKind};
 use vectorcraft_tools::{Mods, ToolKey};
 
-use super::{first_selected, pstate, set_pstate};
+use super::{pstate, set_pstate};
 use crate::VectorcraftApp;
 use crate::theme::Tokens;
 use crate::widgets::{self, SpinPick, menu_item};
@@ -20,26 +20,62 @@ pub const SIZE_PRESETS: [f64; 15] = [6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0,
 pub const TRACKING_PRESETS: [f64; 14] = [-100.0, -75.0, -50.0, -25.0, -10.0, -5.0, 0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 200.0];
 pub const SCALE_PRESETS: [f64; 8] = [25.0, 50.0, 75.0, 90.0, 100.0, 110.0, 125.0, 150.0];
 
-/// The character style shown by the panel: the selected range's (or the caret's) while the Type
-/// tool edits text, else the first selected text object's first run. With it, the paragraph
+/// The stored character style: the selected range's (or the caret's) while the Type
+/// tool edits text, else the first selected text object's first run (including groups). With it, the paragraph
 /// attributes of the paragraph the selection starts in (else of the first paragraph).
+/// Font/paragraph controls and named-style capture use this; dimensional fields use `shared_effective`.
 pub(crate) fn text_style(app: &VectorcraftApp) -> Option<(CharStyle, vectorcraft_doc::ParaStyle)> {
     if let Some((id, a, b)) = text_editing(app)
         && let Some(NodeKind::Text(t)) = app.session.active().and_then(|d| d.doc.node(id)).map(|n| &n.kind)
     {
         return Some((vectorcraft_text::edit::insertion_style(&t.runs, a, b), t.para_at(t.paragraphs_in(a, a).start).clone()));
     }
-    let n = first_selected(app)?;
-    match &n.kind {
-        NodeKind::Text(t) => Some((t.first_style(), t.para_at(0).clone())),
-        _ => None,
+    let t = first_selected_text(app)?;
+    Some((t.first_style(), t.para_at(0).clone()))
+}
+
+/// The first selected text descendant, shared by Character and Paragraph controls.
+pub(crate) fn first_selected_text(app: &VectorcraftApp) -> Option<&vectorcraft_doc::TextObject> {
+    let st = app.session.active()?;
+    for node in st.selection.objects.iter().filter_map(|id| st.doc.node(*id)) {
+        let mut text = None;
+        node.walk(&mut |n| {
+            if text.is_none()
+                && let NodeKind::Text(t) = &n.kind
+            {
+                text = Some(t.as_ref());
+            }
+        });
+        if text.is_some() {
+            return text;
+        }
     }
+    None
 }
 
 /// `f` of the character styles the panels act on: the runs the Type tool's selection covers (the
 /// caret's style at a caret), else every run of the selected type, groups' included. `None` (a
 /// blank field) where they differ, or with no type.
 pub(crate) fn shared<T: PartialEq>(app: &VectorcraftApp, f: impl Fn(&CharStyle) -> T) -> Option<T> {
+    shared_styles(app, |_, style| Some(f(style)))
+}
+
+/// Dimensional controls use document units and tolerate arithmetic roundoff when comparing
+/// compensated runs. Keep raw styles available to font/paragraph controls and style definitions,
+/// even if a collapsed affine prevents editing dimensions.
+fn shared_effective(app: &VectorcraftApp, f: impl Fn(&CharStyle) -> f64) -> Option<f64> {
+    shared_styles(app, |t, style| t.effective_char_style(style).map(|s| Metric(f(&s)))).map(|v| v.0)
+}
+
+struct Metric(f64);
+
+impl PartialEq for Metric {
+    fn eq(&self, other: &Self) -> bool {
+        (self.0 - other.0).abs() <= 1e-9 * self.0.abs().max(other.0.abs()).max(1.0)
+    }
+}
+
+fn shared_styles<T: PartialEq>(app: &VectorcraftApp, f: impl Fn(&vectorcraft_doc::TextObject, &CharStyle) -> Option<T>) -> Option<T> {
     let st = app.session.active()?;
     let text = |id: NodeId| match st.doc.node(id).map(|n| &n.kind) {
         Some(NodeKind::Text(t)) => Some(t),
@@ -49,26 +85,26 @@ pub(crate) fn shared<T: PartialEq>(app: &VectorcraftApp, f: impl Fn(&CharStyle) 
     if let Some((id, a, b)) = text_editing(app) {
         let t = text(id)?;
         if b <= a {
-            return Some(f(&vectorcraft_text::edit::insertion_style(&t.runs, a, b)));
+            return f(t, &vectorcraft_text::edit::insertion_style(&t.runs, a, b));
         }
         let mut end = 0;
         for r in &t.runs {
             let start = end;
             end += r.text.len();
             if start < b && end > a {
-                acc.add(f(&r.style));
+                acc.add(f(t, &r.style));
             }
         }
     } else {
         for n in st.selection.objects.iter().filter_map(|id| st.doc.node(*id)) {
             n.walk(&mut |c| {
                 if let NodeKind::Text(t) = &c.kind {
-                    t.runs.iter().for_each(|r| acc.add(f(&r.style)));
+                    t.runs.iter().for_each(|r| acc.add(f(t, &r.style)));
                 }
             });
         }
     }
-    acc.value()
+    acc.value().flatten()
 }
 
 /// The value a run of styles share so far ([`shared`]).
@@ -402,7 +438,7 @@ pub(crate) fn metrics_grid(app: &mut VectorcraftApp, ui: &mut Ui, id: &str, s: &
     egui::Grid::new(id).num_columns(2).spacing([6.0, 4.0]).show(ui, |ui| {
         cell(ui, "T", tl!("Font Size"), |ui| size_field(app, ui, "ch-size", fw));
         cell(ui, "A↕", tl!("Leading"), |ui| {
-            let leading = shared(app, CharStyle::effective_leading);
+            let leading = shared_effective(app, CharStyle::effective_leading);
             let auto = shared(app, |s| s.leading.is_none()) == Some(true);
             match widgets::spin_field_auto(ui, "ch-lead", leading, Some(auto), unit, fw, 1.0, 0.1, &SIZE_PRESETS) {
                 Some(SpinPick::Value(v)) => style(app, json!({"leading": v})),
@@ -427,18 +463,18 @@ pub(crate) fn metrics_grid(app: &mut VectorcraftApp, ui: &mut Ui, id: &str, s: &
             return;
         }
         cell(ui, "IT", tl!("Vertical Scale %"), |ui| {
-            if let Some(v) = widgets::spin_plain(ui, "ch-vs", s.v_scale, "%", 1, fw, 1.0, 1.0, &SCALE_PRESETS) {
+            if let Some(v) = widgets::spin_plain(ui, "ch-vs", shared(app, |s| s.v_scale), "%", 1, fw, 1.0, 1.0, &SCALE_PRESETS) {
                 format(app, json!({"vScale": v}));
             }
         });
         cell(ui, "T↔", tl!("Horizontal Scale %"), |ui| {
-            if let Some(v) = widgets::spin_plain(ui, "ch-hs", s.h_scale, "%", 1, fw, 1.0, 1.0, &SCALE_PRESETS) {
+            if let Some(v) = widgets::spin_plain(ui, "ch-hs", shared_effective(app, |s| s.h_scale), "%", 1, fw, 1.0, 1.0, &SCALE_PRESETS) {
                 format(app, json!({"hScale": v}));
             }
         });
         ui.end_row();
         cell(ui, "Aª", tl!("Baseline Shift"), |ui| {
-            if let Some(v) = widgets::spin_field(ui, "ch-bs", Some(s.baseline_shift), unit, fw, 1.0, -1296.0, &[]) {
+            if let Some(v) = widgets::spin_field(ui, "ch-bs", shared_effective(app, |s| s.baseline_shift), unit, fw, 1.0, -1296.0, &[]) {
                 format(app, json!({"baselineShift": v}));
             }
         });
@@ -454,7 +490,7 @@ pub(crate) fn metrics_grid(app: &mut VectorcraftApp, ui: &mut Ui, id: &str, s: &
 /// The Font Size combo (Character and Properties panels, Control bar): typed, stepped, scrubbed or
 /// picked from the presets, in the type unit, blank where the selected text's sizes differ.
 pub(crate) fn size_field(app: &mut VectorcraftApp, ui: &mut Ui, id: &str, width: f32) {
-    let size = shared(app, |s| s.size);
+    let size = shared_effective(app, |s| s.size);
     if let Some(v) = widgets::spin_field(ui, id, size, app.session.type_unit(), width, 1.0, 0.1, &SIZE_PRESETS) {
         style(app, json!({"size": v}));
     }
@@ -619,6 +655,32 @@ pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui) {
                 }
             });
         });
+        // Proportional Metrics: full-width glyphs on the font's proportional widths (`palt`, `vpal`).
+        let proportional = s.as_ref().is_some_and(|s| s.proportional_metrics);
+        if menu_item(ui, tl!("Proportional Metrics"), has, proportional) {
+            format(app, json!({"proportionalMetrics": !proportional}));
+        }
+        ui.separator();
+    }
+    // Digits: the numeral system the selected characters' digits are drawn in, with the Middle
+    // Eastern (Indic) options, as Paragraph Direction is in the Paragraph panel.
+    if app.session.prefs.show_indic_options {
+        let digits = s.as_ref().map(|s| s.digits);
+        ui.add_enabled_ui(has, |ui| {
+            ui.menu_button(format!("   {}", tl!("Digits")), |ui| {
+                use vectorcraft_doc::Digits;
+                for (label, d, key) in [
+                    (tl!("Default"), Digits::Default, "default"),
+                    (tl!("Arabic"), Digits::Arabic, "arabic"),
+                    (tl!("Hindi"), Digits::Hindi, "hindi"),
+                    (tl!("Farsi"), Digits::Farsi, "farsi"),
+                ] {
+                    if menu_item(ui, label, true, digits == Some(d)) {
+                        format(app, json!({"digits": key}));
+                    }
+                }
+            });
+        });
         ui.separator();
     }
     for l in ["Standard Vertical Roman Alignment", "Tate-chu-yoko", "Fractional Widths", "System Layout", "No Break"] {
@@ -645,6 +707,81 @@ pub fn menu(app: &mut VectorcraftApp, ui: &mut Ui) {
 mod tests {
     use super::*;
     use vectorcraft_engine::Session;
+
+    #[test]
+    fn scaled_dimensions_do_not_show_false_mixed_values_from_roundoff() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
+        let a = app.run("text.create", json!({"x": 20, "y": 50, "text": "Axis", "size": 12})).unwrap()["id"].clone();
+        app.run("object.scale", json!({"sx": 120, "sy": 110})).unwrap();
+        let b = app.run("text.create", json!({"x": 20, "y": 90, "text": "Label", "size": 24})).unwrap()["id"].clone();
+        app.run("select.set", json!({"ids": [a, b]})).unwrap();
+        app.run("text.setStyle", json!({"size": 7, "leading": 9})).unwrap();
+        app.run("text.setFormat", json!({"hScale": 130, "baselineShift": 3})).unwrap();
+        for (actual, expected) in [
+            (shared_effective(&app, |s| s.size), 7.0),
+            (shared_effective(&app, CharStyle::effective_leading), 9.0),
+            (shared_effective(&app, |s| s.h_scale), 130.0),
+            (shared_effective(&app, |s| s.baseline_shift), 3.0),
+        ] {
+            assert!((actual.expect("equal dimensions must not be mixed") - expected).abs() < 1e-8);
+        }
+    }
+
+    #[test]
+    fn scaled_collapsed_text_keeps_nondimensional_controls_available() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
+        app.run("text.create", json!({"x": 20, "y": 50, "text": "Axis", "size": 12})).unwrap();
+        app.run("object.transform", json!({"matrix": [0, 0, 0, 0, 0, 0]})).unwrap();
+        assert!(text_style(&app).is_some());
+        assert_eq!(shared(&app, |s| s.tracking), Some(0.0));
+        assert_eq!(shared_effective(&app, |s| s.size), None);
+        app.run("text.setStyle", json!({"tracking": 40})).unwrap();
+        app.run("text.setFormat", json!({"leftIndent": 4})).unwrap();
+        assert_eq!(shared(&app, |s| s.tracking), Some(40.0));
+        assert_eq!(text_style(&app).unwrap().1.left_indent, 4.0);
+        let ctx = egui::Context::default();
+        let texts = super::super::tests_appearance::frame_events(&ctx, &mut app, vec![], show);
+        assert!(!texts.iter().any(|(s, _)| s == "No text selected"));
+    }
+
+    #[test]
+    fn scaled_character_fields_show_document_sizes_and_mixed_group_values() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
+        let a = app.run("text.create", json!({"x": 20, "y": 50, "text": "Axis", "size": 12})).unwrap()["id"].clone();
+        app.run("object.scale", json!({"sx": 200})).unwrap();
+        assert_eq!(shared_effective(&app, |s| s.size), Some(24.0));
+        assert_eq!(text_style(&app).unwrap().0.size, 12.0, "style definitions keep stored attributes");
+        let b = app.run("text.create", json!({"x": 20, "y": 90, "text": "Label", "size": 24})).unwrap()["id"].clone();
+        app.run("select.set", json!({"ids": [a, b]})).unwrap();
+        app.run("object.group", json!({})).unwrap();
+        assert_eq!(shared_effective(&app, |s| s.size), Some(24.0), "different local sizes, same displayed size");
+        app.run("object.scale", json!({"sx": 200, "sy": 100})).unwrap();
+        assert_eq!(shared_effective(&app, |s| s.h_scale), Some(200.0));
+        app.run("text.setStyle", json!({"size": 10})).unwrap();
+        assert_eq!(shared_effective(&app, |s| s.size), Some(10.0));
+        app.run("text.setFormat", json!({"hScale": 100})).unwrap();
+        assert_eq!(shared_effective(&app, |s| s.h_scale), Some(100.0));
+    }
+
+    #[test]
+    fn scaled_range_fields_follow_the_type_tool_selection() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
+        app.session.select_tool("type", Default::default()).unwrap();
+        let id = app.run("text.create", json!({"x": 20, "y": 50, "text": "Axis label", "size": 12})).unwrap()["id"].clone();
+        app.session.apply_actions(vec![vectorcraft_tools::Action::Notify("text.editNew".into())]).unwrap();
+        assert!(text_editing(&app).is_some());
+        app.run("object.scale", json!({"sx": 200})).unwrap();
+        app.run("text.setRangeStyle", json!({"id": id, "start": 0, "end": 4, "size": 10})).unwrap();
+        app.session.set_tool_option("selectAll", &json!(true));
+        assert_eq!(shared_effective(&app, |s| s.size), None);
+        app.session.set_tool_option("select", &json!({"start": 0, "end": 4}));
+        assert_eq!(shared_effective(&app, |s| s.size), Some(10.0));
+        assert_eq!(text_style(&app).unwrap().0.size, 5.0);
+    }
 
     /// Bold and Italic pick the family's own faces by name, and toggle back (#724).
     #[test]
@@ -673,17 +810,34 @@ mod tests {
         assert!(!crate::menus::enabled(&app, "type.bold"));
     }
 
-    /// Character Alignment is in the panel menu with the East Asian options only (as Mojikumi Set
-    /// and Top-to-Top Leading are in the Paragraph panel).
+    /// Character Alignment and Proportional Metrics are in the panel menu with the East Asian
+    /// options only (as Mojikumi Set and Top-to-Top Leading are in the Paragraph panel).
     #[test]
     fn character_alignment_shows_with_the_east_asian_options() {
         let mut app = VectorcraftApp::new(Session::new(), Default::default());
         app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
         let id = app.session.execute("text.create", &json!({"x": 20, "y": 50, "text": "雅楽"})).unwrap()["id"].clone();
         app.session.execute("select.set", &json!({"ids": [id]})).unwrap();
-        let shown = |app: &mut VectorcraftApp| crate::tests_labels::painted_text(app, menu).contains("Character Alignment");
-        assert!(!shown(&mut app));
+        let shown = |app: &mut VectorcraftApp| {
+            let text = crate::tests_labels::painted_text(app, menu);
+            (text.contains("Character Alignment"), text.contains("Proportional Metrics"))
+        };
+        assert_eq!(shown(&mut app), (false, false));
         app.session.prefs.show_east_asian_options = true;
+        assert_eq!(shown(&mut app), (true, true));
+    }
+
+    /// Digits is in the panel menu with the Middle Eastern (Indic) options only, as Paragraph
+    /// Direction is in the Paragraph panel.
+    #[test]
+    fn digits_show_with_the_indic_options() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 300, "height": 200})).unwrap();
+        let id = app.session.execute("text.create", &json!({"x": 20, "y": 50, "text": "صفحة 3"})).unwrap()["id"].clone();
+        app.session.execute("select.set", &json!({"ids": [id]})).unwrap();
+        let shown = |app: &mut VectorcraftApp| crate::tests_labels::painted_text(app, menu).contains("Digits");
+        assert!(!shown(&mut app));
+        app.session.prefs.show_indic_options = true;
         assert!(shown(&mut app));
     }
 }

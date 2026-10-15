@@ -24,9 +24,11 @@ lightcraft-raw = { workspace = true }
 lightcraft-denoise-core = { workspace = true }
 lightcraft-denoise = { workspace = true, optional = true }
 lightcraft-meta = { workspace = true }
+lightcraft-lensdb = { workspace = true }
 lightcraft-faces = { workspace = true }
 miniz_oxide = { workspace = true }
 lightcraft-merge = { workspace = true }
+lightcraft-geocode = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -49,6 +51,8 @@ denoise = ["dep:lightcraft-denoise", "lightcraft-denoise/runtime", "lightcraft-g
 rawnind-model = ["denoise", "lightcraft-denoise/rawnind-model", "lightcraft-denoise-core/rawnind-model"]
 
 [dev-dependencies]
+# HDR JPEG XL tests read the file's colour encoding
+jxl-oxide = { workspace = true }
 # Lossless synthetic HEIC files (the import test; decoded when the codecs' `heif` feature is on).
 lightcraft-heif = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }

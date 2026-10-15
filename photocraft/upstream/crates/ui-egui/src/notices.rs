@@ -130,9 +130,10 @@ fn dismiss(app: &mut PhotocraftApp, id: u64) {
 pub fn io_warnings(app: &mut PhotocraftApp, what: &str, warnings: &[String]) {
     let Some(first) = warnings.first() else { return };
     let n = warnings.len();
-    app.ui.status = if n == 1 { format!("{what}: {first}") } else { format!("{what} with {n} warnings: {first} …") };
+    let title = crate::i18n::fmt(&crate::i18n::trn(crate::i18n::current(), n as u64, "{what} with {n} warning", "{what} with {n} warnings"), &[("what", what)]);
+    app.ui.status = if n == 1 { format!("{what}: {first}") } else { format!("{title}: {first} …") };
     app.ui.status_error = true;
-    post(app, format!("{what} with {n} warning{}", if n == 1 { "" } else { "s" }), warnings.to_vec(), false, None);
+    post(app, title, warnings.to_vec(), false, None);
 }
 
 /// Report a failed file operation: the status bar shows it as an error and a notice keeps it on
@@ -266,7 +267,7 @@ mod tests {
         // the current language); `tr` with an explicit language leaves the process-wide language,
         // which other tests running in parallel draw with, untouched
         let es = crate::i18n::Lang::from_code("es").unwrap();
-        assert_eq!(crate::i18n::tr(es, &notice.title), "El arrastrar y soltar archivos de forma nativa no está disponible en Wayland");
+        assert_eq!(crate::i18n::tr(es, &notice.title), "Arrastrar y soltar archivos de forma nativa no está disponible en Wayland");
         assert_ne!(crate::i18n::tr(es, &notice.lines[0]), notice.lines[0]);
         assert_eq!(crate::i18n::tr(crate::i18n::Lang::EN, &notice.title), "Native file drag-and-drop is unavailable");
     }
@@ -369,6 +370,25 @@ mod tests {
         let text = app.ui.notices[1].lines.join(" ");
         assert!(text.contains("Blend If on `Overlay`"), "{text}");
         assert!(!text.contains("Memory usage"), "the budget hint is only for the budget fallback: {text}");
+    }
+
+    #[test]
+    fn import_warning_punctuation_is_localized_without_changing_english() {
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        for (lang, expected) in [
+            (crate::i18n::Lang::EN, "Opened x.psd with 3 warnings: first warning …"),
+            (crate::i18n::Lang::from_code("cs").unwrap(), "Otevřeno: x.psd (3 upozornění): first warning …"),
+        ] {
+            crate::i18n::with_language(lang, || {
+                let what = crate::i18n::fmt(tl!("Opened {name}"), &[("name", "x.psd")]);
+                let warnings = vec!["first warning".into(), "second warning".into(), "third warning".into()];
+                io_warnings(&mut app, &what, &warnings);
+                assert_eq!(app.ui.status, expected);
+                assert_eq!(app.ui.notices.last().unwrap().lines, warnings);
+                io_warnings(&mut app, &what, &warnings[..1]);
+                assert_eq!(app.ui.status, format!("{what}: first warning"));
+            });
+        }
     }
 
     #[test]

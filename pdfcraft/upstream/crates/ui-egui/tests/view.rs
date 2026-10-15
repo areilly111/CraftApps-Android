@@ -158,6 +158,24 @@ fn two_up_layout_places_pages_side_by_side() {
 }
 
 #[test]
+fn two_page_view_shows_one_spread_at_a_time_until_continuous() {
+    use pdfcraft_ui_egui::canvas::PageLayout;
+    // Two-page view without continuous scrolling shows just the current spread; the continuous
+    // checkbox reveals the rest (#752).
+    let mut h = harness(&[("layout", "two-page"), ("zoom", "50")]);
+    h.run_steps(4);
+    assert_eq!(h.state().views[0].layout, PageLayout::TwoUp);
+    assert!(!h.state().views[0].continuous(), "`two-page` is the non-scrolling two-page display");
+    assert!(rect(&h, 0).is_some() && rect(&h, 1).is_some(), "the first spread is on screen");
+    assert!(rect(&h, 2).is_none(), "the next spread is not shown until paged or scrolled");
+    // Turning on continuous scrolling lays every spread out in one column.
+    h.state_mut().set_option("continuous", "on").unwrap();
+    h.run_steps(4);
+    assert!(rect(&h, 2).is_some(), "continuous scrolling reveals the later spreads");
+    assert_eq!(h.state().views[0].layout, PageLayout::TwoUp, "the base layout is unchanged");
+}
+
+#[test]
 fn single_page_layout_shows_one_page_at_a_time() {
     let mut h = harness(&[("layout", "single"), ("zoom", "50")]);
     h.run_steps(4);
@@ -238,6 +256,80 @@ fn precise_touchpad_wheel_scrolls_one_to_one() {
     assert!(drift.abs() < 2.0, "no easing tail after the swipe: drifted {drift}");
 }
 
+/// The 40 frames from one wheel notch on, with the system asking for no animations (Windows'
+/// Animation effects turned off) or not, and Preferences ▸ Animation effects as given: how far
+/// page 1 has moved up in each frame, or with ⌘/Ctrl held, the view's zoom.
+fn frames_after_a_notch(system_reduced: bool, animation_effects: &str, zooming: bool) -> Vec<f32> {
+    let mut h = harness_stepping(1.0 / 60.0, &[("layout", "continuous"), ("zoom", "100")]);
+    h.state_mut().motion.reduced = system_reduced;
+    h.state_mut().set_option("animation_effects", animation_effects).unwrap();
+    let at = h.state().views[0].viewport_rect().center();
+    h.hover_at(at);
+    h.run_steps(2);
+    let before = rect(&h, 0).expect("page 1 on screen").min.y;
+    let (delta, modifiers) = if zooming { (egui::vec2(0.0, 1.0), Modifiers::COMMAND) } else { (egui::vec2(0.0, -1.0), Modifiers::NONE) };
+    h.event(egui::Event::MouseWheel { unit: MouseWheelUnit::Line, delta, phase: TouchPhase::Move, modifiers });
+    (0..40)
+        .map(|_| {
+            h.step();
+            if zooming { h.state().views[0].zoom } else { before - rect(&h, 0).expect("page 1 still laid out").min.y }
+        })
+        .collect()
+}
+
+/// The system's answer and the Animation effects choice, for each way to have them off and
+/// each way to have them on.
+const AT_ONCE: [(bool, &str); 3] = [(true, "system"), (false, "off"), (true, "off")];
+const EASED: [(bool, &str); 3] = [(false, "system"), (false, "on"), (true, "on")];
+
+#[test]
+fn a_wheel_notch_scrolls_at_once_with_animation_effects_off() {
+    // Eased, egui spreads a notch over about a quarter of a second. At once, the page moves the
+    // notch's whole distance in one frame.
+    let notch = pdfcraft_ui_egui::scroll_speed::ScrollSpeed::default().line_points();
+    for (system_reduced, effects) in AT_ONCE {
+        let moved = frames_after_a_notch(system_reduced, effects, false);
+        // The frame the notch arrives in scrolls; the next one draws the page where it stays.
+        assert!(
+            moved[2..].iter().all(|y| (y - notch).abs() < 0.5),
+            "{effects}, system reduced {system_reduced}: one notch is {notch} points, all at once: {moved:?}"
+        );
+    }
+    for (system_reduced, effects) in EASED {
+        let moved = frames_after_a_notch(system_reduced, effects, false);
+        assert!(moved[2] < notch * 0.75, "{effects}, system reduced {system_reduced}: egui eases the notch: {moved:?}");
+        assert!(
+            (moved[39] - notch).abs() < 1.0,
+            "{effects}, system reduced {system_reduced}: easing changes how long a notch takes, not how far it goes: {moved:?}"
+        );
+    }
+}
+
+#[test]
+fn the_wheel_zooms_a_whole_step_at_once_with_animation_effects_off() {
+    // ⌘/Ctrl with the wheel: egui eases the zoom as it eases scrolling.
+    let step = frames_after_a_notch(true, "system", true)[0];
+    assert!(step > 1.1, "the notch zoomed in: {step}");
+    for (system_reduced, effects) in AT_ONCE {
+        let zooms = frames_after_a_notch(system_reduced, effects, true);
+        assert!(
+            zooms.iter().all(|zoom| *zoom == step),
+            "{effects}, system reduced {system_reduced}: the whole step in the frame the notch arrives, and no more after it: {zooms:?}"
+        );
+    }
+    for (system_reduced, effects) in EASED {
+        let zooms = frames_after_a_notch(system_reduced, effects, true);
+        assert!(
+            zooms[0] > 1.0 && zooms[0] < 1.0 + (step - 1.0) * 0.75,
+            "{effects}, system reduced {system_reduced}: egui eases the notch: {zooms:?}"
+        );
+        assert!(
+            (zooms[39] / step - 1.0).abs() < 0.01,
+            "{effects}, system reduced {system_reduced}: easing changes how long a zoom step takes, not how far it goes: {zooms:?}"
+        );
+    }
+}
+
 #[test]
 fn page_display_commands_switch_layouts() {
     let mut h = harness(&[]);
@@ -253,9 +345,15 @@ fn page_display_commands_switch_layouts() {
     assert!(h.state().views[0].cover, "the cover toggle flips");
     assert!(h.state_mut().execute("view.layout.cover"));
     assert!(!h.state().views[0].cover, "toggling twice restores");
-    h.state_mut().execute("view.layout.continuous");
+    // Continuous scrolling is an independent toggle over the base layout (#752).
+    assert!(h.state().views[0].continuous(), "the default view scrolls continuously");
+    h.state_mut().execute("view.continuous");
     h.run_steps(3);
-    assert_eq!(h.state().views[0].layout, pdfcraft_ui_egui::canvas::PageLayout::Continuous);
+    assert!(!h.state().views[0].continuous(), "the checkbox turns continuous scrolling off");
+    assert_eq!(h.state().views[0].layout, pdfcraft_ui_egui::canvas::PageLayout::TwoUp, "toggling scrolling leaves the base layout");
+    h.state_mut().execute("view.layout.single");
+    assert_eq!(h.state().views[0].layout, pdfcraft_ui_egui::canvas::PageLayout::Single);
+    assert!(!h.state().views[0].continuous(), "switching the base layout leaves scrolling off");
 }
 
 #[test]
@@ -264,7 +362,8 @@ fn layout_option_rejects_typos() {
     assert!(h.state_mut().set_option("layout", "singel").is_err());
     assert!(h.state_mut().set_option("default-layout", "bogus").is_err());
     assert!(h.state_mut().set_option("cover", "maybe").is_err());
-    assert_eq!(h.state().views[0].layout, pdfcraft_ui_egui::canvas::PageLayout::Continuous);
+    assert_eq!(h.state().views[0].layout, pdfcraft_ui_egui::canvas::PageLayout::Single);
+    assert!(h.state().views[0].continuous(), "a rejected typo leaves the default display unchanged");
     assert!(h.state_mut().set_option("cover", "on").is_err(), "cover needs two-page view first");
     h.state_mut().set_option("layout", "two-up").unwrap();
     h.state_mut().set_option("cover", "on").unwrap();
@@ -286,8 +385,9 @@ fn view_options_without_a_document() {
 #[test]
 fn default_page_display_is_used_for_new_documents() {
     use pdfcraft_ui_egui::canvas::PageLayout;
-    // The factory default is continuous scrolling without snap jumps.
-    assert_eq!(PdfCraftApp::new().view_defaults.layout, PageLayout::Continuous);
+    // The factory default is single page, scrolling continuously, without snap jumps.
+    assert_eq!(PdfCraftApp::new().view_defaults.layout, PageLayout::Single);
+    assert!(PdfCraftApp::new().view_defaults.continuous);
     let mut h = harness(&[]);
     h.state_mut().set_option("default-layout", "single").unwrap();
     h.state_mut().open_bytes("other.pdf", None, PAGES.to_vec()).expect("opens");
@@ -309,7 +409,8 @@ fn default_page_display_is_used_for_new_documents() {
     let mut legacy = PdfCraftApp::new();
     legacy.set_option("language", "en").unwrap();
     legacy.restore("{}");
-    assert_eq!(legacy.view_defaults.layout, PageLayout::Continuous);
+    assert_eq!(legacy.view_defaults.layout, PageLayout::Single);
+    assert!(legacy.view_defaults.continuous, "a legacy file without the key keeps the factory default");
 }
 
 #[test]
@@ -349,6 +450,8 @@ fn preferences_set_the_default_zoom() {
     let mut h = harness(&[]);
     assert!(h.state_mut().execute("app.preferences"));
     h.run_steps(3);
+    h.get_by_label("Zoom to page level").scroll_to_me();
+    h.run_steps(4);
     h.get_by_label("Zoom to page level").click();
     h.run_steps(2);
     assert!(h.state_mut().execute("create.blank"));
@@ -367,9 +470,9 @@ fn rail_page_display_menu_offers_acrobats_view_choices() {
         h.get_by_label(item).click();
         h.run_steps(4);
     };
-    let shown = |h: &Harness<'static, PdfCraftApp>| (h.state().views[0].layout, h.state().views[0].fit);
+    let shown = |h: &Harness<'static, PdfCraftApp>| (h.state().views[0].layout, h.state().views[0].continuous(), h.state().views[0].fit);
     pick(&mut h, "Fit one full page");
-    assert_eq!(shown(&h), (PageLayout::Single, Fit::Page));
+    assert_eq!(shown(&h), (PageLayout::Single, false, Fit::Page), "one full page at a time, not scrolling");
     // The whole page fits at once, so the wheel turns pages without zooming out first.
     let at = h.state().views[0].viewport_rect().center();
     h.hover_at(at);
@@ -382,7 +485,7 @@ fn rail_page_display_menu_offers_acrobats_view_choices() {
     pick(&mut h, "Zoom to page level");
     assert_eq!(h.state().views[0].fit, Fit::Page);
     pick(&mut h, "Fit to width scrolling");
-    assert_eq!(shown(&h), (PageLayout::Continuous, Fit::Width));
+    assert_eq!(shown(&h), (PageLayout::Single, true, Fit::Width), "single page, scrolling continuously");
 }
 
 #[test]
@@ -703,10 +806,17 @@ fn required_radio_buttons_get_a_round_red_border() {
         let p = egui::pos2(r.min.x + r.width() * (x / 300.0), r.min.y + r.height() * (1.0 - y / 400.0));
         *img.get_pixel((p.x * ppp) as u32, (p.y * ppp) as u32)
     };
-    let red = |p: image::Rgba<u8>| p[0] > 180 && p[1] < 100 && p[2] < 100;
-    // Fit width puts about 4 px in a point: 0.2 to 0.3 pt from an edge is inside a 2 px border.
-    assert!(red(at(50.2, 320.0)), "the left of the circle is red: {:?}", at(50.2, 320.0));
-    assert!(!red(at(50.3, 339.7)), "the widget's corner, outside the circle, is not: {:?}", at(50.3, 339.7));
+    // Fit width is about 4 px in a point, and the stroke is 2 px. Chrome width can shift
+    // that stroke by a fraction of a pixel, so one sample may land on its antialiased edge
+    // (still red, mixed with the field tint) instead of the solid stroke.
+    let stroke = |p: image::Rgba<u8>| p[0] > 180 && p[2] < 140 && i16::from(p[0]) - i16::from(p[2]) > 80;
+    assert!(
+        [0.05_f32, 0.2].into_iter().any(|dx| stroke(at(50.0 + dx, 320.0))),
+        "the left of the circle is red: {:?} {:?}",
+        at(50.05, 320.0),
+        at(50.2, 320.0)
+    );
+    assert!(!stroke(at(50.3, 339.7)), "the widget's corner, outside the circle, is not: {:?}", at(50.3, 339.7));
 }
 
 /// Acrobat's Highlight existing fields is a preference, not a per-document choice: turned on
@@ -845,7 +955,14 @@ fn compare_page_with_raster(h: &mut Harness<'static, PdfCraftApp>, pdf: &[u8], z
     let img = h.render().expect("renders");
     let scale = zoom * 96.0 / 72.0 * ppp;
     let mut renderer = pdfcraft_render::PageRenderer::new(std::sync::Arc::new(pdf.to_vec()), pdfcraft_render::RenderConfig::default());
-    let page = renderer.render(pdfcraft_render::RenderRequest { page: 0, kind: pdfcraft_render::RequestKind::Pixels, tile: None, scale, tag: 0 });
+    let page = renderer.render(pdfcraft_render::RenderRequest {
+        page: 0,
+        kind: pdfcraft_render::RequestKind::Pixels,
+        tile: None,
+        scale,
+        tag: 0,
+        preview: false,
+    });
     assert!(page.error.is_none(), "{:?}", page.error);
     // Compare the lined area (page x 40..270 pt, y 60..330 pt from the top), screen against raster.
     let (ox, oy) = ((r.min.x * ppp).round() as i64, (r.min.y * ppp).round() as i64);
@@ -919,4 +1036,67 @@ trailer << /Root 1 0 R >>
     h.step();
     let first = detail(&mut h);
     assert!(first * 10 > sharp * 7, "the first frame after zooming lost its detail: {first} against {sharp}");
+}
+
+#[test]
+fn sidebar_collapse_and_resize_preserves_scroll_position() {
+    use pdfcraft_ui_egui::canvas::Fit;
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("pages.pdf", None, PAGES.to_vec()).expect("opens");
+        app.set_option("left", "closed").unwrap();
+        app.set_option("panel", "bookmarks").unwrap();
+        app.set_option("layout", "continuous").unwrap();
+        app
+    });
+    let mut width = 0.0;
+    for _ in 0..400 {
+        h.run_steps(1);
+        let w = h.state().views[0].viewport_rect().width();
+        if w == width {
+            break;
+        }
+        width = w;
+    }
+    h.state_mut().views[0].go_to_page(2);
+    h.run_steps(6);
+
+    let v = &h.state().views[0];
+    assert_eq!(v.current, 2);
+    assert_eq!(v.fit, Fit::Width);
+    let zoom_before = v.zoom;
+    let rect_before = v.page_screen_rect(2).expect("page 2 on screen");
+    let vp_before = v.viewport_rect();
+    let rel_y_before = rect_before.min.y - vp_before.min.y;
+
+    // Collapse bookmarks panel: available width increases, so fit-width zoom increases.
+    h.state_mut().set_option("panel", "none").unwrap();
+    h.run_steps(6);
+
+    let v = &h.state().views[0];
+    let zoom_after = v.zoom;
+    assert!(zoom_after > zoom_before, "zoom increased when panel collapsed: {zoom_after} vs {zoom_before}");
+    assert_eq!(v.current, 2, "still on page 2 after panel collapsed");
+    let rect_after = v.page_screen_rect(2).expect("page 2 still on screen");
+    let vp_after = v.viewport_rect();
+    let rel_y_after = rect_after.min.y - vp_after.min.y;
+    assert!((rel_y_after - rel_y_before).abs() < 1.0, "page 2 scroll position preserved: before {rel_y_before}, after {rel_y_after}");
+
+    // Reopen bookmarks panel: available width decreases, so fit-width zoom decreases.
+    h.state_mut().set_option("panel", "bookmarks").unwrap();
+    for _ in 0..400 {
+        h.run_steps(1);
+        let w = h.state().views[0].viewport_rect().width();
+        if w == width {
+            break;
+        }
+        width = w;
+    }
+    let v = &h.state().views[0];
+    assert_eq!(v.current, 2, "still on page 2 after panel reopened");
+    let rect_reopened = v.page_screen_rect(2).expect("page 2 still on screen");
+    let vp_reopened = v.viewport_rect();
+    let rel_y_reopened = rect_reopened.min.y - vp_reopened.min.y;
+    assert!((rel_y_reopened - rel_y_before).abs() < 1.0, "page 2 scroll position preserved on reopen: before {rel_y_before}, after {rel_y_reopened}");
 }

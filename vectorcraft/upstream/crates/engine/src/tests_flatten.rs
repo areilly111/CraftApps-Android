@@ -451,13 +451,13 @@ fn opacity_masks_are_rasterized_with_their_look() {
         json!({"ids": [m], "gradient": {"kind": "linear", "stops": [{"offset": 0, "color": "#ffffff"}, {"offset": 1, "color": "#000000"}]}}),
     );
     run(&mut s, "transparency.makeOpacityMask", json!({"ids": [a, m]}));
-    assert!(node(&s, a).mask.is_some());
+    assert!(node(&s, a).extras().mask.is_some());
     let before = picture(&s);
     run(&mut s, "select.all", json!({}));
     let (ids, _, rasterized) = flatten(&mut s, json!({"lineArtPpi": 144}));
     assert_eq!((ids.len(), rasterized), (1, 1));
     let mut masks = 0;
-    node(&s, ids[0]).walk(&mut |c| masks += c.mask.is_some() as usize);
+    node(&s, ids[0]).walk(&mut |c| masks += c.extras().mask.is_some() as usize);
     assert_eq!(masks, 0, "no transparency is left");
     assert!(changed(&before, &picture(&s)) < 0.02);
 }

@@ -399,6 +399,8 @@ pub enum Overlay {
     Line { a: Point, b: Point, color: [u8; 3], dashed: bool },
     /// An anchor square: filled = selected.
     Anchor { p: Point, color: [u8; 3], filled: bool, size: f32 },
+    /// A Curvature tool point, drawn as a circle; filled = the last touched point.
+    CurvePoint { p: Point, color: [u8; 3], filled: bool, size: f32 },
     /// A handle end circle.
     Handle { p: Point, color: [u8; 3] },
     /// Smart-guide style label (e.g. "anchor", "W: 100 pt").
@@ -425,6 +427,11 @@ pub enum Cursor {
     ResizeNwSe,
     ResizeNeSw,
     Rotate,
+    /// The rotate cursor beside a bounding box, bowed toward the pointer's side of the box: off
+    /// its centre in direction `0..8` (0 straight up, then clockwise in 45° steps). Its arc wraps
+    /// the corner it is at, so at the top right it opens toward the bottom left. Make it with
+    /// [`Cursor::rotate_about`].
+    RotateToward(u8),
     /// Over a Live Corners widget (drag to round the corners).
     CornerRadius,
     Pen,
@@ -476,6 +483,18 @@ pub enum Cursor {
 }
 
 impl Cursor {
+    /// The rotate cursor for the pointer at `p` turning art about `center`: [`Cursor::RotateToward`]
+    /// the pointer's side of it, or the plain [`Cursor::Rotate`] on the centre itself.
+    pub fn rotate_about(center: Point, p: Point) -> Self {
+        let d = p - center;
+        if !(d.x.is_finite() && d.y.is_finite()) || d.hypot() < 1e-9 {
+            return Cursor::Rotate;
+        }
+        // y points down the page: atan2(x, -y) is 0 straight up and grows clockwise.
+        let octant = (d.x.atan2(-d.y) / std::f64::consts::FRAC_PI_4).round() as i64;
+        Cursor::RotateToward(octant.rem_euclid(8) as u8)
+    }
+
     /// General › Use Precise Cursors: the drawing tools' pointers (the Pen's in every state, the
     /// Eyedropper's, the Slice and Blend tools') become a plain crosshair at the hotspot.
     pub fn precise(self) -> Self {

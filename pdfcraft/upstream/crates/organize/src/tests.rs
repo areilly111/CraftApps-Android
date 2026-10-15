@@ -417,6 +417,41 @@ fn combine_concatenates_with_a_bookmark_per_file() {
 }
 
 #[test]
+fn combiner_adds_each_source_then_releases_it() {
+    let bytes = Arc::new(fixture());
+    let src = Document::open(bytes.clone()).unwrap();
+    let mut combiner = crate::Combiner::new();
+    combiner.add("A", &src, None).unwrap();
+    drop(src);
+    // No output intents to copy, so the combine keeps nothing of the source's file.
+    assert_eq!(Arc::strong_count(&bytes), 1);
+    let picked: &[usize] = &[1];
+    combiner.add("B", &open(fixture()), Some(picked)).unwrap();
+    let streamed = combiner.finish().unwrap();
+    let whole = combine_selected(&[("A", &open(fixture()), None), ("B", &open(fixture()), Some(picked))]).unwrap();
+    assert_eq!(write_full(&streamed, &SaveOptions::default()).unwrap(), write_full(&whole, &SaveOptions::default()).unwrap());
+}
+
+#[test]
+fn combining_hostile_outlines_ends_their_runs_too() {
+    // The bookmark cases of `hostile_outlines_end_their_runs_and_never_loop`, combined: each run ends
+    // where it would repeat, and the source's bookmarks sit under its own entry.
+    let cases: [(&[&str], &str); 3] = [
+        (&["<< /Title (Self) /Parent 3 0 R /Next 5 0 R >>"], "H[Self]"),
+        (&["<< /Title (A) /Parent 3 0 R /Next 6 0 R >>", "<< /Title (B) /Parent 3 0 R /Next 5 0 R >>"], "H[A,B]"),
+        (&["<< /Title (A) /Parent 3 0 R /Next 99 0 R >>"], "H[A]"),
+    ];
+    for (items, listed) in cases {
+        let out = full_roundtrip(&combine(&[("H", &outline_with(items))]).unwrap());
+        assert_eq!(titles(&crate::bookmarks(&out)), [listed]);
+    }
+    // A bookmark whose first child is itself: nesting is cut off, so the combine still ends.
+    let looped = outline_with(&["<< /Title (Self) /Parent 3 0 R /First 5 0 R >>"]);
+    let out = full_roundtrip(&combine(&[("H", &looped)]).unwrap());
+    assert_eq!(crate::bookmarks(&out).first().map(|b| b.title.as_str()), Some("H"));
+}
+
+#[test]
 fn inherited_attributes_travel_with_copied_pages() {
     let out = full_roundtrip(&extract_pages(&doc_b(), &[1]).unwrap());
     let p = page_dict(&out, 0);
@@ -1442,6 +1477,35 @@ fn number_pages_past_four_mib_in_total_is_accepted() {
     assert_eq!(crate::page_labels(&d).unwrap()[4_999], format!("{}5000", "x".repeat(1000)));
 }
 
+/// Each range keeps its own decoded prefix, so a small file sharing one prefix object asks for a
+/// copy per range (about 200 MiB at the tree-work limit). Past 4 MiB of decoded prefixes in all
+/// the tree is refused, and so is relabelling it, which changes nothing.
+#[test]
+fn page_label_prefixes_are_bounded_in_total() {
+    // `ranges` ranges naming one shared prefix object of `prefix` bytes, without a style.
+    let shared = |ranges: i64, prefix: usize| {
+        let mut d = doc_a();
+        let prefix = d.add(Object::String(PdfString::text(&"x".repeat(prefix))));
+        let mut spec = Dict::new();
+        spec.set(b"P".to_vec(), Object::Ref(prefix));
+        let spec = d.add(Object::Dict(spec));
+        let mut tree = Dict::new();
+        tree.set(b"Nums".to_vec(), Object::Array((0..ranges).flat_map(|i| [Object::Int(i), Object::Ref(spec)]).collect()));
+        let tree = d.add(Object::Dict(tree));
+        d.update_dict(d.root().unwrap(), |c| c.set(b"PageLabels".to_vec(), Object::Ref(tree))).unwrap();
+        d
+    };
+    let mut d = shared(5_000, 1_000);
+    let e = crate::page_labels(&d).unwrap_err().to_string();
+    assert!(e.contains("decoded prefixes exceed 4 MiB in total"), "{e}");
+    let before = d.modified_objects();
+    assert!(crate::number_pages(&mut d, 0, 1, crate::LabelStyle::Decimal, "", 1).is_err());
+    assert_eq!(d.modified_objects(), before, "a refused relabelling changes nothing");
+    // Exactly 4 MiB of prefixes is still read.
+    let max = pdfcraft_cos::page_labels::MAX_PREFIX_TOTAL_BYTES / 1024;
+    assert!(crate::page_labels(&shared(max as i64, 1024)).unwrap().iter().all(|l| l.len() == 1024));
+}
+
 #[test]
 fn page_boxes_default_inherit_and_set() {
     let mut doc = open(fixture());
@@ -1661,4 +1725,366 @@ fn a_repeated_widget_joins_an_indirect_kids_array() {
     let field = out.resolve(&fields[0]).as_dict().cloned().unwrap();
     let kids = out.resolve(field.get(b"Kids").unwrap()).as_array().cloned().unwrap();
     assert_eq!(kids.len(), 3, "both original widgets and the repeat's own: {kids:?}");
+}
+
+/// A one-page document whose form holds one text field named `name` (a widget that is its own
+/// field, the smallest form a page can carry).
+fn doc_with_field(name: &str) -> Document {
+    doc_with_fields(&[name])
+}
+
+/// A one-page document whose form holds one widget field per name, in order.
+fn doc_with_fields(names: &[&str]) -> Document {
+    let first = 5; // object number of the first field
+    let refs: Vec<String> = names.iter().enumerate().map(|(i, _)| format!("{} 0 R", first + i)).collect();
+    let mut b: Vec<String> = vec![
+        format!("<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [{}] >> >>", refs.join(" ")), // 1
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >>".into(),                // 2
+        format!("<< /Type /Page /Parent 2 0 R /Annots [{}] >>", refs.join(" ")),                   // 3
+        "<< /Title (form) >>".into(),                                                              // 4
+    ];
+    for name in names.iter() {
+        b.push(format!("<< /Type /Annot /Subtype /Widget /FT /Tx /T ({name}) /V (x) /Rect [60 60 200 80] /P 3 0 R >>")); // 5 + i
+    }
+    open(build(&b, "/Root 1 0 R /Info 4 0 R"))
+}
+
+/// The /T names of a document's /AcroForm /Fields, in order.
+fn form_field_names(doc: &Document) -> Vec<String> {
+    let Some(form) = catalog(doc).get(b"AcroForm").map(|f| doc.resolve(f)).and_then(|f| f.as_dict().cloned()) else {
+        return Vec::new();
+    };
+    form.get(b"Fields")
+        .map(|f| doc.resolve(f))
+        .and_then(|f| f.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|f| {
+            doc.resolve(f)
+                .as_dict()
+                .and_then(|d| d.get(b"T").cloned())
+                .map(|t| doc.resolve(&t))
+                .and_then(|t| t.as_string().map(|s| String::from_utf8_lossy(&s.bytes).into_owned()))
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Two documents whose forms both name a field Text1 cannot just be put together: fields of
+/// one fully-qualified name are one field, so the values would blur into it. The incoming
+/// field is renamed to the first free variant, Text1-1.
+#[test]
+fn import_renames_a_colliding_field_name() {
+    let mut dst = doc_with_field("Text1");
+    let src = doc_with_field("Text1");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["Text1", "Text1-1"]);
+}
+
+/// The rename takes the first free variant: with Text1 and Text1-1 already in the form, a
+/// colliding Text1 becomes Text1-2 (not Text1-1, which would collide again).
+#[test]
+fn import_renames_to_the_first_free_variant() {
+    let mut dst = doc_with_fields(&["Text1", "Text1-1"]);
+    let src = doc_with_field("Text1");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["Text1", "Text1-1", "Text1-2"]);
+}
+
+/// A one-page document whose form holds one text field whose `/T` is a UTF-16BE hex string —
+/// the standard encoding for non-ASCII names — decoding to `name`.
+fn doc_with_field_utf16(name: &str) -> Document {
+    let t: String = std::iter::once(0xFEFFu16).chain(name.encode_utf16()).map(|u| format!("{u:04X}")).collect();
+    let b: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] >> >>".into(), // 1
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >>".into(), // 2
+        "<< /Type /Page /Parent 2 0 R /Annots [5 0 R] >>".into(),                   // 3
+        "<< /Title (form) >>".into(),                                               // 4
+        format!("<< /Type /Annot /Subtype /Widget /FT /Tx /T <{t}> /V (x) /Rect [60 60 200 80] /P 3 0 R >>"), // 5
+    ];
+    open(build(&b, "/Root 1 0 R /Info 4 0 R"))
+}
+
+/// The decoded `/T` names of a document's /AcroForm /Fields, in order (whatever encoding each
+/// was written in).
+fn decoded_form_field_names(doc: &Document) -> Vec<String> {
+    let Some(form) = catalog(doc).get(b"AcroForm").map(|f| doc.resolve(f)).and_then(|f| f.as_dict().cloned()) else {
+        return Vec::new();
+    };
+    form.get(b"Fields")
+        .map(|f| doc.resolve(f))
+        .and_then(|f| f.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|f| {
+            doc.resolve(f)
+                .as_dict()
+                .and_then(|d| d.get(b"T").cloned())
+                .map(|t| doc.resolve(&t))
+                .and_then(|t| t.as_string().map(|s| s.to_text()))
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// A field's name is its text, not the bytes it was written in: a destination field named in
+/// PDFDocEncoding and an incoming UTF-16BE field that decode to the same name are one name,
+/// so the incoming field is renamed out of the way (not silently blurred into the other).
+#[test]
+fn import_renames_by_decoded_name_whatever_its_encoding() {
+    let mut dst = doc_with_field("Text1");
+    let src = doc_with_field_utf16("Text1");
+    let out = import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(out.renamed_fields, [("Text1".to_string(), "Text1-1".to_string())]);
+    assert_eq!(decoded_form_field_names(&dst), ["Text1", "Text1-1"]);
+}
+
+/// Renaming a non-ASCII name keeps it readable: the new `/T` stores the new name as text
+/// (UTF-16BE again), never as mojibake of the old bytes.
+#[test]
+fn a_renamed_non_ascii_name_stays_readable() {
+    let mut dst = doc_with_field_utf16("Förm");
+    let src = doc_with_field_utf16("Förm");
+    let out = import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(out.renamed_fields, [("Förm".to_string(), "Förm-1".to_string())]);
+    assert_eq!(decoded_form_field_names(&dst), ["Förm", "Förm-1"]);
+}
+
+/// A one-page document whose form holds one field tree: a root field `root` with one child
+/// field `kid` (a merged field-and-widget, as page tools make them).
+fn doc_with_tree(root: &str, kid: &str) -> Document {
+    let b: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] >> >>".into(), // 1
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >>".into(), // 2
+        "<< /Type /Page /Parent 2 0 R /Annots [6 0 R] >>".into(),                   // 3
+        "<< /Title (form) >>".into(),                                               // 4
+        format!("<< /FT /Tx /T ({root}) /Kids [6 0 R] >>"),                         // 5
+        format!("<< /Type /Annot /Subtype /Widget /FT /Tx /T ({kid}) /Parent 5 0 R /Rect [60 60 200 80] /P 3 0 R >>"), // 6
+    ];
+    open(build(&b, "/Root 1 0 R /Info 4 0 R"))
+}
+
+/// A field's name is its place in the tree, not just its own `/T`: an incoming field called
+/// x.b collides with the child b of the destination's field x, and is renamed out of the way.
+#[test]
+fn import_renames_a_nested_field_whose_full_name_collides() {
+    let mut dst = doc_with_tree("x", "b");
+    let src = doc_with_field("x.b");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["x", "x.b-1"]);
+}
+
+/// The collision may sit below the top level: the destination holds a field literally named
+/// a.b, and the incoming tree a ▸ b walks into it. Only the colliding child is renamed — the
+/// incoming root a never collided, so it keeps its name.
+#[test]
+fn import_renames_the_colliding_child_not_the_whole_tree() {
+    let mut dst = doc_with_field("a.b");
+    let src = doc_with_tree("a", "b");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["a.b", "a"], "the incoming root keeps its name");
+    // The incoming tree is the second /Fields entry; its child was renamed.
+    let fields = catalog(&dst)
+        .get(b"AcroForm")
+        .map(|f| dst.resolve(f))
+        .and_then(|f| f.as_dict().cloned())
+        .unwrap()
+        .get(b"Fields")
+        .map(|l| dst.resolve(l))
+        .and_then(|l| l.as_array().cloned())
+        .unwrap();
+    let kid = dst.resolve(&fields[1]).as_dict().unwrap().get(b"Kids").map(|k| dst.resolve(k)).and_then(|k| k.as_array().cloned()).unwrap();
+    let kid_t = dst.resolve(&kid[0]).as_dict().unwrap().get(b"T").cloned().unwrap();
+    let resolved = dst.resolve(&kid_t);
+    let name = resolved.as_string().unwrap();
+    assert_eq!(String::from_utf8_lossy(&name.bytes), "b-1", "the child's /T is renamed, the FQN follows the root");
+}
+
+/// A field name is taken even when it hangs only off a page's annotations: a widget that is
+/// its own field, never registered in `/AcroForm /Fields`, still names a field, and an import
+/// must not silently blur into it.
+#[test]
+fn import_renames_away_from_an_orphaned_widgets_name() {
+    let b: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".into(),                                 // 1 (no /AcroForm)
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >>".into(), // 2
+        "<< /Type /Page /Parent 2 0 R /Annots [5 0 R] >>".into(),                   // 3
+        "<< /Title (orphan) >>".into(),                                             // 4
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Text1) /V (x) /Rect [60 60 200 80] /P 3 0 R >>".into(), // 5
+    ];
+    let mut dst = open(build(&b, "/Root 1 0 R /Info 4 0 R"));
+    let src = doc_with_field("Text1");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["Text1-1"], "the orphaned Text1 must count as taken");
+}
+
+/// Callers can keep the older behaviour — an incoming field of a taken name becomes one field
+/// with the one already there — by asking to merge. Nothing is renamed.
+#[test]
+fn import_can_merge_into_same_named_fields_instead() {
+    let mut dst = doc_with_field("Text1");
+    let src = doc_with_field("Text1");
+    let outcome = import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Merge).unwrap();
+    assert_eq!(form_field_names(&dst), ["Text1", "Text1"]);
+    assert!(outcome.renamed_fields.is_empty(), "merge renames nothing");
+}
+
+/// Duplicating a page copies the document's own fields: the copies keep their names (one field
+/// shown twice, as before field-conflict renaming existed) instead of silently becoming Text1-1.
+#[test]
+fn duplicating_a_page_with_a_field_keeps_the_field_name() {
+    let mut doc = doc_with_field("Text1");
+    crate::duplicate_pages(&mut doc, &[0]).unwrap();
+    assert_eq!(crate::page_count(&doc).unwrap(), 2);
+    assert_eq!(form_field_names(&doc), ["Text1", "Text1"], "nothing renamed");
+}
+
+/// Replace Pages keeps the field names too.
+#[test]
+fn replacing_a_page_renames_no_fields() {
+    let mut doc = doc_with_field("Text1");
+    crate::replace_pages(&mut doc, &[0], &doc_with_field("Text1"), &[0]).unwrap();
+    assert!(form_field_names(&doc).iter().all(|n| n == "Text1"), "{:?}", form_field_names(&doc));
+}
+
+/// Extract and Split copy one document: two same-named field roots (malformed but common) stay
+/// one field by name rather than being split apart as Name and Name-1.
+#[test]
+fn extract_and_split_keep_same_named_fields_together() {
+    let src = doc_with_fields(&["Text1", "Text1"]);
+    let out = extract_pages(&src, &[0]).unwrap();
+    assert_eq!(form_field_names(&out), ["Text1", "Text1"]);
+    for part in split(&src, &SplitBy::PageCount(1)).unwrap() {
+        assert_eq!(form_field_names(&part), ["Text1", "Text1"]);
+    }
+}
+
+/// An import says what it renamed, so callers can tell the user — and their scripts — that a
+/// field they knew by one name now goes by another.
+#[test]
+fn import_reports_the_fields_it_renamed() {
+    let mut dst = doc_with_fields(&["Text1", "Text1-1"]);
+    let src = doc_with_field("Text1");
+    let outcome = import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(outcome.renamed_fields, [("Text1".to_string(), "Text1-2".to_string())]);
+    assert_eq!(outcome.pages.len(), 1);
+}
+
+/// A renamed tree survives a save and reopen: the parent keeps its new name, the child still
+/// hangs under it with its own name unchanged, and an independent parser reads the same form.
+#[test]
+fn a_renamed_field_tree_survives_a_save_and_reopen() {
+    let mut dst = doc_with_tree("a", "b");
+    let src = doc_with_tree("a", "b");
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    let out = full_roundtrip(&dst);
+    assert_eq!(form_field_names(&out), ["a", "a-1"], "the incoming root was renamed");
+    let fields = catalog(&out)
+        .get(b"AcroForm")
+        .map(|f| out.resolve(f))
+        .and_then(|f| f.as_dict().cloned())
+        .unwrap()
+        .get(b"Fields")
+        .map(|l| out.resolve(l))
+        .and_then(|l| l.as_array().cloned())
+        .unwrap();
+    let root = out.resolve(&fields[1]).as_dict().cloned().unwrap();
+    let kids = root.get(b"Kids").map(|k| out.resolve(k)).and_then(|k| k.as_array().cloned()).unwrap();
+    let kid = out.resolve(&kids[0]).as_dict().cloned().unwrap();
+    assert_eq!(kid.reference(b"Parent"), fields[1].as_ref(), "the child still hangs under the renamed root");
+    let kid_t = kid.get(b"T").cloned().unwrap();
+    let resolved = out.resolve(&kid_t);
+    assert_eq!(String::from_utf8_lossy(&resolved.as_string().unwrap().bytes), "b", "the child keeps its own name");
+}
+
+/// The pre-scan says what an import of `src` into `dst` would rename, without changing
+/// anything — the Combine tab shows it before anything is combined.
+#[test]
+fn field_name_conflicts_previews_what_an_import_renames() {
+    let dst = doc_with_fields(&["Text1", "Text1-1"]);
+    let src = doc_with_field("Text1");
+    assert_eq!(field_name_conflicts(&dst, &src), [("Text1".to_string(), "Text1-2".to_string())]);
+    let apart = doc_with_field("Signature1");
+    assert!(field_name_conflicts(&dst, &apart).is_empty(), "nothing collides, nothing to preview");
+}
+
+/// The collision is not only with the destination: two incoming fields of one name would blur
+/// into each other just the same, so the second is renamed too.
+#[test]
+fn import_renames_a_field_colliding_with_another_incoming_field() {
+    let mut dst = doc_with_field("Other");
+    let src = doc_with_fields(&["Text1", "Text1"]);
+    import_pages_with(&mut dst, &src, &[0], 1, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["Other", "Text1", "Text1-1"]);
+}
+
+/// A page listed twice shows its widget on both copies — also when the field was renamed: both
+/// pages' widgets belong to the one renamed field, and no second Text1 appears.
+#[test]
+fn a_repeated_page_joins_the_renamed_field() {
+    let mut dst = doc_with_field("Text1");
+    let src = doc_with_field("Text1");
+    import_pages_with(&mut dst, &src, &[0, 0], 2, FieldConflicts::Rename).unwrap();
+    assert_eq!(form_field_names(&dst), ["Text1", "Text1-1"], "one field, renamed once");
+    let fields = catalog(&dst)
+        .get(b"AcroForm")
+        .map(|f| dst.resolve(f))
+        .and_then(|f| f.as_dict().cloned())
+        .unwrap()
+        .get(b"Fields")
+        .map(|l| dst.resolve(l))
+        .and_then(|l| l.as_array().cloned())
+        .unwrap();
+    let renamed = fields[1].clone();
+    for page in [1, 2] {
+        let list = page_dict(&dst, page).get(b"Annots").map(|a| dst.resolve(a)).and_then(|a| a.as_array().cloned()).unwrap();
+        assert!(list.contains(&renamed), "page {page}'s widget belongs to the renamed field");
+    }
+}
+
+/// Combining forms keeps same-named fields separate — the second file's colliding field is
+/// renamed — and the combine says what it renamed.
+#[test]
+fn combine_renames_colliding_field_names_and_reports_them() {
+    let a = doc_with_field("Text1");
+    let b = doc_with_field("Text1");
+    let out = combine_selected_with(&[("a", &a as &Document, None), ("b", &b, None)], FieldConflicts::Rename).unwrap();
+    assert_eq!(out.renamed_fields, [("Text1".to_string(), "Text1-1".to_string())]);
+    assert_eq!(form_field_names(&out.doc), ["Text1", "Text1-1"]);
+    let merged = combine_selected_with(&[("a", &a, None), ("b", &b, None)], FieldConflicts::Merge).unwrap();
+    assert!(merged.renamed_fields.is_empty());
+    assert_eq!(form_field_names(&merged.doc), ["Text1", "Text1"], "merge keeps the older behaviour");
+}
+
+/// The grouped combine (a file's pages split around others') renames colliding names between
+/// files just the same, while a file combined with itself once keeps its fields whole.
+#[test]
+fn combine_grouped_renames_colliding_field_names() {
+    let a = doc_with_field("Text1");
+    let b = doc_with_field("Text1");
+    let runs: Vec<Run<'_>> = vec![(0, "a", &a, None), (1, "b", &b, None)];
+    let out = combine_grouped_with(&runs, FieldConflicts::Rename).unwrap();
+    assert_eq!(out.renamed_fields, [("Text1".to_string(), "Text1-1".to_string())]);
+    assert_eq!(form_field_names(&out.doc), ["Text1", "Text1-1"]);
+    let split: Vec<Run<'_>> = vec![(0, "a", &a, Some(&[0])), (0, "a", &a, None), (1, "b", &b, None)];
+    let once = combine_grouped_with(&split, FieldConflicts::Rename).unwrap();
+    assert_eq!(
+        once.renamed_fields,
+        [("Text1".to_string(), "Text1-1".to_string())],
+        "the grouped file is copied once; only b's colliding field renames"
+    );
+}
+
+/// The pre-flight scan over a whole combine list: what each file's fields would be renamed,
+/// in order, exactly as the combine would rename them — the Combine tab shows this before
+/// anything is combined.
+#[test]
+fn combine_field_conflicts_previews_each_file_in_order() {
+    let a = doc_with_field("Text1");
+    let b = doc_with_field("Text1");
+    let c = doc_with_fields(&["Text1", "Other"]);
+    let preview = combine_field_conflicts(&[&a, &b, &c]);
+    assert_eq!(preview[0], [], "the first file collides with nothing");
+    assert_eq!(preview[1], [("Text1".to_string(), "Text1-1".to_string())]);
+    assert_eq!(preview[2], [("Text1".to_string(), "Text1-2".to_string())], "the cascade continues past the earlier rename");
 }

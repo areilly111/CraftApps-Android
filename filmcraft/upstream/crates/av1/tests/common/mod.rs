@@ -16,6 +16,11 @@ pub fn ffmpeg_dav1d() -> Option<PathBuf> {
     ffmpeg_with(&[("-decoders", "libdav1d")])
 }
 
+/// ffmpeg with libaom (4:2:2 and 4:4:4 fixtures, which SVT-AV1 cannot make) and libdav1d.
+pub fn ffmpeg_libaom() -> Option<PathBuf> {
+    ffmpeg_with(&[("-encoders", "libaom-av1"), ("-decoders", "libdav1d")])
+}
+
 /// Builds such as the Windows "essentials" ones lack these libraries; skip rather than fail.
 fn ffmpeg_with(needs: &[(&str, &str)]) -> Option<PathBuf> {
     let ff = filmcraft_testkit::ffmpeg_or_skip("av1 oracle")?;
@@ -38,9 +43,11 @@ pub fn run(ff: &Path, args: &[&str]) {
     assert!(out.status.success(), "ffmpeg {:?} failed: {}", args, String::from_utf8_lossy(&out.stderr));
 }
 
-/// An AV1 fixture: a lavfi source encoded by ffmpeg's libsvtav1 into IVF.
+/// An AV1 fixture: a lavfi source encoded by ffmpeg (libsvtav1 unless [`Spec::encoder`] says
+/// otherwise) into IVF.
 pub struct Spec {
     pub name: &'static str,
+    pub encoder: &'static str,
     pub lavfi: String,
     pub frames: u32,
     pub pix_fmt: &'static str,
@@ -50,7 +57,12 @@ pub struct Spec {
 
 impl Spec {
     pub fn new(name: &'static str, lavfi: impl Into<String>, frames: u32, pix_fmt: &'static str, enc: &[&str]) -> Spec {
-        Spec { name, lavfi: lavfi.into(), frames, pix_fmt, enc: enc.iter().map(|s| s.to_string()).collect() }
+        Spec { name, encoder: "libsvtav1", lavfi: lavfi.into(), frames, pix_fmt, enc: enc.iter().map(|s| s.to_string()).collect() }
+    }
+
+    pub fn encoder(mut self, encoder: &'static str) -> Spec {
+        self.encoder = encoder;
+        self
     }
 }
 
@@ -60,7 +72,7 @@ pub fn make(ff: &Path, spec: &Spec) -> PathBuf {
         let tmp = filmcraft_testkit::temp_path(&path);
         let frames = spec.frames.to_string();
         let t = tmp.to_str().unwrap().to_string();
-        let mut args: Vec<&str> = vec!["-f", "lavfi", "-i", spec.lavfi.as_str(), "-frames:v", frames.as_str(), "-pix_fmt", spec.pix_fmt, "-c:v", "libsvtav1"];
+        let mut args: Vec<&str> = vec!["-f", "lavfi", "-i", spec.lavfi.as_str(), "-frames:v", frames.as_str(), "-pix_fmt", spec.pix_fmt, "-c:v", spec.encoder];
         args.extend(spec.enc.iter().map(String::as_str));
         args.extend(["-f", "ivf", t.as_str()]);
         run(ff, &args);

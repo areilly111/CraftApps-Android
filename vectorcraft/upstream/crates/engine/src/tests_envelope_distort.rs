@@ -34,7 +34,7 @@ fn sel(s: &mut Session, ids: &[NodeId]) {
 fn rect(s: &mut Session) -> NodeId {
     let a = id_of(&s.execute("shape.rectangle", &json!({"x": 100, "y": 100, "width": 200, "height": 100})).unwrap());
     s.edit("red", |d, _| {
-        d.node_mut(a).unwrap().appearance = vectorcraft_doc::Appearance::basic(Paint::solid(Color::rgb(1.0, 0.0, 0.0)), Paint::None, 0.0);
+        d.node_mut(a).unwrap().appearance = vectorcraft_doc::Appearance::basic(Paint::solid(Color::rgb(1.0, 0.0, 0.0)), Paint::None, 0.0).into();
         Ok(())
     })
     .unwrap();
@@ -63,7 +63,7 @@ fn anchors(nodes: &[Node]) -> Vec<Point> {
 
 fn frame(s: &Session, e: NodeId) -> Affine {
     match node(s, e).kind {
-        NodeKind::Envelope { frame, .. } => frame,
+        NodeKind::Envelope { frame, .. } => *frame,
         k => panic!("{k:?}"),
     }
 }
@@ -110,7 +110,7 @@ fn the_frame_round_trips_natively() {
     let mut old = serde_json::to_value(node(&s, e)).unwrap();
     old["kind"].as_object_mut().unwrap().remove("frame");
     let n: Node = serde_json::from_value(old).unwrap();
-    assert!(matches!(n.kind, NodeKind::Envelope { frame, .. } if frame == Affine::IDENTITY), "older envelopes stand square to the page");
+    assert!(matches!(n.kind, NodeKind::Envelope { frame, .. } if frame == Box::new(Affine::IDENTITY)), "older envelopes stand square to the page");
 }
 
 /// A selected embedded 40×40 pt red image at (100, 100).
@@ -123,7 +123,7 @@ fn red_image(s: &mut Session) -> NodeId {
         let id = d.alloc_id();
         let xf = Affine::translate((100.0, 100.0)) * Affine::scale(10.0);
         let im = vectorcraft_doc::ImageObject { key: "pic".into(), width: 4, height: 4, xf, link: None, placement: Default::default() };
-        d.insert(d.default_layer(), 0, Node::new(id, NodeKind::Image(im)))?;
+        d.insert(d.default_layer(), 0, Node::new(id, NodeKind::Image(Box::new(im))))?;
         sel.set([id]);
         Ok(id)
     })

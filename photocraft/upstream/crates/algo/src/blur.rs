@@ -992,8 +992,9 @@ mod tests {
         let mixed = crate::apply_in(&s, &p, canvas, canvas, Some(&half), canvas);
         for (x, y) in [(0, 0), (18, 11), (36, 22)] {
             let (o, f, m) = (s.pixel(x, y), full.pixel(x, y), mixed.pixel(x, y));
-            for c in 0..4 {
-                assert!((m[c] - (o[c] + f[c]) / 2.0).abs() < 1e-5, "({x},{y}) channel {c}");
+            assert!((m[3] - (o[3] + f[3]) / 2.0).abs() < 1e-5, "({x},{y}) alpha");
+            for c in 0..3 {
+                assert!((m[c] * m[3] - (o[c] * o[3] + f[c] * f[3]) / 2.0).abs() < 1e-5, "({x},{y}) premultiplied channel {c}");
             }
         }
         let cancel = || true;

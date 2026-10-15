@@ -18,11 +18,14 @@ pub enum VideoSource {
 /// A video layer's frame stack (Layer › Video Layers). The layer's displayed content surface is a
 /// cache of `frames[timeline.current]`, which the engine keeps in sync as the playhead moves.
 ///
-/// Frames are full raster surfaces held in memory. (`.pcraft` persistence of the stack is a
-/// follow-up; a saved document keeps the current frame as the layer's raster content.)
+/// Frames are full raster surfaces held in memory and saved in native documents. The
+/// optional original footage is kept separately from painted frames for comparison/restore.
 #[derive(Clone, Debug)]
 pub struct VideoData {
     pub frames: Vec<Surface>,
+    /// Immutable original footage of a file-backed sequence. COW surfaces share unchanged
+    /// pixel tiles with edited frames; blank video layers have no original source.
+    pub original_frames: Option<Vec<Surface>>,
     pub source: VideoSource,
     pub fps: f32,
     /// Show the altered (painted) frames rather than the original footage.
@@ -31,7 +34,7 @@ pub struct VideoData {
 
 impl VideoData {
     pub fn new(frames: Vec<Surface>, fps: f32) -> Self {
-        VideoData { frames: if frames.is_empty() { Vec::new() } else { frames }, source: VideoSource::Blank, fps, show_altered: true }
+        VideoData { frames, original_frames: None, source: VideoSource::Blank, fps, show_altered: true }
     }
     pub fn len(&self) -> usize {
         self.frames.len()
@@ -45,7 +48,11 @@ impl VideoData {
 // by shape, not contents — enough for change detection.
 impl PartialEq for VideoData {
     fn eq(&self, o: &Self) -> bool {
-        self.frames.len() == o.frames.len() && self.source == o.source && self.fps == o.fps && self.show_altered == o.show_altered
+        self.frames.len() == o.frames.len()
+            && self.original_frames.as_ref().map(Vec::len) == o.original_frames.as_ref().map(Vec::len)
+            && self.source == o.source
+            && self.fps == o.fps
+            && self.show_altered == o.show_altered
     }
 }
 

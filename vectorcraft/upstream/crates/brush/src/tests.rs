@@ -118,7 +118,7 @@ fn art_brush_arc_length_mapping_is_linear() {
         Node::path(NodeId(0), shapes::rectangle(Rect::new(5.0, -1.0, 6.0, 1.0)), Appearance::basic(Paint::solid(Color::BLACK), Paint::None, 0.0));
     let frame = rect_art(10.0, 2.0);
     let mut spacer = frame.clone();
-    spacer.appearance = Appearance::default();
+    spacer.appearance = Appearance::default().into();
     let art = Node::group(NodeId(0), vec![std::sync::Arc::new(spacer), std::sync::Arc::new(marker)]);
     let out = stroke_pieces(&art_brush(art, ArtScale::Stretch), &line(0.0, 0.0, 300.0, 0.0), &stroke(1.0));
     let g = &out[0];

@@ -21,6 +21,7 @@ mod links;
 pub mod mcp;
 mod measure;
 mod printing;
+mod reading;
 mod redact;
 mod signing;
 mod tools;
@@ -73,13 +74,26 @@ fn failed(e: impl std::fmt::Display) -> ToolError {
     ToolError::Failed(e.to_string())
 }
 
+impl From<pdfcraft_engine::EditError> for ToolError {
+    fn from(e: pdfcraft_engine::EditError) -> Self {
+        failed(e)
+    }
+}
+
 /// Default and maximum resolution for `page_render`.
 const DEFAULT_DPI: f64 = 96.0;
 const MAX_DPI: f64 = 600.0;
+/// How far a watermark may be moved from the page centre, in points (a page is at most 14,400).
+const WATERMARK_MAX_OFFSET: f64 = 20_000.0;
 
 /// Bookmarks in one page of the bookmark list, by default and at most.
 const BOOKMARK_PAGE: usize = 100;
 const MAX_BOOKMARK_PAGE: usize = 1000;
+
+/// `text_find` extracts this many pages first, doubling each batch up to [`FIND_MAX_BATCH`], so a
+/// match near the start returns without touching the rest of a long document (#971).
+const FIND_FIRST_BATCH: usize = 8;
+const FIND_MAX_BATCH: usize = 128;
 
 /// Page texts of one document version: (the working bytes, one slot per page).
 type TextCache = (Arc<Vec<u8>>, Vec<Option<Arc<PageText>>>);
@@ -152,7 +166,11 @@ impl Automation {
         let out = match name {
             "doc_open" => self.doc_open(&a)?,
             "doc_list" => json!({ "documents": self.session.docs().iter().map(summary).collect::<Vec<_>>() }),
-            "doc_info" => info(self.doc(&a)?),
+            "doc_info" => {
+                let id = self.doc(&a)?.id;
+                self.session.refresh_fonts(id);
+                info(self.doc(&a)?)
+            }
             "doc_close" => self.doc_close(&a)?,
             "doc_save" => self.doc_save(&a)?,
             "doc_set_info" => {
@@ -194,6 +212,38 @@ impl Automation {
                 out["rotated"] = json!(n);
                 out
             }
+            "page_enhance_camera" => {
+                let page = self.page(&a)?;
+                let given = a.nums::<8>("corners")?;
+                let doc = self.doc(&a)?;
+                let (id, info) = (doc.id, doc.info.pages.get(page).cloned().ok_or_else(|| failed("no such page"))?);
+                let corners = match given {
+                    Some(c) => [0, 1, 2, 3].map(|i| {
+                        let [x, y] = info.view_to_user(c[2 * i] as f32, c[2 * i + 1] as f32);
+                        [x as f64, y as f64]
+                    }),
+                    None => self.session.detect_camera_corners(id, page).ok_or_else(|| {
+                        failed("the document's edges could not be found on this page: pass `corners` [x1, y1, x2, y2, x3, y3, x4, y4]")
+                    })?,
+                };
+                let level = match a.opt_int("level")? {
+                    None => 0,
+                    Some(l @ 0..=100) => l as u8,
+                    Some(l) => return Err(ToolError::InvalidArgs(format!("level must be between 0 and 100, not {l}"))),
+                };
+                let look = match a.opt_str("mode")? {
+                    None => pdfcraft_engine::camera_clean::Look::Colour,
+                    Some(m) => pdfcraft_engine::camera_clean::Look::from_name(m)
+                        .ok_or_else(|| ToolError::InvalidArgs(format!("unknown mode {m:?} (original, colour, greyscale, bw)")))?,
+                };
+                self.session.enhance_camera_page_at(id, page, corners, look, level).map_err(failed)?;
+                let r = |v: f32| (v * 100.0).round() / 100.0;
+                let used: Vec<f32> = corners.iter().flat_map(|&[x, y]| info.user_to_view(x as f32, y as f32)).map(r).collect();
+                let mut out = summary(self.doc(&a)?);
+                out["corners"] = json!(used);
+                out["detected"] = json!(given.is_none());
+                out
+            }
             "page_delete" => {
                 let pages = self.pages(&a, "pages")?;
                 self.apply(&a, Edit::DeletePages { pages })?
@@ -211,12 +261,12 @@ impl Automation {
             "doc_split" => self.doc_split(&a)?,
             "edit_undo" => {
                 let id = self.doc(&a)?.id;
-                let label = self.session.undo(id).map_err(failed)?;
+                let label = self.session.undo(id).map_err(failed)?.to_string();
                 json!({ "undone": label, "document": summary(self.doc(&a)?) })
             }
             "edit_redo" => {
                 let id = self.doc(&a)?.id;
-                let label = self.session.redo(id).map_err(failed)?;
+                let label = self.session.redo(id).map_err(failed)?.to_string();
                 json!({ "redone": label, "document": summary(self.doc(&a)?) })
             }
             "command_list" => self.command_list(&a)?,
@@ -341,6 +391,21 @@ impl Automation {
                     .collect();
                 json!({ "page": page + 1, "count": lines.len(), "lines": lines })
             }
+            "image_hit" => {
+                let page = self.page(&a)?;
+                let point = a
+                    .get("point")
+                    .and_then(Value::as_array)
+                    .filter(|p| p.len() == 2)
+                    .and_then(|p| Some([p.first()?.as_f64()?, p.get(1)?.as_f64()?]))
+                    .filter(|p| p.iter().all(|v| v.is_finite() && v.abs() <= 1e9))
+                    .ok_or_else(|| ToolError::InvalidArgs("point must contain two finite coordinates".into()))?;
+                let doc = self.doc(&a)?;
+                let p = &doc.info.pages[page];
+                let user = p.view_to_user(point[0] as f32, point[1] as f32).map(f64::from);
+                let images: Vec<_> = doc.page_images(page).iter().enumerate().filter(|(_, im)| im.contains(user)).map(|(i, _)| i + 1).collect();
+                json!({"page":page+1,"images":images})
+            }
             "page_images" => {
                 let page = self.page(&a)?;
                 let doc = self.doc(&a)?;
@@ -352,7 +417,11 @@ impl Automation {
                     .enumerate()
                     .map(|(i, im)| {
                         let (u, v) = (info.user_to_view(im.rect[0] as f32, im.rect[1] as f32), info.user_to_view(im.rect[2] as f32, im.rect[3] as f32));
-                        json!({ "image": i + 1, "rect": [r(u[0].min(v[0])), r(u[1].min(v[1])), r(u[0].max(v[0])), r(u[1].max(v[1]))], "pixels": [im.width, im.height], "name": im.name, "kind": if im.is_form { "form" } else { "image" } })
+                        let visible = im.visible_rect.map(|rect| {
+                            let (u, v) = (info.user_to_view(rect[0] as f32, rect[1] as f32), info.user_to_view(rect[2] as f32, rect[3] as f32));
+                            [r(u[0].min(v[0])), r(u[1].min(v[1])), r(u[0].max(v[0])), r(u[1].max(v[1]))]
+                        });
+                        json!({ "visible_rect": visible, "image": i + 1, "rect": [r(u[0].min(v[0])), r(u[1].min(v[1])), r(u[0].max(v[0])), r(u[1].max(v[1]))], "pixels": [im.width, im.height], "name": im.name, "kind": if im.is_form { "form" } else { "image" } })
                     })
                     .collect();
                 json!({ "page": page + 1, "count": list.len(), "images": list })
@@ -409,7 +478,7 @@ impl Automation {
             }
             "text_paragraphs" => {
                 let page = self.page(&a)?;
-                let doc = self.doc(&a)?;
+                let doc = self.doc_to_copy(&a)?;
                 let info = &doc.info.pages[page];
                 let r = |x: f32| (x as f64 * 100.0).round() / 100.0;
                 let blocks: Vec<Value> = doc
@@ -421,6 +490,8 @@ impl Automation {
                         json!({
                             "paragraph": i + 1,
                             "text": b.text,
+                            "editor_text": b.editor_text,
+                            "rows": b.rows.iter().map(|row| row.iter().map(|i| i + 1).collect::<Vec<_>>()).collect::<Vec<_>>(),
                             "lines": b.lines.iter().map(|l| l + 1).collect::<Vec<_>>(),
                             "rect": [r(u[0].min(v[0])), r(u[1].min(v[1])), r(u[0].max(v[0])), r(u[1].max(v[1]))],
                             "font": b.base_font,
@@ -429,6 +500,78 @@ impl Automation {
                     })
                     .collect();
                 json!({ "page": page + 1, "count": blocks.len(), "paragraphs": blocks })
+            }
+            "text_font_files" => {
+                let roots = if let Some(paths) = a.get("directories") {
+                    let paths = paths
+                        .as_array()
+                        .filter(|p| p.len() <= 16)
+                        .ok_or_else(|| ToolError::InvalidArgs("directories must be at most 16 paths".into()))?;
+                    paths
+                        .iter()
+                        .map(|p| self.resolve(p.as_str().ok_or_else(|| ToolError::InvalidArgs("directory must be a path".into()))?, false))
+                        .collect::<Result<Vec<_>>>()?
+                } else if let Some(root) = &self.root {
+                    vec![root.clone()]
+                } else {
+                    pdfcraft_engine::text_fonts::installed_directories()
+                };
+                json!({"fonts": pdfcraft_engine::text_fonts::discover(&roots).into_iter().map(|f| json!({"path":f.path,"family":f.family,"font":f.face})).collect::<Vec<_>>()})
+            }
+            "text_font_import" => {
+                let page = self.page(&a)?;
+                let path = self.resolve(a.str("path")?, false)?;
+                let file = std::fs::File::open(&path).map_err(failed)?;
+                use std::io::Read;
+                let mut bytes = Vec::new();
+                file.take((16 << 20) + 1).read_to_end(&mut bytes).map_err(failed)?;
+                if bytes.len() > 16 << 20 {
+                    return Err(ToolError::InvalidArgs("font input exceeds 16 MiB".into()));
+                }
+                let before: Vec<_> = self.doc(&a)?.text_editor_fonts(page).into_iter().map(|f| f.resource).collect();
+                let mut out = self.apply(&a, Edit::RegisterTextFont { page, bytes: Arc::new(bytes) })?;
+                let added = self
+                    .doc(&a)?
+                    .text_editor_fonts(page)
+                    .into_iter()
+                    .find(|f| !before.contains(&f.resource) && !f.resource.starts_with("PCApproved"));
+                if let Some(f) = added {
+                    out["resource"] = json!(f.resource);
+                    out["font"] = json!(f.face);
+                }
+                out
+            }
+            "text_fonts" => {
+                let page = self.page(&a)?;
+                json!({"fonts": self.doc(&a)?.text_editor_fonts(page).into_iter().map(|f| json!({"resource":f.resource,"font":f.face,"full_face":f.resource.starts_with("PCFull"),"preview_only":f.resource.starts_with("PCApproved")})).collect::<Vec<_>>()})
+            }
+            "text_edit_layout" => {
+                let page = self.page(&a)?;
+                let doc = self.doc(&a)?;
+                let k = a.int("paragraph")?;
+                let blocks = doc.text_blocks(page);
+                if k < 1 || k as usize > blocks.len() {
+                    return Err(ToolError::InvalidArgs("paragraph is out of range".into()));
+                }
+                let source = &blocks[k as usize - 1];
+                let text = a.opt_str("text")?.unwrap_or(&source.editor_text);
+                let style = pdfcraft_engine::BlockStyle {
+                    size: a.opt_num("size")?,
+                    width: a.opt_num("width")?,
+                    resource: a.opt_str("font_resource")?.map(str::to_owned),
+                    ranges: parse_style_ranges(a.get("ranges"))?,
+                    ..Default::default()
+                };
+                let layout = doc.text_edit_layout(page, k as usize - 1, text, &style).map_err(failed)?;
+                let info = &doc.info.pages[page];
+                let view_rect = |r: [f64; 4]| {
+                    let a = info.user_to_view(r[0] as f32, r[1] as f32);
+                    let b = info.user_to_view(r[2] as f32, r[3] as f32);
+                    [a[0].min(b[0]), a[1].min(b[1]), a[0].max(b[0]), a[1].max(b[1])]
+                };
+                let fonts: Vec<_> = doc.text_editor_fonts(page).into_iter().map(|f| json!({"resource": f.resource, "face": f.face})).collect();
+                json!({ "page": page + 1, "paragraph": k, "source_rect": view_rect(layout.source_rect),
+                    "draft_rect": layout.draft_rect.map(view_rect), "overflow": layout.overflow, "embedded_fonts": fonts })
             }
             "text_edit" if a.get("paragraph").is_some() => {
                 let page = self.page(&a)?;
@@ -440,6 +583,8 @@ impl Automation {
                 let block = self.doc(&a)?.text_blocks(page)[k as usize - 1].clone();
                 let text = a.opt_str("text")?.map(str::to_owned).unwrap_or(block.text);
                 let mut style = pdfcraft_engine::BlockStyle {
+                    ranges: parse_style_ranges(a.get("ranges"))?,
+                    resource: a.opt_str("font_resource")?.map(str::to_owned),
                     bold: a.opt_bool("bold")?,
                     size: a.opt_num("size")?,
                     underline: a.opt_bool("underline")?,
@@ -538,11 +683,14 @@ impl Automation {
             "printers" => self.printers()?,
             "printer_options" => self.printer_options(&a)?,
             "link_list" => self.link_list(&a)?,
+            "link_open" => self.link_open(&a)?,
             "link_add" => self.link_add(&a)?,
             "link_edit" => self.link_edit(&a)?,
             "link_delete" => self.link_delete(&a)?,
             "links_from_urls" => self.links_from_urls(&a)?,
             "links_remove" => self.links_remove(&a)?,
+            "object_list" => self.object_list(&a)?,
+            "object_move" => self.object_move(&a)?,
             "content_list" => self.content_list(&a)?,
             "page_add_text" => self.page_add_text(&a)?,
             "page_add_image" => self.page_add_image(&a)?,
@@ -550,6 +698,7 @@ impl Automation {
             "content_delete" => self.content_delete(&a)?,
             "doc_print" => self.doc_print(&a)?,
             "doc_remove_hidden" => self.doc_remove_hidden(&a)?,
+            "doc_audit_redactions" => self.doc_audit_redactions(&a)?,
             "fill_sign_add" => self.fill_sign_add(&a)?,
             "fill_sign_date_format" => self.fill_sign_date_format(&a)?,
             "measure_distance" => self.measurement_add(&a, pdfcraft_engine::measure::Kind::Distance)?,
@@ -567,6 +716,7 @@ impl Automation {
             "comment_set_status" => self.comment_set_status(&a)?,
             "sign_list" => self.sign_list(&a)?,
             "accessibility_check" => self.a11y_check(&a)?,
+            "accessibility_autotag_preview" => self.accessibility_autotag_preview(&a)?,
             "ocr_recognize" => self.ocr_recognize(&a)?,
             "js_run" => self.js_run(&a)?,
             "js_document_scripts" => self.js_document_scripts(&a)?,
@@ -579,6 +729,7 @@ impl Automation {
             "doc_compare" => self.doc_compare(&a)?,
             "action_list" => self.action_list()?,
             "pdfa_verify" => self.pdfa_verify(&a)?,
+            "print_readiness" => self.print_readiness(&a)?,
             "doc_export_office" => self.doc_export_office(&a)?,
             "pdfa_convert" => self.pdfa_convert(&a)?,
             "action_run" => self.action_run(&a)?,
@@ -588,9 +739,16 @@ impl Automation {
             "ocr_status" => self.ocr_status()?,
             "ocr_recognize_files" => self.ocr_recognize_files(&a)?,
             "accessibility_report" => self.a11y_report(&a)?,
+            "accessibility_review_record" => self.a11y_review_record(&a)?,
+            "accessibility_review_save" => self.a11y_review_save(&a)?,
+            "accessibility_review_load" => self.a11y_review_load(&a)?,
+            "accessibility_review_html" => self.a11y_review_html(&a)?,
             "accessibility_fix" => self.a11y_fix(&a)?,
             "accessibility_figures" => self.accessibility_figures(&a)?,
             "accessibility_set_alt" => self.accessibility_set_alt(&a)?,
+            "accessibility_tags" => self.accessibility_tags(&a)?,
+            "accessibility_set_tag_property" => self.accessibility_set_tag_property(&a)?,
+            "accessibility_move_tag" => self.accessibility_move_tag(&a)?,
             "sign_id_create" => self.sign_id_create(&a)?,
             "sign_document" => self.sign_document(&a)?,
             "sign_keychain_ids" => {
@@ -628,6 +786,7 @@ impl Automation {
             "comment_mark" => self.comment_mark(&a)?,
             "comment_lock" => self.comment_lock(&a)?,
             "comments_hide" => self.comments_hide(&a)?,
+            "view_reading_colors" => self.view_reading_colors(&a)?,
             "comments_summarize" => self.comments_summarize(&a)?,
             "comment_edit" => self.comment_edit(&a)?,
             "comment_delete" => self.comment_delete(&a)?,
@@ -660,6 +819,13 @@ impl Automation {
         let id = a.int("doc")?;
         let id = u64::try_from(id).map_err(|_| ToolError::InvalidArgs("doc must be positive".into()))?;
         self.session.get(DocId(id)).ok_or_else(|| ToolError::Failed(format!("no open document with id {id} (see doc_list)")))
+    }
+
+    /// The document, if its security allows copying text and images out of it (Table 22, bit 5).
+    fn doc_to_copy(&self, a: &Args) -> Result<&Document> {
+        let doc = self.doc(a)?;
+        doc.check_copying().map_err(failed)?;
+        Ok(doc)
     }
 
     fn doc_open(&mut self, a: &Args) -> Result<Value> {
@@ -699,10 +865,13 @@ impl Automation {
             self.apply(a, Edit::FlattenFillSign)?;
         }
         let bytes = if full { self.session.save_full_bytes(id) } else { self.session.save_bytes(id) }.map_err(failed)?;
+        // A save that adds or removes encryption, or must not keep the old revision (Sanitize,
+        // redaction), is rewritten in full even when an incremental save was asked for.
+        let incremental = !full && bytes.starts_with(&self.doc(a)?.saved_bytes());
         write_atomic(&target, &bytes)?;
         let path = target.to_string_lossy().into_owned();
         self.session.mark_saved(id, bytes.clone(), Some(path.clone())).map_err(failed)?;
-        Ok(json!({ "path": path, "bytes": bytes.len(), "incremental": !full, "document": summary(self.doc(a)?) }))
+        Ok(json!({ "path": path, "bytes": bytes.len(), "incremental": incremental, "document": summary(self.doc(a)?) }))
     }
 
     fn doc_revisions(&mut self, a: &Args) -> Result<Value> {
@@ -910,7 +1079,13 @@ impl Automation {
     fn apply(&mut self, a: &Args, edit: Edit) -> Result<Value> {
         let id = self.doc(a)?.id;
         self.session.apply(id, edit).map_err(failed)?;
-        Ok(summary(self.doc(a)?))
+        let doc = self.doc(a)?;
+        let mut out = summary(doc);
+        // Text the edit stored as typed but drew with `?` (its font can't draw it): said, not silent.
+        if !doc.edit_notices.is_empty() {
+            out["warnings"] = json!(doc.edit_notices.iter().map(ToString::to_string).collect::<Vec<_>>());
+        }
+        Ok(out)
     }
 
     fn marks(&mut self, tool: &str, a: &Args) -> Result<Value> {
@@ -958,7 +1133,10 @@ impl Automation {
                     opacity: a.opt_num("opacity")?.unwrap_or(d.opacity),
                     rotation: a.opt_num("rotation")?.unwrap_or(d.rotation),
                     behind: a.opt_bool("behind")?.unwrap_or(false),
-                    offset: [0.0; 2],
+                    offset: [
+                        a.opt_num("offset_x")?.unwrap_or(0.0).clamp(-WATERMARK_MAX_OFFSET, WATERMARK_MAX_OFFSET),
+                        a.opt_num("offset_y")?.unwrap_or(0.0).clamp(-WATERMARK_MAX_OFFSET, WATERMARK_MAX_OFFSET),
+                    ],
                 };
                 Edit::AddWatermark { pages, settings: wm, replace, file }
             }
@@ -987,7 +1165,7 @@ impl Automation {
     }
 
     fn export(&mut self, tool: &str, a: &Args) -> Result<Value> {
-        let doc = self.doc(a)?;
+        let doc = self.doc_to_copy(a)?;
         let pages = match a.opt_ints("pages")? {
             Some(_) => self.pages(a, "pages")?,
             None => (0..doc.info.pages.len()).collect(),
@@ -1074,7 +1252,13 @@ impl Automation {
                     }
                     (None, None) => return Err(ToolError::InvalidArgs("text needs `text` or `path`".into())),
                 };
-                (format!("{title}.pdf"), self.session.create_from_text(&title, &text).map_err(failed)?)
+                // The page font is Helvetica/WinAnsi: text it would turn into `?` is refused (with
+                // its line) by `pdfcraft_create::from_text`, as for every other caller.
+                let bytes = self.session.create_from_text(&title, &text).map_err(|e| match e {
+                    pdfcraft_engine::EditError::Create(pdfcraft_engine::CreateError::Invalid(m)) => ToolError::InvalidArgs(m),
+                    e => failed(e),
+                })?;
+                (format!("{title}.pdf"), bytes)
             }
             other => return Err(ToolError::InvalidArgs(format!("unknown source {other:?}"))),
         };
@@ -1189,7 +1373,7 @@ impl Automation {
         let bytes = std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
         let pages = a.opt_ints("pages")?.map(|p| one_based(&p)).transpose()?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        self.apply(a, Edit::InsertPagesFrom { name, bytes: Arc::new(bytes), pages, at })
+        self.apply(a, Edit::InsertPagesFrom { name, bytes: Arc::new(bytes), pages, at, field_conflicts: pdfcraft_organize::FieldConflicts::Rename })
     }
 
     /// Write freshly created bytes to `out` and/or open them as a new document.
@@ -1210,8 +1394,8 @@ impl Automation {
 
     fn doc_create_multiple(&mut self, a: &Args) -> Result<Value> {
         let paths = a.strs("paths")?;
-        if paths.is_empty() || paths.len() > pdfcraft_engine::MAX_CREATE_FILES {
-            return Err(ToolError::InvalidArgs(format!("paths must list 1 to {} files", pdfcraft_engine::MAX_CREATE_FILES)));
+        if paths.is_empty() {
+            return Err(ToolError::InvalidArgs("paths must list at least one file".into()));
         }
         let separate = match a.opt_str("mode")? {
             None | Some("combine") => false,
@@ -1226,16 +1410,16 @@ impl Automation {
             Some(Value::Array(v)) if v.len() == paths.len() => v.iter().map(|x| x.as_str().map(str::to_owned)).collect(),
             Some(_) => return Err(ToolError::InvalidArgs("pages must list a range (or null) for each path".into())),
         };
-        let mut sources = Vec::new();
-        for (p, range) in paths.into_iter().zip(ranges) {
+        // Each file is read, converted and copied in turn, so a long list holds one file at a time.
+        let sources = paths.into_iter().zip(ranges).map(|(p, range)| -> std::result::Result<pdfcraft_engine::CombineSource, ToolError> {
             let path = self.resolve(p, false)?;
             let bytes = std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?;
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             let (_, pdf) = self.session.convert_to_pdf(&name, &Arc::new(bytes)).map_err(failed)?;
             let title = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            sources.push((title, pdf, range));
-        }
-        let bytes = self.session.combine_ranges(&sources).map_err(failed)?;
+            Ok((title, pdf, range))
+        });
+        let bytes = self.session.combine_each(sources)?.ok_or_else(|| ToolError::InvalidArgs("paths must list at least one file".into()))?;
         self.deliver(a, "Combined", bytes)
     }
 
@@ -1326,6 +1510,13 @@ impl Automation {
             }
             Some(_) => return Err(ToolError::InvalidArgs("groups must list a number (or null) for each path".into())),
         };
+        let field_conflicts = match a.opt_str("field_conflicts")? {
+            None | Some("rename") => pdfcraft_organize::FieldConflicts::Rename,
+            Some("merge") => pdfcraft_organize::FieldConflicts::Merge,
+            Some(other) => {
+                return Err(ToolError::InvalidArgs(format!("field_conflicts must be \"rename\" or \"merge\", not {other:?}")));
+            }
+        };
         let mut sources: Vec<CombineSource> = Vec::new();
         let mut firsts: Vec<(u64, PathBuf, usize)> = Vec::new();
         for (i, (p, range)) in paths.into_iter().zip(ranges).enumerate() {
@@ -1343,15 +1534,18 @@ impl Automation {
                     if let Some(g) = group {
                         firsts.push((g, path.clone(), sources.len()));
                     }
-                    Arc::new(std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?)
+                    let bytes = Arc::new(std::fs::read(&path).map_err(|e| failed(format!("{}: {e}", path.display())))?);
+                    // Images and text files are made into PDFs first (#569), as in the Combine files tab.
+                    let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    self.session.as_pdf(&file_name, &bytes).map_err(failed)?
                 }
             };
             let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             sources.push((name, bytes, range));
         }
         let passwords: Vec<Option<&str>> = passwords.iter().map(Option::as_deref).collect();
-        let bytes = match groups {
-            None => self.session.combine_unlocked(&sources, &passwords),
+        let combined = match groups {
+            None => self.session.combine_unlocked_reporting(&sources, &passwords, field_conflicts),
             Some(groups) => {
                 // A path without a group is a file of its own: give it a key no group uses.
                 let mut next = groups.iter().flatten().max().map_or(Some(0), |m| m.checked_add(1));
@@ -1366,11 +1560,15 @@ impl Automation {
                         }
                     });
                 }
-                self.session.combine_grouped(&sources, &keys, &passwords)
+                self.session.combine_grouped_reporting(&sources, &keys, &passwords, field_conflicts)
             }
         }
         .map_err(failed)?;
-        self.deliver(a, "Combined", bytes)
+        let mut result = self.deliver(a, "Combined", combined.bytes)?;
+        if !combined.renamed_fields.is_empty() {
+            result["renamed_fields"] = json!(combined.renamed_fields.iter().map(|(old, new)| json!([old, new])).collect::<Vec<_>>());
+        }
+        Ok(result)
     }
 
     fn doc_split(&mut self, a: &Args) -> Result<Value> {
@@ -1457,8 +1655,9 @@ impl Automation {
 
     fn renderer(&mut self, id: DocId) -> Result<&mut PageRenderer> {
         let doc = self.session.get(id).ok_or_else(|| failed("no such document"))?;
+        let colors = self.session.reading_colors(id).unwrap_or_default();
         let fresh = || {
-            let config = RenderConfig { password: doc.password.as_deref().map(Arc::from), ..Default::default() };
+            let config = RenderConfig { password: doc.password.as_deref().map(Arc::from), reading_colors: colors, ..Default::default() };
             (doc.display.clone(), PageRenderer::new(doc.display.clone(), config))
         };
         let entry = self.renderers.entry(id).or_insert_with(fresh);
@@ -1475,7 +1674,16 @@ impl Automation {
         if !(1.0..=MAX_DPI).contains(&dpi) {
             return Err(ToolError::InvalidArgs(format!("dpi must be between 1 and {MAX_DPI}")));
         }
-        let out = self.renderer(id)?.render(RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale: (dpi / 72.0) as f32, tag: 0 });
+        let scale = (dpi / 72.0) as f32;
+        let out = if let Some(block) = a.opt_int("hide_text_block")? {
+            let index = usize::try_from(block)
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .ok_or_else(|| ToolError::InvalidArgs("hide_text_block must be a positive paragraph index from text_paragraphs".into()))?;
+            self.doc(a)?.text_edit_preview(page, index).map_err(failed)?.render_background(scale).map_err(failed)?
+        } else {
+            self.renderer(id)?.render(RenderRequest { page, kind: RequestKind::Pixels, tile: None, scale, tag: 0, preview: false })
+        };
         if let Some(e) = out.error {
             return Err(failed(format!("page {} could not be rendered: {e}", page + 1)));
         }
@@ -1514,7 +1722,7 @@ impl Automation {
     }
 
     fn text_extract(&mut self, a: &Args) -> Result<Value> {
-        let doc = self.doc(a)?;
+        let doc = self.doc_to_copy(a)?;
         let id = doc.id;
         let pages = match a.opt_ints("pages")? {
             Some(_) => self.pages(a, "pages")?,
@@ -1531,22 +1739,49 @@ impl Automation {
         Ok(json!({ "pages": out }))
     }
 
+    /// Matches in document order, extracting page text in growing batches and stopping as soon as
+    /// `limit` is reached, so a bounded search doesn't extract (and cache) the whole document
+    /// (#971). One match past the limit is looked for, so `complete` is true only when no more
+    /// exist; otherwise `next` holds the arguments that continue the search.
     fn text_find(&mut self, a: &Args) -> Result<Value> {
         let doc = self.doc(a)?;
         let (id, n) = (doc.id, doc.info.pages.len());
         let query = a.str("query")?;
-        let limit = a.opt_int("limit")?.unwrap_or(500).max(1) as usize;
-        let texts = self.page_texts(id, &(0..n).collect::<Vec<_>>())?;
+        let limit = usize::try_from(a.opt_int("limit")?.unwrap_or(500).max(1)).unwrap_or(usize::MAX);
+        let start = match a.opt_int("start_page")? {
+            None => 0,
+            Some(p) if p >= 1 && usize::try_from(p).is_ok_and(|p| p <= n) => usize::try_from(p - 1).unwrap_or(0),
+            Some(p) => return Err(ToolError::InvalidArgs(format!("start_page {p} is out of range: the document has {n} pages"))),
+        };
+        let skip = usize::try_from(a.opt_int("skip")?.unwrap_or(0).max(0)).unwrap_or(usize::MAX);
         let mut matches = Vec::new();
-        'pages: for (p, text) in texts.iter().enumerate() {
-            for r in text.find(query) {
-                if matches.len() == limit {
-                    break 'pages;
+        let mut next = None;
+        let (mut first, mut batch) = (start, FIND_FIRST_BATCH);
+        'search: while first < n {
+            let end = first.saturating_add(batch).min(n);
+            let pages: Vec<usize> = (first..end).collect();
+            let texts = self.page_texts(id, &pages)?;
+            for (p, text) in pages.iter().zip(&texts) {
+                let skip_here = if *p == start { skip } else { 0 };
+                // One extra match proves that the caller needs a continuation. Include skipped
+                // matches on the starting page when bounding the temporary per-page result.
+                let needed = limit.saturating_sub(matches.len()).saturating_add(skip_here).saturating_add(1);
+                for (k, r) in text.find_opts_limited(query, false, false, needed).into_iter().enumerate().skip(skip_here) {
+                    if matches.len() == limit {
+                        next = Some(json!({ "start_page": p + 1, "skip": k }));
+                        break 'search;
+                    }
+                    matches.push(json!({ "page": p + 1, "text": text.text_of(r.clone()), "rects": text.line_rects(r) }));
                 }
-                matches.push(json!({ "page": p + 1, "text": text.text_of(r.clone()), "rects": text.line_rects(r) }));
             }
+            first = end;
+            batch = batch.saturating_mul(2).min(FIND_MAX_BATCH);
         }
-        Ok(json!({ "query": query, "count": matches.len(), "matches": matches }))
+        let mut out = json!({ "query": query, "count": matches.len(), "complete": next.is_none(), "matches": matches });
+        if let (Some(next), Some(o)) = (next, out.as_object_mut()) {
+            o.insert("next".into(), next);
+        }
+        Ok(out)
     }
 
     fn command_list(&self, a: &Args) -> Result<Value> {
@@ -1669,6 +1904,53 @@ fn foreign_share(path: &Path, root: &Path) -> bool {
 }
 
 // ---- JSON helpers ----------------------------------------------------------------------------
+
+fn parse_style_ranges(value: Option<&Value>) -> Result<Vec<pdfcraft_engine::RangeStyle>> {
+    let Some(value) = value else { return Ok(Vec::new()) };
+    let values = value.as_array().filter(|v| v.len() <= 1024).ok_or_else(|| Args::wrong("ranges", "an array of at most 1024 style objects"))?;
+    values
+        .iter()
+        .map(|v| {
+            let a = Args(v);
+            let bounds = a
+                .get("range")
+                .and_then(Value::as_array)
+                .filter(|v| v.len() == 2)
+                .ok_or_else(|| Args::wrong("range", "[start,end] UTF-8 byte offsets"))?;
+            let start = bounds
+                .first()
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| Args::wrong("range", "nonnegative byte offsets"))?;
+            let end = bounds
+                .get(1)
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| Args::wrong("range", "nonnegative byte offsets"))?;
+            let family = a
+                .opt_str("font")?
+                .map(|f| match f {
+                    "helvetica" => Ok(pdfcraft_engine::FontFamily::Helvetica),
+                    "times" => Ok(pdfcraft_engine::FontFamily::Times),
+                    "courier" => Ok(pdfcraft_engine::FontFamily::Courier),
+                    _ => Err(Args::wrong("font", "helvetica, times or courier")),
+                })
+                .transpose()?
+                .map(|f| -> Result<_> { Ok((f, a.opt_bool("bold")?.unwrap_or(false), a.opt_bool("italic")?.unwrap_or(false))) })
+                .transpose()?;
+            Ok(pdfcraft_engine::RangeStyle {
+                range: start..end,
+                family,
+                resource: a.opt_str("font_resource")?.map(str::to_owned),
+                size: a.opt_num("size")?,
+                color: a.opt_str("color")?.map(comments::parse_color).transpose()?,
+                underline: a.opt_bool("underline")?,
+                char_spacing: a.opt_num("char_spacing")?,
+                scale: a.opt_num("scale")?,
+            })
+        })
+        .collect()
+}
 
 /// Typed access to validated arguments.
 struct Args<'a>(&'a Value);
@@ -1820,6 +2102,9 @@ fn info(d: &Document) -> Value {
         // (laid out from the template by PdfCraft, see xfa_layout; placeholder pages when that failed).
         "xfa": i.xfa.map(|x| match x { pdfcraft_render::Xfa::Static => "static", pdfcraft_render::Xfa::Dynamic => "dynamic" }),
         "xfa_layout": d.xfa.as_ref().map(|x| json!({ "pages": x.pages, "fields": x.fields, "warnings": x.warnings })),
+        // A script of the form ran too long and was abandoned: its scripts no longer run in this
+        // document (calculations, buttons) until it is opened again.
+        "xfa_scripts_off": d.xfa_scripts_off(),
         // What was rewritten from, or could not be written to, the XFA data.
         "xfa_warnings": d.xfa_warnings,
         "security": security,
@@ -1854,6 +2139,15 @@ fn info(d: &Document) -> Value {
                         },
                     })).collect::<Vec<_>>(),
                     "preserve_rb": preserve_rb,
+                }),
+                pdfcraft_render::LinkTarget::RemoteGoTo { file, destination, new_window } => json!({
+                    "remote_document": file,
+                    "destination": match destination {
+                        pdfcraft_render::RemoteDestination::Default => json!({ "kind": "default" }),
+                        pdfcraft_render::RemoteDestination::Page { page, view } => json!({ "kind": "page", "page": page1(*page), "view": format!("{view:?}") }),
+                        pdfcraft_render::RemoteDestination::Named(name) => json!({ "kind": "named", "name": name }),
+                    },
+                    "new_window": new_window,
                 }),
                 pdfcraft_render::LinkTarget::Other(o) => json!({ "other": o }),
             },
@@ -1901,7 +2195,7 @@ fn encode_png(width: u32, height: u32, premultiplied: &[u8]) -> Result<Vec<u8>> 
 /// Extract the text of `pages` (0-based) with one renderer per worker thread.
 fn extract_parallel(bytes: &Arc<Vec<u8>>, password: Option<Arc<str>>, pages: &[usize]) -> Vec<(usize, std::result::Result<PageText, String>)> {
     let extract = |r: &mut PageRenderer, p: usize| {
-        let out = r.render(RenderRequest { page: p, kind: RequestKind::Text, tile: None, scale: 1.0, tag: 0 });
+        let out = r.render(RenderRequest { page: p, kind: RequestKind::Text, tile: None, scale: 1.0, tag: 0, preview: false });
         match out.error {
             Some(e) => Err(e),
             None => Ok(out.text.map(|t| (*t).clone()).unwrap_or_default()),
@@ -1993,6 +2287,85 @@ fn write_atomic_with(path: &Path, bytes: &[u8], suffixes: impl IntoIterator<Item
 mod tests {
     use super::*;
     use pdfcraft_platform::staging::STAGING_ATTEMPTS;
+
+    /// `n` pages, page i showing "Page i".
+    fn numbered_pages(n: usize) -> Vec<u8> {
+        let mut objs: Vec<String> = vec!["<< /Type /Catalog /Pages 2 0 R >>".into()];
+        let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
+        objs.push(format!("<< /Type /Pages /Kids [{}] /Count {n} /MediaBox [0 0 200 300] >>", kids.join(" ")));
+        objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
+        for i in 0..n {
+            objs.push(format!("<< /Type /Page /Parent 2 0 R /Contents {} 0 R /Resources << /Font << /F1 3 0 R >> >> >>", 5 + 2 * i));
+            let body = format!("BT /F1 24 Tf 20 150 Td (Page {}) Tj ET", i + 1);
+            objs.push(format!("<< /Length {} >>\nstream\n{body}\nendstream", body.len()));
+        }
+        let mut out = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, o) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{o}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+        for o in offsets {
+            out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+        out
+    }
+
+    fn json(a: &mut Automation, tool: &str, args: Value) -> Value {
+        match a.call(tool, &args).map(|mut c| c.remove(0)) {
+            Ok(Content::Json(v)) => v,
+            other => panic!("{tool} {args}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_bounded_text_find_reads_only_the_pages_it_needs_and_says_it_stopped() {
+        let dir = std::env::temp_dir().join(format!("pdfcraft-automation-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("long.pdf"), numbered_pages(200)).unwrap();
+        let mut a = Automation::new().with_root(&dir).unwrap();
+        let doc = json(&mut a, "doc_open", json!({ "path": "long.pdf" }))["doc"].clone();
+        let extracted = |a: &Automation| a.texts.values().map(|(_, pages)| pages.iter().filter(|t| t.is_some()).count()).sum::<usize>();
+
+        // #971: the first match is on page 1 and the next on page 10, so the rest of the 200 pages
+        // aren't extracted or cached.
+        let first = json(&mut a, "text_find", json!({ "doc": doc, "query": "Page 1", "limit": 1 }));
+        assert_eq!(first["count"], 1);
+        assert_eq!(first["matches"][0]["page"], 1);
+        assert_eq!(first["complete"], false, "{first}");
+        assert_eq!(first["next"], json!({ "start_page": 10, "skip": 0 }));
+        assert!(extracted(&a) <= 3 * FIND_FIRST_BATCH, "{} pages extracted for one match", extracted(&a));
+
+        // Following `next` returns every match exactly once, in order, and then says it's complete.
+        // "1" appears twice on pages like 11 and 101, so continuing has to skip within a page.
+        let all = json(&mut a, "text_find", json!({ "doc": doc, "query": "1", "limit": 10_000 }));
+        assert_eq!(all["complete"], true);
+        assert!(all.get("next").is_none());
+        let mut pieced = Vec::new();
+        let mut args = json!({ "doc": doc, "query": "1", "limit": 3 });
+        loop {
+            let found = json(&mut a, "text_find", args.clone());
+            pieced.extend(found["matches"].as_array().unwrap().iter().map(|m| (m["page"].clone(), m["rects"].clone())));
+            if found["complete"] == true {
+                break;
+            }
+            args["start_page"] = found["next"]["start_page"].clone();
+            args["skip"] = found["next"]["skip"].clone();
+        }
+        let expected: Vec<_> = all["matches"].as_array().unwrap().iter().map(|m| (m["page"].clone(), m["rects"].clone())).collect();
+        assert_eq!(all["count"], expected.len());
+        assert_eq!(pieced, expected);
+
+        // A search that runs to the end below its limit is complete; a start page past the end is refused.
+        let few = json(&mut a, "text_find", json!({ "doc": doc, "query": "Page 200", "start_page": 150 }));
+        assert_eq!((few["count"].clone(), few["complete"].clone()), (json!(1), json!(true)));
+        assert!(a.call("text_find", &json!({ "doc": doc, "query": "x", "start_page": 201 })).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn dot_dot_resolves_by_name_and_never_climbs_above_the_start() {

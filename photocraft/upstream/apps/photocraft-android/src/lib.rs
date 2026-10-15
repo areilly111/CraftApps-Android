@@ -22,6 +22,7 @@ mod file_browser;
 mod gpu;
 mod jni_bridge;
 mod pen;
+mod keyboard;
 mod saf;
 mod services;
 mod shell;
@@ -42,7 +43,7 @@ use crate::updater::Updater;
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.1.0` → 100).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]): how the render
 /// state reaches this port's app type. Sibling ports implement the same trait for theirs;
@@ -147,7 +148,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
         craftapps_shared::pen::sync_settings(&guard);
     }
     let pen_config_dir = config.clone();
-    wire_android_hooks(&mut services, updater.clone(), storage, granted, pen_settings.clone(), pen_config_dir);
+    wire_android_hooks(&mut services, storage, granted, pen_settings.clone(), pen_config_dir);
 
     // GPU backend cascade (Vulkan → GLES → CPU canvas), honoring the persisted
     // Performance prefs. Replaces the v1 hardware-adapter picker below.
@@ -186,7 +187,6 @@ fn run(app: AndroidApp) -> Result<(), String> {
 /// closures only ever run on Android. Sibling ports reuse this verbatim.
 fn wire_android_hooks(
     services: &mut photocraft_ui_egui::Services,
-    updater: Arc<Mutex<Updater>>,
     storage: Arc<StorageManager>,
     granted: bool,
     pen_settings: Arc<Mutex<craftapps_shared::pen::PenSettings>>,
@@ -196,9 +196,6 @@ fn wire_android_hooks(
     let tablet_storage = storage.clone();
     let sd_storage = storage.clone();
     services.android_hooks = Some(photocraft_ui_egui::AndroidHooks {
-        check_updates: Box::new(move || {
-            updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-        }),
         storage: photocraft_ui_egui::AndroidStorageHooks {
             location_label: Box::new(move || {
                 if granted {
@@ -216,7 +213,7 @@ fn wire_android_hooks(
                     let _ = crate::jni_bridge::open_all_files_settings();
                 }
             }),
-            pick_sd_card: Box::new(move || {
+            pick_folder: Box::new(move || {
                 // The folder picker needs no permission: the chosen tree is
                 // read and written through SAF directly.
                 crate::saf::set_pending_tree(sd_storage.clone());
@@ -226,7 +223,7 @@ fn wire_android_hooks(
                 }
             }),
         },
-        pen: photocraft_ui_egui::AndroidPenHooks {
+        pen: Some(photocraft_ui_egui::AndroidPenHooks {
             pen_section: Box::new(move |ui| {
                 let mut settings = pen_settings
                     .lock()
@@ -244,7 +241,7 @@ fn wire_android_hooks(
                     }
                 }
             }),
-        },
+        }),
     });
 }
 

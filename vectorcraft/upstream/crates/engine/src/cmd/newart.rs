@@ -94,7 +94,7 @@ impl NewArt {
     /// Give new object `n` (in `d`) this look: its placed gradients land relative to its bounds, and
     /// it links to the style (type keeps its own transparency).
     pub(crate) fn apply(&self, d: &mut vectorcraft_doc::Document, n: &mut Node) {
-        n.appearance = self.appearance.clone();
+        n.appearance = self.appearance.clone().into();
         if self.unit_box
             && n.appearance.has_placed_gradient()
             && let Some(b) = n.geometric_bounds()
@@ -105,7 +105,7 @@ impl NewArt {
             return;
         }
         (n.opacity, n.blend) = (self.opacity, self.blend);
-        n.graphic_style = self.style.as_deref().and_then(|name| d.graphic_style_index(name)).map(|i| d.graphic_style_id(i));
+        n.extras_mut().graphic_style = self.style.as_deref().and_then(|name| d.graphic_style_index(name)).map(|i| d.graphic_style_id(i));
     }
 }
 

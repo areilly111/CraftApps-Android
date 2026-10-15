@@ -24,6 +24,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod auto;
+pub mod blemish;
 pub mod colorops;
 pub mod cull;
 pub mod dust;
@@ -43,7 +44,7 @@ pub mod transform;
 pub mod upright;
 pub mod visualize;
 
-pub use output::{DeepImage, DeepSamples, DisplaySpace, OutputDepth, OutputSpace, OutputTrc, Proof};
+pub use output::{DeepImage, DeepSamples, DisplaySpace, OutputDepth, OutputSpace, OutputTrc, Proof, ProofLut, proof_profile, register_proof_profile};
 pub use visualize::{MaskView, Overlay};
 
 use lightcraft_develop::{DevelopSettings, Treatment};
@@ -78,6 +79,10 @@ pub struct SourceInfo {
     pub as_shot_tint: f64,
     /// No measured camera illuminant: WB adjustments are relative to the camera's rendered look.
     pub relative_wb: bool,
+    /// The Kelvin scale comes from matrices measured for the camera model, not from the file: before those were
+    /// used for white balance, this source was edited on the relative scale (6500 K / 0 = as shot), so settings
+    /// without a [`lightcraft_develop::WbScale`] are read that way ([`local::legacy_to_kelvin`]).
+    pub legacy_relative_wb: bool,
     /// The camera's colour model (raw files with a colour matrix); `None`: white balance adapts
     /// the developed pixels (Bradford, linear Rec.2020).
     pub camera_color: Option<Arc<CameraColor>>,
@@ -97,6 +102,7 @@ impl Default for SourceInfo {
             as_shot_tint: 0.0,
             lens: None,
             relative_wb: false,
+            legacy_relative_wb: false,
             camera_color: None,
             camera_tone: None,
             mattes: None,
@@ -358,6 +364,9 @@ pub struct Plan<'a> {
     pub geo: u64,
     /// Key of the white-balanced, retouched, denoised image (and of the planes computed from it).
     pub lin_key: u64,
+    /// [`Self::lin_key`] without the noise-reduction settings: draft renders reuse the smooth
+    /// planes of an image that differs from this one only in its noise reduction.
+    pub pre_nr_key: u64,
     /// Red eye / pet eye corrections with their detected pupils, in output pixels.
     pub eyes: Vec<redeye::EyeK>,
     /// The whole frame's dehaze airlight, for a windowed render (which can't see the whole frame).
@@ -418,7 +427,7 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
     let (wb_t, wb_tint) = local::effective_wb(info, s);
     let eyes = redeye::resolve(src, &s.red_eye, s.orientation, &frame, w, h, px_per_long);
     let d = &s.detail;
-    let lin_key = hash_of((
+    let pre_nr_key = hash_of((
         geo,
         [wb_t, wb_tint, info.as_shot_temp, info.as_shot_tint].map(f64::to_bits),
         format!("{:?}", s.spots),
@@ -427,10 +436,10 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
         format!("{:?}", s.optics),
         // and the local tone mapping
         local_tone::enabled(info, s),
-        [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits),
         src_long,
     ));
-    Plan { settings, frame, w, h, px_per_long, src_long, geo, lin_key, eyes, fixed_air, keep, mattes: info.mattes.clone() }
+    let lin_key = hash_of((pre_nr_key, [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits)));
+    Plan { settings, frame, w, h, px_per_long, src_long, geo, lin_key, pre_nr_key, eyes, fixed_air, keep, mattes: info.mattes.clone() }
 }
 
 /// Whether the scene-linear stage needs work only the CPU does (defringe, spot removal).
@@ -457,6 +466,37 @@ pub fn lin_cpu(img: &mut Rgb32f, info: &SourceInfo, p: &Plan<'_>) {
 /// (CPU and GPU) goes through this, so an SDR render of an HDR edit looks the same everywhere.
 pub fn settings_for<'a>(s: &'a DevelopSettings, req: &RenderRequest) -> std::borrow::Cow<'a, DevelopSettings> {
     if req.depth == OutputDepth::F32Hdr { std::borrow::Cow::Borrowed(s) } else { s.sdr_rendition() }
+}
+
+/// Long edge (pixels) of the small HDR render [`hdr_histogram`] measures.
+pub const HDR_HISTOGRAM_EDGE: usize = 384;
+
+/// The histogram of an HDR edit's HDR rendition for a preview request `req`: a small float HDR
+/// render of the same framing ([`HDR_HISTOGRAM_EDGE`]), binned with SDR on the left half and the
+/// whole HDR range ([`Hdr::MAX_EV_LIMIT`](lightcraft_develop::Hdr::MAX_EV_LIMIT) stops above SDR
+/// white, whatever the headroom limit, so the scale stays put) on the right ([`Histogram::of_hdr`]). A preview of
+/// an HDR edit shows its SDR rendition; this says how far its highlights go. `None` for SDR edits,
+/// high-bit-depth, windowed and proofed requests (their histogram stays the image's).
+pub fn hdr_histogram(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Option<Histogram> {
+    // a drag's drafts keep their own histogram: a second render per tick would slow them down
+    if !s.hdr.enabled || req.depth != OutputDepth::U8 || req.window.is_some() || req.proof.is_some() || req.quality == Quality::Draft {
+        return None;
+    }
+    let k = (HDR_HISTOGRAM_EDGE as f64 / req.max_w.max(req.max_h).max(1) as f64).min(1.0);
+    let size = |v: usize| ((v as f64 * k).round() as usize).max(1);
+    let hreq = RenderRequest {
+        max_w: size(req.max_w),
+        max_h: size(req.max_h),
+        depth: OutputDepth::F32Hdr,
+        overlay: Overlay::None,
+        proof: None,
+        window: None,
+        display: None,
+        ..*req
+    };
+    let deep = render(src, info, s, &hreq).deep?;
+    let DeepSamples::F32(v) = &deep.samples else { return None };
+    Some(Histogram::of_hdr(v.as_chunks::<3>().0, lightcraft_develop::Hdr::MAX_EV_LIMIT as f32))
 }
 
 /// Render `src` with settings `s`.
@@ -521,7 +561,12 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
     lap("wb/spots/nr", &mut t);
     let mut planes = match cached.map(|e| e.planes) {
         Some(p) if p.key == lin_key => p,
-        _ => local::Planes { key: lin_key, ..Default::default() },
+        // A draft while noise reduction changes (a slider drag): the wide, edge-aware planes of the
+        // image before the change stand in (noise reduction barely moves a blur that wide); the
+        // per-pixel log luminance and the fine texture band are redone. Keyed so a full-quality
+        // render never takes them.
+        Some(p) if req.quality == Quality::Draft && p.pre_nr == plan.pre_nr_key => p.for_other_nr(),
+        _ => local::Planes { key: lin_key, pre_nr: plan.pre_nr_key, ..Default::default() },
     };
     let mut prep = local::prepare(lin.clone(), s, frame, px_per_long, req.quality, &mut planes, plan.mattes.as_deref());
     if let Some(a) = plan.fixed_air {
@@ -644,5 +689,7 @@ mod tests_geometry;
 mod tests_hdr;
 #[cfg(test)]
 mod tests_local;
+#[cfg(test)]
+mod tests_tone;
 #[cfg(test)]
 mod tests_window;

@@ -1,13 +1,13 @@
 //! Photoshop menu parity: how much of [`crate::menu_catalog::CATALOG`] is live.
 //!
-//! `cargo xtask parity` prints this report and writes `docs/parity.md`. A test keeps the live
+//! `cargo xtask parity` prints this report and writes `docs/parity-checklist.md`. A test keeps the live
 //! count from regressing below [`FLOOR`].
 
 use crate::menu_catalog::CATALOG;
 use crate::menus::is_live;
 
 /// Minimum number of live catalog items. Raise it when parity grows; never lower it.
-pub const FLOOR: usize = 627;
+pub const FLOOR: usize = 631;
 
 /// One top-level menu's coverage.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -31,7 +31,7 @@ impl Parity {
         if self.total == 0 { 0.0 } else { 100.0 * self.live as f64 / self.total as f64 }
     }
 
-    /// The report as Markdown (the body of `docs/parity.md`).
+    /// The report as Markdown (the body of `docs/parity-checklist.md`).
     pub fn to_markdown(&self) -> String {
         let mut s = String::new();
         s.push_str("# Photoshop menu parity\n\n");

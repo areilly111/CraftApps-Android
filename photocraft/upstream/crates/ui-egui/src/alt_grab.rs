@@ -2,8 +2,8 @@
 //!
 //! Many Linux desktops move a window with Alt+drag: Cinnamon (Linux Mint's default), MATE, Xfce,
 //! and KDE before Plasma 6. Their window manager grabs every Alt+left press, so the click never
-//! reaches PhotoCraft: the Brush's ⌥ Eyedropper samples nothing and the Clone Stamp gets no source
-//! point, while the ⌥ cursor still shows (the keyboard is not grabbed until the press). Nothing in
+//! reaches PhotoCraft: the Brush's ⌥ Eyedropper samples nothing, the Clone Stamp gets no source
+//! point and the Zoom tool does not zoom out (#3137), while the ⌥ cursor still shows (the keyboard is not grabbed until the press). Nothing in
 //! the app can win that grab back, but its signature is clear: the pointer "leaves" the window from
 //! well inside the canvas while ⌥ is held with a tool whose ⌥-click matters (X11 and Wayland report
 //! a grab as the pointer leaving), and comes back to a window that still has the keyboard focus
@@ -27,9 +27,9 @@ struct Watch {
     pending: bool,
 }
 
-/// Tools whose ⌥-click does something: the ⌥ Eyedropper and the clone source point.
+/// Tools whose ⌥-click does something: the ⌥ Eyedropper, the clone source point and Zoom Out.
 pub(crate) fn alt_click_tool(tool: Tool, mods: egui::Modifiers) -> bool {
-    crate::canvas::alt_samples(tool, mods) || (mods.alt && !mods.ctrl && matches!(tool, Tool::CloneStamp | Tool::Healing))
+    crate::canvas::alt_samples(tool, mods) || (mods.alt && !mods.ctrl && matches!(tool, Tool::CloneStamp | Tool::Healing | Tool::Zoom))
 }
 
 /// The status-bar message for an ⌥-click the desktop took.

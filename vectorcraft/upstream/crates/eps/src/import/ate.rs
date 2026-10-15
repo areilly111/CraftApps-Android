@@ -634,7 +634,7 @@ impl Story {
         if text.trim().is_empty() && !threaded {
             return None;
         }
-        let leading = self.lines.windows(2).map(|w| (w[1].1 - w[0].1) * scale).find(|l| l.is_finite() && *l > 0.0);
+        let leading = self.line_leading(scale);
         let chars: Vec<char> = text.chars().collect();
         let mut runs = vec![];
         let mut from = 0usize;
@@ -664,6 +664,38 @@ impl Story {
         t.kind = kind;
         t.xf = xf;
         Some(Node::new(id, NodeKind::Text(Box::new(t))))
+    }
+
+    /// The leading the file's own line positions imply: the distance from one line to the next, less
+    /// the space between paragraphs that is part of it (a paragraph's space after and the next one's
+    /// space before; a layout's lines are where that space has put them, and the text object adds it
+    /// again).
+    fn line_leading(&self, scale: f64) -> Option<f64> {
+        let para_at = |c: usize| {
+            let mut end = 0usize;
+            for (n, p) in &self.paras {
+                end = end.saturating_add(*n);
+                if c < end {
+                    return Some(p);
+                }
+            }
+            self.paras.last().map(|(_, p)| p)
+        };
+        let chars: Vec<char> = self.text.chars().collect();
+        let breaks: Vec<usize> = chars.iter().enumerate().filter(|(_, c)| matches!(c, '\r' | '\x03')).map(|(i, _)| i).collect();
+        // More lines than breaks: area type wraps, and which break ends which line is unknown.
+        let wraps = self.lines.len() > breaks.len() + 1;
+        self.lines.windows(2).enumerate().find_map(|(i, w)| {
+            let pitch = w[1].1 - w[0].1;
+            let between = match breaks.get(i) {
+                Some(&at) if !wraps && chars.get(at) == Some(&'\r') => {
+                    para_at(at).map_or(0.0, |p| p.space_after) + para_at(at + 1).map_or(0.0, |p| p.space_before)
+                }
+                _ => 0.0,
+            };
+            let l = (pitch - between) * scale;
+            (l.is_finite() && l > 0.0).then_some(l)
+        })
     }
 
     /// The style of each paragraph of `text` (paragraphs split at `\n`).
@@ -758,5 +790,74 @@ mod tests {
         }
         let deep = format!("/0 {}", "[".repeat(200));
         assert!(read(deep.as_bytes()).is_none());
+    }
+
+    /// A point-type story of `text` whose lines start at the heights `ys` (the layout's own: where
+    /// the paragraph spacing has put them), every paragraph styled `para`.
+    fn story(text: &str, ys: &[f64], para: &Para) -> Story {
+        let size = 13.0;
+        let paras = text.split_inclusive('\r').map(|p| (p.chars().count(), para.clone())).collect();
+        Story {
+            text: text.to_string(),
+            anchor: (0.0, 0.0),
+            lines: ys.iter().map(|y| (0.0, *y)).collect(),
+            frames: vec![FrameKind::Point([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])],
+            paras,
+            runs: vec![(
+                text.chars().count(),
+                Style {
+                    font: None,
+                    size,
+                    leading: None,
+                    tracking: 0.0,
+                    baseline_shift: 0.0,
+                    h_scale: 1.0,
+                    v_scale: 1.0,
+                    fill: Some(Color::BLACK),
+                    stroke: None,
+                    stroke_width: 1.0,
+                },
+            )],
+        }
+    }
+
+    /// The leading of the text object a story comes in as.
+    fn leading_of(story: &Story) -> Option<f64> {
+        let node = story.node(NodeId(1), 0, (0.0, 0.0), Affine::IDENTITY)?;
+        match &node.kind {
+            NodeKind::Text(t) => t.runs.first().and_then(|r| r.style.leading),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn leading_leaves_out_the_space_between_paragraphs_that_the_lines_already_have() {
+        // Lines 10.6 apart that are three paragraphs with 5 less after each: auto leading (15.6) less 5.
+        let para = Para { space_after: -5.0, ..Para::default() };
+        let s = story("one\rtwo\rthree\r", &[0.0, 10.6, 21.2], &para);
+        assert!((s.line_leading(1.0).unwrap() - 15.6).abs() < 1e-9);
+        assert!((leading_of(&s).unwrap() - 15.6).abs() < 1e-9);
+        // Space after and space before both count; the scale of the frame carries onto the leading.
+        let para = Para { space_after: 4.0, space_before: 2.0, ..Para::default() };
+        let s = story("one\rtwo\r", &[0.0, 20.0], &para);
+        assert!((s.line_leading(1.0).unwrap() - 14.0).abs() < 1e-9);
+        assert!((s.line_leading(0.5).unwrap() - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn leading_between_lines_of_a_paragraph_is_their_distance() {
+        // A line break inside a paragraph has no paragraph spacing between its lines.
+        let para = Para { space_after: -5.0, space_before: 3.0, ..Para::default() };
+        let s = story("one\x03two\x03three\r", &[0.0, 15.6, 31.2], &para);
+        assert!((s.line_leading(1.0).unwrap() - 15.6).abs() < 1e-9);
+        // Paragraphs without spacing: the distance as it was.
+        let s = story("one\rtwo\r", &[0.0, 15.6], &Para::default());
+        assert!((s.line_leading(1.0).unwrap() - 15.6).abs() < 1e-9);
+        // Area type whose paragraph wraps: lines and breaks don't pair up, so nothing is taken off.
+        let para = Para { space_after: -5.0, ..Para::default() };
+        let s = story("one two three\rfour\r", &[0.0, 15.6, 31.2, 41.8], &para);
+        assert!((s.line_leading(1.0).unwrap() - 15.6).abs() < 1e-9);
+        // One line has no distance to read.
+        assert_eq!(story("one\r", &[0.0], &Para::default()).line_leading(1.0), None);
     }
 }

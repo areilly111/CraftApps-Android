@@ -6,7 +6,7 @@
 # apps, text addresses the user informally ("du") and commands use the infinitive ("Projekt
 # öffnen…"). Product, format and feature names (FilmCraft, ArtCraft, Lumetri, Essential Graphics,
 # EDL, AAF…) keep their spelling. This catalog covers every menu, including the native macOS
-# Settings menu; anything else is shown in English.
+# app menu; anything else is shown in English.
 #
 # Terms: track = Spur, bin = Ablage, marker = Marker, playhead = Abspielposition, In/Out = In-/Out-
 # Punkt, transition = Übergang, frame hold = Standbild, panel = Bedienfeld, workspace =
@@ -180,6 +180,8 @@
 	Guide Templates	Hilfslinienvorlagen
 	Help	Hilfe
 	Hide All Caption Tracks	Alle Untertitelspuren ausblenden
+	Hide FilmCraft	FilmCraft ausblenden
+	Hide Others	Andere ausblenden
 	High Quality Playback	Wiedergabe in hoher Qualität
 	History	Verlauf
 	Import From	Importieren aus
@@ -269,6 +271,7 @@
 	Properties	Eigenschaften
 	Proxy	Proxy
 	Purple	Lila
+	Quit FilmCraft	FilmCraft beenden
 	Reconnect Full Resolution Media…	Medien in voller Auflösung neu verknüpfen…
 	Recover Unsaved Changes…	Nicht gespeicherte Änderungen wiederherstellen…
 	Rectangle	Rechteck
@@ -384,3 +387,4 @@
 	Zoom Out	Verkleinern
 	Zoom to Sequence	Auf Sequenz zoomen
 	Project Notes	Projektnotizen
+

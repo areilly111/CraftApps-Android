@@ -50,7 +50,7 @@ fn has_layer_for_slice(s: &Session) -> std::result::Result<(), String> {
     if matches!(l.content, LayerContent::Adjustment(_)) {
         return Err("adjustment layers have no bounds to slice".into());
     }
-    if d.doc.layers.first().is_some_and(|b| b.id == id && b.name == "Background" && b.locks.transparency && b.locks.position) {
+    if d.doc.is_background(id) {
         return Err("the Background layer can't have a layer-based slice".into());
     }
     if d.doc.slices.list.iter().any(|s| s.layer == Some(id)) {
@@ -283,8 +283,8 @@ fn from_guides(s: &mut Session) -> Result<Value> {
     let b = d.doc.bounds();
     let mut xs: Vec<i32> = vec![b.x0, b.x1];
     let mut ys: Vec<i32> = vec![b.y0, b.y1];
-    xs.extend(d.doc.guides.vertical.iter().map(|g| (*g as f64).round() as i32).filter(|x| *x > b.x0 && *x < b.x1));
-    ys.extend(d.doc.guides.horizontal.iter().map(|g| (*g as f64).round() as i32).filter(|y| *y > b.y0 && *y < b.y1));
+    xs.extend(d.doc.guides.vertical.iter().map(|g| g.round() as i32).filter(|x| *x > b.x0 && *x < b.x1));
+    ys.extend(d.doc.guides.horizontal.iter().map(|g| g.round() as i32).filter(|y| *y > b.y0 && *y < b.y1));
     if xs.len() == 2 && ys.len() == 2 {
         return Err(EngineError::Other("the document has no guides inside the canvas".into()));
     }

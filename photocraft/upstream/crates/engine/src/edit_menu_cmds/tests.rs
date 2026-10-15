@@ -219,6 +219,22 @@ fn delete_and_fill_selection_removes_the_object_in_one_step() {
 }
 
 #[test]
+fn content_aware_fill_samples_photoshops_window() {
+    // A 50 px selection samples the 200 px square centred on it (Photoshop 25.4's overlay);
+    // at the canvas edge the square slides inwards. Edit › Fill uses the same window.
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 600, "height": 400, "background": "white"})).unwrap();
+    for (x, y, want) in [(275, 175, [200, 100, 200, 200]), (10, 10, [0, 0, 200, 200])] {
+        s.execute("select.rect", json!({"x": x, "y": y, "width": 50, "height": 50})).unwrap();
+        for sampling in ["auto", "rectangular"] {
+            let r = s.execute("edit.contentAwareFill", json!({"sampling": sampling})).unwrap();
+            assert_eq!(r["window"], json!(want), "{sampling} at {x},{y}");
+            s.undo();
+        }
+    }
+}
+
+#[test]
 fn content_aware_fill_outputs_and_sampling() {
     let mut s = blob_session(8);
     let base = s.active().unwrap().active_layer.unwrap();
@@ -280,6 +296,34 @@ fn content_aware_scale_params() {
     assert_eq!(r["to"], json!([48, 16]));
     assert!(s.execute("edit.contentAwareScale", json!({"width": 0})).is_err());
     assert!(s.execute("edit.contentAwareScale", json!({"protect": "no such channel"})).is_err());
+}
+
+#[test]
+fn content_aware_scale_places_the_result_and_previews_it_reduced() {
+    // The transform box (#3096) moves the result with `x`/`y` and previews it on a reduced copy.
+    for depth in [8, 16, 32] {
+        let mut s = session(depth);
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.edit("paint", |doc, active| {
+            doc.layer_mut(active.unwrap()).unwrap().surface_mut().unwrap().fill_rect(Rect::new(4, 4, 36, 28), &[0.2, 0.4, 0.6, 1.0]);
+            Ok(())
+        })
+        .unwrap();
+        let p = json!({"width": 16, "height": 40, "x": 10, "y": 2});
+        let preview = super::ContentAwareScalePreview::new(&s, &p, 10).unwrap();
+        assert_eq!(preview.region(), Rect::new(4, 4, 36, 28));
+        let small = preview.run(&crate::jobs::JobCtx::new()).unwrap();
+        assert_eq!(small.content_bounds(), Rect::new(0, 0, 4, 10), "depth {depth}: the longest side, 40 px, previews at 10");
+        let past = s.active().unwrap().history.past_len();
+        let r = s.execute("edit.contentAwareScale", p).unwrap();
+        assert_eq!(r["bounds"], json!([10, 2, 16, 40]));
+        assert_eq!(active(&s).surface().unwrap().content_bounds(), Rect::from_xywh(10, 2, 16, 40), "depth {depth}");
+        assert_eq!(s.active().unwrap().history.past_len(), past + 1, "depth {depth}: one step");
+        for bad in [json!({"x": "left"}), json!({"y": 1e9})] {
+            assert!(s.execute("edit.contentAwareScale", bad.clone()).is_err(), "{bad}");
+            assert!(super::ContentAwareScalePreview::new(&s, &bad, 64).is_err(), "{bad}");
+        }
+    }
 }
 
 #[test]

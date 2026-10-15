@@ -35,7 +35,14 @@ fn image_node(d: &mut Document, key: &str) -> Node {
     let id = d.alloc_id();
     Node::new(
         id,
-        NodeKind::Image(ImageObject { key: key.into(), width: 2, height: 2, xf: Affine::IDENTITY, link: None, placement: Default::default() }),
+        NodeKind::Image(Box::new(ImageObject {
+            key: key.into(),
+            width: 2,
+            height: 2,
+            xf: Affine::IDENTITY,
+            link: None,
+            placement: Default::default(),
+        })),
     )
 }
 
@@ -120,7 +127,7 @@ fn unused_images_are_pruned() {
         d.images.insert(k.into(), blob(b));
     }
     let mut n = image_node(&mut d, "used");
-    n.mask = Some(Box::new(OpacityMask::new(image_node(&mut d, "in mask"), false)));
+    n.extras_mut().mask = Some(Box::new(OpacityMask::new(image_node(&mut d, "in mask"), false)));
     d.insert(Some(layer), 0, n).unwrap();
     let art = image_node(&mut d, "in symbol");
     d.symbols.push(Symbol { name: "S".into(), art: Arc::new(art) });

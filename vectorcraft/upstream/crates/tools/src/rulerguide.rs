@@ -5,7 +5,8 @@
 //! selected guides (Alt copies them). A dragged guide snaps ([`GuideSnap`]): with Shift to the
 //! ruler's ticks, else to whole pixels, the grid, with Smart Guides the art's and the artboards'
 //! edges, centres and anchors, or with Snap to Point the anchors. Dropped off the canvas onto its
-//! ruler, a moved guide is deleted. Hidden or locked guides (View › Guides) can't be picked.
+//! ruler, a moved guide is deleted. Hidden or locked guides (View › Guides), and guides on a hidden
+//! or locked layer, can't be picked.
 
 use serde_json::json;
 use vectorcraft_geom::Point;
@@ -24,7 +25,7 @@ pub fn guide_at(cx: &ToolContext, p: Point) -> Option<usize> {
         .guides
         .iter()
         .enumerate()
-        .filter(|(_, g)| cx.doc.guide_passes(g, p, tol))
+        .filter(|(_, g)| cx.doc.guide_editable(g) && cx.doc.guide_passes(g, p, tol))
         .map(|(i, g)| (i, off(g.pos, g.vertical)))
         .filter(|(_, d)| *d <= tol)
         .min_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))

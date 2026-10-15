@@ -313,6 +313,85 @@ fn extruded_text_renders_as_a_mesh() {
     assert!(img.data.iter().filter(|q| q[3] > 0.5).count() > 200);
 }
 
+#[test]
+fn shape_surface_items_colour_the_extruded_surfaces() {
+    let (mut p, cid) = project(200, 200);
+    add(&mut p, cid, LayerSource::Shape, |l| {
+        l.switches.three_d = true;
+        let mut next = 10_000u64;
+        let ids = &mut build::Ids(&mut next);
+        let surface = |ids: &mut build::Ids, m: &str, c: [f64; 4]| {
+            let mut g = build::shape_surface(ids, m).unwrap();
+            g.children.push(build::shape_surface_prop(ids, "color").unwrap().into());
+            if let Some(effectcraft_project::Node::Prop(pr)) = g.children.last_mut() {
+                pr.value = Value::Color(c);
+            }
+            g
+        };
+        // A white square whose group colours its sides green; the layer's Contents colour every
+        // front blue and every side red, but the group's own Side wins.
+        let rect = build::shape_rect(ids, [80.0, 80.0], [0.0, 0.0], 0.0);
+        let fill = build::shape_fill(ids, [1.0, 1.0, 1.0, 1.0]);
+        let side = surface(ids, "side", [0.0, 1.0, 0.0, 1.0]);
+        let group = build::shape_group(ids, "Group 1", vec![rect, fill, side]);
+        let front = surface(ids, "front", [0.0, 0.0, 1.0, 1.0]);
+        let outer_side = surface(ids, "side", [1.0, 0.0, 0.0, 1.0]);
+        let contents = l.props.sub_mut("contents").unwrap();
+        contents.children.extend([group.into(), front.into(), outer_side.into()]);
+        l.props.children.push(build::extrusion_geometry_options(ids).into());
+        set(l, "geometryOptions/extrusionDepth", Value::Scalar(40.0));
+        set(l, "transform/position", Value::Vec3([100.0, 100.0, 0.0]));
+    });
+    let ctx = crate::EvalCtx { project: &p, comp_id: cid, comp: p.comp(cid).unwrap(), time: Tick::ZERO, expr: None, footage: None };
+    let l = &ctx.comp.layers[0];
+    let params = scene::extrusion_params(&ctx, l).unwrap();
+    let meshes = scene::extruded_meshes(&ctx, l, &params);
+    // No bevel: Front, Side and Back (the Back keeps the fill's white).
+    let colours: Vec<[f32; 4]> = meshes.iter().map(|m| m.1).collect();
+    assert_eq!(colours, [[0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0], [1.0, 1.0, 1.0, 1.0]]);
+    assert!(meshes[0].0.normals.iter().all(|n| n[2] < -0.99), "front cap");
+    assert!(meshes[1].0.normals.iter().all(|n| n[2].abs() < 1e-6), "walls");
+    // Rendered (unlit: base colours) at an angle: the blue face and the green side both show.
+    p.comp_mut(cid).unwrap().layers[0].props.prop_mut("transform/rotationY").unwrap().value = Value::Scalar(50.0);
+    let img = render(&p, cid);
+    let blue = img.data.iter().filter(|q| q[3] > 0.99 && q[2] > 0.9 && q[0] < 0.1 && q[1] < 0.1).count();
+    let green = img.data.iter().filter(|q| q[3] > 0.99 && q[1] > 0.9 && q[0] < 0.1 && q[2] < 0.1).count();
+    assert!(blue > 200 && green > 50, "blue {blue}, green {green}");
+}
+
+#[test]
+fn text_animators_colour_the_extruded_surfaces() {
+    let (mut p, cid) = project(200, 100);
+    add(&mut p, cid, LayerSource::Text, |l| {
+        l.switches.three_d = true;
+        let doc = effectcraft_keyframe::TextDoc { text: "IO".into(), size: 60.0, fill: [1.0, 1.0, 1.0, 1.0], apply_fill: true, ..Default::default() };
+        set(l, "text/sourceText", Value::Text(Box::new(doc)));
+        let mut next = 10_000u64;
+        let ids = &mut build::Ids(&mut next);
+        let props = ["sideColor", "bevelColor"].iter().flat_map(|k| build::text_anim_props(ids, k, false)).collect();
+        let anim = build::text_animator(ids, "Animator 1", props);
+        l.props.group_mut("text/animators").unwrap().children.push(anim.into());
+        set(l, "text/animators/#1/properties/sideColor", Value::Color([0.0, 1.0, 0.0, 1.0]));
+        // Half the selection: the bevel colour blends half way over the fill.
+        set(l, "text/animators/#1/selectors/#1/advanced/amount", Value::Scalar(50.0));
+        l.props.children.push(build::extrusion_geometry_options(ids).into());
+        set(l, "geometryOptions/extrusionDepth", Value::Scalar(30.0));
+        set(l, "geometryOptions/bevelStyle", Value::Enum(1));
+    });
+    let ctx = crate::EvalCtx { project: &p, comp_id: cid, comp: p.comp(cid).unwrap(), time: Tick::ZERO, expr: None, footage: None };
+    let l = &ctx.comp.layers[0];
+    let params = scene::extrusion_params(&ctx, l).unwrap();
+    let meshes = scene::extruded_meshes(&ctx, l, &params);
+    // Two characters × (Front, Bevel, Side, Back).
+    assert_eq!(meshes.len(), 8);
+    for m in meshes.chunks(4) {
+        assert_eq!(m[0].1, [1.0, 1.0, 1.0, 1.0], "front keeps the fill");
+        assert_eq!(m[1].1, [1.0, 0.5, 0.5, 1.0], "bevel: red half way over white");
+        assert_eq!(m[2].1, [0.5, 1.0, 0.5, 1.0], "side: green half way over white");
+        assert_eq!(m[3].1, [1.0, 1.0, 1.0, 1.0], "back keeps the fill");
+    }
+}
+
 // ---------------------------------------------------------------- motion blur, blend modes, mattes
 
 fn solid(p: &mut Project, color: [f32; 3], w: u32, h: u32) -> ItemId {

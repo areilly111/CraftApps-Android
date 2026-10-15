@@ -48,6 +48,36 @@ fn damage_is_skipped_not_fatal() {
     assert!(parse(b"BI /W 1").ops.len() == 1);
 }
 
+/// Issue #1318: an inline image whose dictionary can't be read is skipped up to its `EI`, counted,
+/// and what follows it is parsed.
+#[test]
+fn an_unreadable_inline_image_is_skipped_to_its_end() {
+    let src = b"q BI /W 4 H 4 ID aa EI Q BT (After) Tj ET";
+    let p = parse(src);
+    let names: Vec<&[u8]> = p.ops.iter().map(|o| o.op.as_slice()).collect();
+    assert_eq!(names, [&b"q"[..], b"Q", b"BT", b"Tj", b"ET"]);
+    assert_eq!(p.skipped, b"BI /W 4 H 4 ID aa EI".len());
+    let control = parse(b"q BI /W 4 /H 4 ID aa EI Q BT (After) Tj ET");
+    assert_eq!(control.skipped, 0);
+    assert_eq!(control.ops.len(), 6);
+}
+
+/// Issue #1318, follow-up: without an `EI`, an unreadable inline image runs to the end of the
+/// stream, and those bytes are counted. A readable one whose data is cut short is kept, data and
+/// all, so nothing of it is skipped.
+#[test]
+fn an_unreadable_inline_image_without_ei_is_counted() {
+    let p = parse(b"q BI /W 4 H 4 ID aa");
+    let names: Vec<&[u8]> = p.ops.iter().map(|o| o.op.as_slice()).collect();
+    assert_eq!(names, [&b"q"[..]]);
+    assert_eq!(p.skipped, b"BI /W 4 H 4 ID aa".len());
+    let control = parse(b"q BI /W 4 /H 4 ID aa");
+    assert_eq!(control.skipped, 0);
+    let names: Vec<&[u8]> = control.ops.iter().map(|o| o.op.as_slice()).collect();
+    assert_eq!(names, [&b"q"[..], b"BI"]);
+    assert_eq!(control.ops[1].inline.as_ref().map(|(_, data)| data.as_slice()), Some(&b"aa"[..]));
+}
+
 #[test]
 fn matrices_compose_and_invert() {
     let a = Matrix([2.0, 0.0, 0.0, 3.0, 10.0, 20.0]);

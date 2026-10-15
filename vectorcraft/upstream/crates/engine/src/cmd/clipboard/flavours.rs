@@ -39,6 +39,30 @@ pub fn is_address(text: &str) -> bool {
     !t.chars().any(char::is_whitespace) && SCHEMES.iter().any(|s| t.get(..s.len()).is_some_and(|h| h.eq_ignore_ascii_case(s)) && t.len() > s.len())
 }
 
+/// Is `text` only a reference to a picture: an address ([`is_address`]), or markup that shows
+/// nothing but images (`<img …>`)? A browser's Copy Image puts one of them next to the picture
+/// (some put the image's HTML there as text, #1089): then the picture is what Paste takes.
+pub fn names_a_picture(text: &str) -> bool {
+    is_address(text) || only_images(text)
+}
+
+/// Is `html` markup whose only content is `<img>` elements: no text outside its tags (whitespace
+/// between them aside), and at least one image?
+fn only_images(html: &str) -> bool {
+    let mut images = 0;
+    let mut rest = html.trim();
+    while !rest.is_empty() {
+        let Some(tag) = rest.strip_prefix('<') else { return false };
+        let Some(end) = tag.find('>') else { return false };
+        let name = tag.get(..end).unwrap_or_default().split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or_default();
+        if name.eq_ignore_ascii_case("img") {
+            images += 1;
+        }
+        rest = tag.get(end + 1..).unwrap_or_default().trim_start();
+    }
+    images > 0
+}
+
 /// How much of a copied file [`file_flavour`] needs to tell what it is.
 pub const FILE_HEAD: usize = 4096;
 
@@ -291,7 +315,7 @@ fn import_image(s: &mut Session, p: &Value) -> Result<Value> {
     let (w, h) = (img.width, img.height);
     let image =
         ImageObject { key: img.key.clone(), width: w, height: h, xf: Affine::scale_non_uniform(sx, sy), link: None, placement: Default::default() };
-    let mut clip = Clipboard { nodes: vec![Node::new(NodeId(1), NodeKind::Image(image))], ..Default::default() };
+    let mut clip = Clipboard { nodes: vec![Node::new(NodeId(1), NodeKind::Image(Box::new(image)))], ..Default::default() };
     clip.images.insert(img.key, img.blob);
     let count = s.load_clipboard(clip, p)?;
     Ok(json!({ "count": count, "width": w as f64 * sx, "height": h as f64 * sy, "pixelWidth": w, "pixelHeight": h }))

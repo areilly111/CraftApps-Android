@@ -78,3 +78,7 @@ family (`sign`, `sign_with_timestamp`, `timestamp_document`, `embed_ltv`).
 - Performance budgets (`misc.performance-budgets`) are not set or enforced.
 - Some shipped features are still reachable only from the UI, not through an `automation` tool;
   `cargo xtask parity` lists them; closing that gap is tracked in the execution plan (D4).
+
+`doc.text_edit_preview(page, block)` prepares a read-only page background with the selected
+paragraph’s glyphs removed, preserving text positioning, images and colours. It shares the
+working document’s render configuration and never enters the undo history.

@@ -431,7 +431,7 @@ impl<'a, 'i> Imp<'a, 'i, '_> {
                 }
                 self.adjustments(&mut ti, el, local_start, src_in, speed, ctx, kind);
                 if !primary || kind == TrackKind::Audio {
-                    ti.markers = self.markers(el, local_start, src_in, speed);
+                    ti.markers = self.markers(el, local_start, src_in, speed, ctx.seq_rate);
                 }
                 let pref = match kind {
                     TrackKind::Video => lane.max(0) as usize,
@@ -453,7 +453,7 @@ impl<'a, 'i> Imp<'a, 'i, '_> {
         }
         if primary {
             // Markers on primary storyline elements are timeline markers.
-            for m in self.markers(el, local_start, Tick::ZERO, 1.0) {
+            for m in self.markers(el, local_start, Tick::ZERO, 1.0, ctx.seq_rate) {
                 seq.markers.push(Marker { start: t0 + m.start, ..m });
             }
         }
@@ -475,8 +475,10 @@ impl<'a, 'i> Imp<'a, 'i, '_> {
         (t0 + dur, vclip)
     }
 
-    fn markers(&mut self, el: Node, local_start: Tick, src_in: Tick, speed: f64) -> Vec<Marker> {
+    fn markers(&mut self, el: Node, local_start: Tick, src_in: Tick, speed: f64, rate: FrameRate) -> Vec<Marker> {
         let mut out = Vec::new();
+        // FCPXML has no zero-duration marker: a point is written as one frame at the sequence rate.
+        let frame = rate.frame_duration();
         for m in elements(el).filter(|m| matches!(m.tag_name().name(), "marker" | "chapter-marker")) {
             let rel = attr_time(m, "start").unwrap_or(Tick::ZERO) - local_start;
             let start = if src_in == Tick::ZERO && speed == 1.0 { rel } else { src_in + scaled(rel, speed) };
@@ -484,7 +486,7 @@ impl<'a, 'i> Imp<'a, 'i, '_> {
             out.push(Marker {
                 id: MarkerId(self.b.alloc()),
                 start,
-                duration: if d.0 <= 1 { Tick::ZERO } else { d },
+                duration: if d <= frame { Tick::ZERO } else { d },
                 name: m.attribute("value").unwrap_or("").to_string(),
                 comment: m.attribute("note").unwrap_or("").to_string(),
                 kind: if m.has_tag_name("chapter-marker") { MarkerKind::Chapter } else { MarkerKind::Comment },

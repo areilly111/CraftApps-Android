@@ -1,0 +1,35 @@
+name: Desktop printing
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "apps/vectorcraft/Cargo.toml"
+      - "apps/vectorcraft/src/printing.rs"
+      - "apps/vectorcraft/src/printing/**"
+      - "crates/ui-egui/src/print.rs"
+      - "crates/ui-egui/src/tests_printps.rs"
+      - ".github/workflows/print.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-print
+      - run: cargo clippy --locked -p vectorcraft --all-targets -- -D warnings
+      - run: cargo test --locked -p vectorcraft
+      - name: Check pending submission and queue refusal feedback
+        run: cargo test --locked -p vectorcraft-ui-egui tests_printps

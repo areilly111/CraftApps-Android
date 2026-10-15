@@ -4,8 +4,8 @@
 //!
 //! An artboard is a top-level group with [`photocraft_doc::Artboard`] set; the compositor clips
 //! its children to the board and paints its background. Moving the group (Move tool,
-//! `layer.translate`) moves the board with its contents. The canvas grows to the right and
-//! bottom to fit new boards, like Photoshop's auto-expanding artboard canvas.
+//! `layer.translate`) moves the board with its contents. The canvas grows to fit every board,
+//! in every direction, like Photoshop's auto-expanding artboard canvas ([`fit_canvas`]).
 
 use photocraft_color::{Color, ColorMode, PixelFormat, SampleType};
 use photocraft_doc::{Artboard, ArtboardBackground, Document, Layer, LayerContent, LayerId, Size};
@@ -181,14 +181,34 @@ pub(crate) fn place_copy(doc: &mut Document, id: LayerId) -> Result<()> {
     Ok(())
 }
 
-/// Grow the canvas (right/bottom) so every artboard fits.
+/// Grow the canvas so every artboard fits. Photoshop's artboard documents grow in every
+/// direction: a board left of or above the origin shifts the whole document (boards, their
+/// contents, guides, paths…) right/down by its overhang, then the canvas grows to show it. An
+/// axis whose boards span more than the largest canvas, or a shift that would push pixels past
+/// the 32-bit range, stays unshifted: the board stays partly off-canvas, as one past the size
+/// limit does.
 pub(crate) fn fit_canvas(doc: &mut Document) {
-    let (mut w, mut h) = (doc.size.width as i64, doc.size.height as i64);
-    for (_, _, a) in doc.artboards() {
-        w = w.max(i64::from(a.rect.x1));
-        h = h.max(i64::from(a.rect.y1));
+    let max = i64::from(crate::document_preset_cmds::MAX_DIMENSION);
+    let boards: Vec<Rect> = doc.artboards().iter().map(|b| b.2.rect).collect();
+    // The canvas and every board, per axis (`lo` ≤ 0 is the canvas origin or a board past it).
+    let span = |edges: &dyn Fn(&Rect) -> (i32, i32), len: u32| {
+        boards.iter().map(edges).fold((0, i64::from(len)), |(lo, hi), (a, b)| (lo.min(i64::from(a)), hi.max(i64::from(b))))
+    };
+    let (x0, x1) = span(&|r| (r.x0, r.x1), doc.size.width);
+    let (y0, y1) = span(&|r| (r.y0, r.y1), doc.size.height);
+    let shift = |lo: i64, hi: i64| if hi - lo <= max { i32::try_from(-lo).unwrap_or(0) } else { 0 };
+    let (mut sx, mut sy) = (shift(x0, x1), shift(y0, y1));
+    // `translate_doc` checks before it moves anything, so a refusal leaves the document as is.
+    if (sx, sy) != (0, 0) && crate::image_cmds::translate_doc(doc, "artboard", sx, sy).is_err() {
+        (sx, sy) = (0, 0);
     }
-    doc.size = Size::new(w.clamp(1, 300_000) as u32, h.clamp(1, 300_000) as u32);
+    let size = Size::new((x1 + i64::from(sx)).clamp(1, max) as u32, (y1 + i64::from(sy)).clamp(1, max) as u32);
+    if size != doc.size {
+        doc.size = size;
+        // Shape pixels are cut at the canvas: a board moved past the old edge rendered its
+        // shapes against it, leaving them missing or clipped (#2389).
+        crate::canvas_geom::refresh(doc, crate::canvas_geom::Refresh::Shapes);
+    }
 }
 
 fn next_artboard_name(doc: &Document) -> String {
@@ -357,12 +377,96 @@ fn set_props(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"layer": id.0, "rect": [rect.x0, rect.y0, rect.width(), rect.height()]}))
 }
 
+/// The Artboard tool's "+" buttons: a board the size of board `layer` on one of its sides, a
+/// [`GAP`] away (further out past any board in the way), empty or (`duplicate`, the ⌥-click) a
+/// copy with its contents. A board left of or above the canvas origin shifts the whole document
+/// right/down so the canvas can grow to show it. One undo step.
+fn add_beside(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "layer.artboard.addBeside";
+    let d = s.active().ok_or(EngineError::NoDocument)?;
+    let id = match p.get("layer").and_then(Value::as_u64) {
+        Some(v) => LayerId(v),
+        None => active_artboard(s).ok_or_else(|| bad(cmd, "no artboard selected"))?,
+    };
+    let src = d.doc.layer(id).and_then(Layer::artboard).cloned().ok_or_else(|| bad(cmd, "the layer is not an artboard"))?;
+    let side = p.get("side").and_then(Value::as_str).unwrap_or("right");
+    let duplicate = p.get("duplicate").and_then(Value::as_bool).unwrap_or(false);
+    let [x0, y0, w, h] = xywh(src.rect);
+    let gap = i64::from(GAP);
+    // In i64: edges ± a board and a gap can pass the i32 range (#931); `board_rect` checks.
+    let (mut x, mut y) = match side {
+        "right" => (x0 + w + gap, y0),
+        "left" => (x0 - gap - w, y0),
+        "bottom" => (x0, y0 + h + gap),
+        "top" => (x0, y0 - gap - h),
+        o => return Err(bad(cmd, format!("unknown side `{o}` (left|right|top|bottom)"))),
+    };
+    let boards: Vec<Rect> = d.doc.artboards().iter().map(|b| b.2.rect).collect();
+    // Each round clears every board in the way, so one round per board settles it.
+    for _ in 0..=boards.len() {
+        let blocked: Vec<&Rect> =
+            boards.iter().filter(|b| i64::from(b.x0) < x + w && i64::from(b.x1) > x && i64::from(b.y0) < y + h && i64::from(b.y1) > y).collect();
+        if blocked.is_empty() {
+            break;
+        }
+        match side {
+            "right" => x = blocked.iter().map(|b| i64::from(b.x1)).max().unwrap_or(x) + gap,
+            "left" => x = blocked.iter().map(|b| i64::from(b.x0)).min().unwrap_or(x) - gap - w,
+            "bottom" => y = blocked.iter().map(|b| i64::from(b.y1)).max().unwrap_or(y) + gap,
+            _ => y = blocked.iter().map(|b| i64::from(b.y0)).min().unwrap_or(y) - gap - h,
+        }
+    }
+    let rect = board_rect(cmd, [x, y, w, h])?;
+    // The canvas starts at (0, 0): a board past it moves everything right/down instead.
+    let (sx, sy) = (rect.x0.min(0).checked_neg(), rect.y0.min(0).checked_neg());
+    let (Some(sx), Some(sy)) = (sx, sy) else {
+        return Err(bad(cmd, format!("no room for an artboard {side} of \"{}\"", d.doc.layer(id).map_or("", |l| l.name.as_str()))));
+    };
+    let grown = |len: u32, by: i32| (i64::from(len) + i64::from(by)).clamp(1, 300_000) as u32;
+    let label = if duplicate { "Duplicate Artboard" } else { "New Artboard" };
+    let (nid, rect) = s.edit(label, |doc, active| {
+        if (sx, sy) != (0, 0) {
+            crate::image_cmds::translate_doc(doc, cmd, sx, sy)?;
+            doc.size = Size::new(grown(doc.size.width, sx), grown(doc.size.height, sy));
+            crate::canvas_geom::refresh(doc, crate::canvas_geom::Refresh::Shapes);
+        }
+        let (Some(x0), Some(y0), Some(x1), Some(y1)) = (rect.x0.checked_add(sx), rect.y0.checked_add(sy), rect.x1.checked_add(sx), rect.y1.checked_add(sy))
+        else {
+            return Err(bad(cmd, "the new artboard is outside the 32-bit coordinate range"));
+        };
+        let rect = Rect::new(x0, y0, x1, y1);
+        let nid = if duplicate {
+            let src_rect = doc.layer(id).and_then(Layer::artboard).map(|a| a.rect).ok_or(EngineError::NoLayer(id))?;
+            let (dx, dy) = (rect.x0.saturating_sub(src_rect.x0), rect.y0.saturating_sub(src_rect.y0));
+            let copy = crate::commands::layer_copy(doc, id)?;
+            let nid = doc.insert_above(Some(id), copy);
+            // Grow the canvas first, so shapes on the board re-render uncut where they land.
+            let fit = |len: u32, edge: i32| i64::from(len).max(i64::from(edge)).clamp(1, 300_000) as u32;
+            doc.size = Size::new(fit(doc.size.width, rect.x1), fit(doc.size.height, rect.y1));
+            let snapshot = doc.clone();
+            let l = doc.layer_mut(nid).ok_or(EngineError::NoLayer(nid))?;
+            crate::commands::translate_layer(&snapshot, l, dx, dy);
+            crate::vector_cmds::translate_vectors(&snapshot, l, f64::from(dx), f64::from(dy));
+            nid
+        } else {
+            let mut g = Layer::group(next_artboard_name(doc), vec![]);
+            set_artboard(&mut g, Artboard { rect, background: src.background, preset: src.preset.clone() });
+            doc.insert_above(Some(id), g)
+        };
+        fit_canvas(doc);
+        *active = Some(nid);
+        Ok((nid, rect))
+    })?;
+    crate::layer_multi_cmds::set_selection(s, vec![nid], Some(nid), Some(nid))?;
+    Ok(json!({"layer": nid.0, "rect": [rect.x0, rect.y0, rect.width(), rect.height()]}))
+}
+
 fn clear_artboard_guides(s: &mut Session) -> Result<Value> {
     let d = s.active().ok_or(EngineError::NoDocument)?;
     let id = active_artboard(s).ok_or(EngineError::Other("no artboard selected".into()))?;
     let r = d.doc.layer(id).and_then(Layer::artboard).map(|a| a.rect).ok_or(EngineError::NoLayer(id))?;
-    let inside_x = |x: &f32| f64::from(*x) > f64::from(r.x0) && f64::from(*x) < f64::from(r.x1);
-    let inside_y = |y: &f32| f64::from(*y) > f64::from(r.y0) && f64::from(*y) < f64::from(r.y1);
+    let inside_x = |x: &f64| *x > f64::from(r.x0) && *x < f64::from(r.x1);
+    let inside_y = |y: &f64| *y > f64::from(r.y0) && *y < f64::from(r.y1);
     let n = d.doc.guides.vertical.iter().filter(|x| inside_x(x)).count() + d.doc.guides.horizontal.iter().filter(|y| inside_y(y)).count();
     if n == 0 {
         return Ok(json!({"cleared": 0}));
@@ -370,6 +474,7 @@ fn clear_artboard_guides(s: &mut Session) -> Result<Value> {
     s.edit("Clear Selected Artboard Guides", |doc, _| {
         doc.guides.vertical.retain(|x| !inside_x(x));
         doc.guides.horizontal.retain(|y| !inside_y(y));
+        doc.guides.prune_colors();
         Ok(())
     })?;
     Ok(json!({"cleared": n}))
@@ -399,7 +504,7 @@ pub fn artboard_document(doc: &Document, id: LayerId) -> Result<Option<Document>
     one.layer_comps.clear();
     one.last_applied_comp = None;
     one.last_document_state = None;
-    let shift = |v: &[f32], o: i32, len: u32| v.iter().map(|g| g - o as f32).filter(|g| *g > 0.0 && *g < len as f32).collect::<Vec<_>>();
+    let shift = |v: &[f64], o: i32, len: u32| v.iter().map(|g| g - f64::from(o)).filter(|g| *g > 0.0 && *g < f64::from(len)).collect::<Vec<_>>();
     one.guides.vertical = shift(&doc.guides.vertical, r.x0, r.width());
     one.guides.horizontal = shift(&doc.guides.horizontal, r.y0, r.height());
     Ok(Some(one))
@@ -428,6 +533,7 @@ fn artboards_to_files(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "file.export.artboardsToFiles";
     let dir = str_param(p, "dir", cmd).or_else(|_| str_param(p, "output", cmd))?.to_string();
     let format = p.get("format").and_then(Value::as_str).unwrap_or("png").trim_start_matches('.').to_ascii_lowercase();
+    let save = SaveOpts::from_params(s, p, cmd)?;
     let d = s.active().ok_or(EngineError::NoDocument)?;
     let prefix = p.get("prefix").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| stem(&d.doc.name));
     let doc = d.doc.clone();
@@ -435,7 +541,7 @@ fn artboards_to_files(s: &mut Session, p: &Value) -> Result<Value> {
     for one in chosen_documents(&doc, p)? {
         let name = if prefix.is_empty() { sanitize(&one.name) } else { format!("{}_{}", sanitize(&prefix), sanitize(&one.name)) };
         let path = join(&dir, &format!("{name}.{format}"));
-        save_doc(&one, &path, SaveOpts::from_params(p))?;
+        save_doc(&one, &path, save)?;
         files.push(path);
     }
     if files.is_empty() {
@@ -562,6 +668,14 @@ pub fn specs() -> Vec<CommandSpec> {
             "{} (guides inside the active artboard)",
             has_active_artboard,
             |s, _| clear_artboard_guides(s)
+        ),
+        spec!(
+            "layer.artboard.addBeside",
+            "Add Artboard Beside",
+            &[],
+            r##"{"layer":id? (default: the active artboard),"side":"left|right|top|bottom"="right","duplicate":bool=false (copy the board with its contents instead of an empty one)} → {layer, rect} (the Artboard tool's "+" buttons: same size, a 100 px gap away, past any board in the way)"##,
+            has_active_artboard,
+            add_beside
         ),
         spec!(
             "file.export.artboardsToFiles",

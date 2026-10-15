@@ -72,7 +72,7 @@ fn masked(clip: bool, invert: bool) -> Document {
     let mut red = rect(&mut d, Rect::new(0.0, 0.0, 40.0, 20.0), [255, 0, 0]);
     let mut m = OpacityMask::new(art, clip);
     m.invert = invert;
-    red.mask = Some(Box::new(m));
+    red.extras_mut().mask = Some(Box::new(m));
     add(&mut d, red);
     d
 }

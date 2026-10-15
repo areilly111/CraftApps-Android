@@ -1,4 +1,4 @@
-//! Lazy CJK fallback fonts for the UI.
+//! Lazy CJK and other-script fallback fonts for the UI.
 //!
 //! The bundled Inter / JetBrains Mono have no Japanese, Chinese or Korean glyphs, and the OS
 //! fonts that do are large (Hiragino ~10 MB, Apple SD Gothic Neo 28 MB, PingFang 78 MB, Noto
@@ -6,6 +6,12 @@
 //! for CJK characters no registered font covers, and registers the next system font for that
 //! character's script (`ctx.add_font`, active from the next frame, which it requests). Fonts are
 //! appended at the lowest priority to every family, so Latin text keeps Inter.
+//!
+//! Other scripts the bundled fonts lack (Thai, Arabic, Hebrew, Devanagari and the other Indic
+//! scripts, ...: [`photocraft_text::scripts`]) work the same way, each with its own attempt state,
+//! independent of the CJK order: the first installed candidate file whose character map really
+//! has the missing character is registered, once per script. egui shapes each font run with
+//! HarfRust, so Thai marks and Arabic joining come from the font; it has no bidi reordering yet.
 //!
 //! Script order follows the UI locale ([`photocraft_text::cjk::script_order`]): Kana prefers a
 //! Japanese font, Hangul a Korean one, Bopomofo a Traditional Chinese one, and Han the
@@ -21,10 +27,13 @@ use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
 use egui::{FontData, FontFamily, FontId, Shape};
 use photocraft_text::cjk::{self, CjkChar, CjkScript, FontFile};
 use photocraft_text::craft_fonts::{self, CraftFont};
+use photocraft_text::scripts::{self, Script};
 use std::path::PathBuf;
 
 /// Skip absurdly large files (a corrupt or non-font path must not eat memory).
 pub const MAX_FONT_BYTES: u64 = 128 << 20;
+/// At most this many candidate files are read for one script (bounded I/O on a miss).
+const MAX_SCRIPT_READS: usize = 6;
 /// Name prefix of the registered fallback fonts.
 pub const FONT_PREFIX: &str = "system-cjk";
 
@@ -34,6 +43,11 @@ pub struct Sources {
     pub locale: fn() -> Option<String>,
     pub files: fn(CjkScript) -> Vec<FontFile>,
     pub last_resort: fn() -> Vec<FontFile>,
+    /// Candidate files for a non-CJK script, most preferred first; read only when a visible
+    /// character of that script is missing.
+    pub scripts: fn(Script) -> Vec<PathBuf>,
+    /// The face of a font file whose character map has the character (`None`: not this file).
+    pub covers: fn(&[u8], char) -> Option<u32>,
     /// Embedded fonts tried before `files` for a script (craft-fonts' Japanese fonts).
     pub embedded: fn(CjkScript) -> Vec<&'static CraftFont>,
 }
@@ -51,6 +65,7 @@ pub fn no_embedded(_: CjkScript) -> Vec<&'static CraftFont> {
 impl Sources {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn system() -> Self {
+        cjk::start_fontconfig_cjk_scan();
         Self {
             locale: || match crate::i18n::current().code() {
                 code @ ("ja" | "ko" | "zh-hans" | "zh-hant") => Some(code.to_string()),
@@ -58,13 +73,34 @@ impl Sources {
             },
             files: cjk::font_files,
             last_resort: cjk::last_resort_files,
+            scripts: scripts::system_candidates,
+            covers: scripts::covering_face,
             embedded: craft_embedded,
         }
     }
     #[cfg(target_arch = "wasm32")]
     pub fn system() -> Self {
-        Self { locale: || None, files: |_| Vec::new(), last_resort: Vec::new, embedded: craft_embedded }
+        Self {
+            locale: || None,
+            files: |_| Vec::new(),
+            last_resort: Vec::new,
+            scripts: |_| Vec::new(),
+            covers: scripts::covering_face,
+            embedded: craft_embedded,
+        }
     }
+}
+
+/// Headless test frame pumps do not wait for `request_repaint_after`, so let the optional
+/// Fontconfig worker finish before asserting on installed system fonts.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn wait_for_fontconfig_cjk_scan() {
+    cjk::start_fontconfig_cjk_scan();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while cjk::fontconfig_cjk_scan_pending() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!cjk::fontconfig_cjk_scan_pending(), "Fontconfig CJK lookup did not finish within 10 seconds");
 }
 
 /// The lazy loader's state: which scripts were tried and which files were read.
@@ -75,6 +111,8 @@ pub struct CjkFallback {
     order: Option<[CjkScript; 4]>,
     tried: Vec<CjkScript>,
     last_resort_tried: bool,
+    /// Non-CJK scripts whose candidates were tried (each at most once per install).
+    scripts_tried: Vec<Script>,
     loaded: Vec<PathBuf>,
     /// Fonts registered so far: (name, path, face index).
     pub registered: Vec<(String, PathBuf, u32)>,
@@ -82,7 +120,16 @@ pub struct CjkFallback {
 
 impl CjkFallback {
     pub fn new(sources: Sources) -> Self {
-        Self { sources, defer_after_reset: false, order: None, tried: Vec::new(), last_resort_tried: false, loaded: Vec::new(), registered: Vec::new() }
+        Self {
+            sources,
+            defer_after_reset: false,
+            order: None,
+            tried: Vec::new(),
+            last_resort_tried: false,
+            scripts_tried: Vec::new(),
+            loaded: Vec::new(),
+            registered: Vec::new(),
+        }
     }
 
     /// Script order for the UI locale (resolved on first use, not at startup).
@@ -105,20 +152,61 @@ impl CjkFallback {
             if self.tried.contains(&s) {
                 continue;
             }
-            self.tried.push(s);
             if let Some(f) = self.load_embedded(s) {
+                self.tried.push(s);
                 return Some(f);
             }
+            let fontconfig_pending = cjk::fontconfig_cjk_scan_pending();
             let files = (self.sources.files)(s);
             if let Some(f) = self.load_first(&files) {
+                self.tried.push(s);
                 return Some(f);
             }
+            if fontconfig_pending {
+                return None;
+            }
+            self.tried.push(s);
         }
         if !self.last_resort_tried {
             self.last_resort_tried = true;
             let files = (self.sources.last_resort)();
             return self.load_first(&files);
         }
+        None
+    }
+
+    /// Every non-CJK script has been tried.
+    pub fn scripts_exhausted(&self) -> bool {
+        self.scripts_tried.len() >= Script::ALL.len()
+    }
+
+    /// The first candidate font for `c`'s script that really maps `c`; the script is tried once.
+    pub fn next_script_font(&mut self, c: char) -> Option<(String, FontData)> {
+        let script = scripts::classify(c)?;
+        if self.scripts_tried.contains(&script) {
+            return None;
+        }
+        self.scripts_tried.push(script);
+        let mut reads = 0;
+        for path in (self.sources.scripts)(script) {
+            if reads >= MAX_SCRIPT_READS {
+                break;
+            }
+            if self.loaded.contains(&path) {
+                continue;
+            }
+            let Some(bytes) = read_font(&path) else { continue };
+            reads += 1;
+            let Some(index) = (self.sources.covers)(&bytes, c) else { continue };
+            self.loaded.push(path.clone());
+            let name = format!("{FONT_PREFIX}-{}", self.registered.len());
+            log::info!("UI font fallback: registered {} (face {index}) for {script:?} as {name}", path.display());
+            self.registered.push((name.clone(), path, index));
+            let mut data = FontData::from_owned(bytes);
+            data.index = index;
+            return Some((name, data));
+        }
+        log::info!("UI font fallback: no installed font covers {script:?}");
         None
     }
 
@@ -141,12 +229,8 @@ impl CjkFallback {
             if self.loaded.contains(&f.path) {
                 continue;
             }
-            let Ok(meta) = std::fs::metadata(&f.path) else { continue };
-            if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_FONT_BYTES {
-                continue;
-            }
-            let Ok(bytes) = std::fs::read(&f.path) else { continue };
-            let index = cjk::face_index_for_family(&bytes, f.family);
+            let Some(bytes) = read_font(&f.path) else { continue };
+            let index = cjk::face_index_for_family(&bytes, &f.family);
             self.loaded.push(f.path.clone());
             let name = format!("{FONT_PREFIX}-{}", self.registered.len());
             log::info!("UI font fallback: registered {} (face {index}) as {name}", f.path.display());
@@ -159,14 +243,24 @@ impl CjkFallback {
     }
 }
 
-/// First CJK character in the frame's text that the UI fonts can't draw.
-fn missing_char(ctx: &egui::Context, shapes: &[egui::epaint::ClippedShape]) -> Option<char> {
-    fn collect(shape: &Shape, out: &mut Vec<char>) {
+/// A font file's bytes, or `None` for missing, empty, oversized or unreadable files.
+fn read_font(path: &std::path::Path) -> Option<Vec<u8>> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_FONT_BYTES {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
+/// First supported missing character for which a fallback has not yet been exhausted.
+fn missing_char(ctx: &egui::Context, shapes: &[egui::epaint::ClippedShape], fallback: &CjkFallback) -> Option<char> {
+    fn collect(shape: &Shape, out: &mut Vec<char>, fallback: &CjkFallback, cjk_pending: bool) {
+        let wanted = |c: char| (cjk_pending && cjk::classify(c).is_some()) || scripts::classify(c).is_some_and(|s| !fallback.scripts_tried.contains(&s));
         match shape {
             Shape::Text(t) => {
                 let text = &t.galley.job.text;
                 if !text.is_ascii() {
-                    for c in text.chars().filter(|c| cjk::classify(*c).is_some()) {
+                    for c in text.chars().filter(|c| wanted(*c)) {
                         if out.len() >= 256 {
                             return;
                         }
@@ -176,13 +270,13 @@ fn missing_char(ctx: &egui::Context, shapes: &[egui::epaint::ClippedShape]) -> O
                     }
                 }
             }
-            Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
+            Shape::Vec(v) => v.iter().for_each(|s| collect(s, out, fallback, cjk_pending)),
             _ => {}
         }
     }
     let mut chars = Vec::new();
     for s in shapes {
-        collect(&s.shape, &mut chars);
+        collect(&s.shape, &mut chars, fallback, !fallback.exhausted());
     }
     if chars.is_empty() {
         return None;
@@ -262,22 +356,27 @@ impl egui::Plugin for CjkFontPlugin {
             ctx.request_repaint();
             return;
         }
-        if self.0.exhausted() {
+        if self.0.exhausted() && self.0.scripts_exhausted() {
             return;
         }
-        let Some(c) = missing_char(ctx, &output.shapes) else { return };
-        let Some(kind) = cjk::classify(c) else { return };
-        if let Some((name, data)) = self.0.next_font(kind) {
+        let Some(c) = missing_char(ctx, &output.shapes, &self.0) else { return };
+        let font = match cjk::classify(c) {
+            Some(kind) => self.0.next_font(kind),
+            None => self.0.next_script_font(c),
+        };
+        if let Some((name, data)) = font {
             add_to_all_families(ctx, name, data);
             ctx.request_repaint();
-        } else if !self.0.exhausted() {
+        } else if cjk::classify(c).is_some() && cjk::fontconfig_cjk_scan_pending() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        } else if !self.0.exhausted() || !self.0.scripts_exhausted() {
             // Nothing readable for this script; try the next one on the next frame.
             ctx.request_repaint();
         }
     }
 }
 
-/// Installs the lazy CJK fallback (system fonts; nothing on the web).
+/// Installs the lazy CJK and other-script fallback (system fonts; nothing on the web).
 pub fn install(ctx: &egui::Context) {
     install_with(ctx, Sources::system());
 }
@@ -297,7 +396,6 @@ pub fn install_with(ctx: &egui::Context, sources: Sources) {
         ctx.add_plugin(CjkFontPlugin(fallback));
     }
 }
-
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
@@ -360,13 +458,16 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("font.ttf"), include_bytes!("../../../assets/fonts/Inter-Regular.ttf")).unwrap();
             std::fs::write(dir.join("empty.ttf"), b"").unwrap();
+            std::fs::write(dir.join("thai.ttf"), synthetic_font(&[(0x0E01, 0x0E5B)])).unwrap();
+            std::fs::write(dir.join("arabic.ttf"), synthetic_font(&[(0x0600, 0x06FF)])).unwrap();
+            std::fs::write(dir.join("devanagari.ttf"), synthetic_font(&[(0x0900, 0x097F)])).unwrap();
             dir
         })
         .clone()
     }
 
     fn fake(name: &str) -> FontFile {
-        FontFile { path: fake_dir().join(name), family: "" }
+        FontFile { path: fake_dir().join(name), family: String::new() }
     }
 
     fn fake_sources(locale: fn() -> Option<String>) -> Sources {
@@ -379,6 +480,8 @@ mod tests {
                 _ => vec![],
             },
             last_resort: || vec![fake("font.ttf")],
+            scripts: |_| Vec::new(),
+            covers: scripts::covering_face,
             embedded: no_embedded,
         }
     }
@@ -409,7 +512,14 @@ mod tests {
             ("zh-Hant-TW", CjkScript::TraditionalChinese),
             ("ko_KR", CjkScript::Korean),
         ] {
-            let mut fb = CjkFallback::new(Sources { locale: || None, files: |_| vec![], last_resort: Vec::new, embedded: no_embedded });
+            let mut fb = CjkFallback::new(Sources {
+                locale: || None,
+                files: |_| vec![],
+                last_resort: Vec::new,
+                scripts: |_| Vec::new(),
+                covers: scripts::covering_face,
+                embedded: no_embedded,
+            });
             fb.order = Some(cjk::script_order(Some(loc)));
             assert!(fb.next_font(CjkChar::Han).is_none());
             assert_eq!(fb.tried[0], first, "{loc}");
@@ -425,6 +535,200 @@ mod tests {
             out.textures_delta.clear();
         }
         ctx.fonts_mut(|f| f.has_glyphs(&FontId::proportional(12.0), &text.replace(' ', "")))
+    }
+
+    /// A minimal TrueType font mapping the `ranges` (inclusive) to box glyphs, so tests have a
+    /// font for a script without committing font files.
+    fn synthetic_font(ranges: &[(u32, u32)]) -> Vec<u8> {
+        let be16 = |v: &mut Vec<u8>, x: i32| v.extend((x as u16).to_be_bytes());
+        let be32 = |v: &mut Vec<u8>, x: u32| v.extend(x.to_be_bytes());
+        let chars: u32 = ranges.iter().map(|(a, b)| b - a + 1).sum();
+        let glyphs = chars as i32 + 1;
+        // One 500x700 box (contour of four on-curve points); glyph 0 (.notdef) is empty.
+        let mut boxed = Vec::new();
+        for x in [1, 50, 0, 550, 700, 3, 0] {
+            be16(&mut boxed, x);
+        }
+        boxed.extend([1u8; 4]);
+        for x in [50, 0, 500, 0, 0, 700, 0, -700] {
+            be16(&mut boxed, x);
+        }
+        boxed.extend([0, 0]);
+        let glyf: Vec<u8> = boxed.repeat(chars as usize);
+        let mut loca = Vec::new();
+        be32(&mut loca, 0);
+        for i in 0..chars {
+            be32(&mut loca, i * boxed.len() as u32);
+        }
+        be32(&mut loca, chars * boxed.len() as u32);
+        let mut head = Vec::new();
+        for x in [0x0001_0000, 0x0001_0000, 0, 0x5F0F_3CF5] {
+            be32(&mut head, x);
+        }
+        for x in [0x000B, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, -200, 600, 800, 0, 8, 2, 1, 0] {
+            be16(&mut head, x);
+        }
+        let mut hhea = Vec::new();
+        be32(&mut hhea, 0x0001_0000);
+        for x in [800, -200, 0, 600, 0, 0, 550, 1, 0, 0, 0, 0, 0, 0, 0, glyphs] {
+            be16(&mut hhea, x);
+        }
+        let mut maxp = Vec::new();
+        be32(&mut maxp, 0x0001_0000);
+        for x in [glyphs, 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0] {
+            be16(&mut maxp, x);
+        }
+        let mut hmtx = Vec::new();
+        for _ in 0..glyphs {
+            be16(&mut hmtx, 600);
+            be16(&mut hmtx, 50);
+        }
+        let mut cmap = Vec::new();
+        for x in [0, 1, 3, 10] {
+            be16(&mut cmap, x);
+        }
+        be32(&mut cmap, 12);
+        be16(&mut cmap, 12);
+        be16(&mut cmap, 0);
+        be32(&mut cmap, 16 + 12 * ranges.len() as u32);
+        be32(&mut cmap, 0);
+        be32(&mut cmap, ranges.len() as u32);
+        let mut gid = 1;
+        for (a, b) in ranges {
+            for x in [*a, *b, gid] {
+                be32(&mut cmap, x);
+            }
+            gid += b - a + 1;
+        }
+        let tables: [(&[u8; 4], Vec<u8>); 7] =
+            [(b"cmap", cmap), (b"glyf", glyf), (b"head", head), (b"hhea", hhea), (b"hmtx", hmtx), (b"loca", loca), (b"maxp", maxp)];
+        let mut font = Vec::new();
+        be32(&mut font, 0x0001_0000);
+        for x in [7, 64, 2, 48] {
+            be16(&mut font, x);
+        }
+        let mut offset = 12 + 16 * tables.len() as u32;
+        for (tag, data) in &tables {
+            font.extend(*tag);
+            be32(&mut font, 0);
+            be32(&mut font, offset);
+            be32(&mut font, data.len() as u32);
+            offset += (data.len() as u32).next_multiple_of(4);
+        }
+        for (_, data) in &tables {
+            font.extend(data);
+            font.resize(font.len().next_multiple_of(4), 0);
+        }
+        font
+    }
+
+    /// Thai, Arabic and Devanagari each have a synthetic font; Thai's list starts with unreadable
+    /// files and Inter, which doesn't map Thai. No other script has a font.
+    fn script_sources() -> Sources {
+        Sources {
+            locale: || Some("en".into()),
+            files: |_| vec![],
+            last_resort: Vec::new,
+            scripts: |s| {
+                let f = |name: &str| fake_dir().join(name);
+                match s {
+                    Script::Thai => vec![f("missing.ttf"), f("empty.ttf"), f("font.ttf"), f("thai.ttf")],
+                    Script::Arabic => vec![f("arabic.ttf")],
+                    Script::Devanagari => vec![f("devanagari.ttf")],
+                    _ => vec![],
+                }
+            },
+            covers: scripts::covering_face,
+            embedded: no_embedded,
+        }
+    }
+
+    fn fallback_files(ctx: &egui::Context) -> Vec<String> {
+        ctx.with_plugin::<CjkFontPlugin, _>(|p| p.0.registered.iter().map(|(_, path, _)| path.file_name().unwrap().to_string_lossy().into_owned()).collect())
+            .unwrap()
+    }
+
+    #[test]
+    fn layer_names_in_other_scripts_load_a_covering_font_once() {
+        let ctx = egui::Context::default();
+        for _ in 0..2 {
+            crate::theme::install_fonts_with(&ctx, script_sources());
+            assert!(render(&ctx, "Layer 1 – café"));
+            ctx.with_plugin::<CjkFontPlugin, _>(|p| assert!(p.0.scripts_tried.is_empty(), "Latin text reads no font")).unwrap();
+            assert!(fallback_files(&ctx).is_empty());
+            // A Thai type layer's name (#2275), Arabic (#1693) and Devanagari: no missing glyphs.
+            for text in ["สวัสดี", "ภาพถ่าย/วันหยุดพักผ่อน", "مرحبا بالعالم", "नमस्ते दुनिया"]
+            {
+                assert!(render(&ctx, text), "tofu in {text}");
+            }
+            assert_eq!(fallback_files(&ctx), ["thai.ttf", "arabic.ttf", "devanagari.ttf"], "the first file that maps the character, never Inter");
+            // Hebrew has no font here: tried once, then left alone (no reload or repaint loop).
+            assert!(!render(&ctx, "שלום"));
+            assert!(!render(&ctx, "שלום"));
+            ctx.with_plugin::<CjkFontPlugin, _>(|p| {
+                assert!(p.0.scripts_tried.contains(&Script::Hebrew));
+                assert_eq!(p.0.registered.len(), 3);
+            })
+            .unwrap();
+            let fonts = ctx.fonts(|f| f.definitions().clone());
+            assert_eq!(fonts.families[&FontFamily::Proportional].first().map(String::as_str), Some("Inter"));
+            for stack in fonts.families.values() {
+                assert_eq!(stack.iter().filter(|n| n.starts_with(FONT_PREFIX)).count(), 3);
+                assert_eq!(stack.last().map(String::as_str), Some("system-cjk-2"), "appended last so Latin keeps Inter");
+            }
+        }
+    }
+
+    #[test]
+    fn a_missing_cjk_font_does_not_block_other_scripts_and_vice_versa() {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts_with(&ctx, script_sources());
+        assert!(!render(&ctx, "日本語/ภาพถ่าย/วันหยุดพักผ่อน.png"));
+        assert!(render(&ctx, "ภาพถ่าย/วันหยุดพักผ่อน.png"));
+        ctx.with_plugin::<CjkFontPlugin, _>(|p| assert!(p.0.exhausted())).unwrap();
+        assert_eq!(fallback_files(&ctx), ["thai.ttf"]);
+        // A script with no font leaves CJK available.
+        let mut fallback = CjkFallback::new(fake_sources(|| Some("ko".into())));
+        assert!(fallback.next_script_font('ส').is_none());
+        assert!(fallback.next_script_font('ส').is_none());
+        assert!(fallback.next_script_font('A').is_none(), "Latin is never a fallback script");
+        assert_eq!(fallback.scripts_tried, [Script::Thai]);
+        assert!(fallback.next_font(CjkChar::Hangul).is_some());
+    }
+
+    #[test]
+    fn script_candidates_are_read_a_bounded_number_of_times() {
+        static CHECKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let mut fallback = CjkFallback::new(Sources {
+            scripts: |_| (0..20).map(|i| fake_dir().join(if i % 2 == 0 { "font.ttf" } else { "thai.ttf" })).collect(),
+            covers: |_, _| {
+                CHECKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                None
+            },
+            ..script_sources()
+        });
+        assert!(fallback.next_script_font('ش').is_none());
+        assert!(fallback.next_script_font('ش').is_none());
+        assert_eq!(CHECKED.load(std::sync::atomic::Ordering::Relaxed), MAX_SCRIPT_READS, "one bounded pass per script");
+        assert!(fallback.registered.is_empty());
+        assert!(!fallback.scripts_exhausted());
+    }
+
+    #[test]
+    fn system_fonts_cover_other_script_samples() {
+        // Like the CJK system-font test, run per script when this machine has a font for it.
+        // The deterministic tests above do not need installed fonts.
+        let samples = [("ภาพถ่าย/วันหยุดพักผ่อน", 'ภ'), ("مرحبا", 'م'), ("שלום", 'ש'), ("नमस्ते", 'न')];
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx);
+        for (text, c) in samples {
+            let Some(script) = scripts::classify(c) else { continue };
+            if !scripts::system_candidates(script).iter().any(|p| read_font(p).and_then(|b| scripts::covering_face(&b, c)).is_some()) {
+                eprintln!("skipping {text}: no {script:?} system font");
+                continue;
+            }
+            assert!(render(&ctx, text), "{text} still has missing glyphs");
+        }
     }
 
     #[test]
@@ -449,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn lazy_registration_triggers_only_for_cjk() {
+    fn lazy_registration_triggers_only_for_supported_scripts() {
         let ctx = egui::Context::default();
         install_with(&ctx, fake_sources(|| Some("ko".into())));
         let _ = render(&ctx, "Layer 1 – café");
@@ -467,7 +771,7 @@ mod tests {
 
     /// No system fonts at all: craft-fonts alone draws Japanese.
     fn craft_only(locale: fn() -> Option<String>) -> Sources {
-        Sources { locale, files: |_| vec![], last_resort: Vec::new, embedded: craft_embedded }
+        Sources { locale, files: |_| vec![], last_resort: Vec::new, scripts: |_| Vec::new(), covers: scripts::covering_face, embedded: craft_embedded }
     }
 
     #[test]
@@ -497,7 +801,17 @@ mod tests {
         // The pre-craft-fonts behaviour: no embedded fonts, no system fonts. Latin renders,
         // Japanese is tried (and stays missing) without panicking, and the loader exhausts.
         let ctx = egui::Context::default();
-        crate::theme::install_fonts_with(&ctx, Sources { locale: || None, files: |_| vec![], last_resort: Vec::new, embedded: no_embedded });
+        crate::theme::install_fonts_with(
+            &ctx,
+            Sources {
+                locale: || None,
+                files: |_| vec![],
+                last_resort: Vec::new,
+                scripts: |_| Vec::new(),
+                covers: scripts::covering_face,
+                embedded: no_embedded,
+            },
+        );
         assert!(render(&ctx, "Layer 1 – café"));
         assert!(!render(&ctx, "日本語の文字"));
         let n = ctx.fonts(|f| f.definitions().font_data.keys().filter(|k| k.starts_with(FONT_PREFIX)).count());
@@ -511,6 +825,8 @@ mod tests {
     /// machine has no font for it, e.g. CI Linux without Noto CJK).
     #[test]
     fn system_fonts_cover_cjk_samples() {
+        #[cfg(target_os = "linux")]
+        wait_for_fontconfig_cjk_scan();
         let available = |s: CjkScript| cjk::font_files(s).iter().any(|f| f.path.is_file());
         let samples = [
             ("图层", CjkScript::SimplifiedChinese),

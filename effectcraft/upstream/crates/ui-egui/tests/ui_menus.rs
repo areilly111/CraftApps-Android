@@ -204,3 +204,24 @@ fn relink_restores_decoded_pixels_and_invalidates_viewer_content() {
     assert_eq!(s.render(cid, Tick::ZERO, RenderOpts::default()).data, expected.data);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// #767: File ▸ Import ▸ File… offers MXF footage (OP1a / OP-Atom from broadcast cameras and
+/// Avid), which the Media Browser lists and the importer reads.
+#[test]
+fn import_dialog_offers_mxf() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let mut app = EffectcraftApp::new(Session::default());
+    let offered = Rc::new(RefCell::new(Vec::<String>::new()));
+    let seen = offered.clone();
+    app.hooks.pick_files = Some(Box::new(move |exts: &[&str]| {
+        *seen.borrow_mut() = exts.iter().map(|e| e.to_string()).collect();
+        Vec::new()
+    }));
+    let result = effectcraft_ui_egui::menus::invoke(&mut app, &egui::Context::default(), "file.import", json!({})).unwrap();
+    assert!(result.is_null(), "cancelled: nothing imported");
+    let offered = offered.borrow();
+    assert!(offered.iter().any(|e| e == "mxf"), "offered {offered:?}");
+    assert!(offered.iter().any(|e| e == "mov"));
+}

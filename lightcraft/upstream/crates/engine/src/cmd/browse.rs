@@ -39,7 +39,9 @@ fn browse(s: &mut Session, p: &Value) -> Result<Value> {
         v.sort();
         v
     };
-    let report = import_with(s, &files, &ImportOptions { mode: ImportMode::Add, local: true, ..Default::default() })?;
+    // looking at a folder never brings its deleted photos back (importing the files does)
+    let opts = ImportOptions { mode: ImportMode::Add, local: true, on_deleted: crate::import::OnDeleted::Skip, ..Default::default() };
+    let report = import_with(s, &files, &opts)?;
     stamp_browsed(s, &dir_s, &files);
     s.browse = Some(Browse { path: dir_s.clone(), subfolders });
     s.source = LibrarySource::Folder;
@@ -105,7 +107,7 @@ impl Session {
         let smart = self.media.smart_dir.clone();
         let plan = self
             .catalog
-            .forget_local_plan(&now, days, &|p| keep.contains(&p.id) || smart.as_ref().is_some_and(|d| d.join(crate::smart::file_name(p)).exists()));
+            .forget_local_plan(&now, days, &|p| keep.contains(&p.id) || smart.as_ref().is_some_and(|d| crate::smart::file_path(d, p).exists()));
         if dry_run {
             return plan;
         }
@@ -196,6 +198,24 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!(
+            "folder.create",
+            "New Folder on Disk",
+            [],
+            None,
+            "{parent, name} — create a folder on disk inside `parent` (refused if the name is taken); one undo step (undo removes it again while it is empty) → {path}",
+            always,
+            create_folder
+        ),
+        cmd!(
+            "photo.moveToFolder",
+            "Move to Folder",
+            [],
+            None,
+            "{folder, ids?} — move the photos' files (default: the selection) with their XMP sidecars into `folder` on disk and relink them; virtual copies follow their master; across volumes the file is copied, verified and only then removed; never overwrites (a name taken in `folder` refuses the whole move); missing/offline and Local photos are refused; one undo step (undo moves them back) → {moved, folder}",
+            always,
+            move_to_folder
+        ),
+        cmd!(
             "library.browse",
             "Browse Folder",
             [],
@@ -249,6 +269,127 @@ pub(crate) fn rename_folder_on_disk(from: &str, to: &str) -> std::result::Result
     std::fs::rename(src, dst).map_err(|e| format!("{from} → {to}: {e}"))
 }
 
+/// Do an undo step's folder change on disk: rename `from` → `to`; with `to` empty, remove the
+/// empty folder `from`; with `from` empty, create the folder `to`. Never overwrites.
+pub(crate) fn folder_on_disk(from: &str, to: &str) -> std::result::Result<(), String> {
+    match (from.is_empty(), to.is_empty()) {
+        (false, false) => rename_folder_on_disk(from, to),
+        (false, true) => remove_empty_folder(from),
+        (true, false) => {
+            if Path::new(to).exists() {
+                return Err(format!("{to} already exists"));
+            }
+            std::fs::create_dir(to).map_err(|e| format!("{to}: {e}"))
+        }
+        (true, true) => Ok(()),
+    }
+}
+
+/// Remove an empty folder; one with anything in it (hidden files too) is refused.
+fn remove_empty_folder(path: &str) -> std::result::Result<(), String> {
+    let p = Path::new(path);
+    if !p.is_dir() {
+        return Err(format!("{path} is not a folder"));
+    }
+    let mut entries = std::fs::read_dir(p).map_err(|e| format!("{path}: {e}"))?;
+    if entries.next().is_some() {
+        return Err(format!("{path} is not empty"));
+    }
+    std::fs::remove_dir(p).map_err(|e| format!("{path}: {e}"))
+}
+
+/// A folder path parameter without trailing separators (`None` when missing or blank).
+fn folder_param<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
+    str_param(p, key).map(|x| x.trim_end_matches(['/', '\\'])).filter(|x| !x.is_empty())
+}
+
+/// `folder.create`: a new folder on disk inside `parent`; undo removes it while it is empty.
+fn create_folder(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "folder.create";
+    let parent = folder_param(p, "parent").ok_or_else(|| bad(C, "missing parent"))?;
+    let name = str_param(p, "name")
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && *n != "." && *n != "..")
+        .ok_or_else(|| bad(C, "give a folder name (no slashes)"))?;
+    if !Path::new(parent).is_dir() {
+        return Err(bad(C, format!("{parent} is not a folder (offline, moved or deleted?)")));
+    }
+    let path = Path::new(parent).join(name).to_string_lossy().to_string();
+    if Path::new(&path).exists() {
+        return Err(bad(C, format!("{path} already exists: choose another name")));
+    }
+    folder_on_disk("", &path).map_err(|e| bad(C, e))?;
+    let undo = crate::FolderMove { from: path.clone(), to: String::new() };
+    if let Err(e) = s.commit_with_folder(&format!("Create Folder “{name}”"), Op::Batch { ops: vec![] }, undo) {
+        let _ = remove_empty_folder(&path);
+        return Err(e);
+    }
+    Ok(json!({"path": path}))
+}
+
+/// `photo.moveToFolder`: move the photos' files (with their sidecars) into `folder` and relink
+/// them, as one undo step. Virtual copies follow their master's file. Never overwrites: a name
+/// already taken in `folder` refuses the whole move.
+fn move_to_folder(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "photo.moveToFolder";
+    let folder = folder_param(p, "folder").ok_or_else(|| bad(C, "missing folder"))?;
+    let dir = Path::new(folder);
+    if !dir.is_dir() {
+        return Err(bad(C, format!("{folder} is not a folder (create it first with folder.create)")));
+    }
+    let ids = s.targets(p);
+    if ids.is_empty() {
+        return Err(bad(C, "no photos to move: select some or give ids"));
+    }
+    let mut plans: Vec<crate::rename::RenamePlan> = Vec::new();
+    let mut taken: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut clashes: Vec<String> = Vec::new();
+    for id in ids {
+        let ph = s.catalog.photo(id).ok_or_else(|| bad(C, format!("no photo {}", id.0)))?;
+        if ph.local {
+            return Err(bad(C, format!("{} is not in the library (Local): add it first", ph.file_name)));
+        }
+        let lightcraft_catalog::Source::File { path } = &ph.source else {
+            return Err(bad(C, format!("{} has no file on disk", ph.file_name)));
+        };
+        if plans.iter().any(|pl| pl.from_path.as_deref() == Some(path.as_str())) {
+            continue; // a virtual copy of a photo already moving
+        }
+        let src = Path::new(path);
+        if !src.is_file() {
+            return Err(bad(C, format!("{path} is missing or offline: find it first (Find Missing Photos)")));
+        }
+        let Some(file) = src.file_name() else { return Err(bad(C, format!("{path}: no file name"))) };
+        if src.parent() == Some(dir) {
+            continue; // already there
+        }
+        let to = dir.join(file);
+        let to_s = to.to_string_lossy().to_string();
+        if to.exists() || !taken.insert(to_s.to_lowercase()) {
+            clashes.push(file.to_string_lossy().to_string());
+            continue;
+        }
+        let name = ph.file_name.clone();
+        plans.push(crate::rename::RenamePlan { id: id.0, from: name.clone(), to: name, from_path: Some(path.clone()), to_path: Some(to_s) });
+    }
+    if !clashes.is_empty() {
+        let s_ = if clashes.len() == 1 { "" } else { "s" };
+        return Err(bad(
+            C,
+            format!("{} already in {folder}: nothing was moved. Rename the photo{s_} first or choose another folder", clashes.join(", ")),
+        ));
+    }
+    let n = plans.len();
+    if n == 0 {
+        return Ok(json!({"moved": 0, "folder": folder}));
+    }
+    let plural = |k: usize| if k == 1 { "" } else { "s" };
+    let _task = s.activity.start("move", &format!("Moving {n} photo{}", plural(n)), crate::activity::Cancel::No);
+    let name = dir.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| folder.to_string());
+    s.apply_file_plans(&crate::rename::RealFs, &plans, &|k| format!("Move {k} Photo{} to “{name}”", plural(k)))?;
+    Ok(json!({"moved": n, "folder": folder}))
+}
+
 /// After a folder moved from `from` to `to`: a browsed folder at or below it follows.
 pub(crate) fn follow_folder(s: &mut Session, from: &str, to: &str) {
     // a library folder chosen at or below it follows too, as a source or as a filter
@@ -285,6 +426,9 @@ pub(crate) fn move_folder(s: &mut Session, from: &str, to: &str) -> std::result:
     if s.library.as_ref().is_some_and(|l| l.dir.starts_with(src) || src.starts_with(&l.dir)) {
         return Err("the library's own folders can't be moved here".into());
     }
+    // Repairs retain their exact old paths, including those on surviving history entries.
+    // Complete them before the directory moves; an unavailable repair leaves it in place.
+    s.repair_sidecars_with(&crate::rename::RealFs).map_err(|e| e.to_string())?;
     rename_folder_on_disk(from, to)?;
     let mut ops: Vec<Op> = s
         .catalog

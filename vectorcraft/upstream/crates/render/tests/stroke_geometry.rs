@@ -181,3 +181,30 @@ fn a_head_past_the_end_counts_in_the_visual_bounds_and_is_never_culled() {
     let img = render_region(&d, Rect::new(83.0, 40.0, 100.0, 60.0), S);
     assert!(img.ink() > 0, "the head is drawn");
 }
+
+/// A shape far beyond any document's reach (from a malformed file) is left undrawn instead of
+/// making the rasterizer panic on a worker thread or ask for terabytes, which would end the app;
+/// the art next to it still draws.
+#[test]
+fn shapes_far_beyond_the_page_are_left_undrawn_without_crashing() {
+    let mut d = Document::new(100.0, 100.0);
+    let layer = d.layers[0].id;
+    let mut far = vectorcraft_geom::BezPath::new();
+    far.move_to((13607718712.4, 13.2));
+    far.curve_to((-0.03, 720.96), (-3.08e17, -8.36e20), (-3.35e20, -1.0));
+    far.close_path();
+    let black =
+        || Appearance { items: vec![AppearanceItem::Fill(vectorcraft_doc::FillLayer::new(Paint::solid(Color::BLACK)))], ..Default::default() };
+    for (path, app) in [
+        (vectorcraft_geom::PathData::from_bezpath(&far), black()),
+        (shapes::rectangle(Rect::new(10.0, 10.0, 30.0, 30.0)), black()),
+        (shapes::rectangle(Rect::new(50.0, 50.0, 60.0, 60.0)), stroked(1e30, |_| {})),
+    ] {
+        let id = d.alloc_id();
+        d.insert(Some(layer), usize::MAX, vectorcraft_doc::Node::path(id, path, app)).unwrap();
+    }
+    let img = Renderer::new().render_region(&d, Rect::new(0.0, 0.0, 100.0, 100.0), 1.0, true);
+    let px = |x: usize, y: usize| img.pixels.get((y * img.width as usize + x) * 4).copied().unwrap();
+    assert_eq!(px(20, 20), 0, "the rectangle next to them draws");
+    assert_eq!(px(90, 5), 255, "nothing of the far shape or the huge stroke");
+}

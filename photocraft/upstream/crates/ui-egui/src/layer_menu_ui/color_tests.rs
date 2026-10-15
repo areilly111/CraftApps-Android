@@ -114,6 +114,21 @@ fn layer_color_background_is_confined_to_the_eye_column_in_every_theme() {
 }
 
 #[test]
+fn right_clicking_eye_opens_color_choices_without_toggling_visibility() {
+    let (mut h, red, other) = harness(crate::theme::ThemeKind::Pro, 1.0);
+    let r = row(&h, red);
+    let eye = pos2(r.left() + 17.0, r.center().y);
+    click(&mut h, eye, PointerButton::Secondary, Modifiers::NONE);
+    let blue = h.get_by_label("Blue").rect().center();
+    click(&mut h, blue, PointerButton::Primary, Modifiers::NONE);
+
+    let st = h.state().session.active().unwrap();
+    assert!(st.doc.layer(red).unwrap().visible);
+    assert_eq!(st.doc.layer(red).unwrap().label, LabelColor::Blue);
+    assert_eq!(st.doc.layer(other).unwrap().label, LabelColor::None);
+}
+
+#[test]
 fn layer_color_menu_marks_only_the_common_color() {
     let mut h = Harness::new_ui(|ui| {
         for c in LabelColor::ALL {

@@ -408,3 +408,19 @@ fn an_ai_files_private_data_is_its_streams_joined() {
     let chained = stream("/Filter [/ASCIIHexDecode /ASCIIHexDecode]", "61>");
     assert!(illustrator_data(&pdf_with_catalog(&[page(true)], &[&chained, &two], "", None), None).is_none());
 }
+
+/// A PDF saved with the editing data has its streams under `AIPDFPrivateData` keys instead (#868);
+/// a file with both kinds is read from its `AIPrivateData` streams.
+#[test]
+fn a_pdfs_private_data_is_its_pdf_streams_joined() {
+    let (a, b, c) = (first_extra(1), first_extra(1) + 1, first_extra(1) + 2);
+    let page = |keys: String| PdfPage {
+        entries: format!("/PieceInfo << /Illustrator << /Private << {keys} /NumBlock 2 >> >> >>"),
+        ..PdfPage::new(100.0, 100.0, "1 0 0 rg 10 10 30 30 re f")
+    };
+    let (one, two, other) = (stream("", "%AI24_ZStandard_Data first "), stream("", "second"), stream("", "%AI24_ZStandard_Data other"));
+    let pdf = pdf_with_catalog(&[page(format!("/AIPDFPrivateData1 {a} 0 R /AIPDFPrivateData2 {b} 0 R"))], &[&one, &two], "", None);
+    assert_eq!(illustrator_data(&pdf, None).unwrap(), b"%AI24_ZStandard_Data first second");
+    let both = format!("/AIPDFPrivateData1 {a} 0 R /AIPDFPrivateData2 {b} 0 R /AIPrivateData1 {c} 0 R");
+    assert_eq!(illustrator_data(&pdf_with_catalog(&[page(both)], &[&one, &two, &other], "", None), None).unwrap(), b"%AI24_ZStandard_Data other");
+}

@@ -100,6 +100,14 @@ Web builds depend on the font faces selected by `crates/text/build.rs`; they can
 `theme::tests::chinese_names_render_in_every_theme_and_font_family` verifies Chinese glyphs in the
 timeline's proportional, monospace, medium and semibold families under all three themes.
 
+Arabic and Hebrew work the same way (`crates/ui-egui/src/rtl.rs`): the `Arab` / `Hebr` craft-fonts
+faces, else one installed face per script (for example Noto Sans Arabic, SF Arabic or Segoe UI),
+are the last fallbacks of every UI font family. egui shapes each font run (letters join) but lays
+runs out left to right with no bidi pass, so captions on the timeline and in the Text panel are laid
+out in reading order by `rtl::Lines` (UAX #9 via unicode-bidi, each right-to-left word its own layout
+section). A caption being edited shows egui's logical order, since `TextEdit` places the caret by
+character index.
+
 ## 3. Quality gates
 
 Every commit must pass all of these:

@@ -10,6 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+craft-ui = { workspace = true }
 filmcraft-time = { workspace = true }
 filmcraft-geom = { workspace = true }
 filmcraft-color = { workspace = true }
@@ -26,21 +27,16 @@ filmcraft-export = { workspace = true }
 filmcraft-gpu = { workspace = true }
 filmcraft-scopes = { workspace = true }
 egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 rayon = { workspace = true }
 web-time = "1"
+# Unicode Bidirectional Algorithm for Arabic and Hebrew captions in reading order (MIT OR Apache-2.0).
+unicode-bidi = "0.3.18"
 # ArtCraft wordmark (PNG) for the About dialog and Home screen.
 image = { version = "0.25", default-features = false, features = ["png"] }
-# eframe's `accesskit` (screen-reader) integration is a compile error with
-# `android-native-activity` (eframe 0.36.2), so the Android port builds eframe
-# without it. The `egui::accesskit` types used across this crate are unaffected
-# (they come from egui itself, not the eframe feature).
-[target.'cfg(not(target_os = "android"))'.dependencies]
-eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit"] }
-[target.'cfg(target_os = "android")'.dependencies]
-eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
 
 # Thread/process CPU clocks for frame-job profiling (safe wrappers; see frames.rs).
 [target.'cfg(unix)'.dependencies]

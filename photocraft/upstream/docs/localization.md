@@ -25,11 +25,15 @@ contextual, command-ID and plural translations; missing entries fall back to Eng
 | Polski | `pl` | one / few (2–4, not 12–14) / many |
 | Ελληνικά | `el` | one / other |
 | Nederlands | `nl` | one / other |
+| Magyar | `hu` | one form |
+| Tiếng Việt | `vi` | one form |
 
-Every non-English catalog covers the current menu labels, `tl!` literals, blend mode names,
-and generated preference labels. Tests enforce that coverage. This does not include every
-engine error or status message: those remain English, as do automation command IDs and
-user-provided document, layer and preset names.
+Languages registered with `complete_menus` cover the current menu labels, `tl!` literals, blend
+mode names, and generated preference labels; tests enforce that coverage. Vietnamese (`vi`) is
+selectable, resolves regional tags such as `vi-VN`, and covers all current stable localization
+keys. `complete_menus` remains false while generated/dynamic long-tail labels are still under
+review. This does not include every engine error or status message: those remain English, as do
+automation command IDs and user-provided document, layer and preset names.
 
 ## Switch without restarting
 
@@ -41,7 +45,7 @@ documents, undo history and tools remain available throughout a language change.
 
 The existing preference store saves the selection for future launches. `auto` follows the
 native system locale; an unsupported code follows the same fallback. Regional tags such as
-`fr-CA`, `ko-KR` and `zh-CN` resolve to the corresponding registered catalog. Traditional and
+`fr-CA`, `ko-KR`, `vi-VN` and `zh-CN` resolve to the corresponding registered catalog. Traditional and
 Simplified Chinese remain distinct. Every Portuguese locale (`pt`, `pt-BR`, `pt-PT`) uses the
 Brazilian Portuguese catalog.
 
@@ -84,6 +88,29 @@ identity continues to use command IDs, independent of translated labels.
 This is hot switching among the bundled catalogs. Catalog files are embedded with
 `include_str!`; editing a TSV file requires a rebuild. External catalog watching and
 file-resource hot reload are not implemented.
+
+## Right-to-left languages
+
+Arabic, Hebrew, Persian, Urdu and the other right-to-left languages listed in
+`i18n::dir_for_code` mirror the window's chrome when chosen: the menu bar starts at the right
+with File, the toolbox docks on the right and the panel dock and its rail on the left, and the
+title, options and status bars read from the right (`crates/ui-egui/src/direction.rs`). The
+direction follows the language code, so a catalog needs no extra setting.
+
+Not mirrored yet: panel interiors, dialogs, menu rows (shortcuts stay on the right), submenus
+(they open to the right), document tabs and the canvas. Before an Arabic catalog reads
+correctly, the UI also needs an Arabic fallback font (the bundled UI fonts have no Arabic
+glyphs) and bidirectional word order: egui 0.36 shapes each right-to-left word with HarfRust,
+so letters join, but lays a line's words out left to right, and its caret indexing is off in
+right-to-left text (emilk/egui#8576, #8577). Document text is laid out by the text engine.
+
+No right-to-left catalog ships yet. To check the mirrored layout with any language, launch with
+`PHOTOCRAFT_UI_DIRECTION=rtl` (or `ltr` to force left-to-right); it is read once per process
+and has no effect on the web build:
+
+```sh
+PHOTOCRAFT_UI_DIRECTION=rtl cargo run -p photocraft-ui-egui --example snapshot -- --out rtl.png
+```
 
 ## Fonts
 

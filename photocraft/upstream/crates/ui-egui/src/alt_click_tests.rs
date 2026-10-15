@@ -1,5 +1,5 @@
 //! ⌥-click through the real canvas: the Brush's temporary Eyedropper (#1659) and the Clone
-//! Stamp's source point and painting (#1658).
+//! Stamp's source point and painting (#1658), the Zoom tool's Zoom Out (#3137).
 
 use egui::{Modifiers, PointerButton, Pos2, vec2};
 use egui_kittest::Harness;
@@ -40,6 +40,7 @@ fn screen(h: &Harness<'static, PhotocraftApp>, x: f32, y: f32) -> Pos2 {
         center: v.center,
         flip: app.ui.view.flip_horizontal,
         rotation: v.rotation,
+        aspect: app.ui.view.display_aspect(),
     };
     xf.to_screen(x, y)
 }
@@ -178,7 +179,7 @@ fn grabbed_alt_click(h: &mut Harness<'static, PhotocraftApp>, x: f32, y: f32, re
 
 #[test]
 fn an_alt_click_the_window_manager_took_says_so() {
-    for tool in [Tool::Brush, Tool::Pencil, Tool::CloneStamp, Tool::Healing] {
+    for tool in [Tool::Brush, Tool::Pencil, Tool::CloneStamp, Tool::Healing, Tool::Zoom] {
         let mut h = harness(two_colours());
         h.state_mut().ui.tool = tool;
         grabbed_alt_click(&mut h, 50.0, 50.0, true);
@@ -227,4 +228,20 @@ fn a_latched_alt_samples_and_sets_the_clone_source_without_the_key() {
     h.state_mut().ui.tool = Tool::CloneStamp;
     click(&mut h, 150.0, 50.0, Modifiers::NONE);
     assert!(h.state().session.presets.clone.active().source.is_some());
+}
+
+#[test]
+fn alt_click_with_the_zoom_tool_zooms_out_held_or_latched() {
+    for (sticky, scrubby, m) in [(false, true, Modifiers::ALT), (true, true, Modifiers::NONE), (true, false, Modifiers::NONE)] {
+        let mut h = harness(two_colours());
+        h.state_mut().ui.tool = Tool::Zoom;
+        h.state_mut().ui.tool_options.zoom_scrubby = scrubby;
+        h.state_mut().ui.shell.sticky_alt = sticky;
+        click(&mut h, 50.0, 50.0, m);
+        assert_eq!(h.state().ui.views[0].zoom, 2.0 / 3.0, "sticky={sticky} scrubby={scrubby}");
+        // Without ⌥ the click zooms in again.
+        h.state_mut().ui.shell.sticky_alt = false;
+        click(&mut h, 50.0, 50.0, Modifiers::NONE);
+        assert_eq!(h.state().ui.views[0].zoom, 1.0, "sticky={sticky} scrubby={scrubby}");
+    }
 }

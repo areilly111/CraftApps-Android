@@ -395,14 +395,9 @@ fn pattern_swatch(ui: &mut egui::Ui, tx: &paint::Texture) {
                     _ => paint::tile::PatternImage { width: 1, height: 1, data: vec![0.5] },
                 },
             };
-            let (br, ct) = (tx.brightness.clamp(-1.0, 1.0), tx.contrast.clamp(-1.0, 1.0));
             let px: Vec<u8> = (0..n * n)
                 .flat_map(|i| {
-                    let v = img.sample_wrap((i % n) as f32, (i / n) as f32);
-                    let mut x = ((v - 0.5) * (1.0 + ct) + 0.5 + br).clamp(0.0, 1.0);
-                    if tx.invert {
-                        x = 1.0 - x;
-                    }
+                    let x = tx.level(img.sample_wrap((i % n) as f32, (i / n) as f32));
                     let g = (x * 255.0).round() as u8;
                     [g, g, g, 255]
                 })

@@ -270,6 +270,53 @@ fn nurbs_splines_stay_within_a_hundredth() {
     assert!(path_points(s).iter().any(|p| p.distance(Point::new(50.0, h - 40.0)) < 1e-9));
 }
 
+#[test]
+fn control_point_splines_honor_closed_flags_without_changing_their_curves() {
+    for returns in [false, true] {
+        for rational in [false, true] {
+            let mut original_curves = None;
+            for closed in [false, true] {
+                let flags = 8 | if rational { 4 } else { 0 } | i32::from(closed);
+                let mut e = vec![(0, "SPLINE".to_string()), (70, flags.to_string()), (71, "3".into()), (72, "11".into()), (73, "7".into())];
+                for k in [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2] {
+                    e.push((40, k.to_string()));
+                }
+                let end = if returns { (20.0, 20.0) } else { (50.0, 25.0) };
+                for ((x, y), weight) in [(20.0, 20.0), (80.0, 0.0), (80.0, 80.0), (20.0, 80.0), (0.0, 80.0), (0.0, 20.0), end]
+                    .into_iter()
+                    .zip([1.0, 0.7, 0.7, 1.0, 0.9, 0.9, 1.0])
+                {
+                    e.extend([(10, x.to_string()), (20, y.to_string()), (30, "0".into())]);
+                    if rational {
+                        e.push((41, weight.to_string()));
+                    }
+                }
+                let e: Vec<_> = e.iter().map(|(c, v)| (*c, v.as_str())).collect();
+                let doc = open(&entities(&e), &points()).document;
+                let [n] = &leaves(&doc)[..] else { panic!("one spline") };
+                let path = n.path_data().unwrap();
+                assert_eq!(path.subpaths.len(), 1);
+                assert_eq!(path.subpaths[0].closed, closed, "flags {flags}, returns {returns}");
+                let curves: Vec<_> = path.to_bezpath().elements().iter().filter(|e| matches!(e, kurbo::PathEl::CurveTo(..))).copied().collect();
+                assert!(!curves.is_empty());
+                if let Some(original) = &original_curves {
+                    assert_eq!(&curves, original, "closure preserves the rational/non-rational curves");
+                } else {
+                    original_curves = Some(curves);
+                }
+            }
+        }
+    }
+    for flags in [8, 9] {
+        let flags_text = flags.to_string();
+        let e =
+            [(0, "SPLINE"), (70, flags_text.as_str()), (71, "3"), (74, "3"), (11, "0"), (21, "0"), (11, "50"), (21, "40"), (11, "100"), (21, "0")];
+        let doc = open(&entities(&e), &points()).document;
+        let [n] = &leaves(&doc)[..] else { panic!("one fit-point spline") };
+        assert_eq!(n.path_data().unwrap().subpaths[0].closed, flags & 1 != 0, "fit-point fallback stays closed/open");
+    }
+}
+
 /// A square with a round hole: a polyline loop and a loop of one edge (a whole arc).
 fn hatch(solid: &'static str) -> Vec<(i32, &'static str)> {
     vec![

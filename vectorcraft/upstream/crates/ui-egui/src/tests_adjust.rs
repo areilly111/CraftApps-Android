@@ -30,6 +30,40 @@ fn the_effect_menu_lists_the_adjustments_and_the_object_menu_the_halftone() {
 }
 
 #[test]
+fn film_grain_dialog_previews_cancels_and_edits_as_one_undo_step() {
+    let mut app = app();
+    app.run("effect.dialog", json!({"effect": "artistic.filmGrain"})).unwrap();
+    let text = dialog_text(&mut app);
+    for label in ["Film Grain", "Grain", "Highlight Area", "Intensity", "Preview"] {
+        assert!(text.lines().any(|line| line == label), "{label} in {text}");
+    }
+    assert!(app.session.in_interaction());
+    dialogs::cancel(&mut app);
+    let effects = |app: &VectorcraftApp| {
+        let st = app.session.active().unwrap();
+        st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.clone()
+    };
+    assert!(effects(&app).is_empty(), "Cancel removes the preview");
+    app.run("effect.dialog", json!({"effect": "artistic.filmGrain"})).unwrap();
+    dialog_text(&mut app);
+    app.ui.dialog.as_mut().unwrap().fields.insert("grain".into(), json!(12));
+    dialog_text(&mut app);
+    let before = app.session.doc().unwrap().history.undo.len();
+    dialogs::confirm(&mut app).unwrap();
+    assert_eq!(app.session.doc().unwrap().history.undo.len(), before + 1);
+    assert_eq!(effects(&app)[0].params["grain"], 12);
+    app.run("effect.dialog", json!({"effect": "artistic.filmGrain", "index": 0})).unwrap();
+    assert_eq!(app.ui.dialog.as_ref().unwrap().f64("grain", 0.0), 12.0);
+    app.ui.dialog.as_mut().unwrap().fields.insert("grain".into(), json!(7));
+    dialog_text(&mut app);
+    dialogs::confirm(&mut app).unwrap();
+    assert_eq!(effects(&app).len(), 1, "editing doesn't add a second effect");
+    assert_eq!(effects(&app)[0].params["grain"], 7);
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(effects(&app)[0].params["grain"], 12);
+}
+
+#[test]
 fn an_adjustment_dialog_has_sliders_and_previews_live() {
     let mut app = app();
     app.run("effect.dialog", json!({"effect": "adjust.hueSaturation"})).unwrap();

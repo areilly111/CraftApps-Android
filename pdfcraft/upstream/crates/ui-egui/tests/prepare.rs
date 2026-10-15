@@ -7,7 +7,8 @@ use egui_kittest::kittest::Queryable;
 use pdfcraft_ui_egui::{PdfCraftApp, QuickTool};
 
 fn harness() -> Harness<'static, PdfCraftApp> {
-    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|cc| {
+        cc.egui_ctx.options_mut(|options| options.warn_on_id_clash = true);
         let mut app = PdfCraftApp::new();
         app.set_option("language", "en").unwrap();
         app.open_bytes("form.pdf", None, include_bytes!("data/form.pdf").to_vec()).unwrap();
@@ -157,6 +158,27 @@ fn appearance_tab_restyles_the_field() {
     h.get_by_label("Appearance").click();
     h.run_steps(2);
     h.get_by_label("Line Style:");
+    fn no_grid_id_warning(shape: &egui::Shape) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().all(no_grid_id_warning),
+            egui::Shape::Text(text) => !text.galley.job.text.contains("Grid ID"),
+            _ => true,
+        }
+    }
+    // Check egui's actual painted diagnostics, rather than reproducing the ID formula.
+    assert!(h.output().shapes.iter().all(|shape| no_grid_id_warning(&shape.shape)), "palette grids must not share an ID");
+    let before = h.state().field_props.as_ref().unwrap().look.unwrap();
+    assert_eq!(h.get_all_by_label("No color").count(), 2);
+    h.get_all_by_label("No color").next().unwrap().click();
+    h.run_steps(2);
+    let border = h.state().field_props.as_ref().unwrap().look.as_ref().unwrap().border;
+    assert_eq!(border, if before.border.is_some() { None } else { Some([0.0; 3]) });
+    assert_eq!(h.state().field_props.as_ref().unwrap().look.as_ref().unwrap().fill, before.fill);
+    h.get_all_by_label("No color").nth(1).unwrap().click();
+    h.run_steps(2);
+    let look = h.state().field_props.as_ref().unwrap().look.as_ref().unwrap();
+    assert_eq!(look.border, border);
+    assert_eq!(look.fill, if before.fill.is_some() { None } else { Some([0.0; 3]) });
     {
         let d = h.state_mut().field_props.as_mut().unwrap();
         let l = d.look.as_mut().expect("a look");

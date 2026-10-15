@@ -28,11 +28,20 @@ pub struct OcrDraft {
     pub language: String,
     /// "Downsample to" resolution.
     pub dpi: u32,
+    /// Also recognize pages that already have text (pictures on them; their text isn't added again).
+    pub text_pages: bool,
 }
 
 impl Default for OcrDraft {
     fn default() -> Self {
-        OcrDraft { pages: OcrPages::All, from: 1, to: 1, language: "en".into(), dpi: 300 }
+        OcrDraft { pages: OcrPages::All, from: 1, to: 1, language: "en".into(), dpi: 300, text_pages: false }
+    }
+}
+
+impl OcrDraft {
+    /// The recognition settings these choices make.
+    pub fn settings(&self) -> OcrSettings {
+        OcrSettings { dpi: self.dpi as f32, language: self.language.clone(), skip_text_pages: !self.text_pages }
     }
 }
 
@@ -75,10 +84,10 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
         ui.add_space(8.0);
     };
     group(ui, "Pages", &mut |ui| {
-        ui.radio_value(&mut d.pages, OcrPages::All, tl!("All pages"));
-        ui.radio_value(&mut d.pages, OcrPages::Current, tl!("Current page"));
+        widgets::radio_value(ui, &mut d.pages, OcrPages::All, tl!("All pages"));
+        widgets::radio_value(ui, &mut d.pages, OcrPages::Current, tl!("Current page"));
         ui.horizontal(|ui| {
-            ui.radio_value(&mut d.pages, OcrPages::Range, tl!("From"));
+            widgets::radio_value(ui, &mut d.pages, OcrPages::Range, tl!("From"));
             let on = d.pages == OcrPages::Range;
             ui.add_enabled(on, egui::DragValue::new(&mut d.from).range(1..=pages));
             ui.label(tl!("to"));
@@ -89,9 +98,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
         egui::Grid::new("ocr-settings").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
             ui.label(tl!("Document language"));
             let name = LANGUAGES.iter().find(|l| l.0 == d.language).map_or("English", |l| l.1);
-            egui::ComboBox::from_id_salt("ocr-language").selected_text(name).width(220.0).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("ocr-language").selected_text(tl!(name)).width(220.0).show_ui(ui, |ui| {
                 for (code, name) in LANGUAGES {
-                    ui.selectable_value(&mut d.language, (*code).to_string(), *name);
+                    ui.selectable_value(&mut d.language, (*code).to_string(), tl!(*name));
                 }
             });
             ui.end_row();
@@ -110,6 +119,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> (boo
             });
             ui.end_row();
         });
+        ui.add_space(4.0);
+        ui.add(crate::widgets::checkbox(&mut d.text_pages, tl!("Also recognize pages that already have text")))
+            .on_hover_text(tl!("Pictures on those pages are recognized too; words already in the page's text are not added again"));
     });
     if !available {
         ui.label(
@@ -152,7 +164,7 @@ impl PdfCraftApp {
             OcrPages::Current => vec![self.views[vi].current],
             OcrPages::Range => (d.from.saturating_sub(1)..d.to).collect(),
         };
-        let settings = OcrSettings { dpi: d.dpi as f32, language: d.language.clone(), ..Default::default() };
+        let settings = d.settings();
         let Some(job) = self.session.ocr_job(id, &pages, settings) else { return };
         let progress = Arc::new(Mutex::new(OcrProgress { total: job.pages.len(), ..Default::default() }));
         let p = progress.clone();
@@ -189,12 +201,12 @@ impl PdfCraftApp {
             return;
         }
         // The settings showing now, not when the folder arrives.
-        let settings = OcrSettings { dpi: self.ocr_draft.dpi as f32, language: self.ocr_draft.language.clone(), ..Default::default() };
+        let settings = self.ocr_draft.settings();
         #[cfg(not(target_arch = "wasm32"))]
         match self.export_dir_override.clone() {
             Some(d) => self.ocr_files_into(files, settings, d.into()),
             None => {
-                let dialog = crate::pickers::FileDialog::new().set_title(tl!("Choose a folder for the searchable files").to_string());
+                let dialog = rfd::AsyncFileDialog::new().set_title(tl!("Choose a folder for the searchable files").to_string());
                 self.ask_one(crate::pickers::Ask::Folder(dialog), None, move |app, dir| app.ocr_files_into(files, settings, dir));
             }
         }

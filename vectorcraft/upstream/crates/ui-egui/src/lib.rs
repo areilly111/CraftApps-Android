@@ -24,6 +24,7 @@ pub mod credits;
 pub mod cursors;
 pub mod dialogs;
 pub mod dock;
+mod edit_toolbar;
 pub mod find_font;
 pub mod floating;
 pub mod font_menu;
@@ -35,7 +36,9 @@ pub mod icons;
 pub mod io;
 pub mod menus;
 pub mod native_menu;
+pub mod opening;
 pub mod palette;
+mod panel_docking;
 pub mod panels;
 pub mod picks;
 pub mod place;
@@ -49,6 +52,7 @@ pub mod shortcuts;
 pub mod state;
 pub mod sysclip;
 pub mod theme;
+pub mod thumb_worker;
 pub mod titlebar;
 pub mod toolbar;
 mod touch;
@@ -117,6 +121,8 @@ mod tests_recolor;
 mod tests_recovery;
 #[cfg(test)]
 mod tests_removeanchors;
+#[cfg(test)]
+mod tests_ruler_origin;
 #[cfg(test)]
 mod tests_save;
 #[cfg(test)]
@@ -188,31 +194,24 @@ pub type OpenUrlFn = Box<dyn FnMut(&str)>;
 /// Shows a file in the system file manager, or opens it in its app.
 pub type RevealFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 
-/// Android only: `Help › Check for Updates…` — open the in-app updater dialog.
-#[cfg(target_os = "android")]
-pub type CheckUpdatesFn = Box<dyn Fn()>;
-/// Android only: `Preferences › Storage` hooks — where documents live.
-#[cfg(target_os = "android")]
-pub struct AndroidStorageHooks {
-    /// Human-readable current media location, e.g. `Tablet storage (/sdcard/ArtCraft/Media)`.
-    pub location_label: Box<dyn Fn() -> String>,
-    /// Switch the media location back to tablet shared storage.
-    pub use_tablet_storage: Box<dyn Fn()>,
-    /// Open the system folder picker to choose an SD-card folder.
-    pub pick_sd_card: Box<dyn Fn()>,
-}
-/// Android only: shell hooks the port registers on [`Services`]. `None` on
-/// every other platform; the Help menu item and the Preferences sections that
-/// use them are registered on Android only, so desktop builds never see them.
-#[cfg(target_os = "android")]
-pub struct AndroidHooks {
-    pub check_updates: CheckUpdatesFn,
-    pub storage: AndroidStorageHooks,
-}
-
 /// Platform services injected by the host app (desktop or web).
+// CraftApps Android: Hooks for Android-specific settings UI (stylus, storage).
+pub struct AndroidStorageHooks {
+    pub location_label: Box<dyn Fn() -> String + Send + Sync>,
+    pub use_tablet_storage: Box<dyn Fn() + Send + Sync>,
+    pub pick_folder: Box<dyn Fn() + Send + Sync>,
+}
+pub struct AndroidPenHooks {
+    pub pen_section: Box<dyn FnMut(&mut egui::Ui) + Send>,
+}
+pub struct AndroidHooks {
+    pub storage: AndroidStorageHooks,
+    pub pen: Option<AndroidPenHooks>,
+}
 #[derive(Default)]
 pub struct Services {
+    /// CraftApps Android: Android-specific settings UI hooks. None on other platforms.
+    pub android_hooks: Option<AndroidHooks>,
     /// Show an open dialog; returns a path.
     pub pick_open: Option<PickOpen>,
     /// Show a save dialog (suggested name, folder, file types); returns a path.
@@ -230,10 +229,6 @@ pub struct Services {
     pub clipboard_read: Option<Box<dyn FnMut() -> Option<String>>>,
     /// Open a URL in the system browser (desktop). Without it, egui opens it (a new tab on the web).
     pub open_url: Option<OpenUrlFn>,
-    /// Android only: hooks the port registers (Help › Check for Updates…,
-    /// Preferences › Storage). `None` everywhere else.
-    #[cfg(target_os = "android")]
-    pub android_hooks: Option<AndroidHooks>,
     /// Show an open dialog for several files (File → Place…); returns their paths (none: cancelled).
     pub pick_open_multi: Option<Box<dyn FnMut() -> Vec<String>>>,
     /// Web: start an async pick of files to place (they arrive via `place_inbox`).
@@ -254,6 +249,10 @@ pub struct Services {
     /// Write a file from any thread (desktop): lets Background Save and Export write off the UI
     /// thread ([`background`]). Without it they run at once.
     pub write_shared: Option<background::SharedWriteFn>,
+    /// Write a file from any thread with what a filler writes into it (desktop): native saves
+    /// stream into the file as they are encoded instead of being held whole in memory first.
+    /// Without it they are encoded, then written with `write` / `write_shared`.
+    pub stream_shared: Option<background::SharedStreamFn>,
     /// Open a file (or a folder) in the system's default app for it (desktop: Edit Original, Show
     /// Package). Without it (the web) those answer with an error.
     pub open_file: Option<RevealFn>,
@@ -268,9 +267,13 @@ pub struct Services {
     /// The macOS menu bar, when the desktop app installed one: the in-window menus are hidden then.
     pub native_menu: Option<native_menu::NativeMenu>,
     /// Show file dialogs off the UI thread (desktop Linux, where a dialog in line holds the window
-    /// and the compositor finds it not answering): what asked runs again with the answer
-    /// ([`picks`]). Without it they are shown in line.
+    /// and the compositor finds it not answering, #592) or as sheets on the window (macOS, where a
+    /// dialog in line aborts the app, #867): what asked runs again with the answer ([`picks`]).
+    /// Without it they are shown in line.
     pub start_pick: Option<picks::StartPick>,
+    /// [`Self::start_pick`]'s dialogs are sheets on the window (macOS): while one is open the app
+    /// neither quits nor closes documents, as under the modal dialog before.
+    pub dialogs_are_sheets: bool,
 }
 
 /// Cached canvas raster.
@@ -324,6 +327,9 @@ pub struct CacheKey {
     pub smooth_images: bool,
     /// Isolation mode's group or layer ([`vectorcraft_render::RenderOptions::isolated`]).
     pub isolated: Option<u64>,
+    /// Appearance of Black › On Screen › Display All Blacks as Rich Black
+    /// ([`vectorcraft_render::RenderOptions::rich_black`]).
+    pub rich_black: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -405,6 +411,8 @@ pub struct VectorcraftApp {
     pub(crate) paste_chord: shortcuts::PasteChord,
     /// Saves and exports running in the background (Preferences → File Handling).
     pub background: background::Background,
+    /// Documents being read off the UI thread ([`opening`]).
+    pub opening: opening::Opening,
     /// Data Recovery's timer and startup question ([`recovery`]).
     pub recovery: recovery::Timer,
     /// Modifiers the keyboard holds (from the host's input), given back after synthetic input.
@@ -501,6 +509,7 @@ impl VectorcraftApp {
             font_check: None,
             paste_chord: Default::default(),
             background: Default::default(),
+            opening: Default::default(),
             recovery: Default::default(),
             host_modifiers: Default::default(),
             synthetic_modifiers: false,
@@ -535,6 +544,11 @@ impl VectorcraftApp {
         if let Some(write) = s.write_shared.take() {
             s.write_shared = Some(Arc::new(move |p: &str, b: &[u8]| file_access::check_write(p).and_then(|()| write(p, b))));
         }
+        if let Some(stream) = s.stream_shared.take() {
+            s.stream_shared = Some(Arc::new(move |p: &str, fill: &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>| {
+                file_access::check_write(p).and_then(|()| stream(p, fill))
+            }));
+        }
         // Edit Original and Show in Folder hand a file to another app: only one automation may read.
         for service in [&mut s.open_file, &mut s.reveal] {
             if let Some(mut open) = service.take() {
@@ -553,6 +567,17 @@ impl VectorcraftApp {
 
     pub fn view(&self) -> Option<&View> {
         self.session.active_index().and_then(|i| self.views.get(i))
+    }
+
+    /// The zero point shown by rulers and position fields; command coordinates stay absolute.
+    pub(crate) fn ruler_origin(&self) -> vectorcraft_geom::Point {
+        let origin = self.session.active().map_or(vectorcraft_geom::Point::ZERO, |d| d.doc.ruler_origin);
+        // An untrusted file cannot make the ruler's tick loop or position fields overflow.
+        if origin.is_finite() && origin.x.abs() <= vectorcraft_engine::MAX_COORD && origin.y.abs() <= vectorcraft_engine::MAX_COORD {
+            origin
+        } else {
+            vectorcraft_geom::Point::ZERO
+        }
     }
     pub fn view_mut(&mut self) -> Option<&mut View> {
         self.sync_views();
@@ -605,9 +630,9 @@ impl VectorcraftApp {
             return r;
         }
         let mut params = params;
-        // Paste in place, in front, in back (#693) and Select › All on Active Artboard (#1006): onto
-        // or on the active artboard, the view's.
-        if matches!(id, "edit.pasteInPlace" | "edit.pasteInFront" | "edit.pasteInBack" | "select.allOnArtboard")
+        // Paste in place, in front, in back (#693), Select › All on Active Artboard (#1006) and Align to
+        // Artboard: onto, on or to the active artboard, the view's. A batch passes it on to those steps.
+        if (vectorcraft_engine::ON_ACTIVE_ARTBOARD.contains(&id) || id == "command.batch")
             && params.get("artboard").is_none()
             && self.view().is_some()
             && let Some(n) = self.session.active().map(|d| d.doc.artboards.len())
@@ -686,8 +711,16 @@ impl VectorcraftApp {
     /// Select a tool (also used by the toolbar and shortcuts).
     pub fn select_tool(&mut self, id: &str) {
         let v = self.view_info();
+        let before = self.session.tool_id();
         if let Err(e) = self.session.select_tool(id, v) {
             self.ui.status = e.to_string();
+        }
+        // A newly chosen Artboard tool starts on the active artboard (the view's).
+        if before != "artboard"
+            && self.session.tool_id() == "artboard"
+            && let Some(n) = self.session.active().map(|d| d.doc.artboards.len())
+        {
+            panels::artboards::select(self, panels::artboards::selected(self, n));
         }
         if let Some(g) = vectorcraft_tools::catalog::group_of(id)
             && let Some(slot) = self.ui.group_tool.get_mut(g)
@@ -704,8 +737,13 @@ impl VectorcraftApp {
             let reply = req.reply.clone();
             // Guarded per request: a panic must not drop the channel (taken out of `self` above).
             let roots = self.automation_roots.clone();
-            let outcome = file_access::confine(roots.as_ref(), || vectorcraft_engine::guard::catch_panic(|| control::handle(self, ctx, &req)))
-                .unwrap_or_else(|msg| control::err(format!("internal error: {msg} (please report this bug)")));
+            let outcome = match file_access::confine(roots.as_ref(), || vectorcraft_engine::guard::catch_panic(|| control::handle(self, ctx, &req))) {
+                Ok(outcome) => outcome,
+                Err(msg) => {
+                    self.picks.recover();
+                    control::err(format!("internal error: {msg} (please report this bug)"))
+                }
+            };
             match outcome {
                 control::Outcome::Done(v) => {
                     let _ = reply.send(v);
@@ -841,6 +879,18 @@ impl VectorcraftApp {
         }
     }
 
+    /// A file dialog is open off the UI thread (a sheet on macOS, [`picks`]): what asked for it runs
+    /// again when it answers.
+    pub fn file_dialog_open(&self) -> bool {
+        self.picks.is_waiting()
+    }
+
+    /// A file dialog is open as a sheet on the window ([`Services::dialogs_are_sheets`]): nothing
+    /// closes or quits until it answers.
+    pub fn file_sheet_open(&self) -> bool {
+        self.services.dialogs_are_sheets && self.file_dialog_open()
+    }
+
     /// Show a transient status message.
     pub fn status(&mut self, s: impl Into<String>) {
         self.ui.status = s.into();
@@ -929,6 +979,7 @@ impl VectorcraftApp {
     pub fn logic(&mut self, ctx: &egui::Context) {
         let confined = self.synthetic_frame.then(|| self.automation_roots.clone()).flatten();
         if let Err(msg) = file_access::confine(confined.as_ref(), || vectorcraft_engine::guard::catch_panic(|| self.logic_frame(ctx))) {
+            self.picks.recover();
             self.status(format!("Internal error: {msg} (please report this bug)"));
         }
     }
@@ -975,17 +1026,22 @@ impl VectorcraftApp {
         self.poll_font_check(ctx);
         picks::poll(self, ctx);
         background::poll(self);
+        opening::poll(self);
         #[cfg(not(target_arch = "wasm32"))]
         self.tick_link_updates(ctx, now);
-        if !self.background.jobs.is_empty() {
+        if !self.background.jobs.is_empty() || !self.opening.pending.is_empty() {
             // Keep the status bar's progress moving and pick the result up when it arrives.
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         // The window's close button (or the system quitting the app) asks about unsaved documents,
-        // once the saves running in the background are done.
+        // once the saves running in the background are done. Not while a file dialog's sheet is on
+        // the window: what asked for it runs again when it answers.
         if ctx.input(|i| i.viewport().close_requested()) {
             background::wait_all(self);
-            if unsaved::any_dirty(self) {
+            if self.file_sheet_open() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.status(picks::busy());
+            } else if unsaved::any_dirty(self) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 if let Err(e) = unsaved::close_all(self, "quit") {
                     self.status(e);
@@ -1026,8 +1082,8 @@ impl VectorcraftApp {
         self.take_dropped_files(ctx);
     }
 
-    /// Files dropped on the window: documents opened, pictures and text placed on the canvas
-    /// ([`Self::drop_target`]).
+    /// Files dropped on the window: documents, libraries, presets and plug-ins opened, pictures
+    /// and text placed on the canvas ([`Self::drop_target`]).
     #[cfg(not(target_arch = "wasm32"))]
     fn take_dropped_files(&mut self, ctx: &egui::Context) {
         let (dropped, shift) = ctx.input(|i| (i.raw.dropped_files.clone(), i.modifiers.shift));
@@ -1103,7 +1159,9 @@ impl VectorcraftApp {
         // The native menu's key equivalents become the input their keys make, ahead of what came
         // after them (see `native_menu`).
         let keys = self.services.native_menu.as_mut().map(native_menu::NativeMenu::take_keys).unwrap_or_default();
-        if !keys.is_empty() {
+        // The menu bar does nothing while a file dialog is open (`native_menu`): a key that raced it
+        // going inert is dropped.
+        if !keys.is_empty() && !self.file_dialog_open() {
             let events: Vec<egui::Event> = keys.into_iter().flat_map(|k| native_menu::key_events(k, || self.system_clipboard_text())).collect();
             raw.events.splice(0..0, events);
         }
@@ -1160,6 +1218,7 @@ impl VectorcraftApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let confined = self.synthetic_frame.then(|| self.automation_roots.clone()).flatten();
         if let Err(msg) = file_access::confine(confined.as_ref(), || vectorcraft_engine::guard::catch_panic(|| self.ui_frame(ui))) {
+            self.picks.recover();
             self.status(format!("Internal error: {msg} (please report this bug)"));
         }
     }

@@ -1,6 +1,7 @@
 use super::*;
 
 mod selection;
+mod stack_cache;
 
 const DEPTHS: [u64; 3] = [8, 16, 32];
 const W: i32 = 64;
@@ -975,4 +976,34 @@ fn inspect_reports_the_smart_source() {
     convert(&mut s);
     assert_eq!(source(&s)["kind"], "embedded");
     assert!(source(&s)["fileName"].is_string());
+}
+
+#[test]
+fn displace_smart_filter_reads_its_map_path_on_re_render() {
+    let dir = std::env::temp_dir().join(format!("pcraft-displace-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A white map displaces by the full scale; mid-grey would not move anything.
+    let white = Document::with_background(
+        "map",
+        Size::new(W as u32, H as u32),
+        photocraft_color::ColorMode::Rgb,
+        photocraft_color::SampleType::U8,
+        photocraft_color::Color::rgba(1.0, 1.0, 1.0, 1.0),
+    );
+    let map = dir.join("white.png");
+    std::fs::write(&map, photocraft_io::export(&white, "png", &Default::default()).unwrap().bytes).unwrap();
+    for depth in DEPTHS {
+        let mut s = session(depth);
+        paint(&mut s);
+        convert(&mut s);
+        let before = flat(&s);
+        s.execute("filter.distort.displace", json!({"horizontal": 8, "vertical": 8, "mapPath": map.to_str().unwrap()})).unwrap();
+        assert!(max_diff(&before, &flat(&s)) > 0.1, "the smart filter displaced the pixels at {depth}-bit");
+        // A later re-render (here: hide and show the filter) reads the map again.
+        s.execute("layer.smartFilter.setVisible", json!({"index": 0, "visible": false})).unwrap();
+        assert_eq!(max_diff(&before, &flat(&s)), 0.0, "hidden at {depth}-bit");
+        s.execute("layer.smartFilter.setVisible", json!({"index": 0, "visible": true})).unwrap();
+        assert!(max_diff(&before, &flat(&s)) > 0.1, "shown again at {depth}-bit");
+    }
+    std::fs::remove_dir_all(&dir).ok();
 }

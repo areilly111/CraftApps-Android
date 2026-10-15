@@ -16,7 +16,7 @@ use photocraft_text::spell::Dictionary;
 use serde_json::{Value, json};
 
 use crate::commands::{CommandSpec, layer_param};
-use crate::type_cmds::{refresh, replace_text};
+use crate::type_cmds::{norm_text, refresh, replace_text};
 use crate::{EngineError, Result, Session};
 
 fn bad(cmd: &str, msg: impl Into<String>) -> EngineError {
@@ -196,6 +196,7 @@ fn insert_text(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "type.insertText";
     let id = layer_param(s, p)?;
     let new = p.get("text").and_then(Value::as_str).filter(|t| !t.is_empty()).ok_or_else(|| bad(cmd, "missing `text`"))?.to_string();
+    let new = norm_text(&new);
     let doc = s.active().ok_or(EngineError::NoDocument)?.doc.clone();
     let t = text(&doc, id).ok_or_else(|| bad(cmd, format!("layer {} is not a type layer", id.0)))?;
     let n = t.chars().count();
@@ -323,5 +324,15 @@ mod tests {
         s.execute("type.insertText", json!({"text": "!"})).unwrap();
         assert_eq!(text_of(&s, id), "€b!");
         assert!(s.execute("type.insertText", json!({"text": ""})).is_err());
+    }
+
+    #[test]
+    fn insert_crlf_reports_caret_in_normalized_text() {
+        let (mut s, id) = session("");
+        let inserted = s.execute("type.insertText", json!({"layer": id, "text": "x\r\ny"})).unwrap();
+
+        assert_eq!(inserted["caret"], 3);
+        assert_eq!(s.execute("type.info", json!({"layer": id})).unwrap()["text"], "x\ny");
+        assert_eq!(s.execute("type.caret", json!({"layer": id, "index": inserted["caret"]})).unwrap()["index"], inserted["caret"]);
     }
 }

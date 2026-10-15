@@ -64,7 +64,7 @@ pub(crate) fn place(s: &mut Session, path: &str) -> NodeId {
 
 pub(crate) fn image(s: &Session, id: NodeId) -> ImageObject {
     match &s.doc().unwrap().doc.node(id).unwrap().kind {
-        NodeKind::Image(im) => im.clone(),
+        NodeKind::Image(im) => (**im).clone(),
         k => panic!("not an image: {k:?}"),
     }
 }
@@ -323,7 +323,7 @@ fn relative_paths_are_written_against_the_saved_file() {
         link: Some(LinkInfo::new(format!("{root}{sep}art{sep}a.png"))),
         placement: Default::default(),
     };
-    d.insert(Some(lid), 0, vectorcraft_doc::Node::new(nid, NodeKind::Image(im))).unwrap();
+    d.insert(Some(lid), 0, vectorcraft_doc::Node::new(nid, NodeKind::Image(Box::new(im)))).unwrap();
     let rel = |dest: String| {
         let d = cmd::links::with_relative_paths(&d, &dest).unwrap_or_else(|| d.clone());
         match &d.node(nid).unwrap().kind {

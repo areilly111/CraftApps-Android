@@ -168,7 +168,8 @@ fn text_from_another_app_pastes_as_point_text_and_svg_text_as_art() {
 }
 
 /// A browser's Copy Image: the picture with its address as text (and HTML, which Paste doesn't
-/// read). The picture is pasted; an address alone pastes as text, nothing is fetched (#597).
+/// read), or its markup as text. The picture is pasted; an address alone pastes as text, nothing
+/// is fetched (#597, #1089).
 #[test]
 fn an_image_copied_in_a_browser_pastes_as_the_picture_not_its_address() {
     let (mut app, board) = app();
@@ -177,6 +178,11 @@ fn an_image_copied_in_a_browser_pastes_as_the_picture_not_its_address() {
     run(&mut app, "edit.paste", json!({}));
     let NodeKind::Image(im) = &pasted(&app)[0].kind else { panic!("not an image: {:?}", pasted(&app)[0].kind) };
     assert!(im.link.is_none() && (im.width, im.height) == (4, 2));
+    // Some browsers (on Linux) put the image's markup there as its text: the picture still (#1089).
+    let markup = br#"<img src="https://example.com/images/cat.png" jsaction="" class="sFlh5c" style="max-width: 351px" alt="">"#.to_vec();
+    copy_elsewhere(&board, vec![(TEXT, markup), (PNG, blue_png())]);
+    run(&mut app, "edit.paste", json!({}));
+    assert!(matches!(pasted(&app)[0].kind, NodeKind::Image(_)), "{:?}", pasted(&app)[0].kind);
     copy_elsewhere(&board, vec![(TEXT, url)]);
     run(&mut app, "edit.paste", json!({}));
     let NodeKind::Text(t) = &pasted(&app)[0].kind else { panic!("not type") };

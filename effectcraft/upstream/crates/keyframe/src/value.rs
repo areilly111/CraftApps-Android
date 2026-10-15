@@ -169,6 +169,24 @@ impl Gradient {
         let a = sample_stops(&self.opacities, t, |a, b, f| a + (b - a) * f as f32).unwrap_or(1.0);
         [col[0], col[1], col[2], col[3] * a]
     }
+
+    /// The colour stops alone at `t` (0..1), RGBA as stored: unlike [`Gradient::sample`], the
+    /// opacity stops are not applied. A new colour stop takes this value.
+    pub fn color_at(&self, t: f64) -> [f32; 4] {
+        sample_stops(&self.colors, t.clamp(0.0, 1.0), |a, b, f| {
+            let mut o = [0.0; 4];
+            for i in 0..4 {
+                o[i] = a[i] + (b[i] - a[i]) * f as f32;
+            }
+            o
+        })
+        .unwrap_or([1.0; 4])
+    }
+
+    /// The opacity stops alone at `t` (0..1). A new opacity stop takes this value.
+    pub fn opacity_at(&self, t: f64) -> f32 {
+        sample_stops(&self.opacities, t.clamp(0.0, 1.0), |a, b, f| a + (b - a) * f as f32).unwrap_or(1.0)
+    }
 }
 
 fn sample_stops<T: Copy>(stops: &[(f64, T)], t: f64, lerp: impl Fn(T, T, f64) -> T) -> Option<T> {

@@ -186,7 +186,7 @@ impl LutFormat {
 }
 
 fn floats(line: &str) -> Result<Vec<f32>, String> {
-    line.split_whitespace().map(|x| x.parse::<f32>().map_err(|_| format!("not a number: {x:?}"))).collect()
+    line.split_whitespace().map(|x| x.parse::<f32>().ok().filter(|v| v.is_finite()).ok_or_else(|| format!("not a finite number: {x:?}"))).collect()
 }
 
 impl Lut {
@@ -251,6 +251,9 @@ impl Lut {
                         let v = floats(&line[key.len()..]).map_err(|e| err(&e))?;
                         if v.len() != 2 {
                             return Err(err(&format!("{key} needs 2 values")));
+                        }
+                        if v[1] <= v[0] {
+                            return Err(err(&format!("{key} maximum must exceed its minimum")));
                         }
                         let r = Some([v[0], v[1]]);
                         if key == "LUT_1D_INPUT_RANGE" { range1 = r } else { range3 = r }
@@ -591,6 +594,16 @@ mod tests {
         assert!(Lut::parse_cube("TITLE \"x\"\n").is_err());
         assert!(Lut::parse_cube("LUT_3D_SIZE 2\n0 0 0\nLUT_1D_SIZE 2\n").is_err());
         assert!(Lut::parse_cube("LUT_3D_SIZE 2\nDOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0\n").is_err());
+        for key in ["LUT_1D_INPUT_RANGE", "LUT_3D_INPUT_RANGE"] {
+            let (size, rows) = if key.starts_with("LUT_1D") { ("LUT_1D_SIZE 2", 2) } else { ("LUT_3D_SIZE 2", 8) };
+            let table = "0 0 0\n".repeat(rows);
+            for range in ["0 0", "1 0", "NaN 1", "0 inf"] {
+                assert!(Lut::parse_cube(&format!("{size}\n{key} {range}\n{table}")).is_err(), "accepted {key} {range}");
+            }
+            assert!(Lut::parse_cube(&format!("{size}\n{key} -0.5 2\n{table}")).is_ok());
+        }
+        assert!(Lut::parse_cube("LUT_1D_SIZE 2\n0 0 0\nNaN 1 1\n").is_err());
+        assert!(Lut::parse_cube("LUT_1D_SIZE 2\nDOMAIN_MAX inf 1 1\n0 0 0\n1 1 1\n").is_err());
         // comments, blank lines, Windows newlines, inline comments
         let txt = "# hi\r\nTITLE \"t\"\r\n\r\nLUT_3D_SIZE 2 # two\r\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
         let l = Lut3d::parse_cube(txt).unwrap();

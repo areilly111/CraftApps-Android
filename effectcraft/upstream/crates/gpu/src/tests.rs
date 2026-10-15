@@ -746,6 +746,28 @@ fn within_memory_returns_the_work_when_there_is_room() {
     assert_eq!((img.width, img.height), (64, 32));
 }
 
+/// A buffer whose allocation fails (here: over the device's buffer size limit; on Adreno an
+/// internal `ERROR_INITIALIZATION_FAILED`) is reported to the caller's error scope instead of
+/// panicking in `create_buffer_init`'s mapped range on a frame thread (#591).
+#[test]
+fn a_failed_buffer_allocation_is_an_error_not_a_panic() {
+    hold_gpu_lock();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else { return };
+    let required_limits =
+        wgpu::Limits { max_buffer_size: 4096, max_storage_buffer_binding_size: 4096, max_uniform_buffer_binding_size: 4096, ..Default::default() };
+    let desc = wgpu::DeviceDescriptor { required_limits, ..Default::default() };
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc)).expect("a device with a small buffer limit");
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::context::buffer_init(&device, &queue, Some("too big"), &[0u8; 8192], wgpu::BufferUsages::STORAGE);
+        crate::context::buffer_init(&device, &queue, Some("unaligned"), &[1u8; 7], wgpu::BufferUsages::UNIFORM);
+    }));
+    let error = pollster::block_on(scope.pop());
+    assert!(made.is_ok(), "a failed allocation must not panic");
+    assert!(error.is_some(), "the failed allocation reaches the error scope");
+}
+
 /// Precomp layers (not collapsed) render their nested comp resident on the GPU
 /// (`walk::draw_precomp`): match the CPU (nested blend modes, effects inside and outside,
 /// transforms, opacity, a blend mode on the precomp layer, half resolution,
@@ -784,4 +806,54 @@ fn nested_precomps_render_resident() {
         let half = RenderOpts { scale: 0.5, ..opts() };
         check(&format!("nested precomps half {depth:?}"), compare_at(&s, half, Tick::from_seconds_f64(0.2)), 0.0);
     }
+}
+
+/// #613: an effect kernel the device's shader compiler rejects (FXC on DirectX 12 aborting on
+/// `pointwise`) no longer turns the whole GPU compositor off: the context is built without it,
+/// lists it, and the effects that need it render on the CPU, matching the CPU render.
+#[test]
+fn effects_whose_kernels_failed_render_on_the_cpu() {
+    if gpu().is_none() {
+        return;
+    }
+    let Ok(mut ctx) = pollster::block_on(crate::context::GpuContext::request()) else { return };
+    ctx.drop_kernel("pointwise");
+    ctx.drop_kernel("box_h");
+    let names: Vec<&str> = ctx.unavailable_kernels().iter().map(|(e, _)| *e).collect();
+    assert_eq!(names, ["pointwise", "box_h"]);
+    let g = Gpu::from_context(ctx);
+    for depth in [BitDepth::Bpc8, BitDepth::Bpc32] {
+        let mut s = Scene::new(depth);
+        let mut l = s.footage(80, 50);
+        s.effect(&mut l, "ec.color.exposure", &[("master/exposure", n(0.7))]);
+        s.effect(&mut l, "ec.color.tint", &[("black", c(0.1, 0.0, 0.3)), ("amount", n(80.0))]);
+        s.effect(&mut l, "ec.blur.gaussian", &[("blurriness", n(5.0))]);
+        s.effect(&mut l, "ec.channel.invert", &[("blend", n(50.0))]);
+        s.push(l);
+        let cpu = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Cpu, ..opts() }).comp_frame_cpu(s.cid, Tick::ZERO);
+        let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+        r.accel = Some(&g);
+        let img = g.render(&r, s.cid, Tick::ZERO).expect("the GPU renders the frame");
+        let mut d = diff(&cpu, &img, tolerance(depth));
+        d.quantized = depth != BitDepth::Bpc32;
+        check(&format!("missing kernels {depth:?}"), Some(d), 0.0);
+    }
+}
+
+/// A layer whose bounds change every frame reads back at a new size each time: the staging
+/// buffers kept for reuse stay within budget instead of growing for the whole render (#2081).
+#[test]
+fn readback_staging_stays_bounded_across_sizes() {
+    let Some(g) = gpu() else { return };
+    if !g.ctx.can_wait() {
+        return;
+    }
+    let mut e = crate::context::Enc::new(&g.ctx);
+    // 1024 × (256 + i) RGBA f32: ~4 MiB each, ~480 MiB over all sizes.
+    for i in 0..120 {
+        let img = g.ctx.image(1024, 256 + i);
+        assert!(e.download(&img).is_some(), "readback {i}");
+    }
+    let held = g.ctx.staging_bytes();
+    assert!(held <= (256 << 20) + 2 * 1024 * 16 * 376, "staging buffers hold {held} bytes");
 }

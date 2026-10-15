@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::cmd::maskedit::MASK_EDIT_LAYER;
+use crate::tests::{history, select_with_a_step_to_redo};
 
 fn session() -> Session {
     let mut s = Session::new();
@@ -34,7 +35,7 @@ fn doc(s: &Session) -> &Document {
 }
 
 fn mask(s: &Session, id: NodeId) -> Option<&vectorcraft_doc::OpacityMask> {
-    doc(s).node(id).and_then(|n| n.mask.as_deref())
+    doc(s).node(id).and_then(|n| n.extras().mask.as_deref())
 }
 
 fn has_edit_layer(d: &Document) -> bool {
@@ -65,6 +66,70 @@ fn mask_options_act_on_the_masked_object_while_editing() {
     assert!((n.opacity - 0.4).abs() < 1e-6 && n.blend == vectorcraft_color::BlendMode::Multiply);
     let info = s.execute("transparency.info", &json!({})).unwrap();
     assert_eq!((info["ids"].clone(), info["opacity"].clone(), info["editingMask"].clone()), (json!([obj.0]), json!(40.0), json!(obj.0)));
+}
+
+/// Disable, Enable, Unlink and Link Opacity Mask and Opacity Mask Options with the flags the masks
+/// already have record no undo step, on the selection, with ids and while the mask is being edited:
+/// the step to redo stays, the document stays unmodified and the journal still has the command. A
+/// call that changes a flag on one of the masks is one undo step. A target without a mask and a
+/// call that gives no flag are still errors.
+#[test]
+fn mask_options_already_set_record_no_undo_step() {
+    let mut s = session();
+    let masked = |s: &mut Session, x: f64| {
+        let (obj, m) = (rect(s, x, 100.0), rect(s, x, 50.0));
+        s.execute("select.set", &json!({"ids": [obj.0, m.0]})).unwrap();
+        s.execute("transparency.makeOpacityMask", &json!({})).unwrap();
+        obj
+    };
+    // `a`'s mask is as made (clipping, not inverted, enabled, linked); `b`'s has each flag the other
+    // way.
+    let (a, b) = (masked(&mut s, 0.0), masked(&mut s, 150.0));
+    s.execute("transparency.setOpacityMask", &json!({"id": b.0, "clip": false, "invert": true, "disabled": true, "linked": false})).unwrap();
+    select_with_a_step_to_redo(&mut s, &[a]);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    let calls = [
+        ("transparency.enableOpacityMask", json!({})),
+        ("transparency.linkOpacityMask", json!({})),
+        ("transparency.setOpacityMask", json!({"clip": true, "invert": false, "disabled": false, "linked": true})),
+        ("transparency.disableOpacityMask", json!({"id": b.0})),
+        ("transparency.unlinkOpacityMask", json!({"ids": [b.0]})),
+        ("transparency.setOpacityMask", json!({"ids": [b.0], "clip": false, "invert": true})),
+    ];
+    for (id, p) in calls {
+        assert_eq!(s.execute(id, &p).unwrap(), Value::Null, "{id} {p}");
+        assert_eq!(history(&s), before, "{id} {p}");
+        assert_eq!(s.journal.last().unwrap(), &(id.to_string(), p));
+    }
+    // While `a`'s mask is edited, the selection is its mask art and the commands act on `a`.
+    s.execute("transparency.editOpacityMask", &json!({"id": a.0})).unwrap();
+    let art = s.doc().unwrap().selection.objects.clone();
+    select_with_a_step_to_redo(&mut s, &art);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved while editing");
+    let calls = [
+        ("transparency.enableOpacityMask", json!({})),
+        ("transparency.linkOpacityMask", json!({})),
+        ("transparency.setOpacityMask", json!({"clip": true, "linked": true})),
+    ];
+    for (id, p) in calls {
+        assert_eq!(s.execute(id, &p).unwrap(), Value::Null, "{id} {p} while editing");
+        assert_eq!(history(&s), before, "{id} {p} while editing");
+        assert_eq!(s.journal.last().unwrap(), &(id.to_string(), p));
+    }
+    assert!(doc(&s).mask_edit.is_some(), "still editing");
+    // `b`'s mask is disabled and `a`'s is not: disabling both is one undo step, and it clears Redo.
+    s.execute("transparency.stopEditingOpacityMask", &json!({})).unwrap();
+    select_with_a_step_to_redo(&mut s, &[a, b]);
+    let undo = history(&s).0;
+    s.execute("transparency.disableOpacityMask", &json!({})).unwrap();
+    assert_eq!(history(&s), (undo + 1, 0, true));
+    assert!(mask(&s, a).unwrap().disabled && mask(&s, b).unwrap().disabled);
+    let plain = rect(&mut s, 0.0, 20.0);
+    let err = s.execute("transparency.enableOpacityMask", &json!({"id": plain.0})).unwrap_err();
+    assert!(err.to_string().contains("no target object has an opacity mask"), "{err}");
+    assert!(s.execute("transparency.setOpacityMask", &json!({"id": a.0})).is_err(), "no flag given");
 }
 
 #[test]
@@ -207,7 +272,7 @@ fn saving_while_editing_writes_no_editing_layer() {
     assert!(back.mask_edit.is_none() && !has_edit_layer(&back));
     assert_eq!(back.layers.len(), 1);
     // The edit made while editing is in the saved mask.
-    assert_eq!(back.node(obj).unwrap().mask.as_ref().unwrap().art.geometric_bounds().unwrap().x0, 50.0);
+    assert_eq!(back.node(obj).unwrap().extras().mask.as_ref().unwrap().art.geometric_bounds().unwrap().x0, 50.0);
     // Still editing in the session.
     assert!(doc(&s).mask_edit.is_some() && has_edit_layer(doc(&s)));
     // A file saved mid-edit by an older version (editing record and layer written) opens clean.

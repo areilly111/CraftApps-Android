@@ -107,7 +107,7 @@ fn add_with_apply_styles_the_selection_in_the_same_undo_step() {
     assert!((geom.start - Point::new(10.0 + 0.35 * 100.0, 20.0 + 0.3 * 50.0)).hypot() < 1e-6, "{geom:?}");
     run(&mut s, "edit.undo", json!({}));
     assert!(doc(&s).graphic_style("Spotlight").is_none());
-    assert_eq!(doc(&s).node(id).unwrap().graphic_style, None);
+    assert_eq!(doc(&s).node(id).unwrap().extras().graphic_style, None);
     // Without a selection it only adds; `ids` targets objects; an existing style is applied as is.
     run(&mut s, "select.none", json!({}));
     let r = run(&mut s, "graphicStyle.addFromLibrary", json!({"library": "blends-transparency", "name": "Ghosted", "apply": true}));
@@ -224,7 +224,7 @@ fn every_builtin_style_paints_visibly_on_a_rectangle() {
             run(&mut s, "file.new", json!({"width": 100, "height": 100}));
             let id = rect(&mut s, 25.0, 30.0, 50.0, 40.0);
             run(&mut s, "graphicStyle.addFromLibrary", json!({"library": b.id, "name": g.name, "apply": true}));
-            assert_eq!(doc(&s).node(id).unwrap().graphic_style, doc(&s).graphic_style(&g.name).map(|x| x.id), "{}", g.name);
+            assert_eq!(doc(&s).node(id).unwrap().extras().graphic_style, doc(&s).graphic_style(&g.name).map(|x| x.id), "{}", g.name);
             let img = renderer.render_region(doc(&s), Rect::new(0.0, 0.0, 100.0, 100.0), 0.5, true);
             let painted = img.pixels.as_chunks::<4>().0.iter().filter(|p| p[..3] != [255, 255, 255]).count();
             assert!(painted > 40, "{} / {} paints {painted} pixels", b.id, g.name);

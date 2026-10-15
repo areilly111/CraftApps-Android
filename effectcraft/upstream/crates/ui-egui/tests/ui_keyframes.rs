@@ -348,3 +348,90 @@ fn graph_editor_buttons_that_do_not_fit_move_to_the_more_menu() {
     click(&mut h, pos2(item[0] + item[2] / 2.0, item[1] + item[3] / 2.0));
     assert_eq!(h.state().ui.timeline.graph_transform_box, !before, "the menu item runs the button");
 }
+
+/// #355, #491: with three layers selected the Properties panel heads "(3) Selected Objects"; its
+/// stopwatch animates Position on all three (one undo step) and scrubbing X moves all three by
+/// the same amount.
+#[test]
+fn properties_panel_edits_every_selected_layer() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Three", "width": 320, "height": 180, "frameRate": 30, "duration": 4})).unwrap();
+    let mut ids = vec![];
+    for (i, c) in ["#e04020", "#20e040", "#2040e0"].iter().enumerate() {
+        let l = s.execute("layer.newSolid", json!({"color": c, "width": 40, "height": 40})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.set", json!({"layer": l, "path": "transform/position", "value": [60.0 + 80.0 * i as f64, 90.0]})).unwrap();
+        ids.push(l);
+    }
+    s.execute("layer.select", json!({"layers": ids})).unwrap();
+    let first = s.state.selected_layers[0];
+    let uid = s.active_comp().unwrap().layer(first).unwrap().props.prop("transform/position").unwrap().uid;
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.state_mut().show_panel(effectcraft_ui_egui::dock::PanelKind::Properties);
+    h.run_steps(4);
+    assert_eq!(h.state().auto.find("properties.selectedObjects").map(|e| e.label.clone()), Some("(3) Selected Objects".into()));
+    let pos = |h: &Harness<'_, EffectcraftApp>, l: u64| {
+        h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.prop("transform/position").unwrap().clone()
+    };
+    let at = |h: &Harness<'_, EffectcraftApp>, id: &str| {
+        let e = h.state().auto.find(id).unwrap_or_else(|| panic!("no {id}"));
+        pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0)
+    };
+    let sw = at(&h, &format!("properties.prop.{uid}.stopwatch"));
+    h.input_mut().events.push(Event::PointerMoved(sw));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: sw, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: sw, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    assert!(ids.iter().all(|l| pos(&h, *l).is_animated()), "every selected layer's stopwatch");
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    assert!(ids.iter().all(|l| !pos(&h, *l).is_animated()), "one undo step");
+    // Scrub X: each layer moves by the same amount.
+    let before: Vec<f64> = ids.iter().map(|l| pos(&h, *l).value.components()[0]).collect();
+    let x = at(&h, &format!("properties.prop.{uid}.value.0"));
+    drag(&mut h, x, x + egui::vec2(30.0, 0.0), Default::default());
+    let after: Vec<f64> = ids.iter().map(|l| pos(&h, *l).value.components()[0]).collect();
+    let d = after[0] - before[0];
+    assert!(d.abs() > 1.0, "the scrub moved X: {before:?} → {after:?}");
+    for (a, b) in after.iter().zip(&before) {
+        assert!((a - b - d).abs() < 1e-6, "same change on every layer: {before:?} → {after:?}");
+    }
+}
+
+/// #770: Proportional Scrubbing (After Effects 26.2). With three layers selected, a Ctrl+Alt
+/// (Cmd+Opt) scrub of Position X in the Timeline leaves the first selected layer where it is,
+/// moves the last by the whole change and the middle one by half, whichever layer is scrubbed.
+#[test]
+fn ctrl_alt_scrub_in_the_timeline_is_proportional() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Three", "width": 320, "height": 180, "frameRate": 30, "duration": 4})).unwrap();
+    let mut ids = vec![];
+    for c in ["#e04020", "#20e040", "#2040e0"] {
+        let l = s.execute("layer.newSolid", json!({"color": c, "width": 40, "height": 40})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.set", json!({"layer": l, "path": "transform/position", "value": [100.0, 90.0]})).unwrap();
+        ids.push(l);
+    }
+    // Selection order: the first created, then the second, then the third.
+    for (i, l) in ids.iter().enumerate() {
+        s.execute("layer.select", json!({"layers": [l], "add": i > 0})).unwrap();
+    }
+    let middle = ids[1];
+    let uid = s.active_comp().unwrap().layer(LayerId(middle)).unwrap().props.prop("transform/position").unwrap().uid;
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let ctx = h.ctx.clone();
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.reveal.position", json!({})).unwrap();
+    h.run_steps(4);
+    let x = |h: &Harness<'_, EffectcraftApp>, l: u64| {
+        h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.prop("transform/position").unwrap().value.components()[0]
+    };
+    let e = h.state().auto.find(&format!("timeline.prop.{uid}.value.0")).cloned().expect("the middle layer's Position X shows");
+    let from = pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0);
+    let ctrl_alt = egui::Modifiers { alt: true, ctrl: true, command: true, ..Default::default() };
+    drag(&mut h, from, from + egui::vec2(40.0, 0.0), ctrl_alt);
+    let moved: Vec<f64> = ids.iter().map(|l| x(&h, *l) - 100.0).collect();
+    assert!(moved[2] > 1.0, "the last selected layer moved: {moved:?}");
+    assert!(moved[0].abs() < 1e-9, "the first selected layer stays: {moved:?}");
+    assert!((moved[1] - moved[2] / 2.0).abs() < 1e-6, "the middle one moves by half: {moved:?}");
+}

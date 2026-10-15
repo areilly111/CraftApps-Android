@@ -27,7 +27,8 @@ pub fn open(app: &mut PhotocraftApp, ctx: &egui::Context, url: &str) -> Value {
     if !opened {
         ctx.open_url(egui::OpenUrl::new_tab(url));
     }
-    app.ui.status = format!("Opened {url}");
+    let template = "Opened {url}";
+    app.ui.status = crate::i18n::fmt(tl!(template), &[("url", url)]);
     json!({"url": url})
 }
 

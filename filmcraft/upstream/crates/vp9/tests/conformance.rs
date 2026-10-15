@@ -40,6 +40,7 @@ fixture_tests!(
     error_resilient,
     odd_size,
     tiny_odd,
+    narrow_tall,
     row_mt,
     speed0,
     speed1,
@@ -98,6 +99,19 @@ fn draft_mode_changes_only_flagged_non_reference_frames() {
         }
         assert!(flagged >= f.frames as usize / 3, "threads {threads}: only {flagged} draft frames");
         assert!(changed > 0, "threads {threads}: draft frames identical to the filtered ones");
+    }
+}
+
+/// The loop filter runs as a wavefront over superblock rows on the decoder's pool: repeated
+/// decodes with several thread counts all match ffmpeg (a race shows up as a mismatch).
+#[test]
+fn loop_filter_wavefront_repeatable() {
+    let f = common::fixture("hd_1080p");
+    let Some((ivf, yuv)) = common::ensure(f) else { return };
+    let reference = std::fs::read(yuv).unwrap();
+    for threads in [2, 5, 16, 16, 16] {
+        let pics = common::decode_file_threads(&ivf, threads).map_err(|e| e.1).unwrap();
+        common::compare(&pics, &reference, f.pix_fmt).unwrap_or_else(|e| panic!("threads {threads}: {e}"));
     }
 }
 

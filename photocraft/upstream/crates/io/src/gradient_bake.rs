@@ -1,12 +1,16 @@
 //! Photoshop gradient appearance → dense linear stops.
 //!
 //! Photoshop interpolates gradient colours with a *Smoothness* setting (0–100 %) and, since the
-//! 2023 releases, an interpolation *method* (Perceptual / Linear / Classic). The compositors
+//! 2023 releases, an interpolation *method* (Smooth / Perceptual / Linear / Classic). The compositors
 //! interpolate stops linearly in sRGB, so on import we sample Photoshop's curve into dense stops.
 //! The model was fitted to Photoshop's own composites in the test corpus (clean-room, from
 //! pixels): Smoothness blends linear interpolation with a Catmull-Rom spline through the stop
 //! colours (end tangents at half the chord slope); Perceptual interpolates in Oklab, Linear in
 //! linear light, Classic in sRGB. Stop midpoints remap each segment piecewise-linearly.
+//! Smooth (Photoshop's default since 2024) goes straight across each segment in Oklab with its own
+//! easing, measured on Photoshop 27.11 (scripted gradients, sampled every 8 px on three colour
+//! pairs: the same curve for each pair, and Smoothness doesn't change it). The curve fits no simple
+//! formula, so it is kept as the measured table [`SMOOTH_EASE`].
 
 use photocraft_color::{Color, ColorMode};
 
@@ -15,6 +19,7 @@ pub(crate) enum Method {
     Classic,
     Perceptual,
     Linear,
+    Smooth,
 }
 
 impl Method {
@@ -22,6 +27,7 @@ impl Method {
         match code {
             Some(b"Perc") => Method::Perceptual,
             Some(b"Lnr ") => Method::Linear,
+            Some(b"Smoo") => Method::Smooth,
             _ => Method::Classic,
         }
     }
@@ -63,7 +69,7 @@ fn into_space(m: Method, rgb: [f32; 3]) -> [f32; 3] {
     match m {
         Method::Classic => rgb,
         Method::Linear => rgb.map(lin),
-        Method::Perceptual => to_oklab(rgb),
+        Method::Perceptual | Method::Smooth => to_oklab(rgb),
     }
 }
 
@@ -71,12 +77,23 @@ fn out_of_space(m: Method, p: [f32; 3]) -> [f32; 3] {
     match m {
         Method::Classic => p.map(|v| v.clamp(0.0, 1.0)),
         Method::Linear => p.map(enc),
-        Method::Perceptual => from_oklab(p),
+        Method::Perceptual | Method::Smooth => from_oklab(p),
     }
 }
 
+/// Smooth's progress across a segment at u = 0, 1/16, …, 1 (Photoshop 27.11, measured as the
+/// position along the Oklab line between the two stop colours).
+const SMOOTH_EASE: [f32; 17] = [0.0, 0.0438, 0.099, 0.1644, 0.2303, 0.2988, 0.3667, 0.433, 0.4974, 0.5642, 0.6302, 0.6985, 0.7656, 0.8333, 0.8945, 0.9517, 1.0];
+
+fn smooth_ease(u: f32) -> f32 {
+    let x = u.clamp(0.0, 1.0) * 16.0;
+    let i = (x.floor() as usize).min(15);
+    let (a, b) = (SMOOTH_EASE.get(i).copied().unwrap_or(0.0), SMOOTH_EASE.get(i + 1).copied().unwrap_or(1.0));
+    a + (b - a) * (x - i as f32)
+}
+
 /// Colour at `t` for sorted stops (positions in 0..1) in `m`'s space.
-fn eval(stops: &[(f32, [f32; 3])], mids: &[f32], smooth: f32, t: f32) -> [f32; 3] {
+fn eval(stops: &[(f32, [f32; 3])], mids: &[f32], smooth: f32, t: f32, m: Method) -> [f32; 3] {
     let n = stops.len();
     if t <= stops[0].0 {
         return stops[0].1;
@@ -92,6 +109,10 @@ fn eval(stops: &[(f32, [f32; 3])], mids: &[f32], smooth: f32, t: f32) -> [f32; 3
     let mid = mids.get(i).copied().unwrap_or(0.5).clamp(0.05, 0.95);
     u = if u <= mid { 0.5 * u / mid } else { 0.5 + 0.5 * (u - mid) / (1.0 - mid) };
     let (p0, p1) = (stops[i].1, stops[i + 1].1);
+    if m == Method::Smooth {
+        let e = smooth_ease(u);
+        return std::array::from_fn(|c| p0[c] + (p1[c] - p0[c]) * e);
+    }
     // Catmull-Rom tangents per unit t; the ends use half the chord slope.
     let tangent = |k: usize| -> [f32; 3] {
         let (a, b) = match k {
@@ -109,7 +130,11 @@ fn eval(stops: &[(f32, [f32; 3])], mids: &[f32], smooth: f32, t: f32) -> [f32; 3
     std::array::from_fn(|c| {
         let linear = p0[c] + (p1[c] - p0[c]) * u;
         let spline = h00 * p0[c] + h10 * h * m0[c] + h01 * p1[c] + h11 * h * m1[c];
-        linear + (spline - linear) * smooth
+        let value = linear + (spline - linear) * smooth;
+        // Catmull-Rom tangents can overshoot neighboring stops, turning even a flat segment into
+        // a dip. Smoothness should bend the ramp without inventing colours outside this segment.
+        let (lo, hi) = (p0[c].min(p1[c]), p0[c].max(p1[c]));
+        if lo.is_finite() && hi.is_finite() { value.clamp(lo, hi) } else { value }
     })
 }
 
@@ -134,7 +159,7 @@ pub(crate) fn bake(stops: Vec<(f32, Color)>, midpoints: &[f32], smoothness: f32,
     let mut out: Vec<(f32, Color)> = (0..=N)
         .map(|k| {
             let t = k as f32 / N as f32;
-            let v = eval(&pts, midpoints, smoothness.clamp(0.0, 1.0), t);
+            let v = eval(&pts, midpoints, smoothness.clamp(0.0, 1.0), t, method);
             if lab {
                 return (t, Color { mode: ColorMode::Lab, c: [v[0].clamp(0.0, 1.0), v[1].clamp(0.0, 1.0), v[2].clamp(0.0, 1.0), 0.0], alpha: alpha(t) });
             }
@@ -176,6 +201,16 @@ mod tests {
     }
 
     #[test]
+    fn smoothness_does_not_overshoot_a_flat_stop_segment() {
+        let gray = |v: f32| Color::rgb(v, v, v);
+        let dark = 28.0 / 255.0;
+        let stops = vec![(0.0, gray(202.0 / 255.0)), (0.27, gray(dark)), (0.53, gray(dark)), (0.72, gray(148.0 / 255.0))];
+        let baked = bake(stops, &[0.5, 0.5, 0.5], 1.0, Method::Classic);
+        let sample = at(&baked, 0.4);
+        assert!(sample.iter().all(|v| (*v - dark).abs() < 1e-4), "flat segment dipped below its stops: {sample:?}");
+    }
+
+    #[test]
     fn perceptual_matches_photoshop_sample() {
         // Measured from Photoshop's composite (ag-psd gradient-mode): orange→blue, Perceptual,
         // 100 % smoothness; at t≈0.491 Photoshop shows (0.592, 0.612, 0.596).
@@ -188,6 +223,31 @@ mod tests {
         let p = at(&s, 0.113);
         for (got, want) in p.iter().zip([0.839f32, 0.608, 0.290]) {
             assert!((got - want).abs() < 0.012, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn smooth_matches_photoshop() {
+        // Photoshop 27.11, Gradient tool, Method Smooth, dither off, 256 px wide, every 32 px.
+        type Row = (&'static str, [f32; 3], [f32; 3], [[u8; 3]; 8]);
+        let measured: [Row; 2] = [
+            ("black→white", [0.0; 3], [1.0; 3], [[0; 3], [4; 3], [29; 3], [63; 3], [99; 3], [137; 3], [179; 3], [221; 3]]),
+            (
+                "red→blue",
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [[255, 0, 0], [232, 51, 67], [202, 71, 105], [171, 81, 136], [140, 83, 162], [109, 80, 188], [76, 69, 213], [41, 49, 236]],
+            ),
+        ];
+        for (name, a, b, want) in measured {
+            let s = bake(vec![(0.0, Color::rgb(a[0], a[1], a[2])), (1.0, Color::rgb(b[0], b[1], b[2]))], &[0.5], 1.0, Method::Smooth);
+            for (k, w) in want.iter().enumerate() {
+                let x = k * 32;
+                let got = at(&s, (x as f32 + 0.5) / 256.0).map(|v| (v * 255.0).round() as i32);
+                for c in 0..3 {
+                    assert!((got[c] - i32::from(w[c])).abs() <= 2, "{name} x {x}: {got:?} vs Photoshop {w:?}");
+                }
+            }
         }
     }
 

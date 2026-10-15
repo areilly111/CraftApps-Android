@@ -51,8 +51,8 @@ fn run(frames: &[Vec<u8>], threads: usize) -> Run {
 }
 
 fn bench(spec: &Spec) {
-    // AV1_PERF_ONLY=<substring> limits the run to matching fixtures.
-    if std::env::var("AV1_PERF_ONLY").is_ok_and(|f| !spec.name.contains(f.as_str())) {
+    // AV1_PERF_ONLY=<substring>[,<substring>...] limits the run to matching fixtures.
+    if std::env::var("AV1_PERF_ONLY").is_ok_and(|f| !f.split(',').any(|f| spec.name.contains(f))) {
         return;
     }
     let Some(ff) = ffmpeg() else { return };
@@ -68,7 +68,6 @@ fn bench(spec: &Spec) {
         }
     }
     let b = best.unwrap();
-    let n = b.stats.frames.max(1) as f64;
     let cpu_fps = b.cpu.map(|c| format!("{:6.1}", b.shown as f64 / c)).unwrap_or_else(|| "     ?".into());
     println!(
         "{:<26} {:>3} shown {:>3} decoded {:>3} tiles/frame | 1 thread: {} fps (thread CPU) {:6.1} fps (wall)",
@@ -79,24 +78,35 @@ fn bench(spec: &Spec) {
         cpu_fps,
         b.shown as f64 / b.wall
     );
-    let total = b.stats.total_secs();
-    let mut line = String::from("    ms/frame:");
+    println!("{}", stage_line("    ms/frame:", &b.stats));
+    // All cores: best of 3 by wall time.
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let mut best: Option<Run> = None;
+    for _ in 0..3 {
+        let r = run(&frames, threads);
+        assert_eq!(r.shown, b.shown);
+        if best.as_ref().is_none_or(|b| r.wall < b.wall) {
+            best = Some(r);
+        }
+    }
+    let m = best.unwrap();
+    println!("    {threads} threads: {:6.1} fps (wall, load average {})", b.shown as f64 / m.wall, load_average());
+    // Per-stage wall time on the frame workers (stages of different frames overlap).
+    println!("{}", stage_line(&format!("    {threads} threads, ms/frame:"), &m.stats));
+}
+
+/// Per-stage milliseconds per frame and share of the total.
+fn stage_line(label: &str, stats: &DecodeStats) -> String {
+    let n = stats.frames.max(1) as f64;
+    let total = stats.total_secs();
+    let mut line = String::from(label);
     for s in Stage::ALL {
-        let v = b.stats.secs(s);
+        let v = stats.secs(s);
         if v > 0.0005 {
             line += &format!(" {} {:.2} ({:.0}%)", s.name(), 1e3 * v / n, 100.0 * v / total);
         }
     }
-    println!("{line}");
-    // All cores: best of 3 by wall time.
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-    let mut best_wall = f64::INFINITY;
-    for _ in 0..3 {
-        let r = run(&frames, threads);
-        assert_eq!(r.shown, b.shown);
-        best_wall = best_wall.min(r.wall);
-    }
-    println!("    {threads} threads: {:6.1} fps (wall, load average {})", b.shown as f64 / best_wall, load_average());
+    line
 }
 
 #[test]
@@ -110,4 +120,9 @@ fn decode_throughput() {
     // Higher quality (more coefficients, finer partitions) and a multi-tile stream (4x2 tiles).
     bench(&Spec::new("perf_1080p_gop_hq", src, 60, "yuv420p", &p("18", "keyint=60")));
     bench(&Spec::new("perf_1080p_gop_tiles", src, 60, "yuv420p", &p("30", "keyint=60:tile-columns=2:tile-rows=1")));
+    // Low delay (each frame references the previous one, as screen and camera recorders encode):
+    // frames cannot overlap, so a frame's own parallelism decides the speed.
+    bench(&Spec::new("perf_1080p_lowdelay", src, 60, "yuv420p", &p("30", "keyint=60:pred-struct=1")));
+    // One tile at 2160p: the post-filters' row bands are most of the parallelism there.
+    bench(&Spec::new("perf_2160p_gop", "testsrc2=s=3840x2160:r=25,noise=alls=6:allf=t", 30, "yuv420p", &p("30", "keyint=30")));
 }

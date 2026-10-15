@@ -13,7 +13,7 @@
 
 use serde_json::{Value, json};
 use vectorcraft_color::{Color, Paint};
-use vectorcraft_doc::hit::{HitKind, hit_test};
+use vectorcraft_doc::hit::{HitKind, hit_test, hit_test_visible};
 use vectorcraft_doc::{Node, NodeKind};
 use vectorcraft_geom::Point;
 
@@ -73,10 +73,13 @@ impl Tool for EyedropperTool {
         // A click inside a fill or among characters samples it too, whatever Object and Type
         // Object Selection by Path Only say.
         let opts = vectorcraft_doc::hit::HitOptions { path_only: false, type_path_only: false, ..cx.hit_options() };
-        let Some(h) = hit_test(cx.doc, ev.pos, opts) else { return vec![] };
+        let stop = self.stop.as_ref().zip(cx.gradient_stop);
+        // Reading a source is independent of its editability. Only Alt's reverse operation
+        // writes to the clicked object; Shift+Alt appends its appearance to the selection.
+        let h = if ev.mods.alt && !ev.mods.shift && stop.is_none() { hit_test(cx.doc, ev.pos, opts) } else { hit_test_visible(cx.doc, ev.pos, opts) };
+        let Some(h) = h else { return vec![] };
         let src = paint_owner(cx.doc, h.leaf);
         let Some(n) = cx.doc.node(src) else { return vec![] };
-        let stop = self.stop.as_ref().zip(cx.gradient_stop);
         if ev.mods.alt && stop.is_none() {
             let how = if ev.mods.shift { "append" } else { "reverse" };
             return vec![Action::Exec("appearance.copyFrom".into(), json!({ "source": src.0, how: true }))];
@@ -184,6 +187,7 @@ mod tests {
         let (mut d, id) = doc_with_rect();
         let cmyk = Color::cmyk(0.1, 0.2, 0.3, 0.4);
         d.node_mut(id).unwrap().appearance.set_fill(Paint::solid(cmyk));
+        d.node_mut(id).unwrap().locked = true;
         let (s, p) = (Selection::default(), paint());
         let shift = Mods { shift: true, ..Default::default() };
         let a = EyedropperTool::default().pointer(&cx(&d, &s, &p), &PointerEvent::new(PointerKind::Down, 150.0, 150.0).with_mods(shift));
@@ -209,13 +213,21 @@ mod tests {
             link: None,
             placement: Default::default(),
         };
-        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(im))).unwrap();
+        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(Box::new(im)))).unwrap();
         let (s, p) = (Selection::default(), paint());
         let mut cx = cx(&d, &s, &p);
         let click = PointerEvent::new(PointerKind::Down, 15.0, 5.0);
         assert_eq!(sampled_hex(&EyedropperTool::default().pointer(&cx, &click)), "#00ff00");
         cx.raster_sample = 3;
         assert_eq!(sampled_hex(&EyedropperTool::default().pointer(&cx, &click)), "#555555", "3 x 3 average");
+        // A template layer and a locked image still supply pixels. Hidden layers do not.
+        d.node_mut(id).unwrap().locked = true;
+        if let NodeKind::Layer { template, .. } = &mut d.node_mut(l).unwrap().kind {
+            *template = true;
+        }
+        assert_eq!(sampled_hex(&EyedropperTool::default().pointer(&crate::testutil::cx(&d, &s, &p), &click)), "#00ff00");
+        d.node_mut(l).unwrap().visible = false;
+        assert!(EyedropperTool::default().pointer(&crate::testutil::cx(&d, &s, &p), &click).is_empty());
     }
 
     #[test]

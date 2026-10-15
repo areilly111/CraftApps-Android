@@ -156,6 +156,10 @@ pub struct Written {
     pub warnings: Vec<String>,
 }
 
+/// On a push button generated for an XFA image field: clicking it picks a picture (the forms
+/// layer reads this key).
+pub const IMAGE_FIELD_KEY: &[u8] = b"PCXfaImage";
+
 /// On an image XObject written for a picture: the SHA-256 (hex) of the picture's bytes. A
 /// re-layout (after every script event) finds the XObjects on the pages it replaces by this,
 /// and reuses them instead of decoding and embedding the same picture again. Nothing is kept
@@ -176,6 +180,63 @@ struct Emitter<'a> {
     radio_selected: HashMap<String, String>,
     field_count: usize,
     warnings: Vec<String>,
+    /// The signatures the file holds, by the SOM path of the field signed.
+    signed: HashMap<String, Signed>,
+}
+
+/// A signature field of the file that has been signed.
+struct Signed {
+    /// Its `V`: the signature dictionary (a reference, as the file has it).
+    value: Object,
+    /// Its widget's `AP`: what the signer's application drew in the box.
+    appearance: Option<Object>,
+}
+
+/// Most fields looked at for signatures.
+const MAX_FIELDS_SEARCHED: usize = 20_000;
+/// Deepest field nesting followed.
+const MAX_FIELD_DEPTH: usize = 32;
+
+/// The signed signature fields the document came with, by full name. Signing applications name
+/// a dynamic form's fields by their SOM path (`form1[0].page1[0].sign[0]`), which is how a
+/// laid-out signature box finds its signature. Fields of an earlier layout pass are not read.
+fn signed_fields(doc: &Document, catalog: &Dict) -> HashMap<String, Signed> {
+    let mut out = HashMap::new();
+    let Some(acro) = catalog.get(b"AcroForm").map(|a| doc.resolve(a)) else { return out };
+    let Some(fields) = acro.as_dict().and_then(|a| a.get(b"Fields")).map(|f| doc.resolve(f)) else { return out };
+    let mut stack: Vec<(Object, String, bool, usize)> =
+        fields.as_array().into_iter().flatten().map(|f| (f.clone(), String::new(), false, 0)).collect();
+    let mut seen = 0usize;
+    while let Some((field, prefix, parent_is_sig, depth)) = stack.pop() {
+        seen += 1;
+        if seen > MAX_FIELDS_SEARCHED {
+            break;
+        }
+        let field = doc.resolve(&field);
+        let Some(d) = field.as_dict() else { continue };
+        if d.contains(SOM_KEY) {
+            continue;
+        }
+        let name = match d.get(b"T").map(|t| doc.resolve(t)).and_then(|t| t.as_string().map(|t| t.to_text())) {
+            Some(t) if prefix.is_empty() => t,
+            Some(t) => format!("{prefix}.{t}"),
+            None => prefix,
+        };
+        let is_sig = match d.name(b"FT") {
+            Some(ft) => ft == b"Sig",
+            None => parent_is_sig,
+        };
+        let kids: Vec<Object> = d.get(b"Kids").map(|k| doc.resolve(k)).and_then(|k| k.as_array().cloned()).unwrap_or_default();
+        if is_sig && let Some(value) = d.get(b"V").filter(|v| doc.resolve(v).as_dict().is_some()) {
+            // The appearance is on the field when it is its own widget, or on its one widget.
+            let appearance = d.get(b"AP").cloned().or_else(|| kids.iter().find_map(|k| doc.resolve(k).as_dict().and_then(|k| k.get(b"AP").cloned())));
+            out.entry(name.clone()).or_insert(Signed { value: value.clone(), appearance });
+        }
+        if depth < MAX_FIELD_DEPTH {
+            stack.extend(kids.into_iter().map(|k| (k, name.clone(), is_sig, depth + 1)));
+        }
+    }
+    out
 }
 
 impl Emitter<'_> {
@@ -304,6 +365,21 @@ impl Emitter<'_> {
             }
             WidgetKind::Signature => {
                 d.set(b"FT".to_vec(), Object::name("Sig"));
+                // Signed already: the box shows the signature the file holds and is done with.
+                if let Some(signed) = self.signed.get(&w.som) {
+                    d.set(b"V".to_vec(), signed.value.clone());
+                    if let Some(ap) = &signed.appearance {
+                        d.set(b"AP".to_vec(), ap.clone());
+                    }
+                    ff |= 1;
+                }
+            }
+            WidgetKind::Image => {
+                // A push button with nothing drawn: the forms layer treats one so marked as an
+                // image field (clicking picks a picture), with no action other viewers run.
+                d.set(b"FT".to_vec(), Object::name("Btn"));
+                ff |= 1 << 16;
+                d.set(IMAGE_FIELD_KEY.to_vec(), Object::Bool(true));
             }
             WidgetKind::CheckBox { on, .. } => {
                 d.set(b"FT".to_vec(), Object::name("Btn"));
@@ -519,6 +595,18 @@ impl Emitter<'_> {
                     );
                 }
                 Item::Text(s) => {
+                    // The form's own text, set in the standard fonts: what they can't draw is
+                    // shown as `?` and reported once (the layout goes on), never silently.
+                    if let Some(c) = pdfcraft_fonts::first_undrawable(&s.text) {
+                        const PREFIX: &str = "some of the form's text has characters the standard fonts can't draw";
+                        if !self.warnings.iter().any(|w| w.starts_with(PREFIX)) {
+                            self.warnings.push(format!(
+                                "{PREFIX} (the first is \"{}\" (U+{:04X})); they are shown as ? until PdfCraft can embed fonts for them",
+                                c.escape_debug(),
+                                u32::from(c)
+                            ));
+                        }
+                    }
                     let name = s.face.resource_name();
                     fonts.insert(name, s.face.family.base_font(s.face.bold, s.face.italic));
                     content.extend(
@@ -610,6 +698,7 @@ pub fn write_form(doc: &mut Document, form: &Form) -> Result<Written, XfaError> 
     };
     // Pictures embedded by earlier passes, from the pages this pass replaces.
     let images = earlier_images(doc, pages_ref);
+    let signed = signed_fields(doc, &catalog);
     let mut em = Emitter {
         doc,
         images,
@@ -618,6 +707,7 @@ pub fn write_form(doc: &mut Document, form: &Form) -> Result<Written, XfaError> 
         radio_selected: HashMap::new(),
         field_count: 0,
         warnings: Vec::new(),
+        signed,
     };
     let mut kids = Vec::new();
     for page in &form.pages {

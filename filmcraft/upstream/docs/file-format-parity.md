@@ -39,7 +39,7 @@ only). "Tested" names the evidence.
 | QuickTime MOV | read + write | yes | yes (H.264, HEVC, ProRes, DNxHR, APV, MJPEG, PCM) | ffprobe | 90% |
 | MXF OP1a / OP-Atom | read + write (XDCAM, AVC-Intra, P2, AS-10 / AS-11, JPEG 2000, DNx) | yes (AVC, DNx, ProRes, MPEG-2, PCM / AES3, timecode) | OP1a (DNxHR, ProRes, H.264), OP-Atom | index-table seeking tests | 70% |
 | MPEG TS / PS (AVCHD `.mts`, `.m2ts`, `.ts`, `.mpg`, `.vob`, `.mod`) | read; write MPEG-2 / Blu-ray / DVD | yes | **no** | fixtures | 65% |
-| Matroska / WebM | read (limited) | yes (H.264, HEVC, VP9, AV1, ProRes, MJPEG + AAC, Opus, FLAC, MP3, Vorbis, PCM); WebM black report (#432), MKV multi-audio (#601) | no | fixtures | 75% |
+| Matroska / WebM | read (limited) | yes (H.264, HEVC, VP9, AV1, ProRes, MJPEG + AAC, Opus, FLAC, MP3, Vorbis, PCM); WebM black report (#432), MKV multi-audio (#601) | no | fixtures; audio sample-aligned with the encoded signal (#790) | 75% |
 | **AVI** | read + write | **no** (extension listed, no demuxer, #598) | no | — | 0% |
 | WMV / ASF | read; write on Windows | no | no | — | 0% |
 | FLV / F4V | read + write | no | no | — | 0% |
@@ -55,9 +55,9 @@ only). "Tested" names the evidence.
 | PNG, JPEG, TIFF, BMP, GIF | read + write | yes | PNG / TIFF / BMP / JPEG sequences, GIF | 90% |
 | WebP | — | yes | no | ahead |
 | **PSD** (layers as sequence) | read (layered) | no | — | 0% |
-| **OpenEXR** | read + write | no | no | 0% |
-| **DPX** | read + write | no | sequences (10-bit RGB, BT.709; #779) | 40% |
-| Targa | read + write | no | sequences (24-bit, 32-bit with alpha; #779) | 40% |
+| **OpenEXR** | read + write | stills and sequences: scan-line, none / RLE / ZIPS / ZIP, half / float / uint, RGB(A) or Y, kept as linear float (#828); no PIZ, PXR24, B44, DWA, tiled, multi-part or deep | sequences (half float, linear RGB / premultiplied RGBA; uncompressed, RLE, ZIPS or ZIP; #806, #874) | 70% |
+| **DPX** | read + write | yes: luma / RGB / RGBA, 8–16-bit, filled 10/12-bit, either byte order (#821); packed 10/12-bit, Y'CbCr 4:2:2 / 4:4:4 with or without alpha (#841); no RLE | sequences (10-bit RGB, BT.709; #779) | 90% |
+| Targa | read + write | yes: every image type, RLE, colour maps, 15–32-bit (#821) | sequences (24-bit, 32-bit with alpha; #779) | 95% |
 | HEIF / HEIC | read | no | — | 0% |
 | Radiance HDR, AI / EPS, ICO, PTL | read | no | — | 0% |
 
@@ -68,7 +68,7 @@ only). "Tested" names the evidence.
 | WAV / BWF (timecode, iXML partial) | read + write | yes | yes | 90% |
 | AIFF / AIFC | read + write | yes | yes | 95% |
 | MP3 | read + write | read | **no** | 60% |
-| AAC / M4A | read + write | yes | inside MP4 / MOV only, **no AAC-only file** | 70% |
+| AAC / M4A | read + write | yes | yes (in MP4 / MOV, and AAC Audio: `.m4a` or ADTS `.aac`, #814) | 95% |
 | FLAC, Ogg, Opus | partial | yes | no | ahead on read |
 | WMA | read (Windows) | no | no | 0% |
 
@@ -84,7 +84,7 @@ only). "Tested" names the evidence.
 ## Summary
 
 **File formats dimension: ~60%, 140–240 h** (codecs counted separately). The beta blocker is
-`.prproj`. After it, by user impact: AVI and WMV import, EXR / DPX / PSD stills, AAF / OMF
+`.prproj`. After it, by user impact: AVI and WMV import, EXR / PSD stills, AAF / OMF
 validation in Avid and Pro Tools, DVD / Blu-ray / DCP / broadcast MXF delivery.
 
 ## Revision history

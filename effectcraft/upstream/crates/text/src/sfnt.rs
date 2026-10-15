@@ -19,6 +19,9 @@ pub struct FaceNames {
     /// The PostScript name (name id 6, e.g. `YuGothic-Bold`): what After Effects scripts and
     /// `.aep`-derived data call a font.
     pub postscript: Option<String>,
+    /// A variable font: it has an `fvar` table with at least one axis (the font menu's
+    /// Variable Fonts filter).
+    pub variable: bool,
 }
 
 fn be16(b: &[u8], o: usize) -> Option<u16> {
@@ -66,12 +69,14 @@ fn read_face<R: Read + Seek>(r: &mut R, off: u64, index: u32) -> Option<FaceName
     let dir = read_at(r, off + 12, n * 16)?;
     let mut name = None;
     let mut os2 = None;
+    let mut fvar = None;
     for i in 0..n {
         let rec = &dir[i * 16..i * 16 + 16];
         let (o, l) = (be32(rec, 8)? as u64, be32(rec, 12)? as usize);
         match &rec[0..4] {
             b"name" => name = Some((o, l)),
             b"OS/2" => os2 = Some((o, l)),
+            b"fvar" => fvar = Some((o, l)),
             _ => {}
         }
     }
@@ -92,7 +97,9 @@ fn read_face<R: Read + Seek>(r: &mut R, off: u64, index: u32) -> Option<FaceName
     }
     let sl = style.to_ascii_lowercase();
     italic |= sl.contains("italic") || sl.contains("oblique");
-    Some(FaceNames { index, family, style, full_name, weight, italic, native_family, postscript })
+    // fvar header: version (4), axesArrayOffset (2), reserved (2), axisCount (2).
+    let variable = fvar.filter(|(_, l)| *l >= 10).and_then(|(fo, _)| read_at(r, fo, 10)).and_then(|fb| be16(&fb, 8)).is_some_and(|axes| axes > 0);
+    Some(FaceNames { index, family, style, full_name, weight, italic, native_family, postscript, variable })
 }
 
 /// A Windows Unicode name-table string by id in a language other than US English.
@@ -165,5 +172,57 @@ mod tests {
         let n = read_faces_bytes(crate::fonts::NOTO_SERIF_REGULAR);
         assert_eq!(n[0].family, "Noto Serif");
         assert!(read_faces_bytes(b"not a font").is_empty());
+        assert!(!f[0].variable && !n[0].variable, "the bundled fonts are static");
+    }
+
+    /// A font file of just `name` (family, Regular) and, when `fvar` is given, an `fvar` table
+    /// with that many axes (or a truncated one with `Some(None)`).
+    fn names_font(family: &str, fvar: Option<Option<u16>>) -> Vec<u8> {
+        let u16s = |v: &[u16]| -> Vec<u8> { v.iter().flat_map(|x| x.to_be_bytes()).collect() };
+        let strings: Vec<Vec<u8>> = [family, "Regular"].iter().map(|s| s.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()).collect();
+        let mut name = u16s(&[0, 2, 30]);
+        let mut off = 0;
+        for (id, st) in strings.iter().enumerate() {
+            name.extend(u16s(&[3, 1, 0x409, id as u16 + 1, st.len() as u16, off]));
+            off += st.len() as u16;
+        }
+        strings.iter().for_each(|st| name.extend(st));
+        let mut tables: Vec<(&[u8; 4], Vec<u8>)> = vec![];
+        match fvar {
+            Some(Some(n)) => {
+                // Header, then `n` axis records: `wght` pinned at 400 (min = default = max).
+                let mut t = u16s(&[1, 0, 16, 2, n, 20, 0, 4 + 4 * n]);
+                (0..n).for_each(|_| t.extend(b"wght".iter().copied().chain(u16s(&[0x190, 0, 0x190, 0, 0x190, 0, 0, 256]))));
+                tables.push((b"fvar", t));
+            }
+            Some(None) => tables.push((b"fvar", u16s(&[1, 0, 16]))),
+            None => {}
+        }
+        tables.push((b"name", name));
+        let mut out = u16s(&[1, 0, tables.len() as u16, 0, 0, 0]);
+        let mut offset = 12 + 16 * tables.len();
+        let mut body: Vec<u8> = vec![];
+        for (tag, data) in &tables {
+            out.extend(*tag);
+            out.extend([0u8; 4]);
+            out.extend((offset as u32).to_be_bytes());
+            out.extend((data.len() as u32).to_be_bytes());
+            body.extend(data);
+            offset += data.len();
+        }
+        out.extend(body);
+        out
+    }
+
+    /// The scan marks a face with an `fvar` table that declares axes as variable, reading only
+    /// the table directory and the fvar header; a static font, an fvar without axes and a
+    /// truncated fvar are not.
+    #[test]
+    fn detects_variable_faces_from_fvar() {
+        let v = read_faces_bytes(&names_font("Var Test", Some(Some(1))));
+        assert_eq!((v.len(), v[0].family.as_str(), v[0].variable), (1, "Var Test", true), "{v:?}");
+        assert!(!read_faces_bytes(&names_font("Static Test", None))[0].variable);
+        assert!(!read_faces_bytes(&names_font("No Axes", Some(Some(0))))[0].variable);
+        assert!(!read_faces_bytes(&names_font("Cut", Some(None)))[0].variable);
     }
 }

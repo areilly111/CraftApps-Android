@@ -473,7 +473,14 @@ fn spline(g: &[Pair<'_>]) -> Option<BezPath> {
     let knots: Vec<f64> = g.iter().filter(|p| p.code == 40).map(|p| number(p.value)).collect::<Option<_>>()?;
     let weights: Vec<f64> = g.iter().filter(|p| p.code == 41).filter_map(|p| number(p.value)).collect();
     let weights = (flags & 4 != 0 && weights.len() == ctrl.len()).then_some(weights.as_slice());
-    curve::nurbs(degree, &knots, &ctrl, weights).or_else(|| curve::through(&points(g, 11)?, flags & 1 != 0))
+    curve::nurbs(degree, &knots, &ctrl, weights)
+        .map(|mut path| {
+            if flags & 1 != 0 {
+                path.close_path();
+            }
+            path
+        })
+        .or_else(|| curve::through(&points(g, 11)?, flags & 1 != 0))
 }
 
 /// Reads a hatch's boundary groups in order.

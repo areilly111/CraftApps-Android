@@ -347,3 +347,20 @@ fn lumetri_presets_drag_onto_a_timeline_clip() {
     d.exec("edit.undo", json!({}));
     assert_eq!(lumetri(&mut d, target), Value::Null);
 }
+
+#[test]
+fn lumetri_rows_keep_their_width_when_the_clip_name_is_long() {
+    let mut d = Driver::demo();
+    d.ok("ui.set", json!({"workspace": "Color"}));
+    d.frames(3);
+    let clip = select_first_clip(&mut d);
+    d.exec("effects.apply", json!({"clips": [clip], "effect": "lumetri"}));
+    d.exec("clip.rename", json!({"clip": clip, "name": "short.png"}));
+    d.exec("sequence.colorSettings", json!({"workingSpace": "rec2100-pq"}));
+    d.frames(3);
+    let short = d.element("lumetri.param.hdr_white").expect("hdr_white row");
+    d.exec("clip.rename", json!({"clip": clip, "name": "inference_output_rollout_2026-10-04_3ce159cb-52e3-4b72-9e90-0c4a1f2b3d4e_with_a_very_long_tail.mp4"}));
+    d.frames(3);
+    let long = d.element("lumetri.param.hdr_white").expect("hdr_white row");
+    assert_eq!(short, long, "a long clip name must not move or widen the control rows");
+}

@@ -16,7 +16,7 @@ After Effects', and does the preset library exist. The per-effect catalogue is t
 | On the GPU | **280** (92%) | Measured: registry flags; GPU vs CPU agreement tested per effect |
 | 32-bit float, no clamping | 306 | Measured: registry flags |
 | **Rendered output matches After Effects** | **unmeasured** | No effect is compared with an After Effects render yet. `effectcraft_effects::fidelity::compare_frames` exists for the corpus ([fidelity/README.md](fidelity/README.md)); simulation effects are pinned by golden hashes of our own output (M13.27) |
-| Animation presets | **8** original text-animator presets against After Effects' **621** `.ffx` presets | Measured: `crates/engine/presets/text_animators.json`; the After Effects `Presets` folder |
+| Animation presets | **31** original presets (8 text-animator, 23 Transitions) against After Effects' **621** `.ffx` presets | Measured: `crates/engine/presets/text_animators.json`, `crates/engine/presets/transitions.json`; the After Effects `Presets` folder |
 | 26.x additions | Curl Noise (26.3) present (#463 open); effect colour labels and the rebuilt Effect Controls (26.5) missing | Release notes |
 
 **Breadth ≈ 85%** (presets weigh in; the effects themselves are ≈ 100%). **Ready ≈ 40%**: until a

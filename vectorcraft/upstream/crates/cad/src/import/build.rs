@@ -479,7 +479,7 @@ impl<'d, 'a> Build<'d, 'a> {
                 .into_iter()
                 .map(|sp| {
                     let mut c = Node::new(self.doc.alloc_id(), kind(PathData::single(sp)));
-                    c.appearance = appearance.clone();
+                    c.appearance = appearance.clone().into();
                     Arc::new(c)
                 })
                 .collect();
@@ -487,7 +487,7 @@ impl<'d, 'a> Build<'d, 'a> {
         } else {
             Node::new(self.doc.alloc_id(), kind(path))
         };
-        n.appearance = appearance;
+        n.appearance = appearance.into();
         Some(n)
     }
 

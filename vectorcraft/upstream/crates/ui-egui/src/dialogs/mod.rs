@@ -7,7 +7,6 @@
 //! Shortcuts, Workspaces, Find Font) draw their own window.
 
 mod about;
-mod all_tools;
 pub mod artboard_options;
 pub mod blend_options;
 mod brush_art_options;
@@ -30,12 +29,15 @@ mod export_as;
 mod export_for_screens;
 pub mod eyedropper;
 pub mod file_info;
+pub mod find_links;
 pub mod flare_options;
 pub mod flatten;
 pub mod flattener_presets;
 mod form;
 pub mod freehand;
 mod gradient_stop;
+pub mod graph_data;
+pub mod graph_design;
 pub mod graphic_style_options;
 pub mod halftone;
 pub mod import_pdf;
@@ -97,6 +99,7 @@ use serde_json::{Value, json};
 
 pub use color_picker::open as open_color_picker;
 pub use document_setup::open as open_document_setup;
+pub(crate) use effect::FILM_GRAIN_FIELDS;
 pub use effect::open as open_effect_dialog;
 pub use export_as::open as open_export_as;
 pub use export_for_screens::open as open_export_for_screens;
@@ -206,12 +209,11 @@ macro_rules! registry {
 
 registry! {
     NewDocument: [new_document::KIND] => new_document::SPEC,
-    Shape: ["rectangle", "roundedRectangle", "ellipse", "polygon", "star", "lineSegment"] => shapes::SPEC,
+    Shape: ["rectangle", "roundedRectangle", "ellipse", "polygon", "star", "lineSegment", "rectangularGrid", "polarGrid"] => shapes::SPEC,
     Transform: ["move", "rotate", "scale", "reflect", "shear"] => transform::SPEC,
     PathOp: ["average", "offsetPath", "simplify", "splitIntoGrid"] => path_ops::SPEC,
     DocumentSetup: ["documentSetup"] => document_setup::SPEC,
     ArtboardOptions: [artboard_options::KIND] => artboard_options::SPEC,
-    AllTools: ["allTools"] => all_tools::SPEC,
     ExportForScreens: ["exportForScreens"] => export_for_screens::SPEC,
     Recolor: [recolor::KIND] => recolor::SPEC,
     Command: ["command"] => command::SPEC,
@@ -227,6 +229,9 @@ registry! {
     Message: [confirm::MESSAGE] => confirm::MESSAGE_SPEC,
     NewSwatch: [new_swatch::KIND] => new_swatch::SPEC,
     NewColorGroup: [new_color_group::KIND] => new_color_group::SPEC,
+    GraphData: [graph_data::KIND] => graph_data::SPEC,
+    GraphDesign: [graph_design::DESIGN] => graph_design::DESIGN_SPEC,
+    GraphMarker: [graph_design::MARKER] => graph_design::MARKER_SPEC,
     GradientStop: ["gradientStop"] => gradient_stop::SPEC,
     ColorPicker: [color_picker::KIND] => color_picker::SPEC,
     GraphicStyleOptions: [graphic_style_options::KIND] => graphic_style_options::SPEC,
@@ -257,6 +262,7 @@ registry! {
     RasterEffectsSettings: [raster_effects::KIND] => raster_effects::SPEC,
     MissingLinks: [missing_links::KIND] => missing_links::SPEC,
     MissingFonts: [missing_fonts::KIND] => missing_fonts::SPEC,
+    FindLinks: [find_links::KIND] => find_links::SPEC,
     TextImport: [text_import::KIND] => text_import::SPEC,
     PdfPresets: [pdf_presets::KIND] => pdf_presets::SPEC,
     PdfPreset: [save_pdf::PRESET_KIND] => save_pdf::PRESET_SPEC,
@@ -342,11 +348,13 @@ pub fn confirm(app: &mut VectorcraftApp) -> DialogResult {
 }
 
 /// After a dialog closes, and each frame: a Missing Fonts dialog that another dialog replaced waits
-/// for its turn again, the search a Missing Fonts dialog started stops once that dialog is gone,
-/// and with no dialog open the next document's Missing Fonts dialog opens (one dialog at a time).
+/// for its turn again, the search a Missing Fonts or Find Linked Files dialog started stops once
+/// that dialog is gone, and with no dialog open the next document's Missing Fonts dialog opens
+/// (one dialog at a time).
 pub(crate) fn settle(app: &mut VectorcraftApp) {
     missing_fonts::requeue_replaced(app);
     missing_fonts::stop_when_closed(app);
+    find_links::stop_when_closed(app);
     missing_fonts::open_next(app);
 }
 
@@ -475,6 +483,8 @@ mod tests_import_pdf;
 mod tests_package;
 #[cfg(test)]
 mod tests_raster_formats;
+#[cfg(test)]
+mod tests_svg_options_range;
 
 #[cfg(test)]
 mod tests_dxf;
@@ -515,3 +525,6 @@ mod tests_perspective;
 
 #[cfg(test)]
 mod tests_modal;
+
+#[cfg(test)]
+mod tests_rectangular_grid;

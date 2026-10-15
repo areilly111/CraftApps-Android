@@ -19,31 +19,25 @@ const TEMPLATE_EXTS: &[&str] = &["vctemplate", "ait", "vectorcraft", "drawcraft"
 /// and flattener, PDF, print and perspective grid presets files are imported. → `document.open`'s result for a document opened now (its
 /// `warnings` say what didn't come in as it was), else null.
 pub fn open_bytes(app: &mut VectorcraftApp, name: &str, bytes: &[u8], path: Option<String>) -> Result<Value, String> {
-    let ext = fileio::extension(name);
+    let opens = opens_as(name);
     // A WebAssembly plug-in is installed.
-    if vectorcraft_engine::cmd::plugin::EXTS.contains(&ext.as_str()) {
+    if opens == Some(OpensAs::Plugin) {
         let r =
             app.run("plugin.install", json!({"dataBase64": vectorcraft_format::base64_encode(bytes), "name": path.as_deref().unwrap_or(name)}))?;
         app.status(format!("Installed plug-in {}", r["name"].as_str().unwrap_or(name)));
         return Ok(Value::Null);
     }
-    let presets = [
-        (vectorcraft_engine::cmd::flatten::PRESET_EXTS, "flattener.presets.import", "flattener presets"),
-        (vectorcraft_engine::cmd::pdfcmds::PRESET_EXTS, "pdf.preset.import", "PDF presets"),
-        (vectorcraft_engine::cmd::printpresets::PRESET_EXTS, "print.presets.import", "print presets"),
-        (vectorcraft_engine::cmd::perspgrid::PRESET_EXTS, "perspective.presets.import", "perspective grid presets"),
-    ];
-    if let Some((_, import, what)) = presets.iter().find(|(exts, ..)| exts.contains(&ext.as_str())) {
+    if let Some(OpensAs::Presets { import, what }) = opens {
         let r = app.run(import, serde_json::json!({"data": String::from_utf8_lossy(bytes)}))?;
         let names: Vec<&str> = r["imported"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         app.status(format!("Imported {what}: {}", names.join(", ")));
         return Ok(Value::Null);
     }
-    if vectorcraft_engine::cmd::library::LIBRARY_EXTS.contains(&ext.as_str()) {
+    if opens == Some(OpensAs::Library) {
         return crate::panels::libraries::import(app, json!({"data": String::from_utf8_lossy(bytes)})).map(|_| Value::Null);
     }
-    let swatches = vectorcraft_engine::cmd::swatchlib::LIBRARY_EXTS.contains(&ext.as_str());
-    if swatches || ext == vectorcraft_doc::style_libs::STYLES_EXT {
+    let swatches = opens == Some(OpensAs::SwatchLibrary);
+    if swatches || opens == Some(OpensAs::StyleLibrary) {
         let p = match path {
             Some(path) => serde_json::json!({ "path": path }),
             // `.ase` swatch libraries are binary.
@@ -63,16 +57,65 @@ pub fn open_bytes(app: &mut VectorcraftApp, name: &str, bytes: &[u8], path: Opti
     open_document(app, name, bytes, path, &Value::Null)
 }
 
+/// The kinds of file File → Open installs, imports or shows in the library panel or the Libraries
+/// panel ([`opens_as`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OpensAs {
+    /// A WebAssembly plug-in: installed.
+    Plugin,
+    /// Flattener, PDF, print or perspective grid presets: imported with command `import`, and
+    /// `what` names them in the status bar.
+    Presets { import: &'static str, what: &'static str },
+    /// A Libraries panel file: added to the Libraries panel as a new library.
+    Library,
+    /// A swatch library: opened in the library panel.
+    SwatchLibrary,
+    /// A graphic style library: opened in the library panel.
+    StyleLibrary,
+}
+
+/// The kind of file named `name` (by its extension) that File → Open installs, imports or shows in
+/// the library panel or the Libraries panel ([`open_bytes`]), else `None`. A drop opens these files
+/// the same way, wherever they are dropped ([`VectorcraftApp::drop_target`]).
+pub fn opens_as(name: &str) -> Option<OpensAs> {
+    let ext = fileio::extension(name);
+    let presets = [
+        (vectorcraft_engine::cmd::flatten::PRESET_EXTS, "flattener.presets.import", "flattener presets"),
+        (vectorcraft_engine::cmd::pdfcmds::PRESET_EXTS, "pdf.preset.import", "PDF presets"),
+        (vectorcraft_engine::cmd::printpresets::PRESET_EXTS, "print.presets.import", "print presets"),
+        (vectorcraft_engine::cmd::perspgrid::PRESET_EXTS, "perspective.presets.import", "perspective grid presets"),
+    ];
+    if vectorcraft_engine::cmd::plugin::EXTS.contains(&ext.as_str()) {
+        Some(OpensAs::Plugin)
+    } else if let Some(&(_, import, what)) = presets.iter().find(|(exts, ..)| exts.contains(&ext.as_str())) {
+        Some(OpensAs::Presets { import, what })
+    } else if vectorcraft_engine::cmd::library::LIBRARY_EXTS.contains(&ext.as_str()) {
+        Some(OpensAs::Library)
+    } else if vectorcraft_engine::cmd::swatchlib::LIBRARY_EXTS.contains(&ext.as_str()) {
+        Some(OpensAs::SwatchLibrary)
+    } else if ext == vectorcraft_doc::style_libs::STYLES_EXT {
+        Some(OpensAs::StyleLibrary)
+    } else {
+        None
+    }
+}
+
 /// Open a document through the engine loader with the `document.open` options in `p` →
 /// `document.open`'s result.
 pub fn open_document(app: &mut VectorcraftApp, name: &str, bytes: &[u8], path: Option<String>, p: &Value) -> Result<Value, String> {
     let r = fileio::open_bytes_with(&mut app.session, name, bytes, path, p).map_err(|e| e.to_string())?;
+    opened(app, &r);
+    Ok(r)
+}
+
+/// A document just opened (`r`: `document.open`'s result): the views follow, the status bar says
+/// what didn't come in as it was, and missing links are asked about.
+pub(crate) fn opened(app: &mut VectorcraftApp, r: &Value) {
     app.sync_views();
     if let Some(w) = r["warnings"].as_array().filter(|w| !w.is_empty()) {
         app.status(format!("Opened with {} note(s): {}", w.len(), w[0].as_str().unwrap_or_default()));
     }
-    crate::dialogs::missing_links::after_open(app, &r);
-    Ok(r)
+    crate::dialogs::missing_links::after_open(app, r);
 }
 
 /// A path from the open dialog, or "cancelled".
@@ -111,9 +154,12 @@ pub fn report_open_error(app: &mut VectorcraftApp, name: &str, e: &str) {
     dialogs::confirm::tell(app, &message, &crate::i18n::message(crate::i18n::current(), e));
 }
 
-/// [`open_path`] for a file the user asked for, a failure reported ([`report_open_error`]).
+/// [`open_path`] for a file the user asked for, a failure reported ([`report_open_error`]). On
+/// the desktop a document is decoded off the UI thread ([`crate::opening`]): the result is then
+/// `{background: true, status}`, and the document opens in its tab (or the failure is reported)
+/// once it is ready.
 pub fn open_reporting(app: &mut VectorcraftApp, path: &str) -> Result<Value, String> {
-    let r = open_path(app, path);
+    let r = open_file(app, path, crate::opening::available());
     if let Err(e) = &r {
         report_open_error(app, &fileio::file_name(path), e);
     }
@@ -126,7 +172,27 @@ fn read(app: &VectorcraftApp, path: &str) -> Result<Vec<u8>, String> {
 
 /// Open the file at `path` (see [`open_bytes`]) → `document.open`'s result, or null.
 pub fn open_path(app: &mut VectorcraftApp, path: &str) -> Result<Value, String> {
-    let bytes = read(app, path)?;
+    open_file(app, path, false)
+}
+
+/// [`open_path`]; with `background`, a document (not a file that installs, imports or asks
+/// first) is decoded off the UI thread ([`crate::opening::start`]).
+fn open_file(app: &mut VectorcraftApp, path: &str, background: bool) -> Result<Value, String> {
+    let mut bytes = read(app, path)?;
+    if background && opens_as(path).is_none() {
+        // A PDF with several pages or a password, or a DXF drawing, asks first, as at once.
+        if crate::dialogs::import_pdf::offer(app, path, &bytes, Some(path.to_string()), None)
+            || crate::dialogs::dxf_import::offer(app, path, &bytes, Some(path.to_string()), None)
+        {
+            note_recent(app, path);
+            return Ok(Value::Null);
+        }
+        match crate::opening::start(app, path, bytes) {
+            Ok(r) => return Ok(r),
+            // No thread: at once.
+            Err(back) => bytes = back,
+        }
+    }
     let r = open_bytes(app, path, &bytes, Some(path.to_string()))?;
     note_recent(app, path);
     Ok(r)
@@ -422,7 +488,15 @@ fn write_plan(app: &mut VectorcraftApp, plan: SavePlan) -> Result<Value, String>
     let enabled = app.session.prefs.background_save && target.is_some();
     // The work writes the file; the copy makes it the document's own afterwards.
     let done = job.clone();
-    let work = move |write: Writer| job.write(|p, b| write(p, b).map_err(EngineError::Other)).map_err(|e| e.to_string());
+    // A native file streams into the file as it is encoded (desktop; not to a download).
+    let stream = app.services.stream_shared.clone().filter(|_| job.streams() && !is_web(app));
+    let work = move |write: Writer| {
+        match stream {
+            Some(stream) => job.write_streamed(&mut |p, fill| stream(p, fill).map_err(EngineError::Other)),
+            None => job.write(|p, b| write(p, b).map_err(EngineError::Other)),
+        }
+        .map_err(|e| e.to_string())
+    };
     let then = move |app: &mut VectorcraftApp, r: Result<Value, String>| {
         let r = r?;
         // The document may have closed meanwhile: the file is written all the same.

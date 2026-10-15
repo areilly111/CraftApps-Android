@@ -26,6 +26,7 @@ pub mod camera_raw;
 pub mod color_to_alpha;
 pub mod content_aware;
 mod denoise;
+pub mod direct;
 mod distort;
 mod distort2;
 pub mod erase;
@@ -42,11 +43,13 @@ pub mod liquify;
 pub mod magnetic;
 pub mod matting;
 mod noise;
+pub mod nonlocal;
 mod oil;
 mod other;
 mod other2;
 pub mod paint;
 pub mod panorama;
+mod par;
 pub mod perspective;
 mod photo_util;
 mod pixelate;
@@ -56,6 +59,7 @@ pub mod pyramid;
 pub mod quantize;
 pub mod redeye;
 mod relight;
+pub mod remove;
 mod render;
 pub mod render2;
 pub mod resample;
@@ -1091,7 +1095,7 @@ fn apply_tiled_with_impl(
             return (*t, Vec::new());
         };
         if let Some(sel) = selection {
-            mix_selection(&mut data, *t, sel, src);
+            mix_selection(&mut data, *t, sel, src, fmt.alpha);
         }
         tick();
         (*t, data)
@@ -1175,7 +1179,7 @@ fn apply_box_blur(
         let write = |(s, v): &mut (Surface, Vec<blur::Strip>)| {
             for (t, data) in v.iter_mut() {
                 if let Some(sel) = selection {
-                    mix_selection(data, *t, sel, &Image::read(surface, *t));
+                    mix_selection(data, *t, sel, &Image::read(surface, *t), fmt.alpha);
                 }
                 s.write_region(*t, data);
             }
@@ -1198,14 +1202,36 @@ fn apply_box_blur(
 }
 
 /// Mixes filtered `data` for `t` back toward the original pixels in `orig` by the selection's
-/// coverage (channel 0 of `sel`).
-fn mix_selection(data: &mut [f32], t: Rect, sel: &Surface, orig: &Image) {
+/// coverage (channel 0 of `sel`). Changing alpha requires premultiplied colour interpolation;
+/// otherwise hidden colours leak into feathered edges and alpha-removing filters darken them.
+fn mix_selection(data: &mut [f32], t: Rect, sel: &Surface, orig: &Image, alpha: bool) {
     let w = t.width() as usize;
     for (i, px) in data.chunks_exact_mut(orig.ch.max(1)).enumerate() {
         let (x, y) = (t.x0 + (i % w) as i32, t.y0 + (i / w) as i32);
         let k = sel.pixel(x, y)[0].clamp(0.0, 1.0);
         if k >= 1.0 {
             continue;
+        }
+        if k <= 0.0 {
+            for (c, v) in px.iter_mut().enumerate() {
+                *v = orig.get(x, y, c);
+            }
+            continue;
+        }
+        if alpha {
+            let a = px.len() - 1;
+            let original_alpha = orig.get(x, y, a);
+            let filtered_alpha = px[a];
+            if original_alpha != filtered_alpha {
+                let mixed_alpha = original_alpha + (filtered_alpha - original_alpha) * k;
+                let original_weight = original_alpha * (1.0 - k);
+                let filtered_weight = filtered_alpha * k;
+                for (c, v) in px[..a].iter_mut().enumerate() {
+                    *v = if mixed_alpha > 0.0 { (orig.get(x, y, c) * original_weight + *v * filtered_weight) / mixed_alpha } else { 0.0 };
+                }
+                px[a] = mixed_alpha;
+                continue;
+            }
         }
         for (c, v) in px.iter_mut().enumerate() {
             let o = orig.get(x, y, c);
@@ -1224,6 +1250,9 @@ mod tests_ext;
 
 #[cfg(test)]
 mod tests_mosaic;
+
+#[cfg(test)]
+mod tests_selection_mix;
 
 /// The current upstream sampler through the identical source/selection/tile pipeline.
 #[cfg(test)]

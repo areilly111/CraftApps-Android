@@ -1,6 +1,6 @@
 # UI parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (created; shortcut notes moved here from the checklist) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (zoom row: Compare and Reference sharp at 1:1) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How LightCraft's interaction compares with Lightroom's: views, panels, tools and handles, modifier
 keys, shortcuts, zoom, context menus and feel. Rows for individual menu items and shortcuts live in
@@ -27,7 +27,7 @@ assessment and the notes that don't fit a row. Visual reference for agents: `pla
 | Crop, Upright, transform handles | handles, aspect lock, angle, overlays (O / ⇧O), guided Upright | ✅ all of them; overlay cycle on ⇧O | 85% | crop opacity of cut-out area (15.5) |
 | Masking tools | brush (A / B, flow, density, auto mask, pressure), linear / radial, range masks, AI masks, pins | brush, linear, radial, colour / luminance range, add / subtract / intersect / invert, masks panel, pins | 60% | brush live preview (#517 / #518), no pen pressure, no depth range, AI masks, Feather / Edge controls (15.5) |
 | Remove / heal | content-aware remove, heal, clone, visualize spots | heal, clone, auto source, visualize spots, red / pet eye | 65% | content-aware (patch synthesis) remove, generative remove, detect distractions |
-| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan | Fit to 800%, pinch zoom, pan, Navigator-like | 60% | **original-pixel detail at 100% (preview capped at 2,560 px; P0 gap LR-VIEW-ZOOM)** |
+| Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan | Fit to 800%, pinch zoom, pan, Navigator-like | 60% | **original-pixel detail at 100% with a mask overlay or soft proofing** (no zoom window there; Detail, Before/After, Compare and Reference have them; P0 gap LR-VIEW-ZOOM) |
 | Library culling and metadata | ratings, flags, labels with keys, painter, keywording, metadata panel, filter bar | ratings / flags / labels and advance, keyword list and sets, keywording box, metadata fields, smart albums, filter bar | 85% | painter tool, quick collection, some Classic keys |
 | Shortcuts | Lightroom desktop and Classic keymaps | Lightroom-desktop keymap with Classic additions, editable | 85% | deliberate differences below; no Classic keymap layer |
 | Context menus | everywhere | 26 sites (grid, filmstrip, albums, folders, keywords, masks, presets…) | 70% | unaudited against Lightroom's menus item by item |
@@ -78,4 +78,5 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Zoom row: Compare and Reference get zoom windows; what remains of LR-VIEW-ZOOM is overlays and soft proofing |
 | 2026-10-10 | major | Created: measured command and shortcut counts, assessment by area, estimates; moved the shortcut conflicts section here from the checklist |

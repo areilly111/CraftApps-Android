@@ -56,3 +56,27 @@ fn undoing_a_fill_keeps_the_filled_layer_active() {
     assert_eq!(target(&s), one(bg));
     assert!(s.active().unwrap().doc.layer(new).is_some());
 }
+
+#[test]
+fn undo_preserves_intentionally_empty_layer_selection() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 8, "height": 8})).unwrap();
+    let background = s.active().unwrap().doc.layers[0].id;
+    s.execute("select.deselectLayers", json!({})).unwrap();
+    assert_eq!(target(&s), (None, Vec::new()));
+
+    s.execute("layer.new.layer", json!({"name": "A"})).unwrap();
+    let added = target(&s).0.unwrap();
+    assert!(s.undo());
+    assert_eq!(target(&s), (None, Vec::new()), "undo restores the empty pre-edit target");
+    assert!(s.redo());
+    assert_eq!(target(&s), one(added), "redo selects the created layer");
+    assert!(s.undo());
+    assert_eq!(target(&s), (None, Vec::new()), "repeated undo keeps the empty target");
+
+    // A real selected target must still be restored normally.
+    s.execute("layer.select", json!({"layer": background.0})).unwrap();
+    s.execute("layer.new.layer", json!({"name": "B"})).unwrap();
+    assert!(s.undo());
+    assert_eq!(target(&s), one(background));
+}

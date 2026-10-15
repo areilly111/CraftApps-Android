@@ -224,7 +224,7 @@ mod tests {
             };
             raw.events.push(Event::ModifiersChanged(self.modifiers));
             prepare_input(&self.ctx, &mut raw, self.injected);
-            let _ = self.ctx.run_ui(raw, |ui| {
+            let mut out = self.ctx.run_ui(raw, |ui| {
                 if self.standard {
                     ui.put(
                         Rect::from_min_size(pos2(100.0, 100.0), vec2(60.0, 20.0)),
@@ -266,6 +266,7 @@ mod tests {
                     self.accept_warp.then_some(p)
                 });
             });
+            out.textures_delta.clear();
         }
 
         fn move_to(&mut self, p: Pos2) {
@@ -482,7 +483,7 @@ mod tests {
                 let mut raw = RawInput { screen_rect: Some(bounds), time: Some(time), events, ..Default::default() };
                 app.raw_input_hook(&ctx, &mut raw);
                 let mut warp = None;
-                let _ = ctx.run_ui(raw, |ui| {
+                let mut out = ctx.run_ui(raw, |ui| {
                     app.logic(ui.ctx(), &mut frame);
                     app.ui(ui, &mut frame);
                     finish_frame(ui.ctx(), bounds, |p| {
@@ -490,6 +491,7 @@ mod tests {
                         Some(p)
                     });
                 });
+                out.textures_delta.clear();
                 warp
             };
             for _ in 0..4 {

@@ -190,7 +190,8 @@ impl Headless {
             }
         }
         let sel = self.session.active().map(|d| d.selection.objects.iter().map(|i| i.0).collect::<Vec<_>>()).unwrap_or_default();
-        Ok(json!({"selection": sel, "tool": self.session.tool_id(), "requests": requests}))
+        let key = self.session.active().and_then(|d| d.selection.key).map(|k| k.0);
+        Ok(json!({"selection": sel, "key": key, "tool": self.session.tool_id(), "requests": requests}))
     }
 
     fn key(&mut self, p: &Value) -> Result<Value, String> {

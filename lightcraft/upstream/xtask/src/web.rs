@@ -1,5 +1,5 @@
 //! `cargo xtask web`: build `apps/lightcraft-web` for wasm32 and bundle it with `wasm-bindgen`
-//! into `<target>/web/` (index.html + worker.js + lightcraft_web.js + lightcraft_web_bg.wasm),
+//! into `<target>/web-site/` (index.html + worker.js + lightcraft_web.js + lightcraft_web_bg.wasm),
 //! with gzip and brotli precompressed copies (`*.gz`, `*.br`) next to each file.
 //! `--serve [port]` then serves that folder with a tiny static HTTP server (std only) that sends
 //! the cross-origin isolation headers (COOP/COEP) and the precompressed files when the browser
@@ -13,6 +13,13 @@ use std::process::Command;
 use crate::{cargo, metadata, root, run as step};
 
 const TARGET: &str = "wasm32-unknown-unknown";
+/// Cargo profile for the optimized (`--dev` off) browser build; see `[profile.web]` in `Cargo.toml`.
+const WEB_PROFILE: &str = "web";
+/// Directory under `<target>` that receives the bundle. It must **not** be a Cargo profile name:
+/// cross-compiling with `--target wasm32-unknown-unknown` makes Cargo write the selected profile's
+/// *host* artifacts (build scripts, proc-macros, `deps/`, `build/`, `.fingerprint/`) to
+/// `<target>/<profile>/`, and `packaging/web/package.sh` zips the whole bundle directory (issue #793).
+const SITE_DIR: &str = "web-site";
 const CHINESE_FONT_FILE: &str = "lightcraft_zh_hans.otf";
 const CHINESE_FONT_LICENSE_FILE: &str = "OFL-noto-sans-cjk-sc.txt";
 
@@ -100,14 +107,14 @@ pub fn run(args: &[&str]) -> Result<(), String> {
     check_bindgen(&want)?;
     let meta = metadata()?;
     let target_dir = PathBuf::from(meta["target_directory"].as_str().ok_or("cargo metadata: no target_directory")?);
-    let profile = if dev { "dev" } else { "web" };
+    let profile = if dev { "dev" } else { WEB_PROFILE };
 
     let mut c = cargo();
     c.args(["build", "-p", "lightcraft-web", "--lib", "--target", TARGET, "--profile", profile]);
     step(c, &format!("cargo build -p lightcraft-web --target {TARGET} --profile {profile}"))?;
 
     let wasm = target_dir.join(TARGET).join(if dev { "debug" } else { profile }).join("lightcraft_web.wasm");
-    let out = target_dir.join("web");
+    let out = target_dir.join(SITE_DIR);
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let mut b = Command::new("wasm-bindgen");
     b.arg(&wasm).args(["--target", "web", "--no-typescript", "--out-name", "lightcraft_web", "--out-dir"]).arg(&out);
@@ -285,6 +292,21 @@ mod tests {
     fn bindgen_version_is_locked() {
         let v = locked_bindgen_version().unwrap();
         assert!(v.starts_with("0.2."), "{v}");
+    }
+
+    #[test]
+    fn site_dir_is_not_a_cargo_profile() {
+        // Cross-compiling writes the selected profile's *host* artifacts (build scripts,
+        // proc-macros, `deps/`, `build/`, `.fingerprint/`) to `<target>/<profile>/`, so the bundle
+        // must not live in a profile directory or `packaging/web/package.sh` would zip them
+        // (issue #793).
+        let manifest = std::fs::read_to_string(root().join("Cargo.toml")).unwrap();
+        let is_profile = |name: &str| {
+            let header = format!("[profile.{name}]");
+            manifest.lines().any(|l| l.trim() == header)
+        };
+        assert!(is_profile(WEB_PROFILE), "`{WEB_PROFILE}` is no longer a profile in Cargo.toml");
+        assert!(!is_profile(SITE_DIR), "`{SITE_DIR}` is a Cargo profile name; pick a different bundle directory");
     }
 
     #[test]

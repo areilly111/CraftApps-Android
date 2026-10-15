@@ -38,7 +38,8 @@ Methods (handlers in `crates/ui-egui/src/control.rs`):
 | `ui.timeline.hit` / `ui.timeline.locate` | `{x,y,modifiers?}` / `{clip, edge?}` | timeline hit-testing. `hit` reports a clip's `edge` (`In`/`Out`) within 7 px of it (a third of a narrow clip); just left of a cut that is the left clip's Out, from the cut rightwards the right clip's In. `kind` is the trim a press of the current tool with `modifiers` starts there (`trim`, `ripple`, `roll`, `rateStretch`, `remix`), `volume` on an audio clip's Volume line (Selection and Pen tools), or null |
 | `ui.playback` | `{action: play|stop|toggle, speed?}` | |
 | `ui.screenshot` | `{path?, panel?}` | PNG of the window or one panel; fails after 10 s when no frame is presented (window hidden, display asleep) |
-| `ui.resize`, `ui.focus`, `app.quit` | | `ui.focus` is the only request that activates the app and takes keyboard focus. `app.quit` quits without the save prompt (unsaved changes stay in the recovery journal); the command `app.quit` (Quit, Cmd+Q) asks first |
+| `ui.resize`, `app.quit` | `{width,height}` / `{}` | resize or close the native window; `app.quit` quits without the save prompt (unsaved changes stay in the recovery journal), while the command `app.quit` asks first |
+| `ui.focus` | `{}` / `{id}` | empty parameters activate the native window; a widget ID requests egui focus without OS activation |
 | `perf.stats` | – | performance counters (also the command `perf.stats`, so `engine.execute` and MCP `command_run` reach it; headless sessions return the engine part). `decode`: GOP-cache requests / hits / `cacheHitRate`, decoder seeks, samples decoded and skipped while catching up, `draftFrames` (decoded in draft mode), `h264Threads` (frame-threading workers per H.264 decoder), `liveDecoders` (sources holding a decoder now), `cacheMB` / `cacheBudgetMB` (decoded frames all sources hold, and the shared budget), `planePoolMB` / `planesReused` (idle buffers of the frame pool, the planes of evicted frames and the compositor's float images, which a standalone export frees when it ends; and buffers taken from it instead of allocated), decoder ms (total and per sample), `framesDecoded`, `hardware` (Settings ▸ Playback ▸ Hardware decoding: `enabled`, pictures from hardware decoders `frames` vs `softwareFrames`, `sessions`, `declined` streams, mid-stream `fallbacks`); `playback`: playing, shown / dropped frames and `dropRate` of the current or last play, resolution, `draftDecode` (Settings ▸ Playback ▸ Draft decoding), `audio` (desktop: sound is mixed 200 ms ahead of the device; device `callbacks`, `underruns` and `missingFrames` played as silence because the mixer fell behind, `minLeadMs` the least sound left buffered); `frames`: frame-worker jobs, cancelled, `requestHitRate`, `decodeMs` / `renderMs` (mean, p50, p95 of the last 256 jobs), queue, render-cost estimate, cache use; `monitor`: the `frame` and `revision` of the picture the Program monitor shows against `playheadFrame` and `projectRevision` (how far a drag or a scrub is ahead of the picture); `ui`: fps and frame ms; `process`: CPU seconds; `media`, `jobs`. Counters are cumulative: diff two readings to measure an interval ([performance.md](performance.md)) |
 
 **Timeline thumbnails.** `ui.set {timeline: {thumbnails}}` sets the Timeline wrench menu's Show Video
@@ -53,7 +54,22 @@ still apply. `engine.commands` and the menus always show the selection's enablem
 **Focus.** Driving the app never steals the user's keyboard. Started with `--control`, the app opens
 without activating itself. UI requests and screenshots that need a rendered frame bring the window
 forward without making it key (macOS `orderFrontRegardless`), so the user's typing keeps going to
-the app they are in. Only an explicit `ui.focus` activates FilmCraft.
+the app they are in. Only an explicit `ui.focus {}` activates FilmCraft. Injected keys work on
+focused widgets even when the native window is in the background.
+
+`ui.focus {id}` targets an enabled, visible widget registered with a real egui response. It rejects
+unknown IDs, non-widget regions and hidden tool aliases. The reply acknowledges the request;
+`ui.inspect.keyboardFocus` reports the actual widget ID, matching element IDs, label and active
+focus. This is separate from `ui.focused`, which identifies the active panel. Tools, dock tabs,
+tab menus and divider handles expose widget IDs through `ui.elements`. Tab/Shift-Tab move widget
+focus; Space/Enter activate focused buttons and tabs, with visible focus outlines.
+
+For unattended validation, start with `--control <port> --control-input-only`. This opt-in mode
+accepts widget input through control requests and excludes native keyboard, pointer, file-drop
+and menu commands. Window close/quit and screenshots remain available. Ordinary launches and
+`--control` alone keep native input enabled. `ui.inspect.input` distinguishes `mode`, the observed
+`nativeWindowFocused`, and egui's `effectiveWindowFocused`; effective focus does not activate the
+OS window or prove physical-keyboard delivery.
 
 Element ids are stable, e.g. `timeline.clip.<id>`, `timeline.track.V1.lock`, `tools.Razor`,
 `project.item.<id>`, `effects.item.gaussian_blur`, `panel.tab.Timeline`, `program.transport.playback.toggle`.
@@ -102,7 +118,10 @@ is, and so does one whose position would not change (the listed clip only change
 lists every clip that moved, partners included. No clip is moved before the sequence
 start: if one would be, all clips of the call land later by the same amount (their spacing is
 kept). A `time` beyond the representable range is an "invalid parameters" error. The timeline
-panel's drag passes `linked: false`, because it already lists exactly the clips it moves.
+panel's drag passes `linked: false`, because it already lists exactly the clips it moves. With
+`copy: true` (Option-drag in the timeline) the clips stay where they are and copies land at the
+destinations instead (linked partners are copied too, unless `linked: false`); the result lists
+the new clips as `copied`, they are selected, and copies of linked clips are linked to each other.
 
 **Trim mode** (`crates/engine/src/trim.rs`): `trim.selectEditPoint` / `trim.selectNearest` enter trim
 mode (the Program monitor becomes the Trim Monitor, ids `trimMonitor.*`); `trim.monitor` returns what
@@ -150,3 +169,26 @@ Annotations, argument checking, errors and export progress / cancellation:
 [agents.md § Conventions](agents.md#conventions).
 
 Time is in ticks (254 016 000 000 per second); commands also accept `seconds`, `frame` or `timecode`.
+
+## Panel docking commands
+
+`ui.menu.invoke` and `engine.execute` route these frontend commands:
+
+| Command | Parameters | Result |
+| --- | --- | --- |
+| `window.floatPanel` | `{panel?, rect?: [x,y,width,height]}` | Move an existing panel into a floating group. Omitted panel uses the focused panel; omitted rect uses a centered 420×320 group. |
+| `window.dockPanel` | `{panel?, anchor, zone?: "center"\|"left"\|"right"\|"top"\|"bottom", before?}` | Move into the anchor's tab group or a side split; `before` names an existing destination tab for precise ordering. Floating destinations accept tabs only. |
+| `window.closePanel` | `{panel?}` | Close a docked or floating panel without closing its project documents. |
+
+Invalid source/target identities and non-finite or out-of-range geometry return an error with
+the layout unchanged. `ui.inspect.ui.floating` reports floating groups and their logical-point
+rectangles. `panel.drag.<Panel>` locates each panel's header grip; `panel.float.<index>.move`
+and `.resize` locate floating geometry handles. Named workspace saves include these groups.
+
+`window.dockAction` accepts `{action}` using the shared docking action's JSON form. It
+covers tab moves and ordering, split and floating geometry, activation, and closing.
+For example, `{"action":{"ResizeSplit":{"path":[],"size":{"FixedFirst":360}}}}`
+resizes the root split; path entries use `false` for the first child and `true` for
+the second. `{"action":{"MoveFloating":{"panel":"Info","rect":[45,65,420,320]}}}`
+repositions and resizes the floating group containing Info. Invalid actions leave the
+layout unchanged. Pointer gestures dispatch through this same catalog command.

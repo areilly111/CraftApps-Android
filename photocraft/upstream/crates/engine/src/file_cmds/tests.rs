@@ -92,6 +92,28 @@ fn revert_reloads_as_one_undoable_step() {
 }
 
 #[test]
+fn injected_import_failure_does_not_open_a_document() {
+    let mut s = session(8, 8, 8);
+    let before = s.documents().len();
+    crate::allocation::fail_next_for_test();
+    let result = open_bytes_as(&mut s, "image.png", b"not decoded", None, None);
+    assert!(result.as_ref().is_err_and(|e| e.to_string().contains("not enough memory for importing document")));
+    assert_eq!(s.documents().len(), before);
+}
+
+#[test]
+fn injected_save_failure_does_not_modify_the_destination() {
+    let dir = tmp("allocation-save");
+    let path = join(&dir, "existing.psd");
+    std::fs::write(&path, b"previous file").unwrap();
+    let s = session(8, 8, 8);
+    crate::allocation::fail_next_for_test();
+    let result = save_doc(doc(&s), &path, None);
+    assert!(result.as_ref().is_err_and(|e| e.to_string().contains("not enough memory for saving document")));
+    assert_eq!(std::fs::read(path).unwrap(), b"previous file");
+}
+
+#[test]
 fn save_a_copy_keeps_path_and_dirty_state() {
     let dir = tmp("copy");
     let mut s = session(20, 10, 16);
@@ -111,6 +133,63 @@ fn save_a_copy_keeps_path_and_dirty_state() {
     s.execute("file.saveACopy", json!({"path": flat, "layers": false})).unwrap();
     assert_eq!(photocraft_io::import("flat.psd", &std::fs::read(&flat).unwrap()).unwrap().document.layers.len(), 1);
     assert!(s.execute("file.saveACopy", json!({})).is_err());
+}
+
+/// `tgaBits` picks the Targa's bits per pixel (byte 16 of the header); unset, a document with an
+/// alpha channel is written as 32-bit, with the channel as the alpha.
+#[test]
+fn save_a_copy_writes_the_targa_bits_asked_for() {
+    let dir = tmp("tga-bits");
+    let mut s = session(20, 10, 8);
+    s.execute("select.all", json!({})).unwrap();
+    s.execute("select.saveSelection", json!({})).unwrap();
+    for (params, bpp) in [(json!({}), 32), (json!({"tgaBits": 24}), 24), (json!({"tgaBits": 32}), 32), (json!({"tgaBits": null}), 32)] {
+        let out = join(&dir, "a.tga");
+        let mut p = params.clone();
+        p["path"] = json!(out);
+        s.execute("file.saveACopy", p).unwrap();
+        let bytes = std::fs::read(&out).unwrap();
+        assert_eq!(bytes[16], bpp, "{params}");
+        let back = photocraft_io::import("a.tga", &bytes).unwrap().document;
+        assert_eq!(back.channels.len(), usize::from(bpp == 32), "{params}: the selection reopens as Alpha 1");
+    }
+}
+
+/// A `tgaBits` other than 24 or 32 is a bad parameter, reported before anything is written.
+#[test]
+fn bad_targa_bits_are_refused_before_writing() {
+    let dir = tmp("tga-bad");
+    let mut s = session(8, 8, 8);
+    for bad in [json!(16), json!(0), json!(-32), json!(32.5), json!("32"), json!(true), json!([32])] {
+        let out = join(&dir, "a.tga");
+        let r = s.execute("file.saveACopy", json!({"path": out, "tgaBits": bad}));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "{bad}: {r:?}");
+        assert!(!std::path::Path::new(&out).exists(), "{bad}: nothing written");
+        let r = s.execute("file.export.layersToFiles", json!({"dir": dir, "format": "tga", "tgaBits": bad}));
+        assert!(matches!(r, Err(EngineError::BadParams { .. })), "{bad}: {r:?}");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0, "{bad}: no layer written");
+    }
+}
+
+/// Preferences › File Handling › Image Previews decides whether a PSD gets Photoshop's
+/// thumbnail resource (1036): Always and Ask When Saving write it, Never doesn't.
+#[test]
+fn image_previews_preference_controls_the_psd_thumbnail() {
+    use crate::prefs::Ask;
+    let dir = tmp("previews");
+    let mut s = session(300, 200, 16);
+    let has_thumbnail = |path: &str| {
+        let file = photocraft_psd::PsdFile::from_bytes(&std::fs::read(path).unwrap()).unwrap();
+        file.resources.iter().any(|r| r.id == photocraft_psd::resources::ids::THUMBNAIL)
+    };
+    for (ask, expect) in [(Ask::Always, true), (Ask::Never, false), (Ask::Ask, true)] {
+        s.edit_prefs(|p| p.file_handling.image_previews = ask);
+        let out = join(&dir, &format!("{ask:?}.psd"));
+        s.execute("file.saveACopy", json!({"path": out})).unwrap();
+        assert_eq!(has_thumbnail(&out), expect, "{ask:?}");
+        let png = join(&dir, &format!("{ask:?}.png"));
+        s.execute("file.saveACopy", json!({"path": png})).unwrap();
+    }
 }
 
 #[test]
@@ -156,6 +235,45 @@ fn place_embedded_centres_fits_and_embeds() {
         assert!(s.undo() && s.undo());
         assert_eq!(doc(&s).layers.len(), 1);
     }
+}
+
+/// Preferences ▸ General ▸ Always Create Smart Objects When Placing: unchecked, an embedded place
+/// lands as a plain pixel layer; a linked place is always a smart object and `"smartObject"` wins.
+#[test]
+fn always_create_smart_objects_preference_places_a_pixel_layer() {
+    let dir = tmp("place-smart-pref");
+    let big = png(&dir, "big.png", 200, 100, "#ff0000");
+    let mut s = session(100, 100, 8);
+    s.execute("prefs.set", json!({"path": "general.alwaysCreateSmartObjectsWhenPlacing", "value": false})).unwrap();
+    let r = s.execute("file.placeEmbedded", json!({"path": big})).unwrap();
+    assert_eq!(r["smartObject"], json!(false));
+    let d = s.active().unwrap();
+    let l = d.doc.layer(d.active_layer.unwrap()).unwrap();
+    assert!(matches!(l.content, LayerContent::Raster(_)), "a pixel layer");
+    // Fitted to the canvas width, centred vertically, exactly like the smart-object place.
+    assert!(composite(&s, 50, 50)[0] > 0.99 && composite(&s, 50, 50)[2] < 0.01);
+    assert!(composite(&s, 50, 10)[1] > 0.99, "white background above");
+    // An explicit "smartObject": true overrides, and Place Linked with the preference off still
+    // creates a linked smart object.
+    assert_eq!(s.execute("file.placeEmbedded", json!({"path": big, "smartObject": true})).unwrap()["smartObject"], json!(true));
+    assert_eq!(s.execute("file.placeLinked", json!({"path": big})).unwrap()["smartObject"], json!(true));
+}
+
+/// Preferences ▸ General ▸ Resize Image During Place: off, a larger image keeps its natural size
+/// instead of being fitted to the canvas; an explicit `"fit"` still wins.
+#[test]
+fn resize_image_during_place_preference_controls_the_fit() {
+    let dir = tmp("place-fit-pref");
+    let big = png(&dir, "big.png", 200, 100, "#ff0000");
+    let mut s = session(100, 100, 8);
+    s.execute("prefs.set", json!({"path": "general.resizeImageDuringPlace", "value": false})).unwrap();
+    let r = s.execute("file.placeEmbedded", json!({"path": big})).unwrap();
+    assert!((r["scale"].as_f64().unwrap() - 100.0).abs() < 1e-9, "natural size: {r}");
+    let b = r["bounds"].as_array().unwrap();
+    assert!(b[2].as_f64().unwrap() > 100.0, "wider than the canvas: {b:?}");
+    // An explicit "fit": true overrides the preference.
+    let r = s.execute("file.placeEmbedded", json!({"path": big, "fit": true})).unwrap();
+    assert!((r["scale"].as_f64().unwrap() - 50.0).abs() < 1e-9, "fitted on request: {r}");
 }
 
 /// A 40×20 JPEG (left half red, right half blue) tagged EXIF Orientation = 6: shown upright it
@@ -219,6 +337,144 @@ fn file_info_round_trips_through_xmp_and_psd() {
     let out = write_file_info(Some(foreign), &json!({"authorTitle": "Artist"}));
     assert!(out.contains("xmp:CreatorTool=\"Other App\""));
     assert_eq!(read_file_info(Some(&out))["authorTitle"], "Artist");
+}
+
+fn camera_exif() -> Vec<u8> {
+    photocraft_algo::exif::build(&photocraft_algo::exif::CameraInfo {
+        make: Some("SONY".into()),
+        model: Some("ILCE-7RM5".into()),
+        lens: Some("24-70mm F2.8".into()),
+        exposure_time: Some(1.0 / 250.0),
+        f_number: Some(8.0),
+        iso: Some(400.0),
+        focal_length: Some(33.1),
+        focal_length_35mm: Some(50.0),
+        date_taken: Some("2024:02:17 12:40:19".into()),
+    })
+}
+
+#[test]
+fn file_info_reads_camera_data_from_jpeg_and_psd_exif() {
+    let mut s = session(8, 8, 8);
+    assert_eq!(s.execute("file.fileInfo", json!({})).unwrap()["camera"], json!({}));
+    s.edit("exif", |doc, _| {
+        doc.metadata.exif = Some(Arc::new(camera_exif()));
+        Ok(())
+    })
+    .unwrap();
+    let want = json!({
+        "make": "SONY", "model": "ILCE-7RM5", "dateTaken": "2024-02-17 12:40:19", "exposure": "1/250 s", "fNumber": "f/8",
+        "iso": "ISO 400", "focalLength": "33.1 mm", "focalLength35mm": "50 mm", "lens": "24-70mm F2.8"
+    });
+    for name in ["x.jpg", "x.psd"] {
+        let (bytes, _) = encode(doc(&s), name, None).unwrap();
+        let back = photocraft_io::import(name, &bytes).unwrap().document;
+        let mut t = Session::new();
+        t.add_document(back, None);
+        assert_eq!(t.execute("file.fileInfo", json!({})).unwrap()["camera"], want, "{name}");
+        // Editing the description fields leaves the read-only camera data alone.
+        let edited = t.execute("file.fileInfo", json!({"title": "Pier", "camera": {"make": "ignored"}})).unwrap();
+        assert_eq!(edited["camera"], want, "{name}");
+    }
+}
+
+#[test]
+fn camera_data_formats_like_photoshop_and_falls_back_to_xmp() {
+    let info = |t: Option<f64>, n: Option<f64>, f: Option<f64>| {
+        let exif = photocraft_algo::exif::build(&photocraft_algo::exif::CameraInfo { exposure_time: t, f_number: n, focal_length: f, ..Default::default() });
+        camera_data(Some(&exif), None)
+    };
+    assert_eq!(info(Some(2.0), Some(2.8), Some(35.0)), json!({"exposure": "2 s", "fNumber": "f/2.8", "focalLength": "35 mm"}));
+    assert_eq!(info(Some(0.5), Some(5.6), None), json!({"exposure": "1/2 s", "fNumber": "f/5.6"}));
+    assert_eq!(info(Some(0.4), None, None), json!({"exposure": "0.4 s"}));
+    assert_eq!(info(Some(1.0 / 2000.0), None, None), json!({"exposure": "1/2000 s"}));
+    assert_eq!(info(Some(0.0), Some(0.0), Some(0.0)), json!({}));
+    // No EXIF block (a raw import, XMP-only files): Photoshop's exif:/tiff:/aux: properties.
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:tiff="http://ns.adobe.com/tiff/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:aux="http://ns.adobe.com/exif/1.0/aux/"
+ tiff:Make="SONY" tiff:Model="ILCE-7RM5" exif:ExposureTime="1/250" exif:FNumber="8/1" exif:FocalLength="331/10"
+ exif:FocalLengthIn35mmFilm="50" exif:DateTimeOriginal="2024-02-17T12:40:19.00+01:00" aux:Lens="Lens &amp; Co">
+<exif:ISOSpeedRatings><rdf:Seq><rdf:li>400</rdf:li></rdf:Seq></exif:ISOSpeedRatings>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let want = json!({
+        "make": "SONY", "model": "ILCE-7RM5", "dateTaken": "2024-02-17 12:40:19", "exposure": "1/250 s", "fNumber": "f/8",
+        "iso": "ISO 400", "focalLength": "33.1 mm", "focalLength35mm": "50 mm", "lens": "Lens & Co"
+    });
+    assert_eq!(camera_data(None, Some(xmp)), want);
+    // EXIF wins; XMP only fills what EXIF lacks.
+    let exif = photocraft_algo::exif::build(&photocraft_algo::exif::CameraInfo { make: Some("Other".into()), ..Default::default() });
+    let both = camera_data(Some(&exif), Some(xmp));
+    assert_eq!(both["make"], "Other");
+    assert_eq!(both["exposure"], "1/250 s");
+    // Garbage in either block reads as no data, never a panic.
+    assert_eq!(camera_data(Some(b"II*\0\xff\xff\xff\xff"), Some("<exif:FNumber>0/0</exif:FNumber> exif:ExposureTime=\"-1/0\"")), json!({}));
+}
+
+const MULTILINGUAL_XMP: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"
+ xmp:CreatorTool="Other App" xmpRights:Marked="True" xmpRights:WebStatement="https://example.com/license">
+<dc:title><rdf:Alt><rdf:li xml:lang="x-default">Sun</rdf:li><rdf:li xml:lang="fr">Soleil</rdf:li><rdf:li xml:lang="ar">الشمس</rdf:li></rdf:Alt></dc:title>
+<dc:description><rdf:Alt><rdf:li xml:lang="x-default">Sunrise</rdf:li><rdf:li xml:lang="fr">Lever du soleil</rdf:li></rdf:Alt></dc:description>
+<dc:rights><rdf:Alt><rdf:li xml:lang="x-default">All rights reserved</rdf:li><rdf:li xml:lang="fr">Tous droits réservés</rdf:li></rdf:Alt></dc:rights>
+<dc:subject><rdf:Bag><rdf:li>sky</rdf:li></rdf:Bag></dc:subject>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+
+fn assert_translations_kept(xmp: &str) {
+    for prop in ["dc:title", "dc:description", "dc:rights"] {
+        assert_eq!(find_element(xmp, prop).unwrap().2, find_element(MULTILINGUAL_XMP, prop).unwrap().2, "{prop}");
+        assert_eq!(xmp.matches(&format!("<{prop}>")).count(), 1);
+    }
+    assert!(xmp.contains("xmp:CreatorTool=\"Other App\""));
+    assert!(xmp.contains("xmpRights:Marked=\"True\""));
+    assert!(xmp.contains("xmpRights:WebStatement=\"https://example.com/license\""));
+}
+
+#[test]
+fn file_info_keeps_translations_when_editing_keywords() {
+    let partial = json!({"keywords": ["sky", "sunrise"]});
+    let mut dialog = read_file_info(Some(MULTILINGUAL_XMP));
+    dialog["keywords"] = json!("sky; sunrise");
+    for params in [partial, dialog] {
+        let out = write_file_info(Some(MULTILINGUAL_XMP), &params);
+        assert_translations_kept(&out);
+        assert_eq!(read_file_info(Some(&out))["keywords"], json!(["sky", "sunrise"]));
+    }
+    let unchanged = read_file_info(Some(MULTILINGUAL_XMP));
+    assert_eq!(write_file_info(Some(MULTILINGUAL_XMP), &unchanged), MULTILINGUAL_XMP);
+    assert_eq!(write_file_info(Some(MULTILINGUAL_XMP), &json!({})), MULTILINGUAL_XMP);
+}
+
+#[test]
+fn file_info_clears_only_the_requested_field() {
+    let out = write_file_info(Some(MULTILINGUAL_XMP), &json!({"keywords": []}));
+    assert_translations_kept(&out);
+    assert!(find_element(&out, "dc:subject").is_none());
+    assert_eq!(read_file_info(Some(&out))["keywords"], json!([]));
+}
+
+#[test]
+fn file_info_translations_survive_undo_and_psd_round_trip() {
+    for depth in [8, 16, 32] {
+        let mut s = session(8, 8, depth);
+        s.edit("Set metadata", |doc, _| {
+            doc.metadata.xmp = Some(MULTILINGUAL_XMP.to_string());
+            Ok(())
+        })
+        .unwrap();
+        s.execute("file.fileInfo", json!({"keywords": ["sunrise"]})).unwrap();
+        let edited = doc(&s).metadata.xmp.clone().unwrap();
+        assert_translations_kept(&edited);
+        assert!(s.undo());
+        assert_eq!(doc(&s).metadata.xmp.as_deref(), Some(MULTILINGUAL_XMP));
+        assert!(s.redo());
+        assert_eq!(doc(&s).metadata.xmp.as_deref(), Some(edited.as_str()));
+        let (bytes, _) = encode(doc(&s), "x.psd", None).unwrap();
+        let back = photocraft_io::import("x.psd", &bytes).unwrap().document;
+        assert_translations_kept(back.metadata.xmp.as_deref().unwrap());
+        assert_eq!(read_file_info(back.metadata.xmp.as_deref())["keywords"], json!(["sunrise"]));
+    }
 }
 
 #[test]
@@ -295,6 +551,118 @@ fn flatten_all_layer_effects_and_masks() {
         // Each script is a single history step.
         assert!(s.undo());
         assert!(doc(&s).layer(id).unwrap().mask.is_some());
+    }
+}
+
+/// Flatten All Layer Effects must bake the effect visuals without destroying the layer's masks:
+/// an enabled raster mask and a vector mask on one layer, a disabled raster mask on another
+/// (#3804). The command is a visual no-op; the masks (pixels and state) survive, including a
+/// `.pcraft` round trip.
+#[test]
+fn flatten_all_layer_effects_keeps_masks() {
+    for depth in [8, 16, 32] {
+        let mut s = session(40, 40, depth);
+        // Layer 1: a red square with a green colour overlay, an enabled raster mask revealing
+        // x < 20 and a vector mask revealing x 15..30.
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.execute("select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).unwrap();
+        s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        s.execute("select.deselect", json!({})).unwrap();
+        let id1 = s.active().unwrap().active_layer.unwrap();
+        s.edit("fx", |doc, _| {
+            let l = doc.layer_mut(id1).unwrap();
+            l.effects.enabled = true;
+            l.effects.items.push(photocraft_doc::Effect::ColorOverlay {
+                common: photocraft_doc::effects::FxCommon::new(photocraft_color::BlendMode::Normal, 1.0),
+                color: photocraft_color::Color::rgb(0.0, 1.0, 0.0),
+            });
+            l.vector_mask = Some(photocraft_doc::VectorMask::new(photocraft_doc::Path::new(vec![photocraft_doc::Subpath::polygon(&[
+                (15.0, 15.0),
+                (30.0, 15.0),
+                (30.0, 30.0),
+                (15.0, 30.0),
+            ])])));
+            Ok(())
+        })
+        .unwrap();
+        s.execute("select.rect", json!({"x": 0, "y": 0, "width": 20, "height": 40})).unwrap();
+        s.execute("layer.layerMask.revealSelection", json!({})).unwrap();
+        s.execute("select.deselect", json!({})).unwrap();
+        // Layer 2: a red square at the bottom-right with the same overlay and a *disabled* mask.
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.execute("select.rect", json!({"x": 30, "y": 30, "width": 8, "height": 8})).unwrap();
+        s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        s.execute("select.deselect", json!({})).unwrap();
+        let id2 = s.active().unwrap().active_layer.unwrap();
+        s.edit("fx", |doc, _| {
+            let l = doc.layer_mut(id2).unwrap();
+            l.effects.enabled = true;
+            l.effects.items.push(photocraft_doc::Effect::ColorOverlay {
+                common: photocraft_doc::effects::FxCommon::new(photocraft_color::BlendMode::Normal, 1.0),
+                color: photocraft_color::Color::rgb(0.0, 1.0, 0.0),
+            });
+            Ok(())
+        })
+        .unwrap();
+        s.execute("select.rect", json!({"x": 34, "y": 34, "width": 2, "height": 2})).unwrap();
+        s.execute("layer.layerMask.revealSelection", json!({})).unwrap();
+        s.execute("select.deselect", json!({})).unwrap();
+        s.edit("disable", |doc, _| {
+            if let Some(m) = doc.layer_mut(id2).and_then(|l| l.mask.as_mut()) {
+                m.enabled = false;
+            }
+            Ok(())
+        })
+        .unwrap();
+        let m1 = doc(&s).layer(id1).unwrap().mask.clone();
+        let v1 = doc(&s).layer(id1).unwrap().vector_mask.clone();
+        let m2 = doc(&s).layer(id2).unwrap().mask.clone();
+        assert_eq!(m1.as_ref().map(|m| m.enabled), Some(true), "layer 1 raster mask is enabled");
+        assert!(v1.as_ref().is_some_and(|v| v.enabled), "layer 1 vector mask is enabled");
+        assert_eq!(m2.as_ref().map(|m| m.enabled), Some(false), "layer 2 raster mask is disabled");
+        let before = [
+            composite(&s, 17, 15), // layer 1: inside both masks
+            composite(&s, 22, 15), // layer 1: raster mask hides
+            composite(&s, 12, 15), // layer 1: vector mask hides
+            composite(&s, 34, 34), // layer 2: the disabled mask does not hide
+        ];
+        assert!(before[0][1] > 0.99 && before[0][0] < 0.01, "overlay renders green: {:?}", before[0]);
+        // The white background shows where a mask hides the layer.
+        assert!(before[1][0] > 0.99 && before[1][1] > 0.99, "the raster mask hides: {:?}", before[1]);
+        assert!(before[2][0] > 0.99 && before[2][1] > 0.99, "the vector mask hides: {:?}", before[2]);
+        assert!(before[3][1] > 0.99, "the disabled mask does not hide");
+        let r = s.execute("file.scripts.flattenAllLayerEffects", json!({})).unwrap();
+        assert_eq!(r["flattened"], 2);
+        {
+            let d = doc(&s);
+            assert_eq!(d.layer(id1).unwrap().mask, m1, "layer 1 raster mask survives");
+            assert_eq!(d.layer(id1).unwrap().vector_mask, v1, "layer 1 vector mask survives");
+            assert_eq!(d.layer(id2).unwrap().mask, m2, "the disabled mask survives");
+        }
+        let after = [composite(&s, 17, 15), composite(&s, 22, 15), composite(&s, 12, 15), composite(&s, 34, 34)];
+        for (a, b) in after.iter().zip(&before) {
+            for k in 0..4 {
+                assert!((a[k] - b[k]).abs() < 0.01, "flattening is a visual no-op: {after:?} vs {before:?}");
+            }
+        }
+        // One history step: undo restores the effects, redo re-flattens, and the masks stay.
+        assert!(s.undo());
+        assert!(!doc(&s).layer(id1).unwrap().effects.items.is_empty());
+        assert_eq!(doc(&s).layer(id1).unwrap().mask, m1);
+        assert!(s.redo());
+        assert_eq!(doc(&s).layer(id1).unwrap().mask, m1);
+        assert_eq!(doc(&s).layer(id1).unwrap().vector_mask, v1);
+        assert_eq!(doc(&s).layer(id2).unwrap().mask, m2);
+        // The masks survive a `.pcraft` save and reopen.
+        let dir = tmp("flatten-effects-masks");
+        let path = join(&dir, "masks.pcraft");
+        save_doc(doc(&s), &path, None).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mut s2 = Session::new();
+        open_bytes_as(&mut s2, "masks.pcraft", &bytes, None, None).unwrap();
+        let layers: Vec<_> = doc(&s2).walk().into_iter().map(|(_, _, l)| l).collect();
+        assert!(layers.iter().any(|l| l.mask == m1 && l.vector_mask == v1), "the raster and vector masks survive .pcraft");
+        assert!(layers.iter().any(|l| l.mask == m2), "the disabled mask survives .pcraft");
     }
 }
 
@@ -476,7 +844,7 @@ fn guide_layouts() {
 
 #[test]
 fn only_layered_files_save_in_place() {
-    for path in ["a.psd", "dir/a.PSB", r"C:\w\a.pcraft", "my.dir/a.psd"] {
+    for path in ["a.psd", "dir/a.PSB", r"C:\w\a.pcraft", "my.dir/a.psd", "a.ora", "dir/A.ORA"] {
         assert!(saves_in_place(path), "{path}");
     }
     // Flat formats, no extension, a dotted folder with an extensionless file, a dot file.

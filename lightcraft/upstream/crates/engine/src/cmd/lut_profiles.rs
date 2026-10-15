@@ -34,22 +34,34 @@ pub fn register_all(s: &Session) {
     }
 }
 
-/// `.cube` files in `paths` (folders searched, zip bundles opened).
-fn cube_files(paths: &[String]) -> Vec<(String, String, Option<String>)> {
+/// `.cube` files in `paths` (folders searched, zip bundles opened), and the files that couldn't
+/// be read with the reason (`[name, reason]`).
+fn cube_files(paths: &[String]) -> (Vec<(String, String, Option<String>)>, Vec<Value>) {
     // (name, text, group)
     let mut out = Vec::new();
+    let mut failed = Vec::new();
+    let stem = |f: &Path| f.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     for p in paths {
         let path = Path::new(p);
         if path.is_dir() {
             let cube = |f: &Path| f.extension().is_some_and(|x| x.eq_ignore_ascii_case("cube"));
             for ep in crate::walk::files_in(path, None, crate::walk::Limits::default(), cube).files {
-                if let Ok(t) = std::fs::read_to_string(&ep) {
-                    let group = ep.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string());
-                    out.push((ep.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), t, group));
+                match std::fs::read_to_string(&ep) {
+                    Ok(t) => {
+                        let group = ep.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string());
+                        out.push((stem(&ep), t, group));
+                    }
+                    Err(e) => failed.push(json!([stem(&ep), e.to_string()])),
                 }
             }
         } else if path.extension().is_some_and(|x| x.eq_ignore_ascii_case("zip")) {
-            let Ok(b) = std::fs::read(path) else { continue };
+            let b = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    failed.push(json!([stem(path), e.to_string()]));
+                    continue;
+                }
+            };
             for (inner, data) in crate::preset_import::read_zip(&b).unwrap_or_default() {
                 if inner.to_ascii_lowercase().ends_with(".cube") {
                     let ip = Path::new(&inner);
@@ -65,11 +77,14 @@ fn cube_files(paths: &[String]) -> Vec<(String, String, Option<String>)> {
                     ));
                 }
             }
-        } else if let Ok(t) = std::fs::read_to_string(path) {
-            out.push((path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), t, None));
+        } else {
+            match std::fs::read_to_string(path) {
+                Ok(t) => out.push((stem(path), t, None)),
+                Err(e) => failed.push(json!([stem(path), e.to_string()])),
+            }
         }
     }
-    out
+    (out, failed)
 }
 
 fn import(s: &mut Session, p: &Value) -> Result<Value> {
@@ -83,8 +98,9 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(d) = &dir {
         std::fs::create_dir_all(d).map_err(|e| bad(C, format!("{}: {e}", d.display())))?;
     }
-    let (mut imported, mut failed) = (Vec::new(), Vec::new());
-    for (name, text, group) in cube_files(&paths) {
+    let (files, mut failed) = cube_files(&paths);
+    let mut imported = Vec::new();
+    for (name, text, group) in files {
         let lut = match lightcraft_pipeline::lut::Lut3d::parse_cube(&text) {
             Ok(l) => l,
             Err(e) => {

@@ -53,12 +53,18 @@ fn eac3_in_mp4_matroska_and_transport_streams() {
         };
         let ours = src.audio(start, n, 48_000).unwrap().channels;
         assert_eq!(ours.len(), ch, "{name}");
-        // Matroska stores CodecDelay (the encoder's 256-sample priming) in ns and timestamps in
-        // ms, and we place packets at the rounded value (240 samples): a shared Matroska timing
-        // limit (AAC and AC-3 alike), not a decoding one. Elsewhere the samples line up exactly.
-        let (worst, lag) = (-32..=32).map(|lag| (snr(&ours, &want, ch, lag), lag)).fold((f64::MIN, 0), |a, b| if b.0 > a.0 { b } else { a });
-        let max_lag = if name.ends_with(".mkv") { 16 } else { 0 };
-        assert!(lag.abs() <= max_lag, "{name}: decode is {lag} samples off ffmpeg's");
+        // Matroska stores the encoder's 256-sample priming as CodecDelay, which we trim exactly
+        // (checked to the sample against the encoded signal in `matroska_audio_oracle`). Whether
+        // ffmpeg's CLI trims it too depends on its version (9.x does; 2023-24 builds keep the
+        // priming samples), so for .mkv its decode may start 256 samples earlier than ours.
+        // Elsewhere the samples line up exactly, whatever the version.
+        let lags: Vec<i64> = match name.ends_with(".mkv") {
+            true => (-32..=32).chain(-256 - 32..=-256 + 32).collect(),
+            false => (-32..=32).collect(),
+        };
+        let (worst, lag) = lags.into_iter().map(|lag| (snr(&ours, &want, ch, lag), lag)).fold((f64::MIN, 0), |a, b| if b.0 > a.0 { b } else { a });
+        let ok = if name.ends_with(".mkv") { lag == 0 || lag == -256 } else { lag == 0 };
+        assert!(ok, "{name}: decode is {lag} samples off ffmpeg's");
         // a window read on a fresh source (random access) gives the same samples
         let fresh = filmcraft_codecs::open_bytes(name, bytes(&f)).unwrap();
         let at = n / 3;

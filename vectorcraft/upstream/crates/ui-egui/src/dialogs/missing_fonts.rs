@@ -292,27 +292,7 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
             ui.add(egui::Spinner::new().size(12.0).color(t.accent));
         }
     });
-    if searching {
-        widgets::dim_name(ui, &d.str("folder"));
-    }
-    if let Some(s) = d.fields.get("searched") {
-        let (folders, files) = (s["folders"].to_string(), s["files"].to_string());
-        widgets::dim_name(
-            ui,
-            &crate::i18n::fmt(tl!("{folders} folder(s) and {files} file(s) searched"), &[("folders", &folders), ("files", &files)]),
-        );
-    }
-    let count = |k: &str| d.fields.get(k).and_then(Value::as_u64).filter(|n| *n > 0).map(|n| n.to_string());
-    if let Some(n) = count("skipped") {
-        let text = tl!("{count} folder(s) skipped, such as other apps' and the system's folders and hidden ones");
-        widgets::dim_name(ui, &crate::i18n::fmt(text, &[("count", &n)]));
-    }
-    if let Some(n) = count("unreadable") {
-        widgets::dim_name(ui, &crate::i18n::fmt(tl!("{count} folder(s) or file(s) couldn't be read"), &[("count", &n)]));
-    }
-    if matches!(d.fields.get("stopped").and_then(Value::as_str), Some("time" | "limit")) {
-        widgets::dim_label(ui, tl!("The search stopped at its limit: search a smaller folder."));
-    }
+    progress(ui, d);
     // Once files are found: what copying them means, and Add Fonts.
     if found.iter().any(|f| f["files"].as_array().is_some_and(|files| !files.is_empty())) {
         ui.add_space(8.0);
@@ -343,6 +323,32 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
         app.status(e);
     }
     false
+}
+
+/// A folder search's progress under the dialog's buttons (fields `state`, `folder`, `searched`,
+/// `skipped`, `unreadable` and `stopped`), in Find Linked Files too.
+pub(super) fn progress(ui: &mut egui::Ui, d: &Dialog) {
+    if d.str("state") == "searching" {
+        widgets::dim_name(ui, &d.str("folder"));
+    }
+    if let Some(s) = d.fields.get("searched") {
+        let (folders, files) = (s["folders"].to_string(), s["files"].to_string());
+        widgets::dim_name(
+            ui,
+            &crate::i18n::fmt(tl!("{folders} folder(s) and {files} file(s) searched"), &[("folders", &folders), ("files", &files)]),
+        );
+    }
+    let count = |k: &str| d.fields.get(k).and_then(Value::as_u64).filter(|n| *n > 0).map(|n| n.to_string());
+    if let Some(n) = count("skipped") {
+        let text = tl!("{count} folder(s) skipped, such as other apps' and the system's folders and hidden ones");
+        widgets::dim_name(ui, &crate::i18n::fmt(text, &[("count", &n)]));
+    }
+    if let Some(n) = count("unreadable") {
+        widgets::dim_name(ui, &crate::i18n::fmt(tl!("{count} folder(s) or file(s) couldn't be read"), &[("count", &n)]));
+    }
+    if matches!(d.fields.get("stopped").and_then(Value::as_str), Some("time" | "limit")) {
+        widgets::dim_label(ui, tl!("The search stopped at its limit: search a smaller folder."));
+    }
 }
 
 /// Find Fonts (`discard`): Type › Find Font on the first font the document misses, to replace it;
@@ -733,7 +739,7 @@ mod tests {
         let fr = crate::i18n::Lang::from_code("fr").unwrap();
         let shown = crate::i18n::message(fr, "2 font file(s) are now in /Fonts; 1 couldn't be added: a.otf: larger than 256 MB");
         assert!(shown.contains("se trouvent maintenant dans /Fonts") && shown.contains("a.otf") && shown.contains("plus de 256 Mo"), "{shown}");
-        for code in ["de", "es", "fr", "it", "ru"] {
+        for code in ["de", "es", "fr", "hu", "it", "ru"] {
             let lang = crate::i18n::Lang::from_code(code).unwrap();
             for s in [
                 "every search thread stopped on an internal error (please report this bug)",

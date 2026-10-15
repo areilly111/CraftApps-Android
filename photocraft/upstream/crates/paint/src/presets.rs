@@ -107,7 +107,9 @@ fn dry_media(base: &BrushSettings) -> Vec<BrushPreset> {
                 spacing: 0.12,
                 shape_dynamics: ShapeDynamics { enabled: true, size: pressure_min(0.5), angle: Dynamic::controlled(Control::Direction), ..Default::default() },
                 transfer: transfer(pressure_min(0.3), Dynamic::default()),
-                texture: Texture { mode: MaskMode::Subtract, ..paper(5, 0.7) },
+                // Subtract takes paint away where the pattern is light (#3340); inverting keeps
+                // these presets as they were designed, with the dark parts taking it away.
+                texture: Texture { mode: MaskMode::Subtract, invert: true, ..paper(5, 0.7) },
                 ..base.clone()
             },
         ),
@@ -129,6 +131,7 @@ fn dry_media(base: &BrushSettings) -> Vec<BrushPreset> {
                     pattern: Pattern::Procedural { style: PatternStyle::Canvas, size: 64, seed: 2 },
                     depth: 0.55,
                     mode: MaskMode::Subtract,
+                    invert: true,
                     ..Default::default()
                 },
                 ..base.clone()
@@ -379,6 +382,7 @@ fn special_effects(base: &BrushSettings) -> Vec<BrushPreset> {
                     enabled: true,
                     pattern: Pattern::Procedural { style: PatternStyle::Canvas, size: 64, seed: 1 },
                     mode: MaskMode::Subtract,
+                    invert: true,
                     depth: 0.7,
                     ..Default::default()
                 },

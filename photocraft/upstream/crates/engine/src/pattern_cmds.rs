@@ -305,25 +305,33 @@ pub(crate) fn placement(p: &Value) -> (f32, f32, bool, (f32, f32)) {
     ((num("scale", 100.0) / 100.0).clamp(0.01, 10.0), num("angle", 0.0), p.get("link").and_then(Value::as_bool).unwrap_or(true), phase)
 }
 
+/// The edit of `layer.newFillLayer.pattern`: a Pattern Fill layer of `pat` placed as `p` asks,
+/// above `active`. The Pattern Fill dialog previews it on a copy of the document.
+pub(crate) fn insert_fill_layer(doc: &mut Document, active: &mut Option<photocraft_doc::LayerId>, pat: &Pattern, p: &Value) -> Result<photocraft_doc::LayerId> {
+    let (scale, angle, link, phase) = placement(p);
+    ensure_in_doc(doc, pat);
+    let fill = Fill::Pattern { name: pat.name.clone(), scale, id: pat.id.clone(), angle, link, phase };
+    let mut l = Layer::new(doc.next_layer_name("Pattern Fill"), LayerContent::Fill(fill));
+    crate::commands::mask_new_layer(doc, &mut l, p, "layer.newFillLayer.pattern")?;
+    let id = doc.insert_above(*active, l);
+    *active = Some(id);
+    Ok(id)
+}
+
 fn new_fill_layer(s: &mut Session, p: &Value) -> Result<Value> {
     let pat = resolve_param(s, "layer.newFillLayer.pattern", p)?;
-    let (scale, angle, link, phase) = placement(p);
-    let id = s.edit("New Pattern Fill Layer", |doc, active| {
-        ensure_in_doc(doc, &pat);
-        let fill = Fill::Pattern { name: pat.name.clone(), scale, id: pat.id.clone(), angle, link, phase };
-        let mut l = Layer::new(doc.next_layer_name("Pattern Fill"), LayerContent::Fill(fill));
-        crate::commands::mask_new_layer(doc, &mut l, p, "layer.newFillLayer.pattern")?;
-        let id = doc.insert_above(*active, l);
-        *active = Some(id);
-        Ok(id)
-    })?;
+    let id = s.edit("New Pattern Fill Layer", |doc, active| insert_fill_layer(doc, active, &pat, p))?;
     Ok(json!({"layer": id.0, "pattern": pat.id}))
 }
 
 fn brush_texture(s: &mut Session, p: &Value) -> Result<Value> {
     let pat = resolve_param(s, "brush.texturePattern", p)?;
+    let n = pat.is_paintable().then(|| usize::try_from(pat.pixel_count()).ok()).flatten();
+    let Some(n) = n else {
+        return Err(bad("brush.texturePattern", "the pattern is empty or too large to paint"));
+    };
     // Brush textures are grey: luminance of the composite over white.
-    let mut px = vec![[0.0f32; 4]; (pat.width * pat.height) as usize];
+    let mut px = vec![[0.0f32; 4]; n];
     pat.surface.read_rgba_into(pat.rect(), &mut px);
     let lum: Vec<f32> = px
         .iter()
@@ -344,8 +352,11 @@ fn brush_texture(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// A swatch colour for UIs (average of the tile), straight RGB.
 pub fn average_color(p: &Pattern) -> Color {
-    let mut px = vec![[0.0f32; 4]; (p.width * p.height) as usize];
-    p.surface.read_rgba_into(p.rect(), &mut px);
+    // A pattern too large to paint is averaged over its paintable top-left corner.
+    let side = photocraft_doc::pattern::MAX_PAINT_PIXELS.isqrt() as u32;
+    let (w, h) = (p.width.min(side), p.height.min(side));
+    let mut px = vec![[0.0f32; 4]; w as usize * h as usize];
+    p.surface.read_rgba_into(Rect::new(0, 0, w as i32, h as i32), &mut px);
     let n = px.len().max(1) as f32;
     let s = px.iter().fold([0.0f32; 3], |a, q| [a[0] + q[0], a[1] + q[1], a[2] + q[2]]);
     Color::rgb(s[0] / n, s[1] / n, s[2] / n)
@@ -555,5 +566,15 @@ mod tests {
         s.execute("brush.texturePattern", json!({"pattern": "Dots", "scale": 50})).unwrap();
         assert!(s.tools.brush.texture.enabled);
         assert!(matches!(s.tools.brush.texture.pattern, photocraft_paint::Pattern::Tile(_)));
+    }
+
+    #[test]
+    fn a_pattern_too_large_to_paint_is_refused_not_allocated() {
+        // width × height overflows u32: this panicked (debug) or wrapped (release).
+        let mut s = session(8);
+        let huge = Pattern { id: "huge".into(), name: "Huge".into(), width: 65_536, height: 65_536, surface: Surface::new(PixelFormat::RGBA8) };
+        s.patterns.items.push(huge);
+        let e = s.execute("brush.texturePattern", json!({"pattern": "huge"})).unwrap_err();
+        assert!(e.to_string().contains("too large"), "{e}");
     }
 }

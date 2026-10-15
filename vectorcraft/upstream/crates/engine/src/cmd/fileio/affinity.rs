@@ -236,13 +236,13 @@ impl Builder {
                 let appearance = self.appearance(fills, strokes, to_doc);
                 if children.is_empty() {
                     let mut p = self.base(n, NodeKind::Path { path: data, rule, live: None, clipping: false, guide: false });
-                    p.appearance = appearance;
+                    p.appearance = appearance.into();
                     p
                 } else {
                     // A shape clips its children: VectorCraft's clipping path keeps its paint, its
                     // fill behind the clipped art and its stroke over it, as Affinity draws it.
                     let mut clip = Node::new(self.doc.alloc_id(), NodeKind::Path { path: data, rule, live: None, clipping: true, guide: false });
-                    clip.appearance = appearance;
+                    clip.appearance = appearance.into();
                     let mut kids = vec![Arc::new(clip)];
                     kids.extend(children);
                     self.base(n, NodeKind::Group { children: kids, clip: true })
@@ -259,7 +259,7 @@ impl Builder {
                         guide: false,
                     },
                 );
-                clip.appearance = self.appearance(background, strokes, to_doc);
+                clip.appearance = self.appearance(background, strokes, to_doc).into();
                 let mut kids = vec![Arc::new(clip)];
                 kids.extend(children);
                 let mut g = self.base(n, NodeKind::Group { children: kids, clip: true });
@@ -289,7 +289,7 @@ impl Builder {
             // shows outside it, as an opacity mask that clips.
             if let Some(kind) = self.image(img, to_doc) {
                 let art = Node::new(self.doc.alloc_id(), kind);
-                out.mask = Some(Box::new(OpacityMask::new(art, true)));
+                out.extras_mut().mask = Some(Box::new(OpacityMask::new(art, true)));
             }
         }
         if let Some(mask) = &n.mask {
@@ -514,7 +514,7 @@ impl Builder {
         let sy = img.height as f64 / f64::from(r.height.max(1));
         let xf = to_doc * affine(img.transform) * Affine::scale_non_uniform(sx, sy);
         self.doc.images.entry(r.key.clone()).or_insert(r.blob);
-        Some(NodeKind::Image(ImageObject { key: r.key, width: r.width, height: r.height, xf, link: None, placement: Default::default() }))
+        Some(NodeKind::Image(Box::new(ImageObject { key: r.key, width: r.width, height: r.height, xf, link: None, placement: Default::default() })))
     }
 }
 

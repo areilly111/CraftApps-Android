@@ -70,12 +70,15 @@ with libdav1d: **bit-exact** on all 6 fixtures.
 wasm32, or without the default `threads` feature, everything runs on the calling thread). Headers are parsed in order; each frame is
 then decoded by a frame worker once the reference frames it reads are finished, so independent
 frames (hierarchical GOP layers) decode concurrently; tiles of a frame decode in parallel into
-private buffers that are merged afterwards. Results never depend on scheduling (the oracle tests
-compare 1 thread, many threads and libdav1d). With frame threads, pictures may be returned by a
+private buffers that are merged afterwards; the in-loop filters (deblocking, CDEF, loop
+restoration) each run in parallel bands of 64 rows (`postfilter.rs` explains why the bands are
+independent). Results never depend on scheduling (the oracle tests compare 1 thread, many threads
+and libdav1d). With frame threads, pictures may be returned by a
 later `decode_pts` call or by `flush`; each carries the `pts` of the temporal unit that showed it.
 
 `tests/perf.rs` (ignored) prints single-threaded fps (thread CPU time), per-stage ms/frame
-(`Decoder::stats()`) and all-core fps for 1080p fixtures. The hot loops (sub-pixel filters,
+(`Decoder::stats()`) and all-core fps with its per-stage ms/frame for 1080p fixtures (key frames,
+GOPs, tiles, low delay) and a single-tile 2160p GOP; `AV1_PERF_ONLY=a,b` picks fixtures. The hot loops (sub-pixel filters,
 CDEF, inverse transforms, deblocking, entropy decoding) are written for auto-vectorisation.
 
 Measured 2026-10-01 on a 14-core Apple Silicon Mac (release build, SVT-AV1 preset 8 1080p

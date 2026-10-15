@@ -59,7 +59,8 @@ fn warp_node(n: &mut Node, f: &dyn Fn(Point) -> Point, h: Option<&Homography>) {
     if let Some(h) = h
         && matches!(n.kind, NodeKind::Text(_) | NodeKind::SymbolInstance { .. })
     {
-        let rec = n.perspective.get_or_insert_with(Default::default);
+        let mut extras = n.extras_mut();
+        let rec = extras.perspective.get_or_insert_with(Default::default);
         let had = rec.homography().unwrap_or(Homography::IDENTITY);
         rec.projection = Some(h.then_after(&had).to_array());
         return;

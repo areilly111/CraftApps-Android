@@ -58,11 +58,16 @@ impl PreviewTextures {
         if !s.is_finite() || s <= 0.0 {
             return (0, false);
         }
+        // Nearest Neighbor is point sampling: downsampled mip levels have already averaged
+        // neighbouring texels, so using one would blur a pixel-art transform preview.
+        if nearest_interpolation {
+            return (0, true);
+        }
         if s < 0.5 {
             // log2(1/s) levels down, at most 12 (4096× smaller).
-            return ((1.0 / s).log2().floor().clamp(0.0, 12.0) as u32, nearest_interpolation);
+            return ((1.0 / s).log2().floor().clamp(0.0, 12.0) as u32, false);
         }
-        let crisp = nearest_interpolation || (zoom >= CRISP_ZOOM && scale <= 1.05);
+        let crisp = zoom >= CRISP_ZOOM && scale <= 1.05;
         (0, crisp)
     }
 
@@ -85,7 +90,7 @@ impl PreviewTextures {
     }
 
     /// Level `n` of the mip chain (built on demand by 2×2 box filtering) and its uv extent.
-    fn level_image(&self, n: u32) -> Option<(Arc<ColorImage>, [f32; 2])> {
+    pub(crate) fn level_image(&self, n: u32) -> Option<(Arc<ColorImage>, [f32; 2])> {
         let mut imgs = self.images.lock().unwrap_or_else(PoisonError::into_inner);
         while imgs.len() <= n as usize {
             let prev = imgs.last()?;
@@ -203,6 +208,10 @@ mod tests {
         assert_eq!(PreviewTextures::choose(1.0, 1.0, true), (0, true));
         assert_eq!(PreviewTextures::choose(0.25, 1.0, false), (2, false));
         assert_eq!(PreviewTextures::choose(0.3, 1.0, false), (1, false));
+        // Nearest Neighbor must use the full-resolution texels, even when zoomed far out.
+        // A mipmap would average adjacent opaque/transparent pixels before sampling.
+        assert_eq!(PreviewTextures::choose(0.25, 1.0, true), (0, true));
+        assert_eq!(PreviewTextures::choose(1.0 / 4096.0, 1.0, true), (0, true));
         assert_eq!(PreviewTextures::choose(f32::NAN, 1.0, false), (0, false));
         assert_eq!(PreviewTextures::choose(1e-9, 1.0, false).0, 12);
     }

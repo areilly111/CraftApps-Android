@@ -147,4 +147,27 @@ mod tests {
             assert!(group.haystack.contains(&word.to_lowercase()), "{word}");
         }
     }
+
+    /// The palette lists `select.key` once, as Cancel Key Object (#541): a pick runs it with no id,
+    /// which cancels the key object. `engine.commands` gives agents the same label.
+    #[test]
+    fn the_palette_lists_cancel_key_object_once() {
+        let items = items();
+        let ids: Vec<&str> = items.iter().filter(|(label, ..)| label == "Cancel Key Object").map(|(_, id, _)| id.as_str()).collect();
+        assert_eq!(ids, ["select.key"]);
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), crate::Services::default());
+        let commands = crate::control::all_commands(&app);
+        let key = commands.as_array().unwrap().iter().find(|c| c["id"] == "select.key").unwrap();
+        assert_eq!(key["label"], "Cancel Key Object");
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        let a = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap()["id"].clone();
+        let b = app.run("shape.rectangle", json!({"x": 80, "y": 50, "width": 30, "height": 30})).unwrap()["id"].clone();
+        app.run("select.set", json!({"ids": [a, b]})).unwrap();
+        app.run("select.key", json!({"id": b})).unwrap();
+        assert!(app.session.active().unwrap().selection.key.is_some());
+        // Run a pick the way `show` runs it.
+        menus::invoke(&mut app, ids[0], json!({}));
+        let st = app.session.active().unwrap();
+        assert_eq!((st.selection.len(), st.selection.key), (2, None), "both objects stay selected, without a key");
+    }
 }

@@ -124,6 +124,32 @@ fn text_is_wrapped_and_paginated() {
     assert!(content(p.last().unwrap()).contains("(After a form feed) Tj"), "a form feed starts a page");
 }
 
+/// Text Helvetica can't draw is refused with its line and character, never set as `?`; text
+/// PdfCraft generates writes such characters as [U+XXXX] and says so.
+#[test]
+fn text_helvetica_cannot_draw_is_refused_or_escaped() {
+    let err = from_text("notes", "Café —\tok\r\n\u{c}第二页 notes", LETTER, 11.0).unwrap_err();
+    let CreateError::Invalid(msg) = &err else { panic!("{err:?}") };
+    assert!(msg.contains("(line 2)") && msg.contains("\"第\" (U+7B2C)") && msg.contains("Western European"), "{msg}");
+    // Western European text, tabs, CRLF and form feeds included, still converts.
+    from_text("notes", "Café —\tok\r\n\u{c}Seite zwei: Grüße", LETTER, 11.0).unwrap();
+    let (doc, escaped) = from_text_escaped("Summary of Comments on 报告.pdf", "Comment: 签名 ok\nPage 2", LETTER, 11.0).unwrap();
+    assert_eq!(escaped, 2);
+    let doc = reopen(&doc);
+    let p = pages(&doc);
+    let c = doc.resolve(p[0].get(b"Contents").unwrap());
+    let Object::Stream(s) = &*c else { panic!() };
+    let shown = String::from_utf8_lossy(&s.decoded().unwrap()).into_owned();
+    assert!(shown.contains("(Comment: [U+7B7E][U+540D] ok) Tj") && shown.contains(&format!("({ESCAPED_NOTE}) Tj")), "{shown}");
+    assert!(!shown.contains('?'), "{shown}");
+    // Nothing to escape: no note.
+    let (doc, escaped) = from_text_escaped("r", "Plain report", LETTER, 11.0).unwrap();
+    assert_eq!(escaped, 0);
+    let p = pages(&doc);
+    let Object::Stream(s) = &*doc.resolve(p[0].get(b"Contents").unwrap()) else { panic!() };
+    assert!(!String::from_utf8_lossy(&s.decoded().unwrap()).contains("U+XXXX"));
+}
+
 fn image_of(doc: &Document, page: usize) -> Dict {
     let p = &pages(doc)[page];
     let res = doc.resolve(p.get(b"Resources").unwrap()).as_dict().cloned().unwrap();
@@ -196,6 +222,64 @@ fn a_tiff_claiming_enormous_dimensions_is_refused() {
     assert_eq!(tif.len(), 122);
     tif.push(0);
     assert!(matches!(from_images(&[("huge.tif".into(), tif)]), Err(CreateError::Image(..))));
+}
+
+/// A PNG of a few bytes whose header claims `w`×`h` 8-bit RGBA pixels, with no pixel data.
+fn png_claiming(w: u32, h: u32) -> Vec<u8> {
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut c = !0u32;
+        for &b in bytes {
+            c ^= u32::from(b);
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    }
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut chunk = |kind: &[u8], data: &[u8]| {
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let body = [kind, data].concat();
+        png.extend_from_slice(&body);
+        png.extend_from_slice(&crc32(&body).to_be_bytes());
+    };
+    let ihdr = [&w.to_be_bytes()[..], &h.to_be_bytes(), &[8, 6, 0, 0, 0]].concat();
+    chunk(b"IHDR", &ihdr);
+    // An empty zlib stream: one stored block of no bytes.
+    chunk(b"IDAT", &[0x78, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01]);
+    chunk(b"IEND", &[]);
+    png
+}
+
+#[test]
+fn a_tiny_png_claiming_huge_dimensions_is_refused_before_allocating() {
+    // 68 bytes claiming 13 GiB (and 1 TiB) of pixels: refused before anything is allocated,
+    // where it used to abort the process when the allocation failed.
+    for (w, h) in [(60_000, 60_000), (1 << 20, 1 << 18)] {
+        let png = png_claiming(w, h);
+        assert_eq!(png.len(), 68);
+        let r = from_images(&[("huge.png".into(), png)]);
+        assert!(matches!(&r, Err(CreateError::Image(_, m)) if m.contains("too large")), "{w}x{h}");
+    }
+}
+
+/// Likewise a PNG: the png crate's limits don't cover the frame buffer, which its header sizes
+/// (60000x60000 RGBA is 14.4 GB). Refused before anything is allocated, not after.
+#[test]
+fn a_png_claiming_enormous_dimensions_is_refused() {
+    let mut png = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut png, 60_000, 60_000);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().unwrap();
+        // A zlib stream holding one zero byte: far too little data, but a well-formed start.
+        w.write_chunk(png::chunk::IDAT, &[0x78, 0x01, 0x01, 0x01, 0x00, 0xFE, 0xFF, 0x00, 0x00, 0x01, 0x00, 0x01]).unwrap();
+    }
+    match from_images(&[("huge.png".into(), png)]) {
+        Err(CreateError::Image(_, m)) => assert!(m.contains("too large"), "{m}"),
+        other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
+    }
 }
 
 #[test]

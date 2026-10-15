@@ -214,9 +214,9 @@ pub fn decode_planes(compression: Compression, data: &[u8], layout: &PlaneLayout
             Ok(out)
         }
         Compression::Rle => decode_rle(data, layout, total),
-        Compression::Zip => zip_decompress(data, total),
+        Compression::Zip => inflate_checked(data, total as u64, true),
         Compression::ZipPrediction => {
-            let mut v = zip_decompress(data, total)?;
+            let mut v = inflate_checked(data, total as u64, true)?;
             unpredict(&mut v, layout)?;
             Ok(v)
         }
@@ -243,10 +243,14 @@ pub fn encode_planes(compression: Compression, decoded: &[u8], layout: &PlaneLay
     }
 }
 
-/// Returns the number of leading bytes of `data` that a decoder would consume
-/// (validating structure). For RLE this is the count table plus the counted
-/// bytes; for Raw it is the decoded size; for ZIP the zlib stream is
-/// decompressed (without keeping output) and the whole input is consumed.
+/// Validates encoded sizes and, for ZIP, the complete stream and checksum.
+///
+/// A ZIP stream whose declared size is over [`MAX_DECODED_BYTES`] is not
+/// decompressed at all (#2926): [`decode_planes`] refuses that layout with
+/// `LimitExceeded` anyway, so inflating it here would only be work on an
+/// untrusted file before the same error. The bytes are kept verbatim, like an
+/// unknown compression method, so a layered file whose merged composite is
+/// too large still opens.
 pub(crate) fn validate_planes(compression: Compression, data: &[u8], layout: &PlaneLayout) -> Result<()> {
     let total = layout.total_bytes()?;
     match compression {
@@ -269,29 +273,44 @@ pub(crate) fn validate_planes(compression: Compression, data: &[u8], layout: &Pl
             }
             Ok(())
         }
-        Compression::Zip | Compression::ZipPrediction => {
-            // Decompress without keeping the output, through the end of the
-            // stream so the Adler-32 checksum is verified too.
-            let mut dec = flate2::read::ZlibDecoder::new(data);
-            let mut buf = [0u8; 8192];
-            let mut got: u64 = 0;
-            loop {
-                let n = dec.read(&mut buf).map_err(|e| PsdError::Decompress(e.to_string()))?;
-                if n == 0 {
-                    break;
-                }
-                got += n as u64;
-                if got > total.saturating_add(1 << 20) {
-                    // Far more output than needed; stop (bomb guard).
-                    break;
-                }
-            }
-            if got < total {
-                return Err(PsdError::Decompress(format!("zlib stream produced {got} of {total} bytes")));
-            }
-            Ok(())
-        }
+        Compression::Zip | Compression::ZipPrediction if total > MAX_DECODED_BYTES => Ok(()),
+        Compression::Zip | Compression::ZipPrediction => inflate_checked(data, total, false).map(|_| ()),
         Compression::Unknown(_) => Ok(()),
+    }
+}
+
+// Keep only the requested pixels, but consume the trailer to verify Adler-32.
+// A bounded surplus tolerates padding without unbounded decompression work.
+fn inflate_checked(data: &[u8], expected: u64, keep: bool) -> Result<Vec<u8>> {
+    const OOM: PsdError = PsdError::LimitExceeded("not enough memory for the decoded channel data");
+    let mut decoder = flate2::Decompress::new(true);
+    let mut out = Vec::new();
+    if keep {
+        out.try_reserve_exact(expected.min(data.len().saturating_mul(1032) as u64) as usize).map_err(|_| OOM)?;
+    }
+    let mut buf = vec![0; expected.saturating_add(1).clamp(8192, 1 << 20) as usize];
+    loop {
+        let before = (decoder.total_in(), decoder.total_out());
+        let input = data.get(before.0 as usize..).ok_or_else(|| PsdError::Decompress("zlib input overflow".into()))?;
+        let status = decoder.decompress(input, &mut buf, flate2::FlushDecompress::None).map_err(|e| PsdError::Decompress(e.to_string()))?;
+        let got = decoder.total_out();
+        if got > expected.saturating_add(1 << 20) {
+            return Err(PsdError::LimitExceeded("zlib output exceeds the declared size and padding allowance"));
+        }
+        if keep {
+            let n = (got - before.1).min(expected.saturating_sub(out.len() as u64)) as usize;
+            out.try_reserve(n).map_err(|_| OOM)?;
+            out.extend_from_slice(buf.get(..n).ok_or_else(|| PsdError::Decompress("zlib output overflow".into()))?);
+        }
+        if status == flate2::Status::StreamEnd {
+            if got < expected {
+                return Err(PsdError::Decompress(format!("zlib stream produced {got} of {expected} bytes")));
+            }
+            return Ok(out);
+        }
+        if before == (decoder.total_in(), got) {
+            return Err(PsdError::Decompress("incomplete zlib stream".into()));
+        }
     }
 }
 
@@ -472,6 +491,27 @@ pub fn unpredict(buf: &mut [u8], layout: &PlaneLayout) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_zip_validates_trailer_size_and_padding_budget() {
+        let layout = PlaneLayout { planes: 1, width: 3, height: 1, depth: 8, version: Version::Psd };
+        for compression in [Compression::Zip, Compression::ZipPrediction] {
+            let data = encode_planes(compression, &[1, 2, 3], &layout).unwrap();
+            for cut in 0..data.len() {
+                assert!(decode_planes(compression, &data[..cut], &layout).is_err(), "cut {cut}");
+                assert!(validate_planes(compression, &data[..cut], &layout).is_err());
+            }
+            let mut corrupt = data;
+            *corrupt.last_mut().unwrap() ^= 1;
+            assert!(decode_planes(compression, &corrupt, &layout).is_err());
+            assert!(validate_planes(compression, &corrupt, &layout).is_err());
+        }
+        let padded = zip_compress(&[1, 2, 3, 0]);
+        assert_eq!(decode_planes(Compression::Zip, &padded, &layout).unwrap(), [1, 2, 3]);
+        let bomb = zip_compress(&vec![0; (1 << 20) + 4]);
+        assert!(decode_planes(Compression::Zip, &bomb, &layout).is_err());
+        assert!(validate_planes(Compression::Zip, &bomb, &layout).is_err());
+    }
 
     fn layout(planes: usize, width: usize, height: usize, depth: u16, version: Version) -> PlaneLayout {
         PlaneLayout { planes, width, height, depth, version }
@@ -674,6 +714,23 @@ mod tests {
             assert!(decode_planes(Compression::Zip, &enc[..cut], &l).is_err(), "cut {cut}");
             assert!(validate_planes(Compression::Zip, &enc[..cut], &l).is_err(), "cut {cut}");
         }
+    }
+
+    /// #2926: a ZIP stream declaring more than `MAX_DECODED_BYTES` is not inflated at parse
+    /// time. Garbage zlib data proves it: decompressing it would fail, skipping it passes, and
+    /// decoding the layout still reports the size limit.
+    #[test]
+    fn zip_over_budget_is_not_decompressed_at_parse() {
+        let l = layout(4, 300_000, 300_000, 8, Version::Psb);
+        assert!(l.total_bytes().unwrap() > MAX_DECODED_BYTES);
+        let garbage = [0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03];
+        for c in [Compression::Zip, Compression::ZipPrediction] {
+            validate_planes(c, &garbage, &l).unwrap();
+            assert!(matches!(decode_planes(c, &garbage, &l), Err(PsdError::LimitExceeded(_))), "{c:?}");
+        }
+        // Within the budget the stream is still checked.
+        let small = layout(1, 4, 4, 8, Version::Psd);
+        assert!(validate_planes(Compression::Zip, &garbage, &small).is_err());
     }
 
     #[test]

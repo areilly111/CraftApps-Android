@@ -155,3 +155,20 @@ fn unloaded_thumbnails_show_their_selection() {
     }
     assert!(checked >= 3, "checked {checked}");
 }
+
+/// A folder of unedited raws on a slow share: the grid must not decode every raw to draw a 512 px
+/// thumbnail the embedded camera JPEG already covers. Measured on a 56 MB Fuji RAF over a 1.2 MB/s
+/// share, that decode is 45 s a photo, and 149 of them queued in front of the render the user asked
+/// for. The embedded JPEG stays a *stand-in* — replaced by a real render — whenever it is not the
+/// picture the photo should show.
+#[test]
+fn an_unedited_raws_thumbnail_skips_the_sensor_decode() {
+    use crate::panels::grid::skips_the_real_render;
+    // unedited raw, embedded camera JPEG on screen: nothing behind it to render
+    assert!(skips_the_real_render(true, true));
+    // a cached render of the file was the stand-in, even for an unedited raw: the real one follows
+    assert!(!skips_the_real_render(true, false));
+    // edited photo, or a raw with no embedded JPEG: render it
+    assert!(!skips_the_real_render(false, true));
+    assert!(!skips_the_real_render(false, false));
+}

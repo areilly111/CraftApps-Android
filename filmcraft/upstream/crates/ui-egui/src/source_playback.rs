@@ -213,6 +213,11 @@ impl FilmcraftApp {
             self.source_playback.clock.audio_seen = (0, now);
             self.start_source_audio();
         }
+        if self.source_playback.clock.audio_clock
+            && let Some(audio) = self.audio.as_mut()
+        {
+            audio.recover();
+        }
         let clock = &mut self.source_playback.clock;
         if clock.anchor_time < 0.0 {
             clock.anchor_time = now;

@@ -42,9 +42,15 @@ overrides:
       - mesa-vulkan-drivers
       - xdg-desktop-portal
   rpm:
+    # Require 64-bit library capabilities, not distro-specific package names. nfpm
+    # does not scan ELF dependencies; declare the direct runtimes and glibc floor
+    # as well as the libraries loaded at runtime. Release RPMs are amd64/arm64.
     depends:
-      - libxkbcommon
-      - (vulkan-loader or libglvnd-egl)
+      - libc.so.6(GLIBC_2.35)(64bit)
+      - libm.so.6()(64bit)
+      - libgcc_s.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit))
     recommends:
       - libwayland-client
       - libX11

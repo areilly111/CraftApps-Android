@@ -567,10 +567,26 @@ pub fn xml_escape(s: &str) -> String {
 
 /// Format a number with at most `decimals` places, trimming trailing zeros.
 pub fn fmt_num(v: f64, decimals: u8) -> String {
+    let mut s = String::new();
+    push_num(&mut s, v, decimals);
+    s
+}
+
+/// [`fmt_num`] appended to `out`, without allocating.
+pub fn push_num(out: &mut String, v: f64, decimals: u8) {
+    use std::fmt::Write as _;
     let v = if v.is_finite() { v } else { 0.0 };
-    let s = format!("{:.*}", decimals as usize, v);
-    let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s };
-    if s == "-0" || s.is_empty() { "0".into() } else { s }
+    let start = out.len();
+    let _ = write!(out, "{:.*}", decimals as usize, v); // writing to a String can't fail
+    let s = out.get(start..).unwrap_or_default();
+    if s.contains('.') {
+        let keep = s.trim_end_matches('0').trim_end_matches('.').len();
+        out.truncate(start + keep);
+    }
+    if matches!(out.get(start..), Some("-0" | "")) {
+        out.truncate(start);
+        out.push('0');
+    }
 }
 
 #[cfg(test)]

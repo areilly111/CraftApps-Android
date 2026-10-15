@@ -53,15 +53,25 @@ pub fn open(app: &mut PhotocraftApp, name: &str, bytes: &[u8]) -> Option<Result<
         // A background import (#210): `jobs_ui` reports the count when it lands.
         if r.get("pending").and_then(Value::as_bool) == Some(true) {
             app.ui.status_error = false;
-            app.ui.status = format!("Importing {what} from {stem}…");
+            let template = "Importing {what} from {file}…";
+            app.ui.status = crate::i18n::fmt(tl!(template), &[("what", tl!(what)), ("file", &stem)]);
             return;
         }
         let n = r.get("count").and_then(Value::as_u64).unwrap_or(0);
         let warnings: Vec<String> = r.get("warnings").and_then(|w| serde_json::from_value(w.clone()).ok()).unwrap_or_default();
         app.ui.status_error = false;
+        let (one, other) = if what == "brushes" {
+            ("Imported {n} brush from {file}", "Imported {n} brushes from {file}")
+        } else {
+            ("Imported {n} gradient from {file}", "Imported {n} gradients from {file}")
+        };
+        let imported = crate::i18n::fmt(&crate::i18n::trn(crate::i18n::current(), n, one, other), &[("file", &stem)]);
         app.ui.status = match warnings.first() {
-            Some(w) => format!("Imported {n} {what} from {stem} ({} notes: {w})", warnings.len()),
-            None => format!("Imported {n} {what} from {stem}"),
+            Some(warning) => {
+                let template = "{message} (notes: {n}; {warning})";
+                crate::i18n::fmt(tl!(template), &[("message", &imported), ("n", &warnings.len().to_string()), ("warning", warning)])
+            }
+            None => imported,
         };
         if what == "brushes" {
             // Show them: Brush Settings › Brushes tab.

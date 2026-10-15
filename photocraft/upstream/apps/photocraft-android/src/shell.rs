@@ -41,14 +41,18 @@ impl AndroidShell {
             match (qa.action, qa.pressed) {
                 (PenAction::None, _) => {}
                 (PenAction::Undo, true) => {
-                    if let Err(e) = self.inner.run_command("edit.undo", serde_json::Value::Null) {
-                        log::warn!("pen undo: {e}");
-                    }
+                    // TODO: Port to 0.8.2 APIs (run_command is private)
+                    // if let Err(e) = self.inner.run_command("edit.undo", serde_json::Value::Null) {
+                    //     log::warn!("pen undo: {e}");
+                    // }
+                    log::warn!("pen undo: not implemented in 0.8.2 port");
                 }
                 (PenAction::Redo, true) => {
-                    if let Err(e) = self.inner.run_command("edit.redo", serde_json::Value::Null) {
-                        log::warn!("pen redo: {e}");
-                    }
+                    // TODO: Port to 0.8.2 APIs (run_command is private)
+                    // if let Err(e) = self.inner.run_command("edit.redo", serde_json::Value::Null) {
+                    //     log::warn!("pen redo: {e}");
+                    // }
+                    log::warn!("pen redo: not implemented in 0.8.2 port");
                 }
                 (PenAction::ToggleEraser, true) => {
                     let cur = self.inner.ui.tool;

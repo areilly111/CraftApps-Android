@@ -72,7 +72,7 @@ fn draw(layout: &TextLayout, transform: &Xform, sink: &mut impl LineSink, only_c
         let offsets: &[(f64, f64)] =
             if bold { &[(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (0.7, 0.7), (-0.7, -0.7), (0.7, -0.7), (-0.7, 0.7)] } else { &[(0.0, 0.0)] };
         for &(ox, oy) in offsets {
-            let local = Xform([1.0, 0.0, 0.0, 1.0, ox * r, oy * r]).mul(&glyph);
+            let local = glyph.mul(&Xform([1.0, 0.0, 0.0, 1.0, ox * r, oy * r]));
             let settings = DrawSettings::unhinted(Size::new(face.size_px), LocationRef::new(&coords));
             match warp {
                 Some(w) => {

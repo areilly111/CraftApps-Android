@@ -37,6 +37,10 @@ used — on import (it then also files a copied photo in its date folder) and by
 `xmp:Rating="-1"` (the XMP convention for rejected) sets the reject flag. Develop settings come from
 `lc:settings` when present (exact); otherwise from the `crs:` fields below (approximate).
 
+When foreign `crs:` settings are only partly transferable, `library.import` includes per-photo `warnings` in its
+report. Warnings identify unsupported profile names, saved Upright geometry that will be recalculated, and other
+unmapped adjustments; they do not change the source packet or become catalog edits.
+
 ## Saving into an existing sidecar
 
 A sidecar may already hold another application's data — e.g. its `crs:` develop settings and `xmpMM:History` — often
@@ -108,8 +112,9 @@ application's renderer and is ignored: the photo keeps LightCraft's own process,
 |---|---|---|
 | `Exposure2012` | `light.exposure` | EV, 1:1 |
 | `Contrast2012`, `Highlights2012`, `Shadows2012`, `Whites2012`, `Blacks2012` | `light.contrast` … `light.blacks` | −100..100, 1:1 |
+| `HDREditMode` | `hdr.enabled` | `1` / `True` = HDR editing on, `0` / `False` off |
 | `WhiteBalance` | `wb.mode` | `As Shot`, `Auto`, `Daylight`, `Cloudy`, `Shade`, `Tungsten`, `Fluorescent`, `Flash`; other names → custom |
-| `Temperature`, `Tint` | `wb.temp`, `wb.tint` | Kelvin / tint as written for raws with a measured illuminant (DNG) and for presets. Raws LightCraft develops relative to their as-shot look (ARW, NEF, RW2, RAF, CR3, CR2, PEF, SRW: 6500 K / 0 means as shot) take the same mired shift from the packet's `AsShotTemperature` / `AsShotTint` instead; without that reference a custom Kelvin stays As Shot and is reported (`Temperature, Tint (custom white balance without AsShotTemperature: kept As Shot)`), because read on the relative scale it would be a large colour cast (issue #510) |
+| `Temperature`, `Tint` | `wb.temp`, `wb.tint` (+ `wb.scale: kelvin`) | Kelvin / tint as written for raws with colour matrices — in the file (DNG) or measured for the camera (`lightcraft_raw::spectral`: ILCE-7M3, D850, EOS 5D Mark III…, issue #730) — and for presets; the mapped settings say `"scale": "kelvin"` so the value stays Kelvin wherever it lands. Raws LightCraft develops relative to their as-shot look (ARW, NEF, RW2, RAF, CR3, CR2, PEF, SRW of other cameras: 6500 K / 0 means as shot) take the same mired shift from the packet's `AsShotTemperature` / `AsShotTint` instead; without that reference a custom Kelvin stays As Shot and is reported (`Temperature, Tint (custom white balance without AsShotTemperature: kept As Shot)`), because read on the relative scale it would be a large colour cast (issue #510). Note that LightCraft's Kelvin for a camera comes from its measured matrices, Lightroom's from Adobe's: the two scales differ (about 7–10 % on the ILCE-7M3), so the number is carried over, not the exact look |
 | `IncrementalTemperature`, `IncrementalTint` | `wb.temp`, `wb.tint` | rendered files: −100..100 on our relative scale (mired shift around 6500 K, same as the Temp slider); a rendered file with only `Temperature` shifts from `AsShotTemperature` like the raws above when it is present |
 | `Vibrance`, `Saturation` | `color.vibrance`, `color.saturation` | 1:1 |
 | `Texture`, `Clarity2012`, `Dehaze` | `effects.texture`, `effects.clarity`, `effects.dehaze` | 1:1 |
@@ -135,13 +140,34 @@ application's renderer and is ignored: the photo keeps LightCraft's own process,
 | `DefringePurple/GreenAmount/HueLo/HueHi` | `optics.defringe_*` | |
 | `ShadowTint`, `RedHue/Saturation`, `GreenHue/Saturation`, `BlueHue/Saturation` | `calibration.shadows_tint`, `calibration.red_hue/red_sat`, … | Calibration panel, 1:1 |
 | `PerspectiveVertical/Horizontal/Rotate/Scale/Aspect/X/Y` | `geometry.vertical/horizontal/rotate/scale/aspect/offset_x/offset_y` | |
-| `PerspectiveUpright` | `geometry.upright` | 0 off, 1 auto, 2 level, 3 vertical, 4 full, 5 guided |
+| `PerspectiveUpright` | `geometry.upright` | 0 off, 1 auto, 2 level, 3 vertical, 4 full, 5 guided; saved `UprightTransform_*` matrices are not imported, so photo import reports that Lightroom geometry was not preserved and the selected mode will be recalculated |
 | `HasCrop`, `CropLeft/Top/Right/Bottom`, `CropAngle` | `crop.geometry` | normalized edges → rect; angle in degrees; `HasCrop="False"` → no crop |
 
 Values pass through our control specs, so anything outside our slider ranges gets clamped.
 
-**Not mapped:** camera profiles and looks (`CameraProfile`, `Look`; we have our own profile set), local adjustments
-(masks, gradients, brushes), spot removal, red eye, lens blur, process-version 2010 field names, and AI features.
+`crs:CameraProfile` is kept as the selected name in the photo's import warning and the active profile is left as it is: the name carries no rendering data and never selects an Adobe profile. Import reports such a profile as not applied (colours may differ from Lightroom), except Lightroom's default profiles (`Adobe Standard`, `Adobe Color`), which every sidecar names and which LightCraft's own starting look stands in for.
+
+**Not mapped:** camera profiles and looks (`CameraProfile`, `Look`; we have our own profile set), red eye, lens blur,
+process-version 2010 field names, and AI features. Local adjustments and spot removal are read as described below.
+
+## Spot removal
+
+Heal and clone spots stored as `crs:RetouchAreas` (one structure per spot, a mask component inside) and the older
+`crs:RetouchInfo` list (one `key = value, …` line per spot; read on its own when it is all a packet has) become our
+spots (`crates/engine/src/crs_masks.rs`, `spots`). Implemented from the public data model and by observing what a
+sidecar written for a healed photo contains.
+
+| Field | Ours | Notes |
+|---|---|---|
+| `SpotType` | `mode` | `heal` (default) or `clone`; the removal method (`Method`) is ours |
+| `Masks` → `Mask/Ellipse` (`X`, `Y`, `SizeX`) | a circle spot | centre in image fractions; `SizeX` is a fraction of the width, our size of the long edge |
+| `Masks` → `Mask/CircularGradient` (`Top/Left/Bottom/Right`) | a circle spot | the box's centre and half-width |
+| `Masks` → `Mask/Paint` (`Dabs`, `Radius`) | a brushed spot | the dabs are the path |
+| `SourceX`, `OffsetY` | `source_offset` | the source's **absolute** x and y (despite the name); ours is the offset from the target. Only with `SourceState="sourceSetExplicitly"` (or no state); anything else leaves the source automatic |
+| `Opacity`, `Feather` | `opacity`, `feather` | 0..1 → 0..100 |
+
+A spot whose mask is any other kind is reported as `Spot: <kind>`. Sizes are clamped to our spot range. A sidecar's
+spots replace the photo's, as its masks do.
 
 ## Local corrections (masks)
 
@@ -172,7 +198,7 @@ carry over are listed in `preset.import`'s `unmapped` as `Mask: <kind>`.
 |---|---|
 | Ours: `.lcpreset` | JSON `{"format": "lightcraft.preset", "version": 1, "presets": [{id, name, group, settings}]}`, where `settings` is a partial develop-settings object (only the groups the preset includes). A file can hold one preset or many, and every preset keeps its group. Import also accepts a bare preset object or an array of them. |
 | Export | `preset.export {path, ids?, group?}`: all user presets by default, or the given ids or one group. In the app: File ▸ Export Presets…, Presets panel ▸ ⋯ ▸ Export User Presets…, or right-click a group ▸ Export Group…. |
-| Import | `preset.import {paths, group?, dryRun?}`: files or folders (recursive): `.lcpreset`, `.xmp`, classic `.lrtemplate` (a Lua table: `value.settings` holds the same field names as `crs:`), photos that carry their edits in XMP ("DNG presets" from mobile apps; their crop, geometry and custom white balance are left out) and `.zip` bundles of any of these. Presets in a folder (or a folder inside a zip) go to a group named after it, unless the file names its own group. The result lists, per preset, the settings that couldn't be carried over (`unmapped`, e.g. `CameraProfile`, `Look`, local masks), and the app's toast names them; fields that only describe the preset or the photo (`Cluster`, `SortName`, `Description`, `SupportsAmount2`, `RequiresRGBTables`, `CropConstrainToWarp`, `OverrideLookVignette`, `AsShotTemperature` / `AsShotTint`, an off `HDREditMode`, empty `PointColors` slots) aren't listed. Older (process version 2010) fields — `Exposure`, `Contrast`, `FillLight`, `HighlightRecovery`, `Shadows`, `Brightness`, `Clarity`, `ToneCurve` — are approximated with today's sliders when a preset has no 2012-era fields. Dropping preset files on the window imports them too. In the app: File ▸ Import Presets…, or Presets panel ▸ ⋯ ▸ Import Presets…. A preset that's already there (same name, group and settings) is skipped. If an id clashes, the import gets a fresh `user.*` id, and built-in presets are never replaced. |
+| Import | `preset.import {paths, group?, dryRun?}`: files or folders (recursive): `.lcpreset`, `.xmp`, classic `.lrtemplate` (a Lua table: `value.settings` holds the same field names as `crs:`), photos that carry their edits in XMP ("DNG presets" from mobile apps; their crop, geometry and custom white balance are left out) and `.zip` bundles of any of these. Presets in a folder (or a folder inside a zip) go to a group named after it, unless the file names its own group. The result lists, per preset, the settings that couldn't be carried over (`unmapped`, e.g. `CameraProfile`, `Look`, local masks), and the app's toast names them; fields that only describe the preset or the photo (`Cluster`, `SortName`, `Description`, `SupportsAmount2`, `RequiresRGBTables`, `CropConstrainToWarp`, `OverrideLookVignette`, `AsShotTemperature` / `AsShotTint`, empty `PointColors` slots) aren't listed. Older (process version 2010) fields — `Exposure`, `Contrast`, `FillLight`, `HighlightRecovery`, `Shadows`, `Brightness`, `Clarity`, `ToneCurve` — are approximated with today's sliders when a preset has no 2012-era fields. Dropping preset files on the window imports them too. In the app: File ▸ Import Presets…, or Presets panel ▸ ⋯ ▸ Import Presets…. A preset that's already there (same name, group and settings) is skipped. If an id clashes, the import gets a fresh `user.*` id, and built-in presets are never replaced. |
 | XMP presets | Read with the `crs:` table above, with `crs:Name` as the name (falling back to the file name) and `crs:Group` as the group (falling back to "Imported Presets"). Only the fields the preset sets are included, so applying it leaves everything else alone and the Amount slider scales it like any other preset. We only read XMP presets; we don't write them. |
 
 LightCraft ships no third-party presets. Its built-in presets are its own values (`crates/engine/src/presets.rs`).

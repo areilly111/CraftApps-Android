@@ -22,6 +22,9 @@ fn help_and_usage_errors() {
     assert_eq!(cli(&[]).status.code(), Some(2));
     assert_eq!(cli(&["frobnicate"]).status.code(), Some(2));
     assert_eq!(cli(&["exec", "file.newBin", "notkv"]).status.code(), Some(2));
+    // Invalid --bridge is a usage error (exit 2) for both exec and mcp (#921).
+    assert_eq!(cli(&["--bridge", "0.0.0.0:9876", "exec", "inspect.project"]).status.code(), Some(2));
+    assert_eq!(cli(&["mcp", "--bridge", "0.0.0.0:9876"]).status.code(), Some(2));
 }
 
 #[test]
@@ -289,5 +292,57 @@ fn closed_stdout_still_runs_the_script_and_saves() {
         b"{\"id\":\"no.such.command\"}\n{\"id\":\"file.newBin\",\"params\":{\"name\":\"x\"}}\n",
     );
     assert_eq!(out.status.code(), Some(1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1054: exporting or rendering a project whose media is missing fails (exit 1) and names the
+/// offline items on stderr and in the result's `offlineMedia`, unless `--allow-offline` accepts the
+/// placeholder frames; then it still warns.
+#[test]
+fn export_with_missing_media_fails_unless_allowed() {
+    let dir = std::env::temp_dir().join(format!("fc-cli-1054-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = |n: &str| dir.join(n).to_str().unwrap().to_string();
+    let (still, proj) = (f("still.png"), f("p.fcproj"));
+    let o = cli(&["--demo", "render", "--seconds", "1", "--scale", "0.1", "--out", &still]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    json_out(&cli(&["exec", "file.newSequence", "name=s", "width=64", "height=36", "fps=24", "--save-as", &proj]));
+    let paths = format!("paths=[\"{}\"]", still.replace('\\', "\\\\"));
+    let item = json_out(&cli(&["--project", &proj, "--save", "exec", "file.import", &paths]))["items"][0].as_u64().unwrap();
+    json_out(&cli(&["--project", &proj, "--save", "exec", "timeline.place", &format!("item={item}"), "track=V1", "frame=0", "audio=false"]));
+    let export = |out: &str, extra: &[&str]| {
+        let mut args = vec!["--project", proj.as_str(), "--compact", "export", out, "--format", "png", "--start", "0", "--end", "0.05"];
+        args.extend_from_slice(extra);
+        cli(&args)
+    };
+
+    let on = export(&f("on.png"), &[]);
+    let v = json_out(&on);
+    assert_eq!(v["offlineMedia"], serde_json::json!([]), "{v}");
+    assert!(!String::from_utf8_lossy(&on.stderr).contains("warning"), "{}", String::from_utf8_lossy(&on.stderr));
+
+    std::fs::remove_file(&still).unwrap();
+    let off = export(&f("off.png"), &[]);
+    let err = String::from_utf8_lossy(&off.stderr);
+    assert_eq!(off.status.code(), Some(1), "{err}");
+    assert!(err.contains("still.png") && err.contains("missing") && err.contains("--allow-offline"), "{err}");
+    let v: Value = serde_json::from_slice(&off.stdout).expect("the result JSON is still printed");
+    assert_eq!(v["offlineMedia"][0]["item"], item, "{v}");
+    assert_eq!(v["offlineMedia"][0]["status"], "missing", "{v}");
+
+    let allowed = export(&f("allowed.png"), &["--allow-offline"]);
+    let err = String::from_utf8_lossy(&allowed.stderr);
+    assert!(allowed.status.success(), "{err}");
+    assert!(err.contains("still.png") && err.contains("missing"), "still warns: {err}");
+    assert_eq!(json_out(&allowed)["offlineMedia"][0]["status"], "missing");
+
+    let render = cli(&["--project", &proj, "render", "--seconds", "0", "--out", &f("r.png")]);
+    let err = String::from_utf8_lossy(&render.stderr);
+    assert_eq!(render.status.code(), Some(1), "{err}");
+    assert!(err.contains("still.png") && err.contains("--allow-offline"), "{err}");
+    let render = cli(&["--project", &proj, "render", "--seconds", "0", "--out", &f("r.png"), "--allow-offline"]);
+    assert!(render.status.success(), "{}", String::from_utf8_lossy(&render.stderr));
+    assert!(String::from_utf8_lossy(&render.stderr).contains("still.png"));
     let _ = std::fs::remove_dir_all(&dir);
 }

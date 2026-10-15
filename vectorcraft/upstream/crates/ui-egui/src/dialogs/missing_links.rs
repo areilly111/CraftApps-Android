@@ -1,13 +1,15 @@
 //! The linked files a document opened without, one at a time: Replace picks another file
 //! (`links.relink`), and with Apply to All the other missing files are looked for by name in its
 //! folder; Ignore keeps the images showing their saved preview, and with Apply to All ignores the
-//! rest. Afterwards, with Preferences › Update Links: Ask When Modified, the modified links are
-//! offered for update (`links.update`). Files another app changes while the document is open are
-//! offered the same way ([`ask_update_changed`], from [`vectorcraft_engine::link_watch`]).
+//! rest. Find in Folder… looks for every missing file in a folder and its subfolders (dialog
+//! `findLinks`, [`super::find_links`]). Afterwards, with Preferences › Update Links: Ask When
+//! Modified, the modified links are offered for update (`links.update`). Files another app changes
+//! while the document is open are offered the same way ([`ask_update_changed`], from
+//! [`vectorcraft_engine::link_watch`]).
 //!
 //! Fields: `missing` (`[{name, path, ids}]`, the one asked about first), `modified` (the ids of
-//! images whose file was modified), `applyToAll`, `path` (the replacement file; picked when empty)
-//! and `discard` (Ignore).
+//! images whose file was modified), `applyToAll`, `path` (the replacement file; picked when empty),
+//! `discard` (Ignore) and `searchFolder` (set it and confirm for Find in Folder… on that folder).
 
 use serde_json::{Value, json};
 
@@ -59,6 +61,17 @@ fn open(app: &mut VectorcraftApp, missing: Vec<Value>, modified: Vec<Value>) {
     app.ui.dialog = Some(Dialog::new(KIND, json!({ "missing": missing, "modified": modified, "applyToAll": false, "path": "" })));
 }
 
+/// Ask about the missing files `rest`, one at a time, then offer the modified ones `modified` for
+/// update.
+pub(super) fn ask_next(app: &mut VectorcraftApp, rest: Vec<Value>, modified: Vec<Value>) {
+    if rest.is_empty() {
+        app.ui.dialog = None;
+        ask_update(app, modified);
+    } else {
+        open(app, rest, modified);
+    }
+}
+
 /// With Update Links: Ask When Modified, offer to read the modified linked files `ids` again.
 fn ask_update(app: &mut VectorcraftApp, ids: Vec<Value>) {
     ask(app, ids, tl!("{count} linked image(s) changed since this document was saved. Show the new versions?"));
@@ -66,6 +79,7 @@ fn ask_update(app: &mut VectorcraftApp, ids: Vec<Value>) {
 
 /// The same offer for linked files another app changed while the document is open
 /// ([`vectorcraft_engine::link_watch`]).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn ask_update_changed(app: &mut VectorcraftApp, ids: Vec<Value>) {
     ask(app, ids, tl!("{count} linked image(s) changed on disk. Show the new versions?"));
 }
@@ -82,7 +96,7 @@ fn ask(app: &mut VectorcraftApp, ids: Vec<Value>, question: &str) {
     super::confirm::ask(app, tl!("Update Modified Links"), &detail, "links.update", json!({ "ids": ids }));
 }
 
-fn body(_: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
+fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     let t = Tokens::get(ui.ctx());
     let missing = d.fields.get("missing").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
     let Some(current) = missing.first() else { return true };
@@ -103,6 +117,18 @@ fn body(_: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     });
     ui.add_space(8.0);
     widgets::dim_label(ui, tl!("Replace it with another file, or ignore it: its images keep showing the preview saved with the document."));
+    if crate::picks::can(app, &crate::picks::PickRequest::Folder) {
+        ui.add_space(8.0);
+        if ui.button(tl!("Find in Folder…")).clicked() {
+            let r = crate::picks::in_dialog(app, d, |app, d| match crate::picks::folder(app) {
+                Some(folder) => super::find_links::from_missing_links(app, d, &folder),
+                None => Ok(()),
+            });
+            if let Err(e) = r {
+                app.status(e);
+            }
+        }
+    }
     if rest > 0 {
         ui.add_space(10.0);
         let all = d.bool("applyToAll");
@@ -115,8 +141,20 @@ fn body(_: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
 }
 
 /// Replace (with `path`, else a picked file) or Ignore (`discard`) the first missing file, then
-/// ask about the next.
+/// ask about the next. With `searchFolder`: Find in Folder… on that folder.
 fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
+    let folder = d.str("searchFolder");
+    if !folder.is_empty() {
+        let mut d = d.clone();
+        // The folder is searched once: a search that doesn't start leaves the dialog without it.
+        if let Some(open) = app.ui.dialog.as_mut().filter(|open| open.kind == KIND) {
+            open.fields.remove("searchFolder");
+        }
+        super::find_links::from_missing_links(app, &mut d, &folder)?;
+        let state = d.fields.get("state").cloned().unwrap_or(Value::Null);
+        app.ui.dialog = Some(d);
+        return Ok(json!({ "state": state }));
+    }
     let missing = d.fields.get("missing").and_then(Value::as_array).cloned().unwrap_or_default();
     let modified = d.fields.get("modified").and_then(Value::as_array).cloned().unwrap_or_default();
     let all = d.bool("applyToAll");
@@ -147,12 +185,7 @@ fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
             rest.retain(|row| row["ids"].as_array().is_none_or(|ids| ids.iter().any(|id| !done.contains(id))));
         }
     }
-    if rest.is_empty() {
-        app.ui.dialog = None;
-        ask_update(app, modified);
-    } else {
-        open(app, rest, modified);
-    }
+    ask_next(app, rest, modified);
     Ok(out)
 }
 
@@ -257,7 +290,19 @@ mod tests {
         app.run("file.place", json!({"path": pic.to_string_lossy()})).unwrap();
         let doc = dir.join("doc.vectorcraft").to_string_lossy().into_owned();
         app.run("document.save", json!({"path": doc})).unwrap();
+        let original_stamp = std::fs::metadata(&pic).unwrap().modified().unwrap();
+        let mark_modified = |seconds| {
+            // Link stamps use milliseconds. Equal-size writes can finish within one tick;
+            // advance the fixture's mtime explicitly rather than relying on a sleep or load.
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&pic)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(original_stamp + std::time::Duration::from_secs(seconds)))
+                .unwrap();
+        };
         std::fs::write(&pic, png([0, 0, 200])).unwrap();
+        mark_modified(2);
         crate::io::open_path(&mut app, &doc).unwrap();
         let d = app.ui.dialog.as_ref().expect("asks");
         assert_eq!((d.kind.as_str(), d.str("__command")), (super::super::confirm::KIND, "links.update".to_string()));
@@ -266,8 +311,10 @@ mod tests {
         // Manually: no question.
         app.run("prefs.set", json!({"key": "updateLinks", "value": "manually"})).unwrap();
         std::fs::write(&pic, png([0, 200, 0])).unwrap();
+        mark_modified(4);
         crate::io::open_path(&mut app, &doc).unwrap();
         assert!(app.ui.dialog.is_none());
+        assert_eq!(app.run("links.check", json!({})).unwrap()["modified"], 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

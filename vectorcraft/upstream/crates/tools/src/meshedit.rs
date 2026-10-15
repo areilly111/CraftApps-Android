@@ -1,10 +1,11 @@
 //! Dragging mesh points and their handles on the canvas, shared by the Mesh tool and Direct
 //! Selection: gradient meshes and mesh envelopes alike (`object.mesh.movePoint`). Clicking a
-//! point focuses it: its handles show and can be dragged too.
+//! point focuses it: its handles show and can be dragged too, and on a gradient mesh a solid fill
+//! colour recolours it (the tool's `meshPoint` option).
 
 use std::borrow::Cow;
 
-use serde_json::json;
+use serde_json::{Value, json};
 use vectorcraft_doc::live::{GradientMesh, envelope_grid};
 use vectorcraft_doc::{EnvelopeKind, Node, NodeId, NodeKind};
 use vectorcraft_geom::Point;
@@ -18,9 +19,10 @@ const FEEDBACK: [u8; 3] = [0x4f, 0x9d, 0xff];
 pub fn grid_of(n: &Node) -> Option<Cow<'_, GradientMesh>> {
     match &n.kind {
         NodeKind::Mesh(m) => Some(Cow::Borrowed(m)),
-        NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows, cols, points, handles }, editing: false, .. } => {
-            envelope_grid(*rows, *cols, points, handles).map(Cow::Owned)
-        }
+        NodeKind::Envelope { kind, editing: false, .. } => match &**kind {
+            EnvelopeKind::Mesh { rows, cols, points, handles } => envelope_grid(*rows, *cols, points, handles).map(Cow::Owned),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -91,6 +93,12 @@ impl MeshEdit {
         self.focus = None;
     }
 
+    /// `{meshPoint: {id, index}|null}`: the focused point, which a solid fill colour recolours
+    /// (`paint.setFill` on a gradient mesh).
+    pub fn options(&self) -> Value {
+        json!({"meshPoint": self.focus.map(|(id, index)| json!({"id": id.0, "index": index}))})
+    }
+
     /// The focused point's handles (lines and ends).
     pub fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
         let Some((id, index)) = self.focus else { return vec![] };
@@ -125,11 +133,11 @@ mod tests {
         let kind = EnvelopeKind::Mesh { rows: 1, cols: 1, points: grid_points(Rect::new(100.0, 100.0, 200.0, 200.0), 1, 1), handles: vec![] };
         let env = NodeKind::Envelope {
             content: vec![Arc::new(rect)],
-            kind,
+            kind: Box::new(kind),
             fidelity: 50.0,
             editing: false,
             options: EnvelopeOptions::NEW,
-            frame: Affine::IDENTITY,
+            frame: Box::new(Affine::IDENTITY),
         };
         let l = d.layers[0].id;
         d.insert(Some(l), 0, Node::new(id, env)).unwrap();

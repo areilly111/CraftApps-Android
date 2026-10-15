@@ -94,12 +94,13 @@ fn registered_languages(source: &str) -> Result<Vec<Language>, String> {
         let catalog = if code == "en" {
             None
         } else {
-            let marker = "include_str!(\"";
-            let start = block.find(marker).ok_or_else(|| format!("language `{code}` has no include_str! catalog"))? + marker.len();
+            // `catalog!("xx")` embeds `xx.tsv` (packed by ui-egui's build.rs).
+            let marker = "catalog!(\"";
+            let start = block.find(marker).ok_or_else(|| format!("language `{code}` has no catalog! entry"))? + marker.len();
             let rest = block.get(start..).ok_or_else(|| format!("language `{code}` has a malformed catalog path"))?;
             let end = rest.find("\")").ok_or_else(|| format!("language `{code}` has a malformed catalog path"))?;
-            let file = rest.get(..end).ok_or_else(|| format!("language `{code}` has an invalid catalog path"))?;
-            let path = Path::new(file);
+            let file = format!("{}.tsv", rest.get(..end).ok_or_else(|| format!("language `{code}` has an invalid catalog path"))?);
+            let path = Path::new(&file);
             if path.components().count() != 1 || path.extension().and_then(|ext| ext.to_str()) != Some("tsv") {
                 return Err(format!("language `{code}` has unsafe catalog path `{file}`"));
             }
@@ -184,9 +185,11 @@ fn plural_keys(sources: &[(PathBuf, String)]) -> BTreeSet<Key> {
             rest = rest.get(at + 4..).unwrap_or("");
             let Some(end) = call_end(rest) else { break };
             let args = rest.get(..end).unwrap_or("");
+            // `trn(lang, n, one, other)`: the forms are the last two literals, so a string in the
+            // count expression (`r["files"].len()`) is not mistaken for one.
             let forms = quoted_strings(args);
-            if forms.len() >= 2 {
-                keys.insert(Key { context: "@plural".into(), source: format!("{}|{}", forms[0], forms[1]) });
+            if let [.., one, other] = forms.as_slice() {
+                keys.insert(Key { context: "@plural".into(), source: format!("{one}|{other}") });
             }
             rest = rest.get(end + 1..).unwrap_or("");
         }
@@ -482,9 +485,9 @@ mod tests {
     fn registered_languages_and_report_are_stable() {
         let registry = r#"
             pub static LANGUAGES: [LangInfo; 3] = [
-                LangInfo { code: "zh", source: include_str!("zh.tsv") },
-                LangInfo { code: "en", source: "" },
-                LangInfo { code: "fr", source: include_str!("fr.tsv") },
+                LangInfo { code: "zh", source: catalog!("zh") },
+                LangInfo { code: "en", source: b"" },
+                LangInfo { code: "fr", source: catalog!("fr") },
             ];
             impl LangInfo {}
         "#;
@@ -542,6 +545,11 @@ mod tests {
     fn plural_keys_come_from_source_calls() {
         let sources = vec![(PathBuf::from("ui.rs"), r#"trn(lang, count, "{n} layer", "{n} layers");"#.into())];
         assert!(plural_keys(&sources).contains(&Key { context: "@plural".into(), source: "{n} layer|{n} layers".into() }));
+        // A string literal in the count expression is not one of the forms.
+        let sources = vec![(PathBuf::from("ui.rs"), r#"trn(lang, r["files"].len() as u64, "{n} file", "{n} files");"#.into())];
+        let keys = plural_keys(&sources);
+        assert!(keys.contains(&Key { context: "@plural".into(), source: "{n} file|{n} files".into() }), "{keys:?}");
+        assert_eq!(keys.len(), 1, "{keys:?}");
     }
 
     #[test]
@@ -571,6 +579,9 @@ mod tests {
             ("el", "el.tsv"),
             ("uk", "uk.tsv"),
             ("nl", "nl.tsv"),
+            ("hu", "hu.tsv"),
+            ("tr", "tr.tsv"),
+            ("vi", "vi.tsv"),
         ] {
             let catalog_path = root.join("crates/ui-egui/src/i18n").join(path);
             let text = fs::read_to_string(&catalog_path).unwrap_or_default();

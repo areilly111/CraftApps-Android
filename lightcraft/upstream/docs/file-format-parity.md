@@ -21,14 +21,14 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 | PSD / PSB | ✅ (maximized-compatibility composite) | ✅ (Classic: PSD export, edit-in round trip) | ✅ merged composite | ⬜ (external-editor round trip writes 16-bit TIFF) | `crates/codecs/src/psd.rs` |
 | HEIC / HEIF | ✅ | ⬜ (Classic) / HDR only | ✅ in every release build (`crates/heif`, heic-rs) | ⬜ | `heif` feature on by packaging scripts |
 | AVIF | ✅ | ✅ (HDR) | ⬜ recognised, not decoded (no permissive pure-Rust AV1 decoder) | ✅ 8/10-bit, PQ HDR | |
-| JPEG XL | ✅ | ✅ | ✅ (`jxl-oxide`) incl. DNG 1.7 JXL tiles | ⬜ | |
+| JPEG XL | ✅ | ✅ | ✅ (`jxl-oxide`) incl. DNG 1.7 JXL tiles | ✅ lossy / lossless, 8/16-bit, PQ HDR (`jixel`, native only; ⬜ web) | `crates/engine/src/tests_export.rs` |
 | WebP | not in its document types | ⬜ | ✅ | ✅ | beyond target |
 | GIF, BMP | ⬜ | ⬜ | ✅ | ⬜ | beyond target |
 | DNG (from raw) | ✅ | ✅ incl. lossy, embedded original | ✅ | ✅ uncompressed or LJ92; ⬜ lossy DNG, embedded original | `crates/raw/src/dngwrite.rs` |
 | Render to DNG (15.5) | — | ✅ | — | ⬜ | new in Classic 15.5 |
 | Original + sidecar | — | ✅ | — | ✅ | |
 | HDR gain map JPEG (ISO 21496-1) | ✅ | ✅ | ✅ (gain map read) | ✅ | `crates/codecs/src/gainmap.rs` |
-| PQ / HLG HDR | ✅ | ✅ AVIF, JXL, TIFF | — | 🟡 PQ AVIF, float TIFF; no HLG | |
+| PQ / HLG HDR | ✅ | ✅ AVIF, JXL, TIFF | — | 🟡 PQ AVIF, PQ JPEG XL, float TIFF; no HLG | |
 | Contact sheet / print PDF | — | ✅ (Print module: PDF / JPEG / printer) | — | 🟡 paginated contact-sheet PDF (A4 / Letter, 150 dpi, sRGB) | `crates/engine/src/contact_sheet.rs` |
 | Video (MP4, MOV, AVCHD…) | ✅ playback, trim, edit | ✅ export | 🟡 catalogued (kind, duration) | ⬜ | see video gap |
 
@@ -63,17 +63,17 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 
 | Part | Weight | Ready for real work | Kind |
 |---|---:|---:|---|
-| Standard image import / export | 35% | ~85% | estimated (table above; missing: AVIF read, JXL / PSD write, lossy DNG) |
+| Standard image import / export | 35% | ~85% | estimated (table above; missing: AVIF read, PSD write, lossy DNG) |
 | Sidecars, metadata, presets | 25% | ~85% | estimated |
 | Lightroom catalog migration | 25% | ~50% | estimated (one-way, approximate rendering of unsupported settings) |
 | HDR, print, video output | 15% | ~35% | estimated |
 | **Non-raw file formats** | 100% | **~70%** | estimated; raw is in [raw-parity.md](raw-parity.md) (~50%) |
 
-Remaining: **30–55 h** (AVIF decode 8–15 h if a permissive decoder is written or found; JXL encode
-4–8 h; PSD write 4–8 h; lossy DNG and Render to DNG 4–8 h; HLG 3–5 h; catalog import depth 8–12 h).
+Remaining: **26–47 h** (AVIF decode 8–15 h if a permissive decoder is written or found; PSD write 4–8 h; lossy DNG and Render to DNG 4–8 h; HLG 3–5 h; catalog import depth 8–12 h).
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-10 | major | Created from the code and the installed Lightroom's document types |
+| 2026-10-10 | minor | JPEG XL export (#247): JXL write ✅ (native only), PQ JPEG XL HDR |

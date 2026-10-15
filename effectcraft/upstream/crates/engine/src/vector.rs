@@ -250,6 +250,12 @@ pub fn vector_clip_masks(doc: &Doc) -> (Vec<BezPath>, Doc) {
     (masks, out)
 }
 
+/// Whether text (the system clipboard's, say) is SVG markup: Edit ▸ Paste makes it a shape
+/// layer (`edit.pasteSvg`).
+pub fn is_svg_text(text: &str) -> bool {
+    effectcraft_svg::looks_like_svg(text.as_bytes())
+}
+
 /// Whether footage is a vector file (SVG / PDF / AI / EPS).
 pub fn is_vector(f: &effectcraft_project::Footage) -> bool {
     effectcraft_render::is_vector_footage(f) || f.path.to_ascii_lowercase().ends_with(".svg")
@@ -471,6 +477,32 @@ pub fn image_layer(proj: &mut Project, comp: &Comp, item: ItemId, img: &VectorIm
 /// are kept with Merge Paths (see [`svg_contents`]).
 pub fn shapes_from_vector(proj: &mut Project, comp: &Comp, src: &Layer, doc: &Doc) -> Layer {
     let mut l = build::layer(proj, comp, &format!("{} Outlines", src.name), LayerSource::Shape, (0, 0), None);
+    add_doc_shapes(proj, &mut l, doc);
+    copy_transform(proj, src, &mut l);
+    like_source(&mut l, src);
+    l.name = comp.unique_layer_name(&format!("{} Outlines", src.name));
+    l
+}
+
+/// Edit ▸ Paste of SVG markup (After Effects 26.3 pastes copied vector artwork as shape layers):
+/// a shape layer named `name` with the document's shapes, its Anchor Point at the centre of the
+/// SVG canvas and its Position at the comp centre, so the canvas lands centred in the comp.
+pub fn shapes_from_svg(proj: &mut Project, comp: &Comp, doc: &Doc, name: &str) -> Layer {
+    let mut l = build::layer(proj, comp, name, LayerSource::Shape, (0, 0), None);
+    add_doc_shapes(proj, &mut l, doc);
+    let (w, h) = (doc.width, doc.height);
+    if w.is_finite()
+        && h.is_finite()
+        && let Some(a) = l.props.sub_mut("transform").and_then(|t| t.get_mut("anchor"))
+    {
+        a.value = Value::Vec3([w / 2.0, h / 2.0, 0.0]);
+    }
+    l
+}
+
+/// The shapes of `doc` into shape layer `l`'s Contents; clips enclosing the whole document
+/// become its masks (Add, then Intersect).
+fn add_doc_shapes(proj: &mut Project, l: &mut Layer, doc: &Doc) {
     let (clips, doc) = vector_clip_masks(doc);
     let mut ids = Ids(&mut proj.next_id);
     let items = svg_contents(&mut ids, &doc);
@@ -488,10 +520,6 @@ pub fn shapes_from_vector(proj: &mut Project, comp: &Comp, src: &Layer, doc: &Do
             }
         }
     }
-    copy_transform(proj, src, &mut l);
-    like_source(&mut l, src);
-    l.name = comp.unique_layer_name(&format!("{} Outlines", src.name));
-    l
 }
 
 /// Layer ▸ Create ▸ Create Shapes from Text: one group per character with its outline, fill and

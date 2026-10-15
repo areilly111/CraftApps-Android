@@ -103,6 +103,29 @@ pub(crate) fn editable_paths<'a>(cx: &'a ToolContext) -> impl Iterator<Item = No
         .filter(|&id| cx.doc.is_editable(id) && cx.doc.node(id).is_some_and(|n| matches!(n.kind, NodeKind::Path { guide: false, .. })))
 }
 
+/// The paths whose anchors show with the Pen: the selected ones, and those inside selected groups
+/// and compound paths (not guides, nor locked or hidden ones). Pen + Alt converts their anchors.
+pub(crate) fn shown_paths(cx: &ToolContext) -> Vec<NodeId> {
+    fn inside(n: &vectorcraft_doc::Node, v: &mut Vec<NodeId>) {
+        match &n.kind {
+            NodeKind::Path { guide: false, .. } => v.push(n.id),
+            // A Shape Builder group's first child is its shaper, not art.
+            NodeKind::Group { children, .. } | NodeKind::Compound { children, .. } => {
+                for c in children.iter().skip(usize::from(n.extras().shaper.is_some())) {
+                    inside(c, v);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut v = vec![];
+    for n in cx.selection.objects.iter().filter_map(|id| cx.doc.node(*id)) {
+        inside(n, &mut v);
+    }
+    v.retain(|id| cx.doc.is_editable(*id));
+    v
+}
+
 /// Nearest anchor within `tol`: (path, subpath, anchor).
 pub(crate) fn hit_anchor(cx: &ToolContext, p: Point, tol: f64) -> Option<(NodeId, usize, usize)> {
     anchor_in(cx, candidate_paths(cx), p, tol)

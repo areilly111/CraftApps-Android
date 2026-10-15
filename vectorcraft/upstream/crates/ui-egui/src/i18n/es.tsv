@@ -1121,6 +1121,23 @@
 	Graph	Gráfico
 	Graph Data	Datos del gráfico
 	Graph Type	Tipo de gráfico
+	Graph Design	Diseño de gráfico
+	Graph Marker	Marcador de gráfico
+	New Design	Nuevo diseño
+	Delete Design	Eliminar diseño
+	Paste Design	Pegar diseño
+	Select Unused	Seleccionar no utilizados
+	Import Data…	Importar datos…
+	Transpose	Transponer
+	Switch x/y	Intercambiar x/y
+	Number of Decimals:	Número de decimales:
+	Column Width:	Ancho de columna:
+	No Legend	Sin leyenda
+	Standard Legend	Leyenda estándar
+	Legends in Wedges	Leyendas en cuñas
+	Ratio	Proporción
+	Even	Igual
+	Stacked	Apilado
 	Graphic Style	Estilo gráfico
 	Graphic Style Libraries	Bibliotecas de estilos gráficos
 	Graphic Style Libraries Menu	Menú Bibliotecas de estilos gráficos
@@ -1341,6 +1358,7 @@
 	Last Effect…	Último efecto…
 	Last Page	Última página
 	Latin	Latín
+	Thai	Tailandés
 	Latin Extended	Latín extendido
 	Latin-1 Supplement	Suplemento Latín-1
 	Layer	Capa
@@ -1563,6 +1581,7 @@
 	Move Rows	Mover filas
 	Move Slices	Mover sectores
 	Move Spine Point	Mover punto del eje
+	Reshape Spine Segment	Remodelar segmento del eje
 	Move Swatch	Mover muestra
 	Move Up	Subir
 	Move…	Mover…
@@ -2051,6 +2070,11 @@
 	Proof Colors	Colores de prueba
 	Proof Setup	Ajuste de prueba
 	Properties	Propiedades
+	Proportional Metrics	Métrica proporcional
+	Digits	Dígitos
+	Arabic	Árabes
+	Hindi	Hindi
+	Farsi	Farsi
 	Proportional Oldstyle	Estilo antiguo proporcional
 	Pucker & Bloat…	Fruncir y engordar…
 	Pucker Tool	Herramienta Fruncir
@@ -2141,6 +2165,9 @@
 	Rectangle: Sunshine	Rectángulo: Sol
 	Rectangle…	Rectángulo…
 	Rectangular Grid	Cuadrícula rectangular
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	Líneas divisorias horizontales:
+	Vertical Dividers:	Líneas divisorias verticales:
 	Rectangular Grid Tool	Herramienta Cuadrícula rectangular
 	Red	Rojo
 	Redefine Character Style	Redefinir estilo de carácter
@@ -2150,6 +2177,9 @@
 	Redefine Symbol	Redefinir símbolo
 	Redefine {kind} Style	Redefinir estilo de {kind}
 	Redo	Rehacer
+	List Folder	Listar carpeta
+	Begin Undo Group	Iniciar grupo de deshacer
+	End Undo Group	Finalizar grupo de deshacer
 	Redo {name}	Rehacer {name}
 	Redo {}	Rehacer {}
 	Reduce Colors	Reducir colores
@@ -2202,6 +2232,13 @@
 	Relinked {n} image(s); not in that folder: {}	Se volvieron a vincular {n} imagen(es); no están en esa carpeta: {}
 	Relinked {} image(s)	Se volvieron a vincular {} imagen(es)
 	Relink…	Volver a vincular…
+	Find Linked Files	Buscar archivos vinculados
+	Find Linked Files in Folder…	Buscar archivos vinculados en una carpeta…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	Elige el archivo con el que volver a vincular cada archivo vinculado. Los archivos con el tamaño y el contenido guardados con el vínculo aparecen primero.
+	Same file	Mismo archivo
+	Same size	Mismo tamaño
+	Don't Relink	No volver a vincular
+	Copy into the document's folder	Copiar en la carpeta del documento
 	Reload Plug-ins	Volver a cargar plugins
 	Remove	Quitar
 	Remove Anchor Points	Quitar puntos de ancla
@@ -2470,6 +2507,7 @@
 	Select an image to see its Link Info.	Selecciona una imagen para ver su información de vínculo.
 	Select an image to trace	Selecciona una imagen para calcar
 	Select Anchors	Seleccionar anclas
+	Select Segments	Seleccionar segmentos
 	Select Appearance Item	Seleccionar elemento de apariencia
 	Select Art	Seleccionar ilustración
 	Select art and choose Object › Pattern › Make.	Selecciona una ilustración y elige Objeto › Motivo › Crear.
@@ -2515,7 +2553,6 @@
 	Set base color to the current color	Definir el color actual como color base
 	Set Bounds	Definir límites
 	Set Current Layer	Definir capa actual
-	Set Key Object	Definir objeto clave
 	Set Keyboard Shortcut	Definir método abreviado de teclado
 	Set Mesh Point Color	Definir color de punto de malla
 	Set Preference	Definir preferencia
@@ -2633,6 +2670,7 @@
 	Size Tile to Art	Ajustar tamaño del mosaico a la ilustración
 	Size/Leading	Tamaño/interlineado
 	Size:	Tamaño:
+	Ridges per segment:	Crestas por segmento:
 	Size: {size}  Tracking: {tracking}	Tamaño: {size}  Espaciado: {tracking}
 	Skew	Sesgar
 	Skin Tone Ramps	Rampas de tonos de piel
@@ -2902,6 +2940,9 @@
 	Tool Options…	Opciones de herramienta…
 	Toolbar: Advanced / Basic	Barra de herramientas: avanzada / básica
 	Toolbar: Single/Double Column	Barra de herramientas: columna simple/doble
+	Toolbar: Add Tool	Barra de herramientas: añadir herramienta
+	Toolbar: Remove Tool	Barra de herramientas: quitar herramienta
+	Toolbar: Reset	Barra de herramientas: restablecer
 	Toolbars	Barras de herramientas
 	Tools	Herramientas
 	Top	Arriba
@@ -3104,6 +3145,7 @@
 	Vertical %	% vertical
 	Vertical Align Bottom	Alinear abajo verticalmente
 	Vertical Align Center	Alinear centros verticalmente
+	Horizontal & Vertical Align Center	Alinear centros horizontal y verticalmente
 	Vertical Align Top	Alinear arriba verticalmente
 	Vertical Area Type Tool	Herramienta Texto de área vertical
 	Vertical Distribute Bottom	Distribuir abajo verticalmente
@@ -3317,6 +3359,7 @@ axis	Horizontal	Horizontal
 axis	Vertical	Vertical
 axis	Both	Ambos
 	Drag to move	Arrastrar para mover
+	Drag to move out of the set	Arrastrar para sacar del conjunto
 	Drag to float as a toolbar	Arrastrar para flotar como barra de herramientas
 	Put back in the toolbar	Devolver a la barra de herramientas
 	Float Panel	Hacer flotar el panel
@@ -3420,6 +3463,7 @@ axis	Both	Ambos
 @msg	`color` must be a colour	`color` debe ser un color
 @msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` debe ser un comando cuyo elemento de menú abra un cuadro de diálogo (consulta ui.menuDialog)
 @msg	`freeform.points` must be an array	`freeform.points` debe ser una lista
+@msg	`freeform.lines` must be an array	`freeform.lines` debe ser una lista
 @msg	`gradient` must be an object	`gradient` debe ser un objeto
 @msg	`library` is a library id or name (see {list})	`library` es el id o el nombre de una biblioteca (consulta {list})
 @msg	`mode` applies to freeform gradients	`mode` se aplica a los degradados de forma libre
@@ -3482,6 +3526,7 @@ axis	Both	Ambos
 @msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art o type
 @msg	artboard {0} does not exist	la mesa de trabajo {0} no existe
 @msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	a esta escala el dibujo mide {w} × {h} pt, más de lo que cabe en el lienzo: elige una escala menor o ajústalo a la mesa de trabajo
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	axis debe ser "vertical", "horizontal" o un ángulo en grados, no `{v}`
 @msg	background {other}: transparent, white, black or a colour such as "#ff8800"	fondo {other}: transparent, white, black o un color como "#ff8800"
 @msg	bad color {v}	color no válido {v}
 @msg	bad colour `{hex}` (#rrggbb)	color no válido `{hex}` (#rrggbb)
@@ -3521,8 +3566,10 @@ axis	Both	Ambos
 @msg	empty path	trazado vacío
 @msg	file version {0} is newer than this VectorCraft supports ({VERSION})	la versión de archivo {0} es más reciente de lo que admite este VectorCraft ({VERSION})
 @msg	freeform point {i} needs `at` [x, y] and a valid `color`	el punto de forma libre {i} necesita `at` [x, y] y un `color` válido
+@msg	freeform line {i} must be an array of point indices	la línea de forma libre {i} debe ser una lista de índices de puntos
 @msg	give both `start` and `end` [x, y] (or neither)	indica `start` y `end` [x, y] (o ninguno de los dos)
-@msg	give corners of the path: anchors between two straight sides	indica esquinas del trazado: puntos de ancla entre dos lados rectos
+@msg	give corners of the path: anchors where its sides meet at an angle	indica esquinas del trazado: puntos de ancla donde sus lados se unen en ángulo
+@msg	give horizontal or vertical	indica horizontal o vertical
 @msg	give the path `id` and the width point `index`	indica el `id` del trazado y el `index` del punto de anchura
 @msg	guides are locked	las guías están bloqueadas
 @msg	image '{key}' has no pixels and was left out	la imagen '{key}' no tiene píxeles y se omitió
@@ -3663,6 +3710,7 @@ axis	Both	Ambos
 @msg	nothing to wrap	no hay nada que envolver
 @msg	object {0} cannot have children	el objeto {0} no puede tener hijos
 @msg	object {id} is not a path	el objeto {id} no es un trazado
+@msg	object {id} is not a selected top-level object	el objeto {id} no es un objeto seleccionado de nivel superior
 @msg	page size {w} × {h}	tamaño de página {w} × {h}
 @msg	page {0} does not exist (the PDF has {1})	la página {0} no existe (el PDF tiene {1})
 @msg	paste unavailable	pegar no está disponible
@@ -3759,6 +3807,7 @@ axis	Both	Ambos
 @msg	the image's pixels don't match its size	los píxeles de la imagen no coinciden con su tamaño
 @msg	the layer has no objects to clip by	la capa no tiene objetos con los que recortar
 @msg	the layer or group is locked	la capa o el grupo está bloqueado
+@msg	the guide is on a hidden or locked layer	la guía está en una capa oculta o bloqueada
 @msg	the target layer is locked or hidden	la capa de destino está bloqueada u oculta
 @msg	the layer to flatten into is hidden	la capa en la que acoplar está oculta
 @msg	the object already has an opacity mask	el objeto ya tiene una máscara de opacidad
@@ -3784,7 +3833,7 @@ axis	Both	Ambos
 @msg	the {tool} tool has no options	la herramienta {tool} no tiene opciones
 @msg	there are no objects to release	no hay objetos que soltar
 @msg	there are no printer settings to open here	aquí no hay ajustes de impresora que abrir
-@msg	this PostScript file can't be read ({_1}): save it as PDF or SVG in the app that made it	no se puede leer este archivo PostScript ({_1}): guárdalo como PDF o SVG en la aplicación que lo creó
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	no se puede leer este archivo PostScript ({why}): guárdalo como PDF o SVG en la aplicación que lo creó
 @msg	this file's PostScript couldn't be read ({why}): {what}	no se pudo leer el PostScript de este archivo ({why}): {what}
 @msg	this format holds one artboard: export several as PDF or with document.exportForScreens	este formato admite una sola mesa de trabajo: exporta varias como PDF o con document.exportForScreens
 @msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	este es un dibujo DWG, que no se puede leer: guárdalo desde la aplicación de CAD como DXF ASCII y abre ese archivo
@@ -3873,6 +3922,9 @@ axis	Both	Ambos
 @msg	tool (a tool id) is required	se requiere tool (un id de herramienta)
 @msg	{tool} isn't in a toolbar group of several tools	{tool} no está en un grupo de la barra de herramientas con varias herramientas
 @msg	onto must name a panel floating in another group	onto debe nombrar un panel que flote en otro grupo
+@msg	below and above must name a panel floating in another group	below y above deben nombrar un panel que flote en otro grupo
+@msg	give only one of onto, below and above	indica solo uno de onto, below y above
+@msg	column must be true or a number from 1	column debe ser true o un número desde 1
 @msg	x and y must both be numbers	x e y deben ser números
 @msg	"{0}" is not a colour: write it as #rrggbb	"{0}" no es un color: escríbelo como #rrggbb
 @msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	esto no es un logotipo de colores planos ({_1}% de sus zonas sólidas coinciden con unos pocos colores planos), así que el modo Logotipo plano convertiría sus degradados en manchas: usa el modo Color
@@ -3911,6 +3963,9 @@ axis	Both	Ambos
 @msg	larger than 256 MB	mayor de 256 MB
 @msg	the files come to more than 1 GB: add fewer at a time	los archivos suman más de 1 GB: agrega menos a la vez
 @msg	every numbered name for it is taken in the Fonts folder	todos los nombres numerados para él ya existen en la carpeta Fonts
+@msg	every numbered name for {name} is taken in the document's folder	todos los nombres numerados para {name} ya existen en la carpeta del documento
+@msg	No linked files to look for	No hay archivos vinculados que buscar
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	Se volvieron a vincular {n} imagen(es); no se pudo volver a vincular {name}: {reason}
 
 # The macOS menu bar (native_menu): the app and Window menus' system items, Settings pages.
 	Services	Servicios
@@ -3924,6 +3979,8 @@ axis	Both	Ambos
 	Images: link to the file instead of only embedding it.	Imágenes: vincular al archivo en lugar de solo incrustarlo.
 	VectorCraft documents: one locked object, updated when the file changes.	Documentos de VectorCraft: un objeto bloqueado que se actualiza cuando cambia el archivo.
 	A file dialog is open: choose there first	Hay un cuadro de diálogo de archivos abierto: elija primero en él
+	The document was closed while its file dialog was open	Se cerró el documento mientras su cuadro de diálogo de archivos estaba abierto
+	The dialog was closed before its file dialog answered	El cuadro de diálogo se cerró antes de que respondiera su cuadro de diálogo de archivos
 	Shaper	Shaper
 	Expand Shaper Group	Expandir grupo Shaper
 	Release Shaper Group	Soltar grupo Shaper
@@ -3933,6 +3990,7 @@ axis	Both	Ambos
 	Perspective Distort	Distorsión de perspectiva
 @msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` es la referencia a un paso {r}, que solo `run` y `command_batch` resuelven
 @msg	`ids` must be an array of object ids, not {v}	`ids` debe ser una lista de identificadores de objeto, no {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` debe ser una lista de índices de puntos de ancla, no {v}
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: el resultado del paso {i} no tiene ese valor (escriba $$ para un $ literal)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: no hay ningún paso {i} antes de este (los pasos se cuentan desde 0; escriba $$ para un $ literal)
 @msg	object ids are non-negative integers, not {v}	los identificadores de objeto son enteros no negativos, no {v}
@@ -4038,6 +4096,31 @@ axis	Both	Ambos
 	Define a variable first	Defina primero una variable
 	Text	Texto
 	Visibility	Visibilidad
+# Shared panel docking
+	Activate Panel	Activar panel
+	Change Panel Layout	Cambiar distribución de paneles
+	Close Panel	Cerrar panel
+	Move Panel	Mover panel
+	Group with	Agrupar con
+	Resize panels	Cambiar tamaño de los paneles
+	Resize panel window	Cambiar tamaño de la ventana del panel
+@msg	Invalid panel layout; restored the default dock	La distribución de paneles no es válida; se restauró el anclaje predeterminado
+@msg	action is required	Se requiere action
+@msg	anchor must name a registered panel	anchor debe indicar un panel registrado
+@msg	before must name a panel	before debe indicar un panel
+@msg	docking action contains an unknown panel or an excessive split path	La acción de anclaje contiene un panel desconocido o una ruta de divisiones demasiado larga
+@msg	group must be true or false	group debe ser true o false
+@msg	move requires a destination panel	Para mover se requiere un panel de destino
+@msg	move requires an existing destination panel	Para mover se requiere un panel de destino existente
+@msg	onto must name a floating panel	onto debe indicar un panel flotante
+@msg	panel group is empty	El grupo de paneles está vacío
+@msg	panel must name a registered panel	panel debe indicar un panel registrado
+@msg	saved panel layout is invalid; reset the workspace first	La distribución guardada de paneles no es válida; primero restablece el espacio de trabajo
+@msg	zone must be a string	zone debe ser una cadena de texto
+@msg	zone must be tab, center, left, right, top or bottom	zone debe ser tab, center, left, right, top o bottom
+@msg	{key} must be a finite coordinate	{key} debe ser una coordenada finita
+@msg	x and y must be provided together	x e y deben proporcionarse juntos
+@msg	invalid restored panel group	El grupo de paneles restaurado no es válido
 
 # Revolve profile guidance.
 
@@ -4093,3 +4176,395 @@ lighting	Light	Luz
 	Stroke Pressure	Presión de pincelada
 	Right Diagonal	Diagonal derecha
 	Left Diagonal	Diagonal izquierda
+	Vertical Guide	Guía vertical
+	Horizontal Guide	Guía horizontal
+	Move Guide to Layer	Mover guía a capa
+@msg	invalid native panel set	Conjunto nativo de paneles no válido
+@msg	missing panel layout	Falta la distribución de paneles
+@msg	unsupported native docking operation	Operación nativa de anclaje no admitida
+	Linux Display Server	Servidor de pantalla de Linux
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	Origen de las reglas
+	Reset Ruler Origin	Restablecer el origen de las reglas
+	Artistic	Artístico
+	Film Grain…	Granulado de película…
+	Highlight Area	Área de iluminaciones
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	el archivo comprimido ocupa al descomprimirse más de lo que VectorCraft lee ({_1} MB de documento, {_2} MB por imagen)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	el documento es demasiado grande para guardarlo comprimido ({0}): guárdelo con Usar compresión desactivado
+@msg	the file stopped being read (please report this bug)	se dejó de leer el archivo (informe de este error)
+	Concentric Dividers:	Divisiones concéntricas:
+	Radial Dividers:	Divisiones radiales:
+
+# Rows other catalogs already had: document and print presets, keyboard-shortcut editor, print and
+# PDF options, arrowheads, harmony rules, Save for Web, graphic styles and file filters.
+@id	pathfinder.add	Unir
+	3 x 3 Average	Promedio de 3 x 3
+	5 x 5 Average	Promedio de 5 x 5
+	PDF File	Archivo PDF
+	1 Color Job	Trabajo a 1 color
+	2 Color Job	Trabajo a 2 colores
+	3 Color Job	Trabajo a 3 colores
+	CMYK profile in effect	Perfil CMYK en vigor
+	CMYK Equivalents	Equivalentes CMYK
+effect	Soft	Suave
+effect	Horizontal	Horizontal
+effect	Vertical	Vertical
+theme	Appearance	Apariencia
+effect	Points	Puntos
+effect	Regular	Regular
+	Phone 393×852	Teléfono 393×852
+	Phone 430×932	Teléfono 430×932
+	Phone 360×800	Teléfono 360×800
+	Phone 412×915	Teléfono 412×915
+	Phone 375×667	Teléfono 375×667
+	Tablet 768×1024	Tableta 768×1024
+	Tablet 820×1180	Tableta 820×1180
+	Tablet 834×1194	Tableta 834×1194
+	Tablet 1024×1366	Tableta 1024×1366
+	Tablet 800×1280	Tableta 800×1280
+	Watch 184×224	Reloj 184×224
+	Watch 198×242	Reloj 198×242
+	Web 1600×900	Web 1600×900
+	Web 1440×900	Web 1440×900
+	Web 1366×768	Web 1366×768
+	Web 1280×800	Web 1280×800
+	Web 1024×768	Web 1024×768
+	Legal	Legal
+	Tabloid	Tabloide
+	A3	A3
+	A4	A4
+	A5	A5
+	B4	B4
+	B5	B5
+	HDTV 1080p	HDTV 1080p
+	HDTV 720p	HDTV 720p
+	4K UHD	4K UHD
+	8K UHD	8K UHD
+	2K Cinema	Cine 2K
+	4K Cinema	Cine 4K
+	Greeting Card	Tarjeta de felicitación
+	Square 8 × 8 in	Cuadrado de 8 × 8 pulgadas
+	Poster 18 × 24 in	Póster de 18 × 24 pulgadas
+	Poster 24 × 36 in	Póster de 24 × 36 pulgadas
+	Logo 1000×1000	Logotipo 1000×1000
+	Business Card 3.5 × 2 in	Tarjeta de presentación de 3.5 × 2 pulgadas
+	Business Card 85 × 55 mm	Tarjeta de presentación de 85 × 55 mm
+	Letterhead Letter	Membrete Carta
+	Letterhead A4	Membrete A4
+	Envelope DL	Sobre DL
+	Envelope #10	Sobre #10
+	Social Portrait Post 1080×1350	Publicación vertical para redes 1080×1350
+	Social Landscape Post 1200×630	Publicación horizontal para redes 1200×630
+	Social Story 1080×1920	Historia para redes 1080×1920
+	Social Tall Post 1000×1500	Publicación alta para redes 1000×1500
+	Profile Cover 1500×500	Portada de perfil 1500×500
+	Page Cover 1640×624	Portada de página 1640×624
+	Video Banner 2560×1440	Banner de video 2560×1440
+	Video Thumbnail 1280×720	Miniatura de video 1280×720
+	Keyboard Shortcuts	Métodos abreviados de teclado
+	Set:	Conjunto:
+	Reset to Defaults	Restablecer valores predeterminados
+	Tool	Herramienta
+	Command	Comando
+	Shortcut	Método abreviado
+	Menu Commands	Comandos de menú
+	Press keys…	Presiona las teclas…
+	Use Default	Usar predeterminado
+	Go to Conflict	Ir al conflicto
+	Remove the shortcut	Quitar el método abreviado
+	Click, then press the new shortcut (Esc cancels)	Haz clic y presiona el nuevo método abreviado (Esc cancela)
+	All shortcuts reset to defaults.	Se restablecieron todos los métodos abreviados a los valores predeterminados.
+	Imported. Press OK to keep the imported set.	Importado. Presiona Aceptar para conservar el conjunto importado.
+	⚠ {chord} was already used by {names} — it has been removed there.	Atención: {chord} ya estaba en uso por {names}; se quitó de allí.
+	VectorCraft Defaults	Valores predeterminados de VectorCraft
+@plural	{n} shortcut is assigned more than once|{n} shortcuts are assigned more than once	{n} método abreviado está asignado más de una vez|{n} métodos abreviados están asignados más de una vez
+	Simulate prints overprints as Overprint Preview shows them; separations always keep them. A preset flattens transparency before printing (PostScript files always flatten it).	«Simular» imprime las sobreimpresiones tal como las muestra la vista previa de sobreimpresión; las separaciones siempre las conservan. Un preajuste acopla la transparencia antes de imprimir (los archivos PostScript siempre la acoplan).
+	Preserve	Conservar
+	Simulate	Simular
+	Portrait (flipped)	Vertical (invertida)
+	Landscape (flipped)	Horizontal (invertida)
+	Visible & Printable Layers	Capas visibles e imprimibles
+	Visible Layers	Capas visibles
+	All Layers	Todas las capas
+	Do Not Scale	No escalar
+	Fit to Page	Ajustar a la página
+	Custom Scale	Escala personalizada
+	Tile Imageable Areas	Mosaico de áreas imprimibles
+	Composite	Compuesto
+	Separations	Separaciones
+	Up (right reading)	Arriba (lectura correcta)
+	Down (right reading)	Abajo (lectura correcta)
+	Positive	Positivo
+	Negative	Negativo
+	Subset	Subconjunto
+	Complete	Completa
+	[Custom]	[Personalizado]
+	[Default]	[Predeterminado]
+	No downsampling	Sin reducción de resolución
+	Subsample	Submuestreo
+	Bicubic	Bicúbica
+	Minimum	Mínima
+	Run Length	Compresión por longitud de secuencia
+	Roman	Romano
+	No conversion	Sin conversión
+	Convert to destination	Convertir al destino
+	Convert to destination (preserve numbers)	Convertir al destino (conservar valores)
+	Don't include profiles	No incluir perfiles
+	Include all profiles	Incluir todos los perfiles
+	Include destination profile	Incluir perfil de destino
+	Include tagged source profiles	Incluir perfiles de origen etiquetados
+	Low resolution (150 ppi)	Baja resolución (150 ppp)
+	High resolution	Alta resolución
+	Inserting, deleting and rotating pages	Insertar, eliminar y rotar páginas
+	Filling in form fields and signing	Rellenar campos de formulario y firmar
+	Commenting, filling in form fields and signing	Comentar, rellenar campos de formulario y firmar
+	Any except extracting pages	Cualquiera excepto extraer páginas
+	Bounding Box	Cuadro delimitador
+	Mobile	Móvil
+	Film & Video	Cine y video
+	Art & Illustration	Arte e ilustración
+	Branding	Identidad de marca
+	Social	Redes sociales
+	Triangle	Triángulo
+	Triangle (open)	Triángulo (abierto)
+	Circle (open)	Círculo (abierto)
+	Square (open)	Cuadrado (abierto)
+	Bar	Barra
+	Arrow	Flecha
+	Arrow (open)	Flecha (abierta)
+	Barbed	Con púas
+	Half Arrow (left)	Media flecha (izquierda)
+	Half Arrow (right)	Media flecha (derecha)
+	Concave	Cóncava
+	Double Bar	Doble barra
+	Feather	Emplumado
+	Dot on Bar	Punto sobre barra
+	Chevron	Galón
+	Double Arrow	Doble flecha
+	Cross	Cruz
+	Plus	Signo más
+	Hexagon	Hexágono
+	Hexagon (open)	Hexágono (abierto)
+	Tag	Etiqueta
+	Tag (open)	Etiqueta (abierta)
+	Half Circle	Semicírculo
+	Drop	Gota
+	Slash	Barra inclinada
+	Double Slash	Doble barra inclinada
+	Diamond (open)	Rombo (abierto)
+	Reverse Triangle	Triángulo invertido
+	Swallowtail	Cola de golondrina
+	Bracket	Corchete
+	Fork	Horquilla
+	Leaf	Hoja
+	Kite	Cometa
+	Triangle to Bar	Triángulo a barra
+	Oval	Óvalo
+	Complementary	Complementario
+	Complementary 2	Complementario 2
+	Split Complementary	Complementario dividido
+	Left Complement	Complemento izquierdo
+	Right Complement	Complemento derecho
+	Analogous	Análogo
+	Analogous 2	Análogo 2
+	Monochromatic	Monocromático
+	Shades	Sombras
+	Triad	Tríada
+	Triad 2	Tríada 2
+	Triad 3	Tríada 3
+	Tetrad	Tétrada
+	Tetrad 2	Tétrada 2
+	Tetrad 3	Tétrada 3
+	Compound	Compuesto
+	Compound 2	Compuesto 2
+	High Contrast	Alto contraste
+	High Contrast 2	Alto contraste 2
+	High Contrast 3	Alto contraste 3
+	Pentagram	Pentagrama
+	Perceptual	Perceptual
+	Relative Colorimetric	Colorimétrico relativo
+	Absolute Colorimetric	Colorimétrico absoluto
+	Exact	Exacto
+	Preserve Tints	Conservar matices
+	Scale Tints	Escalar matices
+	Linear	Lineal
+	Freeform	Libre
+	8 Colors	8 colores
+	16 Colors	16 colores
+	256 Colors	256 colores
+	True Colors	Colores verdaderos
+	Preserve Appearance	Conservar apariencia
+	Maximize Editability	Maximizar editabilidad
+	Clip Group	Grupo de recorte
+	Guide	Guía
+	Symbol	Símbolo
+	Envelope	Envolvente
+	Mesh	Malla
+	Placed Document	Documento colocado
+	Radial Repeat	Repetición radial
+	Grid Repeat	Repetición de cuadrícula
+	Mirror Repeat	Repetición reflejada
+	Auto Size	Tamaño automático
+	Shrink Text to Fit	Reducir texto para que quepa
+	Ascent	Ascendente
+	Cap Height	Altura de mayúsculas
+	x Height	Altura de la x
+	Justify	Justificar
+	First Baseline	Primera línea de base
+	Vertical Align	Alineación vertical
+	Save Selection	Guardar selección
+	Twirl	Molinete
+	Pucker	Fruncir
+	Bloat	Engordar
+	Scallop	Festonear
+	Wrinkle	Arrugar
+	Unknown	Desconocido
+	Copyrighted	Con copyright
+	Public Domain	Dominio público
+	None (Color Preview)	Ninguno (vista previa de color)
+	Rasterized Complex Regions	Regiones complejas rasterizadas
+	Transparent Objects	Objetos transparentes
+	All Affected Objects	Todos los objetos afectados
+	Expanded Patterns	Motivos expandidos
+	Outlined Strokes	Trazos contorneados
+	Outlined Text	Texto contorneado
+	All Rasterized Regions	Todas las regiones rasterizadas
+	High Resolution	Alta resolución
+	Medium Resolution	Resolución media
+	Low Resolution	Baja resolución
+	Copyright and Contact Info	Copyright e información de contacto
+	All Slices	Todos los sectores
+	Selected Slices	Sectores seleccionados
+	No Slices	Sin sectores
+	Images Only	Solo imágenes
+	HTML and Images	HTML e imágenes
+	Selective	Selectivo
+	Adaptive	Adaptativo
+	Black & White	Blanco y negro
+	No Dither	Sin tramado
+	Diffusion	Difusión
+	Unsorted	Sin ordenar
+	Sort by Hue	Ordenar por tono
+	Sort by Luminance	Ordenar por luminancia
+	Sort by Popularity	Ordenar por popularidad
+	Baseline (Standard)	Secuencial (estándar)
+	Baseline Optimized	Secuencial optimizado
+	Art Optimized	Optimizado para ilustración
+	Type Optimized	Optimizado para texto
+	Language Level 2	Nivel de lenguaje 2
+	Language Level 3	Nivel de lenguaje 3
+	TIFF (Black & White)	TIFF (blanco y negro)
+	TIFF (8-bit Color)	TIFF (color de 8 bits)
+	1 bit	1 bit
+	4 bit	4 bits
+	8 bit	8 bits
+	16 bit	16 bits
+	24 bit	24 bits
+	32 bit	32 bits
+	16 bits/pixel	16 bits/píxel
+	24 bits/pixel	24 bits/píxel
+	32 bits/pixel	32 bits/píxel
+	DWG (use DXF)	DWG (usa DXF)
+file-filter	All readable files	Todos los archivos legibles
+file-filter	All placeable files	Todos los archivos que se pueden colocar
+file-filter	Swatch libraries	Bibliotecas de muestras
+file-filter	Flattener presets	Preajustes del acoplador
+file-filter	PDF presets	Preajustes de PDF
+file-filter	Print presets	Preajustes de impresión
+file-filter	SVG Compressed	SVG comprimido
+file-filter	PDF-compatible .ai	.ai compatible con PDF
+file-filter	VectorCraft Template	Plantilla de VectorCraft
+file-filter	Templates	Plantillas
+diagnostics	render	renderizado
+diagnostics	ui	interfaz
+	Preset {number}	Preajuste {number}
+	PRs	PR
+	@{login}: {prs}, {commits}, +{added} / −{deleted} lines (Δ {delta}), +{binary_added} / −{binary_deleted} binary assets, {first} – {last}	@{login}: {prs}, {commits}, +{added} / −{deleted} líneas (Δ {delta}), +{binary_added} / −{binary_deleted} recursos binarios, {first} – {last}
+@plural	{n} PR|{n} PRs	{n} PR|{n} PR
+@plural	{n} commit|{n} commits	{n} commit|{n} commits
+gradient-kind	Radial	Radial
+mark-style	Japanese	Japonesas
+	2-Up	2 vistas
+	2up	2 vistas
+	3 Colors	3 colores
+	4-Up	4 vistas
+	4up	4 vistas
+	6 Colors	6 colores
+	A6	A6
+	Alt+Click	Alt+clic
+	Alt+Drag	Alt+arrastrar
+	Anchors	Anclas
+	Area Type	Texto de área
+	Basic	Básico
+	Black Outline	Contorno negro
+	Brown	Marrón
+	Convert to Global	Convertir en global
+	Cool	Fríos
+	CRLF (Windows)	CRLF (Windows)
+	Current Colors	Colores actuales
+	Default Graphic Style	Estilo gráfico predeterminado
+	Direct Selection	Selección directa
+	Distance:	Distancia:
+	GIF, 128 colours	GIF, 128 colores
+	Gray	Gris
+	Grey	Gris
+	Group Selection	Selección de grupos
+	Hand	Mano
+	Harmony Rules	Reglas de armonía
+	Heavy Ink	Tinta densa
+	High Fidelity Photo	Foto de alta fidelidad
+	Image Trace (Make and Expand)	Calco de imagen (crear y expandir)
+	Joins:	Uniones:
+	Keeps the document editable: VectorCraft reopens the PDF with nothing lost. For files you'll edit again.	Mantiene el documento editable: VectorCraft vuelve a abrir el PDF sin perder nada. Para archivos que volverás a editar.
+	Lab Spot Colors	Tintas planas Lab
+	Lasso	Lazo
+	Length:	Longitud:
+	LF (macOS, Linux)	LF (macOS, Linux)
+	Line Art	Arte lineal
+	Low Fidelity Photo	Foto de baja fidelidad
+	Make Text Wrap	Crear ceñido de texto
+	Measure	Medición
+	Monochrome	Monocromo
+	Muted	Apagados
+	of	de
+	Orange	Naranja
+	Pattern Swatches	Muestras de motivo
+	PDF 1.7	PDF 1.7
+	Pen	Pluma
+	Pink	Rosa
+	Pixel	Píxel
+	Points:	Puntos:
+	Purple	Púrpura
+	Release Image Trace	Soltar calco de imagen
+	Release Text Wrap	Soltar ceñido de texto
+	RGB	RGB
+	Rotate View	Rotar vista
+	Scissors	Tijeras
+	Shades of Gray	Tonos de gris
+	Shear:	Inclinar:
+	Shift+Click	Shift+clic
+	Shift+Drag	Shift+arrastrar
+	Silhouettes	Siluetas
+	Sketched Art	Arte esbozado
+	Spectrum	Espectro
+	sRGB IEC61966-2.1	sRGB IEC61966-2.1
+	Sunshine	Soleado
+	SVG 1.1	SVG 1.1
+	Technical Drawing	Dibujo técnico
+	Text Displayed in Cell	Texto mostrado en la celda
+	Touch Type	Retocar texto
+	UTF-16 (Unicode)	UTF-16 (Unicode)
+	Variation	Variación
+	VectorCraft Default	Predeterminado de VectorCraft
+	VectorCraft Generic CMYK (SWOP-like)	CMYK genérico de VectorCraft (similar a SWOP)
+	VectorCraft Swatches (.vcswatches)	Muestras de VectorCraft (.vcswatches)
+	Vertical Area Type	Texto de área vertical
+	Vertical Type	Texto vertical
+	Vertical Type on a Path	Texto vertical en trazado
+	Vivid	Vivos
+	Warm	Cálidos
+	WebP	WebP
+	Working RGB	RGB de trabajo
+	X:	X:
+	Y:	Y:
+@id	file.close	Cerrar archivo

@@ -21,7 +21,13 @@ fn main() {
     let people = read(&dir.join("people.toml"), "contributors are shown by username only", |t| t.parse::<toml::Table>().map_err(|e| e.to_string()))
         .unwrap_or_default();
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("credits.rs");
-    if let Err(e) = std::fs::write(&out, generate(&json, &people)) {
+    let src = generate(&json, &people);
+    // Unchanged output keeps its mtime, so the next build doesn't compile this crate again
+    // (see crates/text/build.rs).
+    if std::fs::read_to_string(&out).is_ok_and(|old| old == src) {
+        return;
+    }
+    if let Err(e) = std::fs::write(&out, src) {
         println!("cargo::warning=writing {}: {e}", out.display());
     }
 }

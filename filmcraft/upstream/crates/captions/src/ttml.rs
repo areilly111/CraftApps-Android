@@ -10,8 +10,8 @@
 //!
 //! **Reading** is namespace-agnostic (TTML1 2010, the 2006 `ttaf1` drafts and TTML2 all read):
 //! clock times (`HH:MM:SS`, `.fraction`, `:FF` frames and `.subframes`), offset times (`h`, `m`,
-//! `s`, `ms`, `f`, `t` with `ttp:tickRate`), `begin` / `end` / `dur`, nested time containers
-//! (`body` / `div` begins add up), timed `<span>`s inside an untimed `<p>`, `<br/>`, whitespace
+//! `s`, `ms`, `f`, `t` with `ttp:tickRate`), `begin` / `end` / `dur`, nested `par` time
+//! containers (`body` / `div` begins add up and their ends clip what is inside), timed `<span>`s inside an untimed `<p>`, `<br/>`, whitespace
 //! collapsing, styles referenced by id (italic / bold / underline) and `ttm:agent` / `xml:id`.
 
 use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
@@ -423,44 +423,84 @@ pub fn parse(text: &str) -> Result<Document> {
     let Some(body) = root.children().find(|n| n.is_element() && n.tag_name().name() == "body") else {
         return Ok(doc);
     };
-    walk(body, Tick::ZERO, &tm, &styles, Fmt::default(), &mut doc);
+    if root.descendants().any(|n| attr(n, "timeContainer").is_some_and(|v| v.trim() == "seq")) {
+        doc.warnings.push("timeContainer=\"seq\" is not supported; its children are timed as in a par container".into());
+    }
+    // the body is a time container like a div: its begin offsets, and its end clips, everything inside
+    let t = times(body, Scope { begin: Tick::ZERO, end: None }, tm, &mut doc);
+    walk(body, Scope { begin: t.begin.unwrap_or(Tick::ZERO), end: t.end }, &tm, &styles, Fmt::default(), &mut doc);
     doc.cues.sort_by_key(|c| (c.start, c.end));
     Ok(doc)
 }
 
-/// Begin and end of a timed element relative to `parent` (None when it has no timing).
-fn times(n: roxmltree::Node, parent: Tick, tm: &Timing, doc: &mut Document) -> (Option<Tick>, Option<Tick>) {
-    let p = |k: &str, doc: &mut Document| -> Option<Tick> {
+/// The active interval of the enclosing time containers (`par`): child times are offsets from
+/// `begin`, and nothing inside outlasts `end` (None when no ancestor sets an end).
+#[derive(Clone, Copy)]
+struct Scope {
+    begin: Tick,
+    end: Option<Tick>,
+}
+
+/// Whether `n` has timing attributes of its own.
+fn has_timing(n: roxmltree::Node) -> bool {
+    ["begin", "end", "dur"].into_iter().any(|k| attr(n, k).is_some())
+}
+
+/// Timing of an element in its parent container.
+struct Times {
+    /// The begin, when the element sets one.
+    begin: Option<Tick>,
+    /// Its own end (`end`, or `begin` + `dur`, the earlier of the two) clipped to the parent's
+    /// end, else the parent's end.
+    end: Option<Tick>,
+    /// A timing attribute did not parse (and was warned about).
+    bad: bool,
+}
+
+fn times(n: roxmltree::Node, parent: Scope, tm: Timing, doc: &mut Document) -> Times {
+    let mut bad = false;
+    let mut p = |k: &str, doc: &mut Document| -> Option<Tick> {
         let v = attr(n, k)?;
-        let t = parse_time(v, *tm);
+        let t = parse_time(v, tm);
         if t.is_none() {
+            bad = true;
             doc.warnings.push(format!("bad time expression \"{v}\""));
         }
         t
     };
-    let begin = p("begin", doc).map(|b| parent + b);
-    let end = match (p("end", doc), p("dur", doc)) {
-        (Some(e), _) => Some(parent + e),
-        (None, Some(d)) => Some(begin.unwrap_or(parent) + d),
-        _ => None,
+    let begin = p("begin", doc).map(|b| parent.begin + b);
+    let own_end = match (p("end", doc).map(|e| parent.begin + e), p("dur", doc).map(|d| begin.unwrap_or(parent.begin) + d)) {
+        (Some(e), Some(d)) => Some(e.min(d)),
+        (e, d) => e.or(d),
     };
-    (begin, end)
+    let end = match (own_end, parent.end) {
+        (Some(e), Some(pe)) => Some(e.min(pe)),
+        (e, pe) => e.or(pe),
+    };
+    Times { begin, end, bad }
 }
 
-fn walk(n: roxmltree::Node, parent: Tick, tm: &Timing, styles: &std::collections::HashMap<String, Fmt>, fmt: Fmt, doc: &mut Document) {
+fn walk(n: roxmltree::Node, parent: Scope, tm: &Timing, styles: &std::collections::HashMap<String, Fmt>, fmt: Fmt, doc: &mut Document) {
     for c in n.children().filter(|c| c.is_element()) {
         let f = style_of(c, styles, fmt);
         match c.tag_name().name() {
             "div" => {
-                let (b, _) = times(c, parent, tm, doc);
-                walk(c, b.unwrap_or(parent), tm, styles, f, doc);
+                let t = times(c, parent, *tm, doc);
+                walk(c, Scope { begin: t.begin.unwrap_or(parent.begin), end: t.end }, tm, styles, f, doc);
             }
             "p" => {
-                let (b, e) = times(c, parent, tm, doc);
+                let t = times(c, parent, *tm, doc);
+                if t.bad {
+                    continue;
+                }
+                let (b, e) = (t.begin.unwrap_or(parent.begin), t.end);
                 let speaker = attr(c, "agent").map(|a| a.trim().trim_start_matches('_').replace('_', " "));
                 let id = c.attributes().find(|a| a.name() == "id").map(|a| a.value().to_string());
-                match (b, e) {
-                    (Some(b), Some(e)) => {
+                let spans: Vec<roxmltree::Node> = c.children().filter(|x| x.is_element() && x.tag_name().name() == "span" && has_timing(*x)).collect();
+                // a timed paragraph, or one without timed spans in a container with an end, is one cue
+                let whole = if has_timing(c) || spans.is_empty() { e } else { None };
+                match whole {
+                    Some(e) => {
                         let mut o = Out { s: String::new(), pending: false };
                         let tags: Vec<&str> = [(f.italic, "i"), (f.bold, "b"), (f.underline, "u")].into_iter().filter(|x| x.0).map(|x| x.1).collect();
                         for t in &tags {
@@ -475,12 +515,13 @@ fn walk(n: roxmltree::Node, parent: Tick, tm: &Timing, styles: &std::collections
                             doc.cues.push(Cue { start: b, end: e, text, speaker, id, ..Default::default() });
                         }
                     }
-                    _ => {
+                    None => {
                         // untimed paragraph: its timed spans are the cues
-                        let base = b.unwrap_or(parent);
-                        for sp in c.children().filter(|x| x.is_element() && x.tag_name().name() == "span") {
-                            let (sb, se) = times(sp, base, tm, doc);
-                            if let (Some(sb), Some(se)) = (sb, se) {
+                        let scope = Scope { begin: b, end: e };
+                        for sp in spans {
+                            let st = times(sp, scope, *tm, doc);
+                            let sb = st.begin.unwrap_or(scope.begin);
+                            if let (false, Some(se)) = (st.bad, st.end) {
                                 let mut o = Out { s: String::new(), pending: false };
                                 collect(sp, styles, style_of(sp, styles, f), &mut o);
                                 let text = clean(&o.s);

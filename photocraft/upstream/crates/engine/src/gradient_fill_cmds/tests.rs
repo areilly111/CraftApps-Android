@@ -160,6 +160,32 @@ fn set_moves_handles_and_restyles_in_one_undo_step() {
 }
 
 #[test]
+fn locked_gradient_fill_rejects_content_edits_without_history() {
+    let mut s = session(8, "white");
+    s.execute(CREATE, json!({"from": [0, 0], "to": [16, 0], "stops": [[0, "#000000"], [1, "#ffffff"]], "dither": false})).unwrap();
+    s.execute("layer.lockLayers", json!({"all": true})).unwrap();
+    let original = active_fill(&s);
+    let locked_history = s.active().unwrap().history.past_len();
+
+    for (command, params) in [(SET, json!({"reverse": true})), (STOP, json!({"action": "color", "index": 0, "color": "#ff0000"}))] {
+        let result = s.execute(command, params.clone());
+        assert!(matches!(&result, Err(EngineError::Other(message)) if message.contains("locked")), "{command} {params}: {result:?}");
+        assert_eq!(active_fill(&s), original, "{command} changed the fill");
+        assert_eq!(s.active().unwrap().history.past_len(), locked_history, "{command} added history");
+    }
+
+    s.execute("layer.lockLayers", json!({"all": false})).unwrap();
+    for (command, params) in [(SET, json!({"reverse": true})), (STOP, json!({"action": "color", "index": 0, "color": "#ff0000"}))] {
+        let history = s.active().unwrap().history.past_len();
+        s.execute(command, params).unwrap();
+        assert_eq!(s.active().unwrap().history.past_len(), history + 1, "{command} records one step");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(active_fill(&s), original, "undo restores the fill after {command}");
+        assert_eq!(s.active().unwrap().history.past_len(), history);
+    }
+}
+
+#[test]
 fn stops_add_move_recolour_delete_and_midpoints() {
     let mut s = session(8, "white");
     s.execute(CREATE, json!({"from": [0, 0], "to": [48, 0], "stops": [[0, "#000000"], [1, "#ffffff"]], "dither": false})).unwrap();

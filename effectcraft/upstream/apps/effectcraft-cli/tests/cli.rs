@@ -259,6 +259,9 @@ fn render_out_is_relative_to_the_working_directory() {
     let (proj, elsewhere) = (root.join("proj"), root.join("elsewhere"));
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::create_dir_all(&elsewhere).unwrap();
+    // current_dir resolves aliases such as macOS /var -> /private/var.
+    let root = root.canonicalize().unwrap();
+    let (proj, elsewhere) = (root.join("proj"), root.join("elsewhere"));
     let project = proj.join("x.ecproj");
     let p = project.to_str().unwrap();
     ok_json(&[

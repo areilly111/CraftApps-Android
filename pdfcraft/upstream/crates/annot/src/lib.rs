@@ -14,7 +14,7 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
-use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString};
+use pdfcraft_cos::{Dict, Document, ObjRef, Object, PdfString, Stream};
 
 pub mod appearance;
 pub mod links;
@@ -34,6 +34,11 @@ pub enum AnnotError {
     Invalid(String),
     #[error("{0} comments can't be restyled yet (their appearance can't be regenerated)")]
     Unsupported(String),
+    /// Text the standard fonts can't draw where `?` would be permanent or replace a good drawing:
+    /// a redaction's overlay text, or an edit that would redraw a comment another program drew
+    /// with a font that has those characters. The message names the character.
+    #[error("{0}")]
+    Undrawable(String),
     #[error("{0}")]
     Cos(#[from] pdfcraft_cos::CosError),
 }
@@ -1202,8 +1207,16 @@ pub fn add_annotation(doc: &mut Document, new: &NewAnnotation, meta: &Meta) -> R
         // Survives a later subject edit, so flatten-on-save still finds the mark.
         d.set(b"PCFillSign".to_vec(), Object::Bool(true));
     }
+    // A redaction's overlay text becomes page content when it is applied, where `?` would be there
+    // for good: refused before anything is added. A comment's own text is stored as typed and
+    // drawn with `?` for what the standard fonts can't draw (marked, see `draw_appearance`).
+    if d.name(b"Subtype") == Some(b"Redact")
+        && let Some((what, c)) = appearance::undrawable_text(&d)
+    {
+        return Err(AnnotError::Undrawable(pdfcraft_fonts::undrawable_message(what, c)));
+    }
     let r = doc.add(Object::Dict(d.clone()));
-    set_appearance(doc, r)?;
+    draw_appearance(doc, r)?;
     let mut list = annots(doc, page);
     let index = list.len();
     list.push(Object::Ref(r));
@@ -1250,12 +1263,43 @@ pub fn orient_image_stamp(doc: &mut Document, page: usize, index: usize, rotatio
     Ok(())
 }
 
-/// (Re)generate `/AP /N` for the annotation `r` from its dictionary.
-/// Regenerate an annotation's normal appearance from its dictionary.
+/// (Re)generate `/AP /N` for the annotation `r` from its dictionary, for an edit that keeps its
+/// text (a restyle, a new size or colour).
+///
+/// A comment whose text the standard fonts can't draw, with an appearance another program drew
+/// (with a font that has those characters), keeps that appearance: redrawing it would put `?` in
+/// their place, so the edit is refused (`AnnotError::Undrawable`). One PdfCraft drew with `?`
+/// (marked `pdfcraft_fonts::UNDRAWN_MARK`) is redrawn.
 pub fn set_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
     let d = annot_dict(doc, r);
+    let drawn_elsewhere =
+        d.get(b"AP").is_some_and(|ap| doc.resolve(ap).as_dict().is_some_and(|ap| ap.contains(b"N"))) && pdfcraft_fonts::undrawn_mark(&d).is_none();
+    if drawn_elsewhere && let Some((what, c)) = appearance::undrawable_text(&d) {
+        return Err(AnnotError::Undrawable(format!(
+            "PdfCraft can't redraw this comment: the standard fonts can't draw \"{}\" (U+{:04X}) in {what}, which would then show as ? (the comment was left as it is)",
+            c.escape_debug(),
+            u32::from(c)
+        )));
+    }
+    draw_appearance(doc, r)
+}
+
+/// Draw `r`'s normal appearance from its dictionary, whatever its text: characters the standard
+/// fonts can't draw come out as `?`, and the annotation is marked (`pdfcraft_fonts::UNDRAWN_MARK`,
+/// cleared when all of it can be drawn) so the edit is reported and flattening won't make that
+/// `?` permanent. For new text (a new comment, changed contents), as Acrobat keeps text its font
+/// can't show, and for display-only copies.
+fn draw_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
+    let d = annot_dict(doc, r);
     let subtype = String::from_utf8_lossy(d.name(b"Subtype").unwrap_or_default()).into_owned();
-    let Some(mut stream) = appearance::build(&d) else { return Err(AnnotError::Unsupported(subtype)) };
+    let Some(stream) = build_appearance(doc, &d) else { return Err(AnnotError::Unsupported(subtype)) };
+    apply_appearance(doc, r, &d, stream)
+}
+
+/// Draw the appearance for an annotation dictionary: the expensive half of [`set_appearance`].
+/// Pure from the dictionary and the objects it points at, so [`AppearanceCache`] can reuse it.
+fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
+    let mut stream = appearance::build(d)?;
     // Image stamp restyling must retain the placement's page-axis correction.
     if matches!(d.get(b"PCPictureImage"), Some(Object::Bool(true))) {
         let matrix = d.get(b"AP").and_then(|ap| {
@@ -1268,6 +1312,13 @@ pub fn set_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
             stream.dict.set(b"Matrix".to_vec(), matrix);
         }
     }
+    Some(stream)
+}
+
+/// Store a built appearance on the annotation: the cheap half of [`set_appearance`].
+fn apply_appearance(doc: &mut Document, r: ObjRef, d: &Dict, stream: Stream) -> Result<(), AnnotError> {
+    // Characters the standard fonts can't draw came out as `?`: mark the annotation with the first.
+    let missing = appearance::undrawable_text(d).map(|(_, c)| c);
     let ap = doc.add(Object::Stream(stream));
     // A copy (a shared /AP is left alone) that keeps unknown entries; the old down and rollover
     // appearances would show the previous look on press or hover, so they go with the old /N.
@@ -1278,8 +1329,65 @@ pub fn set_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
     doc.update_dict(r, |d| {
         d.set(b"AP".to_vec(), Object::Dict(apd));
         d.remove(b"AS");
+        pdfcraft_fonts::set_undrawn_mark(d, missing);
     })?;
     Ok(())
+}
+
+/// Display appearances built for annotations without any, reused while the annotation
+/// dictionaries they were drawn from are unchanged.
+///
+/// A content edit (moving a paragraph, retyping text, …) leaves every annotation dictionary
+/// alone, but the display copy is rebuilt from the edited document on every refresh: without
+/// this cache each refresh redrew every appearance (27k on one CAD file, ~0.7 s per edit
+/// commit). Entries are keyed by annotation reference; object numbers are never reused within
+/// a document lineage, so an entry stays valid until an annotation edit runs. Callers clear
+/// the cache on any refresh that may change annotations (comments, structural and full
+/// refreshes) and keep it for content-only ones.
+#[derive(Clone, Debug, Default)]
+pub struct AppearanceCache {
+    entries: std::collections::HashMap<ObjRef, Stream>,
+    bytes: usize,
+    hits: u64,
+    builds: u64,
+}
+
+impl AppearanceCache {
+    /// Cached appearance data restarts past this instead of growing without bound.
+    const MAX_BYTES: usize = 64 << 20;
+
+    /// Forget every entry (an annotation edit may have changed the dictionaries).
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    fn get(&mut self, r: ObjRef) -> Option<Stream> {
+        let stream = self.entries.get(&r)?.clone();
+        self.hits += 1;
+        Some(stream)
+    }
+
+    fn insert(&mut self, r: ObjRef, stream: &Stream) {
+        self.builds += 1;
+        if self.entries.len() >= 1_000_000 {
+            self.clear();
+        }
+        if self.bytes.saturating_add(stream.raw.len()) <= Self::MAX_BYTES {
+            self.bytes += stream.raw.len();
+            self.entries.insert(r, stream.clone());
+        }
+        // Else over budget: keep serving the entries already cached instead of growing.
+    }
+
+    /// Cache hits so far (reused appearances); for tests.
+    pub fn hits(&self) -> u64 {
+        self.hits
+    }
+
+    /// Appearances built so far; for tests.
+    pub fn builds(&self) -> u64 {
+        self.builds
+    }
 }
 
 /// A copy of `doc` in which every annotation without a normal appearance (`/AP /N`) has the one
@@ -1288,6 +1396,13 @@ pub fn set_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
 /// stamps, …) that viewers draw from the dictionary. `doc` is not changed: saving writes the file
 /// as it was. Links, form fields and pop-ups keep their own handling.
 pub fn with_missing_appearances(doc: &Document) -> Option<Document> {
+    with_missing_appearances_cached(doc, &mut AppearanceCache::default())
+}
+
+/// A copy of `doc` with [`AppearanceCache`] reuse across refreshes: annotations whose
+/// dictionary is unchanged since the cached build keep their stored appearance instead of
+/// redrawing it. See [`AppearanceCache`] for when entries stay valid.
+pub fn with_missing_appearances_cached(doc: &Document, cache: &mut AppearanceCache) -> Option<Document> {
     let mut copy: Option<Document> = None;
     for page in page_refs(doc).ok()? {
         for r in annots(doc, page).iter().filter_map(Object::as_ref) {
@@ -1296,11 +1411,18 @@ pub fn with_missing_appearances(doc: &Document) -> Option<Document> {
                 continue;
             }
             let has_normal = d.get(b"AP").is_some_and(|ap| doc.resolve(ap).as_dict().is_some_and(|ap| ap.contains(b"N")));
-            if has_normal || appearance::build(&d).is_none() {
+            if has_normal {
                 continue;
             }
-            // Fails only when `r` isn't a dictionary, which `build` above has just ruled out.
-            set_appearance(copy.get_or_insert_with(|| doc.clone()), r).ok();
+            if let Some(stream) = cache.get(r) {
+                // Fails only when `r` isn't a dictionary, which the cached build ruled out.
+                apply_appearance(copy.get_or_insert_with(|| doc.clone()), r, &d, stream).ok();
+                continue;
+            }
+            let Some(stream) = build_appearance(doc, &d) else { continue };
+            cache.insert(r, &stream);
+            // Fails only when `r` isn't a dictionary, which the build just ruled out.
+            apply_appearance(copy.get_or_insert_with(|| doc.clone()), r, &d, stream).ok();
         }
     }
     copy
@@ -1407,10 +1529,12 @@ pub fn set_contents(doc: &mut Document, page: usize, index: usize, text: &str, m
     })?;
     if free_text {
         // The box grows and shrinks with the text instead of clipping it. A locked box keeps its
-        // text editable (as in Acrobat), so the re-fit ignores the lock.
+        // text editable (as in Acrobat), so the re-fit ignores the lock. New text is drawn even
+        // where the standard fonts can't draw some of it (marked and reported, see
+        // `draw_appearance`).
         match fitted_box(doc, r, text) {
-            Some(rect) => apply_text_box(doc, r, rect, meta)?,
-            None => set_appearance(doc, r)?,
+            Some(rect) => apply_text_box(doc, r, rect, meta, true)?,
+            None => draw_appearance(doc, r)?,
         }
     }
     Ok(())
@@ -1593,8 +1717,9 @@ pub fn move_annotation(doc: &mut Document, page: usize, index: usize, dx: f64, d
     Ok(())
 }
 
-/// Resize a rectangle, oval, text box or stamp to `rect`. Stamps keep their appearance,
-/// which PDF viewers scale from its bounding box into the new rectangle.
+/// Resize a rectangle, oval, text box, stamp or drawing to `rect`. Stamps keep their appearance,
+/// which PDF viewers scale from its bounding box into the new rectangle; drawings scale their
+/// strokes and get a new one.
 pub fn set_rect(doc: &mut Document, page: usize, index: usize, rect: [f64; 4], meta: &Meta) -> Result<(), AnnotError> {
     let (_, r) = annot_ref(doc, page, index)?;
     unlocked(doc, r)?;
@@ -1611,15 +1736,65 @@ pub fn set_rect(doc: &mut Document, page: usize, index: usize, rect: [f64; 4], m
         })?;
         return Ok(());
     }
+    if subtype == "Ink" {
+        return resize_ink(doc, r, normalize(rect), meta);
+    }
     if !matches!(subtype.as_str(), "Square" | "Circle" | "FreeText") {
         return Err(AnnotError::Invalid(format!("{subtype} comments can't be resized")));
     }
-    apply_text_box(doc, r, rect, meta)
+    apply_text_box(doc, r, rect, meta, false)
+}
+
+/// Scale a drawing's strokes into `rect`. The margin between the strokes and the old `/Rect` (half
+/// the line width and a little more) stays the same on each side, so the line isn't clipped.
+fn resize_ink(doc: &mut Document, r: ObjRef, rect: [f64; 4], meta: &Meta) -> Result<(), AnnotError> {
+    let d = annot_dict(doc, r);
+    let strokes: Vec<Vec<[f64; 2]>> = d
+        .get(b"InkList")
+        .map(|l| doc.resolve(l))
+        .and_then(|l| l.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|s| {
+            let v: Vec<f64> = doc.resolve(s).as_array().map(|a| a.iter().filter_map(|x| doc.resolve(x).as_f64()).collect()).unwrap_or_default();
+            v.as_chunks::<2>().0.iter().map(|p| [p[0], p[1]]).collect()
+        })
+        .collect();
+    let Some(inner) = bounds(strokes.iter().flatten().copied()) else {
+        return Err(AnnotError::Invalid("the drawing has no strokes".into()));
+    };
+    let old = d.get(b"Rect").map(|o| doc.resolve(o)).and_then(|o| o.as_array().cloned()).unwrap_or_default();
+    let old: Vec<f64> = old.iter().filter_map(|v| doc.resolve(v).as_f64()).collect();
+    let old = match old[..] {
+        [a, b, c, e] => normalize([a, b, c, e]),
+        _ => inner,
+    };
+    let margin = [inner[0] - old[0], inner[1] - old[1], old[2] - inner[2], old[3] - inner[3]].map(|m| m.max(0.0));
+    let target = [rect[0] + margin[0], rect[1] + margin[1], rect[2] - margin[2], rect[3] - margin[3]];
+    if !finite(&rect) || target[2] < target[0] || target[3] < target[1] || rect[2] - rect[0] < 1.0 || rect[3] - rect[1] < 1.0 {
+        return Err(AnnotError::Invalid("invalid rectangle (too small)".into()));
+    }
+    // An axis with no extent (a straight stroke) is centred rather than scaled.
+    let axis = |v: f64, a0: f64, a1: f64, b0: f64, b1: f64| if a1 > a0 { b0 + (v - a0) / (a1 - a0) * (b1 - b0) } else { (b0 + b1) / 2.0 };
+    let scaled: Vec<Vec<[f64; 2]>> = strokes
+        .iter()
+        .map(|s| {
+            s.iter().map(|p| [axis(p[0], inner[0], inner[2], target[0], target[2]), axis(p[1], inner[1], inner[3], target[1], target[3])]).collect()
+        })
+        .collect();
+    doc.update_dict(r, |d| {
+        d.set(b"InkList".to_vec(), Object::Array(scaled.iter().map(|s| num_array(&s.concat())).collect()));
+        d.set(b"Rect".to_vec(), num_array(&rect));
+        touch(d, meta);
+    })?;
+    set_appearance(doc, r)?;
+    Ok(())
 }
 
 /// Store `rect` as a FreeText annotation's text box (or a square's/oval's rectangle): a callout's
-/// leader line re-attaches and `/Rect` grows to hold it, and the appearance is redrawn.
-fn apply_text_box(doc: &mut Document, r: ObjRef, rect: [f64; 4], meta: &Meta) -> Result<(), AnnotError> {
+/// leader line re-attaches and `/Rect` grows to hold it, and the appearance is redrawn
+/// (`new_text`: for changed contents, see [`set_appearance`] and `draw_appearance`).
+fn apply_text_box(doc: &mut Document, r: ObjRef, rect: [f64; 4], meta: &Meta, new_text: bool) -> Result<(), AnnotError> {
     let rect = normalize(rect);
     if !finite(&rect) || rect[2] - rect[0] < 1.0 || rect[3] - rect[1] < 1.0 {
         return Err(AnnotError::Invalid("invalid rectangle (too small)".into()));
@@ -1650,7 +1825,7 @@ fn apply_text_box(doc: &mut Document, r: ObjRef, rect: [f64; 4], meta: &Meta) ->
         }
         touch(d, meta);
     })?;
-    set_appearance(doc, r)
+    if new_text { draw_appearance(doc, r) } else { set_appearance(doc, r) }
 }
 
 fn border_width_of(d: &Dict) -> f64 {
@@ -1881,7 +2056,9 @@ pub fn summaries(doc: &Document) -> Vec<Summary> {
                 index,
                 subtype,
                 author: text_value(doc, d, b"T"),
-                contents: text_value(doc, d, b"Contents"),
+                // Acrobat ends lines with CR, which the interface would draw as nothing (keep in
+                // step with `pdfcraft_render::inspect`).
+                contents: text_value(doc, d, b"Contents").map(|s| s.replace("\r\n", "\n").replace('\r', "\n")),
                 modified: text_value(doc, d, b"M"),
                 name: text_value(doc, d, b"NM"),
                 in_reply_to,

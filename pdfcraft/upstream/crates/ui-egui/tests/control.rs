@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use pdfcraft_ui_egui::PdfCraftApp;
 use pdfcraft_ui_egui::control::{ControlClient, Reply};
 use serde_json::{Value, json};
@@ -39,9 +39,13 @@ fn harness() -> (Harness<'static, PdfCraftApp>, ControlClient) {
 }
 
 fn harness_pages(pages: usize) -> (Harness<'static, PdfCraftApp>, ControlClient) {
+    harness_pages_at(pages, 1400.0, 1.0)
+}
+
+fn harness_pages_at(pages: usize, width: f32, scale: f32) -> (Harness<'static, PdfCraftApp>, ControlClient) {
     let slot: Arc<Mutex<Option<ControlClient>>> = Arc::default();
     let s = slot.clone();
-    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |cc| {
+    let mut h = Harness::builder().with_size(egui::vec2(width, 900.0)).with_pixels_per_point(scale).build_eframe(move |cc| {
         let mut app = PdfCraftApp::new();
         app.set_option("language", "en").unwrap();
         *s.lock().unwrap() = Some(app.attach_control(&cc.egui_ctx));
@@ -67,6 +71,155 @@ fn call(h: &mut Harness<'static, PdfCraftApp>, c: &ControlClient, method: &str, 
 
 fn ok(h: &mut Harness<'static, PdfCraftApp>, c: &ControlClient, method: &str, params: Value) -> Value {
     call(h, c, method, params).unwrap_or_else(|e| panic!("{method}: {e}"))
+}
+
+#[test]
+fn control_resize_reports_observed_dimensions_and_rejects_invalid_sizes() {
+    let (mut h, c) = harness();
+    for params in [
+        json!({}),
+        json!({"width": 800}),
+        json!({"width": "800", "height": 640}),
+        json!({"width": -1, "height": 640}),
+        json!({"width": 0, "height": 640}),
+        json!({"width": 800, "height": 319}),
+        json!({"width": 8193, "height": 640}),
+        json!({"width": 1e300, "height": 640}),
+        json!({"width": null, "height": 640}),
+        json!({"width": 800, "height": 640, "force": true}),
+        json!([]),
+    ] {
+        assert!(call(&mut h, &c, "ui.resize", params).is_err());
+        let window = ok(&mut h, &c, "ui.state", json!({}))["window"].clone();
+        assert_eq!(window["width"], 1400.0);
+        assert_eq!(window["height"], 900.0);
+    }
+    let requested = ok(&mut h, &c, "ui.resize", json!({"width": 800, "height": 640}));
+    assert_eq!(requested["requested"], json!([800.0, 640.0]));
+    let state = ok(&mut h, &c, "ui.state", json!({}));
+    assert_eq!(state["window"]["width"], 800.0);
+    assert_eq!(state["window"]["height"], 640.0);
+    assert_eq!(state["documents"][0]["pages"], 5);
+    assert_eq!(state["documents"][0]["dirty"], false);
+}
+
+#[test]
+fn control_focus_traverses_real_widgets_and_keyboard_activates() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.focus", json!({"label": "Read"}));
+    let read = ok(&mut h, &c, "ui.inspect", json!({"query": "Read", "role": "Button"}));
+    assert_eq!(read["widgets"][0]["focused"], true, "{read}");
+    assert_eq!(read["widgets"][0]["focusable"], true);
+    ok(&mut h, &c, "ui.key", json!({"key": "Tab"}));
+    let edit = ok(&mut h, &c, "ui.inspect", json!({"query": "Edit", "role": "Button"}));
+    assert!(edit["widgets"].as_array().unwrap().iter().any(|w| w["label"] == "Edit" && w["focused"] == true), "{edit}");
+    ok(&mut h, &c, "ui.key", json!({"key": "Tab", "modifiers": ["shift"]}));
+    let read = ok(&mut h, &c, "ui.inspect", json!({"query": "Read", "role": "Button"}));
+    assert_eq!(read["widgets"][0]["focused"], true);
+    ok(&mut h, &c, "ui.key", json!({"key": "Enter"}));
+    let state = ok(&mut h, &c, "ui.state", json!({}));
+    assert_eq!(state["mode"], "Read");
+    assert_eq!(state["documents"][0]["dirty"], false);
+}
+
+#[test]
+fn control_button_focus_preserves_document_undo_redo_shortcuts() {
+    let (mut h, c) = harness_pages(2);
+    ok(&mut h, &c, "ui.focus", json!({"label": "Read"}));
+    ok(&mut h, &c, "ui.key", json!({"key": "Enter"}));
+    ok(&mut h, &c, "ui.click", json!({"label": "All tools"}));
+    assert!(h.ctx.egui_wants_keyboard_input());
+    assert!(!h.ctx.text_edit_focused());
+    ok(&mut h, &c, "ui.command", json!({"id": "page.insert_blank"}));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["pages"], 3);
+    ok(&mut h, &c, "ui.key", json!({"key": "Z", "modifiers": ["command"]}));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["pages"], 2);
+    ok(&mut h, &c, "ui.key", json!({"key": "Z", "modifiers": ["command", "shift"]}));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["pages"], 3);
+}
+
+#[test]
+fn control_text_focus_retains_text_undo_ownership() {
+    let (mut h, c) = harness_pages(2);
+    h.state_mut().apply_edit(pdfcraft_engine::Edit::AddBookmark { parent: vec![], index: 0, title: "Target".into(), page: 0 });
+    ok(&mut h, &c, "ui.command", json!({"id": "page.insert_blank"}));
+    ok(&mut h, &c, "ui.set", json!({"key": "panel", "value": "bookmarks"}));
+    let widgets = ok(&mut h, &c, "ui.inspect", json!({"query": "Search", "role": "TextInput"}));
+    ok(&mut h, &c, "ui.focus", json!({"id": widgets["widgets"][0]["id"]}));
+    assert!(h.ctx.text_edit_focused());
+    ok(&mut h, &c, "ui.type", json!({"text": "target"}));
+    let search_id = egui::Id::new(("bookmark_search", h.state().views[0].id.0));
+    assert_eq!(h.ctx.data(|d| d.get_temp::<String>(search_id)).as_deref(), Some("target"));
+    ok(&mut h, &c, "ui.key", json!({"key": "Z", "modifiers": ["command"]}));
+    assert_eq!(h.ctx.data(|d| d.get_temp::<String>(search_id)).as_deref(), Some(""));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["pages"], 3);
+}
+
+#[test]
+fn control_focus_rejects_missing_ambiguous_disabled_and_nonfocusable_targets() {
+    let (mut h, c) = harness();
+    for params in [
+        json!({}),
+        json!({"label": "does not exist"}),
+        json!({"id": "not a number"}),
+        json!({"id": 0}),
+        json!({"id": 1, "label": "Read"}),
+        json!({"label": false}),
+        json!({"label": "Read", "force": true}),
+        json!([]),
+    ] {
+        assert!(call(&mut h, &c, "ui.focus", params).is_err());
+    }
+    let widgets = ok(&mut h, &c, "ui.inspect", json!({}));
+    let nonfocusable = widgets["widgets"].as_array().unwrap().iter().find(|w| w["focusable"] == false).unwrap();
+    assert!(call(&mut h, &c, "ui.focus", json!({"id": nonfocusable["id"]})).is_err());
+    let read = widgets["widgets"].as_array().unwrap().iter().find(|w| w["label"] == "Read").unwrap();
+    ok(&mut h, &c, "ui.focus", json!({"id": read["id"]}));
+    assert_eq!(ok(&mut h, &c, "ui.inspect", json!({"query": "Read", "role": "Button"}))["widgets"][0]["focused"], true);
+    // Home has no active document, so its document-only toolbar controls are disabled.
+    ok(&mut h, &c, "ui.click", json!({"label": "Home"}));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["home"], true);
+    let widgets = ok(&mut h, &c, "ui.inspect", json!({}));
+    let disabled = widgets["widgets"].as_array().unwrap().iter().find(|w| w["enabled"] == false).unwrap();
+    assert!(call(&mut h, &c, "ui.focus", json!({"id": disabled["id"]})).is_err());
+}
+
+fn close_requested(h: &Harness<'static, PdfCraftApp>) -> bool {
+    h.output().viewport_output.values().any(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)))
+}
+
+#[test]
+fn control_quit_preserves_dirty_documents_and_cancel_keeps_them_open() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.command", json!({"id": "page.insert_blank"}));
+    for params in [json!({"force": true}), json!({"discard": true}), json!([])] {
+        assert!(call(&mut h, &c, "ui.quit", params).is_err());
+        assert!(!close_requested(&h));
+    }
+    assert_eq!(ok(&mut h, &c, "ui.quit", json!({})), json!({"quitting": false, "needs_confirmation": true}));
+    assert!(!close_requested(&h));
+    assert_eq!(ok(&mut h, &c, "ui.quit", Value::Null), json!({"quitting": false, "needs_confirmation": true}));
+    assert!(!close_requested(&h));
+    let state = ok(&mut h, &c, "ui.state", json!({}));
+    assert_eq!(state["close_prompt"], true);
+    assert_eq!(state["documents"][0]["dirty"], true);
+    assert_eq!(state["documents"][0]["pages"], 6);
+    ok(&mut h, &c, "ui.click", json!({"label": "Cancel"}));
+    let state = ok(&mut h, &c, "ui.state", json!({}));
+    assert_eq!(state["close_prompt"], false);
+    assert_eq!(state["documents"].as_array().unwrap().len(), 1);
+    assert_eq!(state["documents"][0]["dirty"], true);
+    assert_eq!(state["documents"][0]["pages"], 6);
+    assert!(!close_requested(&h));
+}
+
+#[test]
+fn control_quit_clean_document_requests_normal_window_close() {
+    for params in [json!({}), Value::Null] {
+        let (mut h, c) = harness();
+        assert_eq!(ok(&mut h, &c, "ui.quit", params), json!({"quitting": true, "needs_confirmation": false}));
+        assert!(close_requested(&h));
+    }
 }
 
 #[test]
@@ -121,6 +274,41 @@ fn theme_commands_and_options_report_preference_and_effective_colours() {
     assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["theme_preference"], "System");
 }
 
+#[test]
+fn lithuanian_password_dialog_translates_dynamic_labels_and_validation() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "lt" }));
+    ok(&mut h, &c, "ui.set", json!({ "key": "dialog", "value": "protect" }));
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Peržiūrėti");
+    h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Redaguoti").click();
+    h.run_steps(2);
+    assert!(!h.state().protect_draft.viewing);
+    h.get_by_role_and_label(egui::accesskit::Role::PasswordInput, "Įveskite slaptažodį");
+    h.get_by_role_and_label(egui::accesskit::Role::PasswordInput, "Pakartokite slaptažodį");
+    h.state_mut().protect_draft.password = "abc".into();
+    h.state_mut().protect_draft.confirm = "xyz".into();
+    h.run_steps(2);
+    h.get_by_label("Slaptažodžiai nesutampa.");
+}
+
+#[test]
+fn lithuanian_inspector_title_updates_through_the_control_channel() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({ "key": "panel", "value": "comments" }));
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspector");
+    let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
+    ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "lt" }));
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspektorius");
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Tab, "Inspector").is_none());
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"], documents);
+    ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "en" }));
+    h.run_steps(2);
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspector");
+}
+
 /// Switching the interface language changes labels only: documents, their dirty state and the
 /// command ids agents drive stay exactly the same.
 #[test]
@@ -132,7 +320,7 @@ fn language_switch_preserves_document_and_command_ids() {
     let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
     assert_eq!(documents[0]["dirty"], true);
     let commands = ok(&mut h, &c, "ui.commands", json!({}));
-    for code in ["ja", "zh-hans", "fr", "de", "uk", "en"] {
+    for code in ["ja", "zh-hans", "fr", "de", "uk", "lt", "en"] {
         ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": code }));
         h.run_steps(2);
         let state = ok(&mut h, &c, "ui.state", json!({}));
@@ -151,7 +339,8 @@ fn language_switch_preserves_document_and_command_ids() {
         h.run_steps(2);
     }
     let error = call(&mut h, &c, "ui.set", json!({ "key": "language", "value": "xx" })).unwrap_err();
-    assert!(error.contains("auto, en, ja"), "{error}");
+    let codes = std::iter::once(i18n::AUTO).chain(i18n::Lang::all().map(i18n::Lang::code)).collect::<Vec<_>>().join(", ");
+    assert_eq!(error, format!("language must be one of {codes}"));
     assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["language"], "en");
 }
 
@@ -837,6 +1026,28 @@ fn state_reports_the_selected_pages() {
     assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([]));
     ok(&mut h, &c, "ui.set", json!({ "key": "select", "value": "2,4" }));
     assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([2, 4]));
+    ok(&mut h, &c, "ui.set", json!({ "key": "select", "value": "4-2,3" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([2, 3, 4]));
+    assert!(call(&mut h, &c, "ui.set", json!({ "key": "select", "value": "0,6" })).is_err());
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([2, 3, 4]));
+    ok(&mut h, &c, "ui.set", json!({ "key": "select", "value": "" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([]));
+}
+
+#[test]
+fn organize_overview_is_reachable_through_the_control_channel() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({ "key": "tool", "value": "organize" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["organize"], true);
+    h.run_steps(3);
+    for label in ["Select page 1", "Select page 3", "Rotate page 1 clockwise"] {
+        ok(&mut h, &c, "ui.click", json!({ "label": label }));
+        h.run_steps(3);
+    }
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([1, 3]));
+    let app = h.state();
+    let rotations: Vec<_> = app.session.get(app.views[0].id).unwrap().info.pages.iter().map(|p| p.rotation).collect();
+    assert_eq!(rotations, [90, 0, 0, 0, 0]);
 }
 
 #[test]
@@ -1024,4 +1235,318 @@ fn measurement_tools_draw_live_calibrate_save_and_export() {
     click(&mut h, &c, 130.0, 50.0);
     assert!((h.state().views[0].measure.drawing_points - 100.0).abs() < 0.01);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn docking_pointer_group_float_close_restore_and_document_commands() {
+    use pdfcraft_ui_egui::docking::Panel;
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    h.run_steps(4);
+    let from = h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspector").rect().center();
+    let to = h.get_by_role_and_label(egui::accesskit::Role::Tab, "Tools").rect().center();
+    h.event(egui::Event::PointerMoved(from));
+    h.run_steps(2);
+    h.event(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+    h.run_steps(2);
+    for step in 1..=8 {
+        h.event(egui::Event::PointerMoved(from.lerp(to, step as f32 / 8.0)));
+        h.run_steps(1);
+    }
+    h.event(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+    h.run_steps(4);
+    assert_eq!(h.state().docking.layout.location(&Panel::Inspector).unwrap().anchor, Some(Panel::Tools));
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspector").click_button(egui::PointerButton::Secondary);
+    h.run_steps(3);
+    h.get_by_label("Float panel").click();
+    h.run_steps(5);
+    let rect = h.state().docking.layout.floating.iter().find(|g| g.panels.contains(&Panel::Inspector)).unwrap().rect;
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Inspector").click_button(egui::PointerButton::Secondary);
+    h.run_steps(3);
+    // Scope to the open context menu; the Tools body also has a close icon.
+    h.get_by_label("Float panel").parent().unwrap().get_by_label("Close panel").click();
+    h.run_steps(4);
+    assert!(!h.state().docking.layout.contains(&Panel::Inspector));
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    h.run_steps(4);
+    assert_eq!(h.state().docking.layout.floating.iter().find(|g| g.panels.contains(&Panel::Inspector)).unwrap().rect, rect);
+    let saved = h.state().persist();
+    let expected = serde_json::to_value(&h.state().docking).unwrap();
+    let (mut reloaded, client) = harness();
+    reloaded.state_mut().restore(&saved);
+    reloaded.run_steps(5);
+    assert_eq!(serde_json::to_value(&reloaded.state().docking).unwrap(), expected);
+    ok(&mut reloaded, &client, "ui.dock", json!({"operation":"move", "panel":"inspector", "target":"tools", "zone":"center"}));
+    reloaded.run_steps(4);
+    ok(&mut reloaded, &client, "ui.command", json!({"id":"page.insert_blank"}));
+    assert_eq!(ok(&mut reloaded, &client, "ui.state", json!({}))["documents"][0]["pages"], 6);
+    ok(&mut reloaded, &client, "ui.command", json!({"id":"edit.undo"}));
+    assert_eq!(ok(&mut reloaded, &client, "ui.state", json!({}))["documents"][0]["pages"], 5);
+}
+
+#[test]
+fn invalid_docking_requests_are_atomic_and_do_not_change_documents() {
+    let (mut h, c) = harness();
+    let before = serde_json::to_value(&h.state().docking).unwrap();
+    for params in [
+        json!({"operation":"close", "panel":"canvas"}),
+        json!({"operation":"move", "panel":"tools", "target":"canvas", "zone":"center"}),
+        json!({"operation":"float", "panel":"tools", "rect":[0,0,-1,100]}),
+        json!({"operation":"move", "panel":"unknown", "target":"tools", "zone":"center"}),
+    ] {
+        assert!(call(&mut h, &c, "ui.dock", params).is_err());
+        assert_eq!(serde_json::to_value(&h.state().docking).unwrap(), before);
+        let state = ok(&mut h, &c, "ui.state", json!({}));
+        assert_eq!(state["documents"][0]["pages"], 5);
+        assert_eq!(state["documents"][0]["dirty"], false);
+    }
+}
+
+#[test]
+fn docking_renders_real_pdf_default_floating_and_redocked() {
+    for width in [900.0, 1400.0] {
+        for scale in [1.0, 2.0] {
+            let (mut h, c) = harness_pages_at(5, width, scale);
+            ok(&mut h, &c, "ui.resize", json!({"width":width,"height":900}));
+            ok(&mut h, &c, "ui.set", json!({"key":"panel","value":"bookmarks"}));
+            h.state_mut().apply_edit(pdfcraft_engine::Edit::AddBookmark { parent: vec![], index: 0, title: "Overview".into(), page: 0 });
+            h.state_mut().apply_edit(pdfcraft_engine::Edit::AddBookmark { parent: vec![], index: 1, title: "Details".into(), page: 2 });
+            for state in ["default", "floating", "redocked"] {
+                if state == "floating" {
+                    ok(&mut h, &c, "ui.dock", json!({"operation":"float", "panel":"inspector", "rect":[160,100,330,480]}));
+                } else if state == "redocked" {
+                    ok(&mut h, &c, "ui.dock", json!({"operation":"move", "panel":"inspector", "target":"tools", "zone":"center"}));
+                }
+                h.run_steps(5);
+                h.state().docking.validate().unwrap();
+                if let Ok(directory) = std::env::var("CRAFT_UI_DOCKING_DIR") {
+                    std::fs::create_dir_all(&directory).unwrap();
+                    h.render().unwrap().save(format!("{directory}/pdf-{width}-{scale}-{state}.png")).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn explicit_panel_requests_reveal_inactive_group_members() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    ok(&mut h, &c, "ui.dock", json!({"operation":"move", "panel":"inspector", "target":"tools", "zone":"center"}));
+    ok(&mut h, &c, "ui.dock", json!({"operation":"activate", "panel":"tools"}));
+    ok(&mut h, &c, "ui.command", json!({"id":"form.fields"}));
+    h.run_steps(4);
+    h.get_by_label("Fields");
+    h.get_by_role_and_label(egui::accesskit::Role::Tab, "Tools").click();
+    h.run_steps(4);
+    // Ordinary frames must preserve the user's selected tab.
+    h.get_by_label("View more");
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    h.run_steps(4);
+    h.get_by_label("This document has no bookmarks.");
+    ok(&mut h, &c, "ui.command", json!({"id":"edit.edit_text"}));
+    h.run_steps(4);
+    h.get_by_label("Edit text & images");
+}
+
+#[test]
+fn home_and_combine_suppress_inspector_without_forgetting_layout_or_choice() {
+    use pdfcraft_ui_egui::docking::Panel;
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    ok(&mut h, &c, "ui.dock", json!({"operation":"float", "panel":"inspector", "rect":[170,120,330,470]}));
+    let before = serde_json::to_value(&h.state().docking).unwrap();
+    for combine in [false, true] {
+        if combine {
+            h.state_mut().open_combine_tab();
+        } else {
+            h.state_mut().active = None;
+        }
+        h.run_steps(4);
+        assert!(h.query_by_role_and_label(egui::accesskit::Role::Tab, "Inspector").is_none());
+        if let Ok(directory) = std::env::var("CRAFT_UI_DOCKING_DIR") {
+            std::fs::create_dir_all(&directory).unwrap();
+            let state = if combine { "combine" } else { "home" };
+            h.render().unwrap().save(format!("{directory}/availability-{state}.png")).unwrap();
+        }
+        assert!(h.state().docking.layout.contains(&Panel::Inspector));
+        assert_eq!(h.state().right, Some(pdfcraft_ui_egui::RightPanel::Bookmarks));
+        assert_eq!(serde_json::to_value(&h.state().docking).unwrap(), before);
+        h.state_mut().active = Some(0);
+        h.state_mut().combine_tab.focused = false;
+        h.run_steps(4);
+        h.get_by_label("This document has no bookmarks.");
+        if let Ok(directory) = std::env::var("CRAFT_UI_DOCKING_DIR") {
+            h.render().unwrap().save(format!("{directory}/availability-return.png")).unwrap();
+        }
+        assert_eq!(serde_json::to_value(&h.state().docking).unwrap(), before);
+    }
+}
+
+#[test]
+fn malformed_docking_settings_preserve_other_preferences() {
+    let mut app = PdfCraftApp::new();
+    app.restore(r#"{"docking":{"layout":{"root":null,"floating":[]},"hidden":[]},"default_mode":"edit","flatten_fill_sign":true}"#);
+    assert_eq!(app.default_mode, pdfcraft_ui_egui::Mode::Edit);
+    app.docking.validate().unwrap();
+    let saved: Value = serde_json::from_str(&app.persist()).unwrap();
+    assert_eq!(saved["default_mode"], "edit");
+    assert_eq!(saved["flatten_fill_sign"], true);
+}
+
+#[test]
+fn rail_reveals_its_remembered_inactive_inspector_then_closes_the_visible_panel() {
+    use pdfcraft_ui_egui::docking::Panel;
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    ok(&mut h, &c, "ui.dock", json!({"operation":"move", "panel":"inspector", "target":"tools", "zone":"center"}));
+    ok(&mut h, &c, "ui.dock", json!({"operation":"activate", "panel":"tools"}));
+    h.run_steps(3);
+    let document = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
+    let mut preferences: Value = serde_json::from_str(&h.state().persist()).unwrap();
+    preferences.as_object_mut().unwrap().remove("docking");
+    assert!(h.query_by_label("This document has no bookmarks.").is_none());
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Bookmarks").click();
+    h.run_steps(4);
+    h.get_by_label("This document has no bookmarks.");
+    let mut after: Value = serde_json::from_str(&h.state().persist()).unwrap();
+    after.as_object_mut().unwrap().remove("docking");
+    assert_eq!(after, preferences, "revealing a group member only changes layout activation");
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"], document);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Bookmarks").click();
+    h.run_steps(4);
+    assert_eq!(h.state().right, None);
+    assert!(!h.state().docking.layout.contains(&Panel::Inspector));
+    assert!(h.query_by_label("This document has no bookmarks.").is_none());
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"], document);
+}
+
+#[test]
+fn control_quit_retains_inactive_fill_sign_typing_after_cancel() {
+    let (mut h, c) = harness();
+    h.state_mut().views[0].fill_text =
+        Some(pdfcraft_ui_egui::fill_sign::TypeBox { page: 0, at: [40.0, 200.0], text: "Unsaved signature note".into(), size: 10.0, focus: false });
+    h.state_mut().active = None;
+    assert!(!h.state().session.get(h.state().views[0].id).unwrap().dirty);
+    assert_eq!(ok(&mut h, &c, "ui.quit", json!({})), json!({"quitting":false,"needs_confirmation":true}));
+    assert!(!close_requested(&h));
+    h.run_steps(3);
+    ok(&mut h, &c, "ui.click", json!({"label":"Cancel"}));
+    assert_eq!(h.state().views[0].fill_text.as_ref().unwrap().text, "Unsaved signature note");
+    assert_eq!(h.state().views.len(), 1);
+    assert!(!close_requested(&h));
+}
+
+#[test]
+fn control_quit_retains_blocked_content_typing_after_cancel() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.command", json!({"id":"edit.text"}));
+    h.run_steps(3);
+    let point = h.state().views[0].page_screen_rect(0).unwrap().center();
+    ok(&mut h, &c, "ui.click", json!({"x":point.x,"y":point.y}));
+    h.event(egui::Event::Text("Keep 世界".into()));
+    h.run_steps(3);
+    assert_eq!(h.state().views[0].content.draft.as_ref().unwrap().text, "Keep 世界");
+    h.state_mut().active = None;
+    assert!(!h.state().session.get(h.state().views[0].id).unwrap().dirty);
+    assert_eq!(ok(&mut h, &c, "ui.quit", json!({})), json!({"quitting":false,"needs_confirmation":true}));
+    h.run_steps(3);
+    ok(&mut h, &c, "ui.click", json!({"label":"Cancel"}));
+    assert_eq!(h.state().views[0].content.draft.as_ref().unwrap().text, "Keep 世界");
+    assert_eq!(h.state().views.len(), 1);
+    assert!(!close_requested(&h));
+}
+
+#[test]
+fn read_mode_retains_existing_rail_click_to_close_policy() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({"key":"panel", "value":"bookmarks"}));
+    ok(&mut h, &c, "ui.set", json!({"key":"mode", "value":"read"}));
+    h.run_steps(3);
+    assert_eq!(h.state().right, Some(pdfcraft_ui_egui::RightPanel::Bookmarks));
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Bookmarks").click();
+    h.run_steps(3);
+    assert_eq!(h.state().right, None);
+    assert_eq!(h.state().mode, pdfcraft_ui_egui::Mode::Read);
+}
+
+fn navigation_frame(h: &mut Harness<'static, PdfCraftApp>, events: Vec<egui::Event>) {
+    h.input_mut().events.extend(events);
+    h.step();
+}
+
+fn navigation_wheel(h: &mut Harness<'static, PdfCraftApp>, pos: egui::Pos2, delta: f32, ctrl: bool) {
+    let modifiers = egui::Modifiers { ctrl, command: ctrl, ..egui::Modifiers::NONE };
+    navigation_frame(
+        h,
+        vec![
+            egui::Event::ModifiersChanged(modifiers),
+            egui::Event::PointerMoved(pos),
+            egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, delta), modifiers, phase: egui::TouchPhase::Move },
+        ],
+    );
+    h.run_steps(20);
+    navigation_frame(h, vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+}
+
+#[test]
+fn ctrl_wheel_anchors_visible_page_and_plain_wheel_only_scrolls() {
+    for percent in [100, 200, 400] {
+        for fraction in [0.1, 0.5, 0.9] {
+            let (mut h, c) = harness_pages(20);
+            ok(&mut h, &c, "ui.set", json!({"key":"zoom", "value":percent.to_string()}));
+            h.run_steps(4);
+            let viewport = h.state().views[0].viewport_rect();
+            let before = h.state().views[0].page_screen_rect(0).unwrap();
+            let visible = before.intersect(viewport).shrink(15.0);
+            let p = egui::pos2(visible.left() + fraction * visible.width(), visible.top() + fraction * visible.height());
+            let normalised = (p - before.min) / before.size();
+            let old_zoom = h.state().views[0].zoom;
+            navigation_wheel(&mut h, p, 20.0, true);
+            let enlarged = h.state().views[0].page_screen_rect(0).unwrap();
+            let anchored = enlarged.min + normalised * enlarged.size();
+            assert!(h.state().views[0].zoom > old_zoom);
+            assert!((anchored.y - p.y).abs() < 2.0, "percent={percent}, fraction={fraction}");
+            if before.width() > viewport.width() {
+                assert!((anchored.x - p.x).abs() < 2.0);
+            }
+            navigation_wheel(&mut h, p, -20.0, true);
+            assert!((h.state().views[0].zoom - old_zoom).abs() < 0.01);
+            let zoom = h.state().views[0].zoom;
+            let top = h.state().views[0].page_screen_rect(0).unwrap().top();
+            navigation_wheel(&mut h, p, -80.0, false);
+            assert_eq!(h.state().views[0].zoom, zoom);
+            assert!(h.state().views[0].page_screen_rect(0).unwrap().top() < top - 20.0);
+        }
+    }
+}
+
+#[test]
+fn wheel_zoom_is_scoped_to_the_viewport_and_respects_existing_limits() {
+    let (mut h, c) = harness();
+    let outside = egui::pos2(5.0, 5.0);
+    let zoom = h.state().views[0].zoom;
+    navigation_wheel(&mut h, outside, 40.0, true);
+    assert_eq!(h.state().views[0].zoom, zoom);
+    for (percent, delta, expected) in [(6400, 80.0, 64.0), (8, -80.0, 0.08)] {
+        ok(&mut h, &c, "ui.set", json!({"key":"zoom", "value":percent.to_string()}));
+        h.run_steps(4);
+        let p = h.state().views[0].viewport_rect().center();
+        navigation_wheel(&mut h, p, delta, true);
+        assert_eq!(h.state().views[0].zoom, expected);
+    }
+}
+
+#[test]
+fn initial_zoom_option_is_applied_before_the_first_viewport_layout() {
+    for percent in [50, 100, 200, 400] {
+        let h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+            let mut app = PdfCraftApp::new();
+            app.open_bytes("initial-zoom.pdf", None, fixture(3)).unwrap();
+            app.set_option("zoom", &percent.to_string()).unwrap();
+            assert_eq!(app.views[0].zoom, percent as f32 / 100.0, "initial options must work before the viewport exists");
+            app
+        });
+        assert_eq!(h.state().views[0].zoom, percent as f32 / 100.0);
+    }
 }

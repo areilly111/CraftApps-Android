@@ -9,6 +9,7 @@ use crate::error::{PsdError, Result};
 use crate::file::PsdFile;
 use crate::header::{ColorMode, Header, Version};
 use crate::layer::{CHANNEL_REAL_USER_MASK, CHANNEL_TRANSPARENCY, CHANNEL_USER_MASK, LayerRecord, Rect};
+use std::borrow::Cow;
 
 /// Interprets planar big-endian bytes as u16 samples.
 pub fn samples_u16(bytes: &[u8]) -> Vec<u16> {
@@ -30,27 +31,58 @@ pub fn f32_to_bytes(samples: &[f32]) -> Vec<u8> {
     samples.iter().flat_map(|s| s.to_be_bytes()).collect()
 }
 
+/// Allocates `len` bytes, reporting a machine without that much memory instead of aborting.
+fn try_buffer(len: usize) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    out.try_reserve_exact(len).map_err(|_| PsdError::LimitExceeded("not enough memory for the converted plane"))?;
+    Ok(out)
+}
+
 /// Expands a 1-bit plane (MSB first, rows padded to bytes) to one byte per
-/// pixel (0 or 1).
-pub fn unpack_bits(bytes: &[u8], width: usize, height: usize) -> Vec<u8> {
+/// pixel (0 or 1). Errors with [`PsdError::LimitExceeded`] when the plane
+/// size overflows or cannot be allocated.
+pub fn unpack_bits(bytes: &[u8], width: usize, height: usize) -> Result<Vec<u8>> {
+    unpack_bits_with(bytes, width, height, |bit| bit)
+}
+
+/// Shared 1-bit expansion; `map` turns each bit (0 or 1) into the output byte.
+fn unpack_bits_with(bytes: &[u8], width: usize, height: usize, map: impl Fn(u8) -> u8) -> Result<Vec<u8>> {
+    let len = width.checked_mul(height).ok_or(PsdError::LimitExceeded("plane size overflow"))?;
     let rb = width.div_ceil(8);
-    let mut out = Vec::with_capacity(width * height);
+    let mut out = try_buffer(len)?;
     for y in 0..height {
         for x in 0..width {
-            let b = bytes.get(y * rb + x / 8).copied().unwrap_or(0);
-            out.push((b >> (7 - (x % 8))) & 1);
+            let b = y.checked_mul(rb).and_then(|row| bytes.get(row + x / 8)).copied().unwrap_or(0);
+            out.push(map((b >> (7 - (x % 8))) & 1));
         }
     }
-    out
+    Ok(out)
 }
 
 /// Converts one plane of samples at `depth` to 8-bit.
 pub fn plane_to_u8(bytes: &[u8], depth: u16, width: usize, height: usize) -> Result<Vec<u8>> {
     Ok(match depth {
-        1 => unpack_bits(bytes, width, height).into_iter().map(|b| if b == 1 { 0 } else { 255 }).collect(),
-        8 => bytes.to_vec(),
-        16 => samples_u16(bytes).into_iter().map(|v| ((u32::from(v) * 255 + 32767) / 65535) as u8).collect(),
-        32 => samples_f32(bytes).into_iter().map(|v| if v.is_nan() { 0 } else { (v.clamp(0.0, 1.0) * 255.0).round() as u8 }).collect(),
+        1 => unpack_bits_with(bytes, width, height, |b| if b == 1 { 0 } else { 255 })?,
+        8 => {
+            let mut out = try_buffer(bytes.len())?;
+            out.extend_from_slice(bytes);
+            out
+        }
+        16 => {
+            let chunks = bytes.as_chunks::<2>().0;
+            let mut out = try_buffer(chunks.len())?;
+            out.extend(chunks.iter().map(|b| ((u32::from(u16::from_be_bytes(*b)) * 255 + 32767) / 65535) as u8));
+            out
+        }
+        32 => {
+            let chunks = bytes.as_chunks::<4>().0;
+            let mut out = try_buffer(chunks.len())?;
+            out.extend(chunks.iter().map(|b| {
+                let v = f32::from_be_bytes(*b);
+                if v.is_nan() { 0 } else { (v.clamp(0.0, 1.0) * 255.0).round() as u8 }
+            }));
+            out
+        }
         d => return Err(PsdError::Unsupported(format!("depth {d}"))),
     })
 }
@@ -87,8 +119,34 @@ pub struct GrayImage {
     pub default_value: u8,
 }
 
-fn interleave(mode: ColorMode, color: &[Vec<u8>], alpha: Option<&[u8]>, palette: &[u8], n: usize) -> Result<Vec<u8>> {
-    let mut out = vec![0u8; n * 4];
+fn interleave(mode: ColorMode, color: &[Cow<'_, [u8]>], alpha: Option<&[u8]>, palette: &[u8], n: usize) -> Result<Vec<u8>> {
+    if color.len() != color_channel_count(mode)? || color.iter().any(|p| p.len() != n) || alpha.is_some_and(|p| p.len() != n) {
+        return Err(PsdError::invalid("channel size mismatch"));
+    }
+    let len = n
+        .checked_mul(4)
+        .filter(|&len| len as u64 <= crate::compression::MAX_DECODED_BYTES)
+        .ok_or(PsdError::LimitExceeded("RGBA output exceeds MAX_DECODED_BYTES"))?;
+    let mut out = Vec::new();
+    out.try_reserve_exact(len).map_err(|_| PsdError::LimitExceeded("not enough memory for RGBA output"))?;
+    out.resize(len, 255);
+    if mode == ColorMode::Rgb {
+        let [r, g, b] = color else { return Err(PsdError::invalid("RGB requires three channels")) };
+        let rgb = r.iter().zip(g.iter()).zip(b.iter());
+        match alpha {
+            Some(alpha) => {
+                for (rgba, (((r, g), b), a)) in out.as_chunks_mut::<4>().0.iter_mut().zip(rgb.zip(alpha)) {
+                    *rgba = [*r, *g, *b, *a];
+                }
+            }
+            None => {
+                for (rgba, ((r, g), b)) in out.as_chunks_mut::<4>().0.iter_mut().zip(rgb) {
+                    *rgba = [*r, *g, *b, 255];
+                }
+            }
+        }
+        return Ok(out);
+    }
     for i in 0..n {
         let (r, g, b) = match mode {
             ColorMode::Rgb => (color[0][i], color[1][i], color[2][i]),
@@ -120,6 +178,24 @@ fn color_channel_count(mode: ColorMode) -> Result<usize> {
         ColorMode::Grayscale | ColorMode::Indexed | ColorMode::Bitmap | ColorMode::Duotone => Ok(1),
         m => Err(PsdError::Unsupported(format!("rgba8 for color mode {m:?}"))),
     }
+}
+
+fn unmatte_to_u8(color: &[u8], alpha: &[u8], depth: u16) -> Result<Vec<u8>> {
+    let convert = |c: f32, a: f32| {
+        let straight = if a > 0.0 { (c + a - 1.0) / a } else { c };
+        (straight.clamp(0.0, 1.0) * 255.0).round() as u8
+    };
+    Ok(match depth {
+        16 => color
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .zip(alpha.as_chunks::<2>().0)
+            .map(|(c, a)| convert(f32::from(u16::from_be_bytes(*c)) / 65535.0, f32::from(u16::from_be_bytes(*a)) / 65535.0))
+            .collect(),
+        32 => color.as_chunks::<4>().0.iter().zip(alpha.as_chunks::<4>().0).map(|(c, a)| convert(f32::from_be_bytes(*c), f32::from_be_bytes(*a))).collect(),
+        d => return Err(PsdError::Unsupported(format!("RGB composite depth {d}"))),
+    })
 }
 
 /// A borrowed view of a layer with the file context needed to decode it.
@@ -154,24 +230,31 @@ impl<'a> Layer<'a> {
     pub fn rgba8(&self) -> Result<RgbaImage> {
         let rect = self.record.rect;
         let (w, h) = rect.size()?;
-        let n = w * h;
+        let n = w.checked_mul(h).ok_or(PsdError::LimitExceeded("layer size overflow"))?;
+        if n.checked_mul(4).is_none_or(|len| len as u64 > crate::compression::MAX_DECODED_BYTES) {
+            return Err(PsdError::LimitExceeded("RGBA output exceeds MAX_DECODED_BYTES"));
+        }
         let depth = self.header.depth;
         let mode = self.header.color_mode;
         let cc = color_channel_count(mode)?;
         let mut color = Vec::with_capacity(cc);
         for id in 0..cc as i16 {
             let plane = if self.record.channel(id).is_some() {
-                plane_to_u8(&self.channel_bytes(id)?, depth, w, h)?
+                let bytes = self.channel_bytes(id)?;
+                if depth == 8 { bytes } else { plane_to_u8(&bytes, depth, w, h)? }
             } else {
                 vec![if mode == ColorMode::Cmyk { 255 } else { 0 }; n]
             };
             if plane.len() != n {
                 return Err(PsdError::invalid("channel size mismatch"));
             }
-            color.push(plane);
+            color.push(Cow::Owned(plane));
         }
         let alpha = match self.record.channel(CHANNEL_TRANSPARENCY) {
-            Some(_) => Some(plane_to_u8(&self.channel_bytes(CHANNEL_TRANSPARENCY)?, depth, w, h)?),
+            Some(_) => {
+                let bytes = self.channel_bytes(CHANNEL_TRANSPARENCY)?;
+                Some(if depth == 8 { bytes } else { plane_to_u8(&bytes, depth, w, h)? })
+            }
             None => None,
         };
         let data = interleave(mode, &color, alpha.as_deref(), &[], n)?;
@@ -215,24 +298,58 @@ impl PsdFile {
 
     /// The merged composite as RGBA8. Supports RGB, grayscale, CMYK, indexed,
     /// duotone (as gray) and bitmap at all depths. Alpha comes from the first
-    /// extra channel when [`PsdFile::merged_has_alpha`] is true.
+    /// extra channel when [`PsdFile::merged_has_alpha`] is true. Removes the
+    /// white matte from RGB composites before reducing precision.
     pub fn composite_rgba8(&self) -> Result<RgbaImage> {
         let h = &self.header;
+        h.validate()?;
         let (w, hh) = (h.width as usize, h.height as usize);
-        let n = w * hh;
+        let n = w.checked_mul(hh).ok_or(PsdError::LimitExceeded("composite size overflow"))?;
+        // Same budget as `Layer::rgba8`: refuse before decoding or converting any plane.
+        if n.checked_mul(4).is_none_or(|len| len as u64 > crate::compression::MAX_DECODED_BYTES) {
+            return Err(PsdError::LimitExceeded("RGBA output exceeds MAX_DECODED_BYTES"));
+        }
         let cc = color_channel_count(h.color_mode)?;
         if usize::from(h.channels) < cc {
             return Err(PsdError::invalid("fewer channels than the color mode requires"));
         }
         let all = self.decode_merged()?;
-        let plane = h.row_bytes() * hh;
-        let get = |i: usize| -> Result<Vec<u8>> { plane_to_u8(&all[i * plane..(i + 1) * plane], h.depth, w, hh) };
+        let plane = h.row_bytes().checked_mul(hh).ok_or(PsdError::LimitExceeded("plane size overflow"))?;
+        let alpha_bytes = if self.merged_has_alpha() {
+            Some(all.get(cc * plane..(cc + 1) * plane).ok_or_else(|| PsdError::invalid("alpha channel size mismatch"))?)
+        } else {
+            None
+        };
+        let get = |i: usize| -> Result<Cow<'_, [u8]>> {
+            let bytes = all.get(i * plane..(i + 1) * plane).ok_or_else(|| PsdError::invalid("channel size mismatch"))?;
+            if h.depth == 8 { Ok(Cow::Borrowed(bytes)) } else { plane_to_u8(bytes, h.depth, w, hh).map(Cow::Owned) }
+        };
         let mut color = Vec::with_capacity(cc);
         for i in 0..cc {
-            color.push(get(i)?);
+            color.push(
+                if h.color_mode == ColorMode::Rgb
+                    && h.depth != 8
+                    && let Some(alpha) = alpha_bytes
+                {
+                    let bytes = all.get(i * plane..(i + 1) * plane).ok_or_else(|| PsdError::invalid("channel size mismatch"))?;
+                    Cow::Owned(unmatte_to_u8(bytes, alpha, h.depth)?)
+                } else {
+                    get(i)?
+                },
+            );
         }
         let alpha = if self.merged_has_alpha() { Some(get(cc)?) } else { None };
-        let data = interleave(h.color_mode, &color, alpha.as_deref(), &self.color_mode_data, n)?;
+        let mut data = interleave(h.color_mode, &color, alpha.as_deref(), &self.color_mode_data, n)?;
+        if h.color_mode == ColorMode::Rgb && h.depth == 8 && alpha.is_some() {
+            for pixel in data.as_chunks_mut::<4>().0 {
+                let a = u32::from(pixel[3]);
+                for c in pixel.iter_mut().take(3) {
+                    if let Some(straight) = ((u32::from(*c) + a).saturating_sub(255) * 255 + a / 2).checked_div(a) {
+                        *c = straight.min(255) as u8;
+                    }
+                }
+            }
+        }
         Ok(RgbaImage { left: 0, top: 0, width: h.width, height: h.height, data })
     }
 }
@@ -240,6 +357,23 @@ impl PsdFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn float_composite_removes_white_matte_without_changing_native_data() {
+        let mut file = crate::testgen::merged_only(Version::Psd, ColorMode::Rgb, 32, crate::Compression::Raw, 1, 1);
+        file.header.channels = 4;
+        let native = f32_to_bytes(&[0.75, 0.875, 1.0, 0.25]);
+        file.image_data = crate::ImageData::encode(crate::Compression::Raw, &native, &file.header).unwrap();
+        assert_eq!(file.composite_rgba8().unwrap().data, [0, 128, 255, 64]);
+        assert_eq!(file.decode_merged().unwrap(), native);
+    }
+
+    #[test]
+    fn oversized_layer_preview_rejects_missing_channels_before_allocating() {
+        let mut file = crate::testgen::small(Version::Psb, crate::Compression::Raw);
+        file.layers_mut().push(LayerRecord { rect: Rect::from_xywh(0, 0, 300000, 300000), ..Default::default() });
+        assert!(matches!(file.iter_layers().last().unwrap().rgba8(), Err(PsdError::LimitExceeded(_))));
+    }
 
     #[test]
     fn sample_conversions() {
@@ -251,7 +385,7 @@ mod tests {
 
     #[test]
     fn unpack_bits_rows() {
-        assert_eq!(unpack_bits(&[0b1010_0000, 0b1000_0000], 3, 2), vec![1, 0, 1, 1, 0, 0]);
+        assert_eq!(unpack_bits(&[0b1010_0000, 0b1000_0000], 3, 2).unwrap(), vec![1, 0, 1, 1, 0, 0]);
     }
 
     #[test]
@@ -260,5 +394,34 @@ mod tests {
         assert_eq!(plane_to_u8(&f32_to_bytes(&[0.0, 1.0, 2.0, -1.0, f32::NAN]), 32, 5, 1).unwrap(), vec![0, 255, 255, 0, 0]);
         assert_eq!(plane_to_u8(&[0b1000_0000], 1, 2, 1).unwrap(), vec![0, 255]);
         assert!(plane_to_u8(&[], 12, 0, 0).is_err());
+    }
+
+    /// A plane size that overflows or cannot be allocated is an error, not a panic or abort.
+    #[test]
+    fn plane_conversion_reports_absurd_sizes() {
+        assert!(matches!(unpack_bits(&[0], usize::MAX / 2, 4), Err(PsdError::LimitExceeded(_))));
+        assert!(matches!(plane_to_u8(&[0], 1, usize::MAX / 2, 4), Err(PsdError::LimitExceeded(_))));
+        assert!(matches!(unpack_bits(&[0], 1 << 40, 1 << 20), Err(PsdError::LimitExceeded(_))));
+    }
+
+    /// A bitmap composite whose RGBA output is over the decode budget is refused up front.
+    #[test]
+    fn composite_rgba8_checks_the_output_budget_first() {
+        let mut file = crate::testgen::small(Version::Psb, crate::Compression::Zip);
+        file.header.color_mode = ColorMode::Bitmap;
+        file.header.depth = 1;
+        file.header.channels = 1;
+        file.header.width = 60_000;
+        file.header.height = 60_000;
+        assert!(matches!(file.composite_rgba8(), Err(PsdError::LimitExceeded("RGBA output exceeds MAX_DECODED_BYTES"))));
+    }
+
+    #[test]
+    fn rgb_interleave_checks_planes_and_preserves_alpha() {
+        let color = [Cow::Borrowed(&[1, 2][..]), Cow::Borrowed(&[3, 4][..]), Cow::Borrowed(&[5, 6][..])];
+        assert_eq!(interleave(ColorMode::Rgb, &color, Some(&[7, 8]), &[], 2).unwrap(), [1, 3, 5, 7, 2, 4, 6, 8]);
+        assert_eq!(interleave(ColorMode::Rgb, &color, None, &[], 2).unwrap(), [1, 3, 5, 255, 2, 4, 6, 255]);
+        assert!(interleave(ColorMode::Rgb, &color[..2], None, &[], 2).is_err());
+        assert!(interleave(ColorMode::Rgb, &color, Some(&[7]), &[], 2).is_err());
     }
 }

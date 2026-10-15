@@ -43,7 +43,9 @@ pub(crate) fn set_paint(ctx: &mut RenderContext, p: &Paint, bounds: Rect, f: &Fr
                     peniko::Gradient::new_linear(s, e).with_stops(stops.as_slice())
                 }
             };
-            ctx.set_paint(grad);
+            // Colour and opacity blend each on its own, as the model samples them and as the PDF
+            // and SVG exports draw them (peniko's default premultiplies).
+            ctx.set_paint(grad.with_interpolation_alpha_space(peniko::InterpolationAlphaSpace::Unpremultiplied));
             true
         }
         Paint::Pattern { pattern, xf } => crate::pattern::set_pattern_paint(ctx, pattern, *xf, f),

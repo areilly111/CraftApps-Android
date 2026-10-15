@@ -284,7 +284,15 @@ fn place_gun_click_drag_and_into_frame() {
     let f = s.execute("frame.create", &json!({"rect": [300, 300, 400, 400], "content": "graphic"})).unwrap()["id"].as_u64().unwrap();
     s.execute("place.load", &json!({"base64": b64})).unwrap();
     s.execute("place.drop", &json!({"frame": f})).unwrap();
-    assert!(matches!(s.doc().unwrap().doc.item(designcraft_doc::ItemId(f)).unwrap().content, designcraft_doc::Content::Graphic(_)));
+    let graphic_xf = |s: &Session| match &s.doc().unwrap().doc.item(designcraft_doc::ItemId(f)).unwrap().content {
+        designcraft_doc::Content::Graphic(g) => g.xf,
+        _ => panic!("not a graphic"),
+    };
+    let placed = graphic_xf(&s);
+    // Dragging the top edge down crops the top only: the image stays where it is.
+    s.execute("selection.set", &json!({"ids": [f]})).unwrap();
+    s.execute("transform.resize", &json!({"from": [300, 300, 400, 400], "to": [300, 340, 400, 400]})).unwrap();
+    assert_eq!(graphic_xf(&s), placed);
 }
 
 #[test]

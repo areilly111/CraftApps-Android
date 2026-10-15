@@ -16,7 +16,9 @@ pub mod dock;
 pub mod i18n;
 pub mod icons;
 pub mod menus;
+mod panel_docking;
 pub mod panels;
+mod prefs;
 pub mod render_worker;
 mod rtl;
 pub mod story_editor;
@@ -53,31 +55,25 @@ pub type OpenAsyncFn = Box<dyn FnMut(ImportRequest)>;
 pub type DownloadFn = Box<dyn FnMut(&str, &[u8])>;
 /// Files delivered asynchronously with their original operation and document identity.
 pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<ImportedFile>>>;
-/// Android only: `Help › Check for Updates…` — open the in-app updater dialog.
-#[cfg(target_os = "android")]
-pub type CheckUpdatesFn = Box<dyn Fn()>;
-/// Android only: `Preferences › Storage` hooks — where documents live.
-#[cfg(target_os = "android")]
-pub struct AndroidStorageHooks {
-    /// Human-readable current media location, e.g. `Tablet storage (/sdcard/ArtCraft/Media)`.
-    pub location_label: Box<dyn Fn() -> String>,
-    /// Switch the media location back to tablet shared storage.
-    pub use_tablet_storage: Box<dyn Fn()>,
-    /// Open the system folder picker to choose an SD-card folder.
-    pub pick_sd_card: Box<dyn Fn()>,
-}
-/// Android only: shell hooks the port registers on [`Services`]. `None` on
-/// every other platform; the Help menu item and the Preferences section that
-/// use them are registered on Android only, so desktop builds never see them.
-#[cfg(target_os = "android")]
-pub struct AndroidHooks {
-    pub check_updates: CheckUpdatesFn,
-    pub storage: AndroidStorageHooks,
-}
 
 /// Platform services injected by the host (desktop or web).
+// CraftApps Android: Hooks for Android-specific settings UI (stylus, storage).
+pub struct AndroidStorageHooks {
+    pub location_label: Box<dyn Fn() -> String + Send + Sync>,
+    pub use_tablet_storage: Box<dyn Fn() + Send + Sync>,
+    pub pick_folder: Box<dyn Fn() + Send + Sync>,
+}
+pub struct AndroidPenHooks {
+    pub pen_section: Box<dyn FnMut(&mut egui::Ui) + Send>,
+}
+pub struct AndroidHooks {
+    pub storage: AndroidStorageHooks,
+    pub pen: Option<AndroidPenHooks>,
+}
 #[derive(Default)]
 pub struct Services {
+    /// CraftApps Android: Android-specific settings UI hooks. None on other platforms.
+    pub android_hooks: Option<AndroidHooks>,
     /// Open-file dialog for a purpose (`open`, `place`) → path.
     pub pick_open: Option<PickFn>,
     /// Save dialog with a suggested name → path.
@@ -92,10 +88,6 @@ pub struct Services {
     pub download: Option<DownloadFn>,
     /// Files delivered asynchronously, drained every frame with their captured request context.
     pub inbox: Option<Inbox>,
-    /// Android only: hooks the port registers (Help › Check for Updates…,
-    /// Preferences › Storage). `None` everywhere else.
-    #[cfg(target_os = "android")]
-    pub android_hooks: Option<AndroidHooks>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +114,11 @@ pub struct SavedWorkspace {
     pub dock_expanded: bool,
     pub open_panel: Option<String>,
     pub floating: Vec<(String, [f32; 2])>,
+    /// Custom panel membership and placement; absent in older workspace files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docking: Option<craft_ui::docking::Layout<String>>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub docking_hidden: std::collections::BTreeMap<String, craft_ui::docking::Location<String>>,
 }
 
 /// A missing on-by-default bool stays on. `bool::default` is false.
@@ -242,6 +239,20 @@ pub struct UiState {
     pub open_panel: Option<String>,
     /// Panels torn off the dock into their own floating windows: (panel id, top-left position).
     pub floating: Vec<(String, [f32; 2])>,
+    /// Shared panel layout after the user customizes the legacy dock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docking: Option<craft_ui::docking::Layout<String>>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub docking_hidden: std::collections::BTreeMap<String, craft_ui::docking::Location<String>>,
+    /// Invalidates in-flight gestures when a workspace is replaced.
+    #[serde(skip)]
+    pub docking_generation: u64,
+    /// One-frame reveal request; z-order is never persisted.
+    #[serde(skip)]
+    pub docking_raise: Option<String>,
+    /// Last explicitly revealed customized panel, for the legacy closePanel control.
+    #[serde(skip)]
+    pub docking_opened: Option<String>,
     pub dock_expanded: bool,
     pub units: Unit,
     pub workspace: String,
@@ -335,6 +346,11 @@ impl Default for UiState {
             dock_tab: "properties".into(),
             open_panel: None,
             floating: Vec::new(),
+            docking: None,
+            docking_hidden: Default::default(),
+            docking_generation: 0,
+            docking_raise: None,
+            docking_opened: None,
             dock_expanded: true,
             units: Unit::Picas,
             workspace: "Essentials".into(),
@@ -811,6 +827,7 @@ impl DesignApp {
 
     /// Open (`file.open`, `file.openBytes`) or place (`file.place`) a file the user chose. A file
     /// that can't be opened or placed gets an alert with the reason, as well as the status line.
+    /// A successful import with warnings keeps the document and shows the warnings in an alert.
     pub fn open_file(&mut self, cmd: &str, params: Value) -> Result<Value, String> {
         let file = match params.get("path").and_then(Value::as_str) {
             Some(path) => std::path::Path::new(path).file_name().map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string()),
@@ -820,6 +837,20 @@ impl DesignApp {
         if let Err(e) = &r {
             let title = if cmd == "file.place" { "Can't Place the File" } else { "Can't Open the File" };
             self.ui.dialog = Some(dialogs::Dialog::new("alert", json!({"title": title, "file": file, "message": e})));
+        } else if let Ok(result) = &r {
+            let warnings: Vec<&str> = result
+                .get("warnings")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .filter(|warning| !warning.is_empty())
+                .collect();
+            if !warnings.is_empty() {
+                self.status(format!("{file}: {}", warnings.join("; ")));
+                self.ui.dialog =
+                    Some(dialogs::Dialog::new("alert", json!({"title": "Import Warnings", "file": file, "message": warnings.join("\n")})));
+            }
         }
         r
     }
@@ -849,6 +880,9 @@ impl DesignApp {
         let t0 = now_ms();
         let t = theme::Tokens::get(&ctx);
         let presenting = self.ui.screen_mode == ScreenMode::Presentation;
+        if presenting || self.ui.hidden_panels != 0 {
+            panel_docking::cancel_gesture(self, &ctx);
+        }
         let dbg = std::env::var_os("DESIGNCRAFT_DEBUG_LAYOUT").is_some();
         if dbg {
             eprintln!("root start {:?}", ui.available_rect_before_wrap());
@@ -880,16 +914,29 @@ impl DesignApp {
             if !presenting {
                 chrome::doc_tabs(self, ui);
             }
-            if self.split && !presenting {
+            let split_layout = (self.split && !presenting)
+                .then(|| {
+                    craft_ui::layout::split_rect(
+                        ui.available_rect_before_wrap(),
+                        craft_ui::layout::SplitAxis::Horizontal,
+                        craft_ui::layout::SplitSize::Ratio(0.5),
+                        2.0,
+                        0.0,
+                    )
+                })
+                .flatten();
+            if let Some(layout) = split_layout {
                 // Two panes with a divider; each has its own view (zoom, scroll) and render cache.
-                let r = ui.available_rect_before_wrap();
-                let mid = r.center().x;
-                let halves = [
-                    egui::Rect::from_min_max(r.min, egui::pos2(mid - 1.0, r.max.y)),
-                    egui::Rect::from_min_max(egui::pos2(mid + 1.0, r.min.y), r.max),
-                ];
-                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(mid - 1.0, r.min.y), egui::pos2(mid + 1.0, r.max.y)), 0.0, t.border);
-                for (k, half) in halves.into_iter().enumerate() {
+                ui.painter().rect_filled(layout.divider, 0.0, t.border);
+                // Resolve the clicked pane before either canvas handles this frame's keys.
+                if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten()) {
+                    if layout.first.contains(p) {
+                        self.focus_pane = 0;
+                    } else if layout.second.contains(p) {
+                        self.focus_pane = 1;
+                    }
+                }
+                for (k, half) in [layout.first, layout.second].into_iter().enumerate() {
                     self.switch_pane(k as u8);
                     // A new pane starts at the other pane's view.
                     if k == 1 && self.view().is_none() {
@@ -902,9 +949,6 @@ impl DesignApp {
                         }
                     }
                     ui.scope_builder(egui::UiBuilder::new().max_rect(half), |ui| canvas::show(self, ui));
-                    if ui.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| half.contains(p))) {
-                        self.focus_pane = k as u8;
-                    }
                 }
                 self.switch_pane(self.focus_pane);
             } else {
@@ -1302,6 +1346,99 @@ mod tests {
         let control::Outcome::Done(r) = control::handle(&mut app, &egui::Context::default(), &req) else { panic!("app.open answers") };
         assert_eq!(r["ok"], json!(false), "{r}");
         assert!(app.ui.dialog.is_none(), "a control-channel app.open doesn't raise an alert");
+    }
+}
+
+#[cfg(test)]
+mod import_warning_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn idml(missing_parts: bool) -> Vec<u8> {
+        let missing = if missing_parts { r#"<idPkg:Spread src="Spreads/missing.xml"/><idPkg:Story src="Stories/missing.xml"/>"# } else { "" };
+        let map = format!(
+            r#"<Document xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging" Self="d"><idPkg:Spread src="Spreads/one.xml"/>{missing}</Document>"#
+        );
+        let spread = r#"<idPkg:Spread xmlns:idPkg="http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging"><Spread Self="s"><Page Self="p" GeometricBounds="0 0 100 100" ItemTransform="1 0 0 1 0 0"/><Rectangle Self="r" ItemTransform="1 0 0 1 0 0"/></Spread></idPkg:Spread>"#;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, text) in [("mimetype", designcraft_idml::MIMETYPE), ("designmap.xml", &map), ("Spreads/one.xml", spread)] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(text.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn app() -> DesignApp {
+        let mut app = DesignApp::new(Session::new(), Services { inbox: Some(Inbox::default()), ..Default::default() });
+        app.run("file.new", json!({"title": "Existing work"})).unwrap();
+        app.run("frame.create", json!({"rect": [10, 10, 50, 50]})).unwrap();
+        app
+    }
+
+    fn assert_partial_import_warning(app: &mut DesignApp, file: &str) {
+        let dialog = app.ui.dialog.as_ref().expect("partial import must show an alert");
+        assert_eq!(dialog.id, "alert");
+        assert_eq!(dialog.fields["title"], "Import Warnings");
+        assert_eq!(dialog.fields["file"], file);
+        for part in ["Spreads/missing.xml", "Stories/missing.xml"] {
+            assert!(dialog.fields["message"].as_str().unwrap().contains(part), "every missing part is named");
+            assert!(app.ui.status.contains(part), "the status line retains the warning");
+        }
+        assert_eq!(app.session.documents().len(), 2);
+        assert_eq!(app.session.documents()[0].doc.title, "Existing work");
+        assert!(app.session.documents()[0].is_dirty(), "existing unsaved work stays intact");
+        assert_eq!(app.session.documents()[0].doc.spreads[0].items.len(), 1);
+        assert_eq!(app.session.doc().unwrap().doc.spreads.len(), 1);
+        assert_eq!(app.session.doc().unwrap().doc.spreads[0].items.len(), 1, "available document content is kept");
+        dialogs::confirm(app).unwrap();
+        assert!(app.ui.dialog.is_none(), "OK dismisses the warning");
+        assert_eq!(app.session.documents().len(), 2, "dismissing the warning keeps the imported document");
+    }
+
+    #[test]
+    fn byte_open_reports_partial_import_warnings_without_losing_documents() {
+        let mut app = app();
+        let result =
+            app.open_file("file.openBytes", json!({"name": "partial.idml", "base64": designcraft_engine::cmd::base64_encode(&idml(true))})).unwrap();
+        assert_eq!(result["warnings"].as_array().unwrap().len(), 2);
+        assert_partial_import_warning(&mut app, "partial.idml");
+    }
+
+    #[test]
+    fn native_open_reports_partial_import_warnings_without_losing_documents() {
+        let path = std::env::temp_dir().join(format!("designcraft-partial-import-{}", std::process::id())).join("partial.idml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, idml(true)).unwrap();
+        let picked = path.to_string_lossy().to_string();
+        let mut app = app();
+        app.services.pick_open = Some(Box::new(move |_| Some(picked.clone())));
+        let result = app.run("app.openDialog", json!({}));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
+        assert_eq!(result.unwrap()["warnings"].as_array().unwrap().len(), 2);
+        assert_partial_import_warning(&mut app, "partial.idml");
+    }
+
+    #[test]
+    fn inbox_open_reports_partial_import_warnings_without_losing_documents() {
+        let mut app = app();
+        let request = app.import_request("open");
+        app.services.inbox.as_ref().unwrap().lock().unwrap().push(ImportedFile { request, name: "partial.idml".into(), bytes: idml(true) });
+        app.drain_inbox();
+        assert_partial_import_warning(&mut app, "partial");
+    }
+
+    #[test]
+    fn complete_import_does_not_show_a_warning() {
+        let mut app = app();
+        let result = app
+            .open_file("file.openBytes", json!({"name": "complete.idml", "base64": designcraft_engine::cmd::base64_encode(&idml(false))}))
+            .unwrap();
+        assert_eq!(result["warnings"], json!([]));
+        assert!(app.ui.dialog.is_none());
+        assert!(app.ui.status.is_empty());
+        assert_eq!(app.session.documents().len(), 2);
     }
 }
 

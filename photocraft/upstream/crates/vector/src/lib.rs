@@ -6,6 +6,7 @@
 //!
 //! * [`edit`]: point-level path editing (Direct Selection, Convert Point) and hit testing.
 //! * [`flatten`]: cubic Bézier flattening with a distance tolerance.
+//! * [`map`]: non-affine maps of paths (Distort, Perspective, Warp).
 //! * [`raster`]: exact area-coverage scanline rasterizer (non-zero / even-odd per component,
 //!   boolean combination of components, inversion).
 //! * [`stroke`]: polygon stroking with miter/round/bevel joins, butt/round/square caps, dashes.
@@ -20,6 +21,7 @@
 
 pub mod edit;
 pub mod flatten;
+pub mod map;
 pub mod raster;
 pub mod shapes;
 pub mod stroke;

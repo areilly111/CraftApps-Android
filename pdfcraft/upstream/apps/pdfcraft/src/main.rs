@@ -4,10 +4,10 @@
 //! `--create-images [images…]` stages the images in one PDF and asks for the page DPI.
 //!
 //! View options (applied after the files open; also the seed of the UI control channel):
-//! `--page N  --zoom 150  --layout continuous|two-up|single  --panel comments|bookmarks|pages|fields|layers|attachments|none
+//! `--page N  --zoom 150  --layout single|continuous|two-up|two-page  --continuous on|off  --panel comments|bookmarks|pages|fields|layers|attachments|none
 //!  --theme light|dark|system  --language auto|<code>  --mode all|read|edit|convert|sign  --tool <catalogue id>  --left open|closed
 //!  --organize on  --fields on  --dialog properties|shortcuts|about  --palette <query>  --home on
-//!  --cover on|off  --default-layout continuous|two-up|single  --default-zoom fit-width|fit-page|<percent>
+//!  --cover on|off  --default-layout single|continuous|two-up|two-page  --default-continuous on|off  --default-zoom fit-width|fit-page|<percent>
 //!  --combine-view grid|list  --combine-zoom 60..200`
 //!
 //! `--new-window` opens a window of its own. Without it, on Windows, a launch that only names files
@@ -31,7 +31,11 @@ use pdfcraft_ui_egui::PdfCraftApp;
 
 #[cfg(target_os = "macos")]
 mod apple_events;
+mod compositor_gpu;
 mod logging;
+#[cfg(target_os = "windows")]
+mod motion;
+mod reopen;
 mod single_instance;
 mod text_scale;
 mod updates;
@@ -299,12 +303,25 @@ fn app_creator<'a>(
     Box::new(move |cc| {
         started.set(true);
         let mut app = PdfCraftApp::new();
+        // First start (or settings from before Units existed): the region's unit.
+        app.units = pdfcraft_ui_egui::units::Unit::system();
+        #[cfg(target_os = "linux")]
+        app.enable_desktop_theme();
+        // The system's reopen-windows choice (macOS) starts the preference; a saved choice replaces it.
+        app.reopen_last_session = reopen::system_default();
         if let Some(json) = cc.storage.and_then(|s| s.get_string("pdfcraft").or_else(|| s.get_string(LEGACY_STORAGE_KEY))) {
             app.restore(&json);
         }
         app.integrated_titlebar = integrated;
         app.system_text_scale = text_scale::system();
+        // Windows' Animation effects setting, which Preferences ▸ Animation effects follows unless
+        // it is set to On or Off.
+        #[cfg(target_os = "windows")]
+        {
+            app.motion.source = Some(motion::source());
+        }
         app.update_source = Some(std::sync::Arc::new(updates::latest_release));
+        app.printer_source = Some(pdfcraft_ui_egui::system_printers());
         app.os_key_store_ids = cfg!(any(target_os = "macos", target_os = "windows"));
         #[cfg(target_os = "macos")]
         {
@@ -457,6 +474,10 @@ fn write_control_file(path: &str, port: u16, token: &str) -> std::io::Result<()>
 ///   desktop with a monitor on each GPU, issue #445) the discrete one wins, as the integrated one
 ///   may fail to present there. Where the system doesn't say which GPU drives a display (macOS,
 ///   containers, remote sessions) the power preference alone decides.
+/// - Under Wayland, the GPU the compositor draws with comes before all of that: the compositor
+///   says which one it is ([`compositor_gpu::compositor_gpu`]), and frames from another GPU may
+///   never reach the screen, even from the GPU behind the built-in panel when the compositor runs
+///   on the discrete one.
 /// - On Windows, use Direct3D 12, falling back to OpenGL, and never load Vulkan drivers unless
 ///   `WGPU_BACKEND` asks for them. Creating a Vulkan instance loads every installed Vulkan driver
 ///   into the process, and a faulty one (an Intel driver in issue #37) crashed PdfCraft before
@@ -476,7 +497,8 @@ fn configure_gpu(native: &mut eframe::NativeOptions) {
     if std::env::var_os("WGPU_POWER_PREF").is_none() {
         setup.power_preference = eframe::wgpu::PowerPreference::LowPower;
         let displays = display_gpus();
-        if !displays.is_empty() {
+        let compositor = compositor_gpu::compositor_gpu();
+        if !displays.is_empty() || compositor.is_some() {
             setup.native_adapter_selector = Some(std::sync::Arc::new(move |adapters, surface| {
                 let usable: Vec<&eframe::wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
                 let infos: Vec<(u32, u32, eframe::wgpu::DeviceType)> = usable
@@ -486,7 +508,7 @@ fn configure_gpu(native: &mut eframe::NativeOptions) {
                         (info.vendor, info.device, info.device_type)
                     })
                     .collect();
-                let picked = pick_adapter(&infos, &displays).and_then(|i| usable.get(i)).map(|a| (*a).clone());
+                let picked = pick_adapter(&infos, &displays, compositor).and_then(|i| usable.get(i)).map(|a| (*a).clone());
                 match &picked {
                     // Which GPU draws is the first question when a window stays black (#8, #378, #445).
                     Some(a) => {
@@ -619,12 +641,12 @@ fn linux_display_gpus(drm: &std::path::Path) -> Vec<DisplayGpu> {
     gpus
 }
 
-/// Index of the adapter to draw with: one that drives a display (by PCI ids) first. Among several
-/// of those, the one driving the primary display (a hybrid laptop's panel, #8; the primary display
-/// on Windows, #378), or else, with no primary display known (a Linux desktop with a monitor on
-/// each GPU, #445), the discrete one. Otherwise the most frugal kind: integrated, discrete, other,
-/// virtual, software.
-fn pick_adapter(adapters: &[(u32, u32, eframe::wgpu::DeviceType)], displays: &[DisplayGpu]) -> Option<usize> {
+/// Index of the adapter to draw with: the GPU the Wayland compositor draws with (`compositor`, by
+/// PCI ids) first, then one that drives a display. Among several of those, the one driving the
+/// primary display (a hybrid laptop's panel, #8; the primary display on Windows, #378), or else,
+/// with no primary display known (a Linux desktop with a monitor on each GPU, #445), the discrete
+/// one. Otherwise the most frugal kind: integrated, discrete, other, virtual, software.
+fn pick_adapter(adapters: &[(u32, u32, eframe::wgpu::DeviceType)], displays: &[DisplayGpu], compositor: Option<(u32, u32)>) -> Option<usize> {
     use eframe::wgpu::DeviceType;
     let display = |pci: (u32, u32)| displays.iter().find(|g| g.pci == pci);
     let multi_gpu_desktop = displays.len() > 1 && !displays.iter().any(|g| g.primary);
@@ -645,7 +667,7 @@ fn pick_adapter(adapters: &[(u32, u32, eframe::wgpu::DeviceType)], displays: &[D
                 DeviceType::VirtualGpu => 4,
                 DeviceType::Cpu => 5,
             };
-            (!drives_display, !drives_primary, rank)
+            (compositor != Some((*vendor, *device)), !drives_display, !drives_primary, rank)
         })
         .map(|(i, _)| i)
 }
@@ -656,6 +678,19 @@ mod tests {
 
     fn endpoint() -> std::io::Result<Endpoint> {
         Ok(Endpoint { port: 4321, token: "0123456789abcdef".into() })
+    }
+
+    /// Tests that open a real GPU device take this first, so only one of them is inside the
+    /// graphics libraries at a time. The test threads otherwise run them together, and on
+    /// FreeBSD's CI machine the test process then died with SIGSEGV, in about half the runs:
+    /// the first device was still being set up when the second test began its own. The UI
+    /// tests take turns the same way (`crates/ui-egui/tests/view.rs`). Hold it for the whole
+    /// test (declared before the instance, so it's released after the device is dropped).
+    static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn gpu() -> std::sync::MutexGuard<'static, ()> {
+        // A test that panicked while holding it leaves nothing to clean up.
+        GPU.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     #[test]
@@ -864,6 +899,7 @@ mod tests {
         // and an error wgpu raises before anything reaches the driver: a texture one pixel wider
         // than the device allows.
         use eframe::wgpu;
+        let _gpu = gpu();
         let native = super::native_options(false, eframe::Renderer::Wgpu);
         let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &native.wgpu_options.wgpu_setup else {
             panic!("default setup creates its own instance")
@@ -928,6 +964,37 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_creation_error_is_returned_and_device_remains_usable() {
+        use eframe::{egui_wgpu, wgpu};
+        let _gpu = gpu();
+        let mut native = super::native_options(false, eframe::Renderer::Wgpu);
+        let egui_wgpu::WgpuSetup::CreateNew(setup) = &native.wgpu_options.wgpu_setup else { panic!("default setup creates its own instance") };
+        let instance = pollster::block_on(native.wgpu_options.wgpu_setup.new_instance());
+        let options = wgpu::RequestAdapterOptions { power_preference: setup.power_preference, ..Default::default() };
+        let Ok(adapter) = pollster::block_on(instance.request_adapter(&options)) else {
+            assert!(std::env::var_os("PDFCRAFT_TEST_REQUIRE_GPU").is_none(), "a GPU adapter is required for this run");
+            eprintln!("skipping pipeline regression: no GPU adapter");
+            return;
+        };
+        let (device, queue) = pollster::block_on(adapter.request_device(&(setup.device_descriptor)(&adapter)))
+            .expect("the selected adapter must provide a test device");
+        native.wgpu_options.wgpu_setup =
+            egui_wgpu::WgpuSetup::Existing(egui_wgpu::WgpuSetupExisting { instance: instance.clone(), adapter, device, queue });
+        // Three samples is invalid on every backend, so this reproduces a pipeline error
+        // without depending on a particular driver. The unpatched constructor panics.
+        for samples in [3, 1, 3, 1] {
+            let options = egui_wgpu::RendererOptions { msaa_samples: samples, ..Default::default() };
+            let result = pollster::block_on(egui_wgpu::RenderState::create(&native.wgpu_options, &instance, None, options));
+            if samples == 3 {
+                let error = result.err().expect("invalid pipeline must return an error");
+                assert!(error.to_string().contains("egui_pipeline"), "{error}");
+            } else {
+                assert!(result.is_ok(), "the device must remain usable: {:?}", result.err());
+            }
+        }
+    }
+
+    #[test]
     fn winit_carries_the_windows_11_monitor_scale_fix() {
         // Issue #324: winit 0.30.13 as released nudges a window dragged onto a monitor with another
         // scale factor back onto the one it is leaving, so on Windows 11 it ends up on the wrong
@@ -966,17 +1033,17 @@ mod tests {
     #[test]
     fn pick_adapter_prefers_the_gpu_driving_the_monitors() {
         // A desktop whose monitors are all on the discrete GPU: the integrated one shows black.
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor(NVIDIA)]), Some(0));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor(NVIDIA)], None), Some(0));
         // Issue #378: the same on Windows, where the Ryzen integrated GPU without a monitor crashed
         // the display driver. Windows also says which display is the primary one.
-        assert_eq!(super::pick_adapter(&adapters(), &[panel(NVIDIA)]), Some(0));
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(NVIDIA)], None), Some(0));
     }
 
     #[test]
     fn pick_adapter_prefers_the_gpu_driving_the_primary_display() {
         // A Windows desktop with a monitor on each GPU: the window opens on the primary display.
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU), panel(NVIDIA)]), Some(0));
-        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)]), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU), panel(NVIDIA)], None), Some(0));
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)], None), Some(1));
     }
 
     #[test]
@@ -1008,10 +1075,10 @@ mod tests {
     #[test]
     fn pick_adapter_keeps_the_integrated_gpu_on_hybrid_laptops() {
         // Issue #8: the panel is on the integrated GPU, an external monitor on the discrete one.
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor(NVIDIA), panel(AMD_IGPU)]), Some(1));
-        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)]), Some(1));
-        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU)]), Some(1));
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU)]), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor(NVIDIA), panel(AMD_IGPU)], None), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)], None), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU)], None), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU)], None), Some(1));
     }
 
     #[test]
@@ -1020,17 +1087,32 @@ mod tests {
         use eframe::wgpu::DeviceType;
         let desktop =
             [(INTEL_IGPU.0, INTEL_IGPU.1, DeviceType::IntegratedGpu), (NVIDIA.0, NVIDIA.1, DeviceType::DiscreteGpu), (0, 0, DeviceType::Cpu)];
-        assert_eq!(super::pick_adapter(&desktop, &[monitor(INTEL_IGPU), monitor(NVIDIA)]), Some(1));
-        assert_eq!(super::pick_adapter(&desktop, &[monitor(NVIDIA), monitor(INTEL_IGPU)]), Some(1));
+        assert_eq!(super::pick_adapter(&desktop, &[monitor(INTEL_IGPU), monitor(NVIDIA)], None), Some(1));
+        assert_eq!(super::pick_adapter(&desktop, &[monitor(NVIDIA), monitor(INTEL_IGPU)], None), Some(1));
         // A GPU driving no display still loses to one that does.
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU), monitor(INTEL_IGPU)]), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor(AMD_IGPU), monitor(INTEL_IGPU)], None), Some(1));
+    }
+
+    #[test]
+    fn pick_adapter_prefers_the_gpu_the_compositor_draws_with() {
+        // A hybrid laptop whose Wayland compositor runs on the discrete GPU (Hyprland with
+        // `AQ_DRM_DEVICES` naming it first): the integrated GPU drives the built-in panel, yet the
+        // compositor shows nothing it draws, and reports no error either.
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU)], Some(NVIDIA)), Some(0));
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)], Some(NVIDIA)), Some(0));
+        // The usual hybrid laptop, with the compositor on the integrated GPU: as before (#8).
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU), monitor(NVIDIA)], Some(AMD_IGPU)), Some(1));
+        // No GPU drives a display as far as sysfs says (a container), but the compositor knows.
+        assert_eq!(super::pick_adapter(&adapters(), &[], Some(NVIDIA)), Some(0));
+        // A compositor GPU no adapter matches (a virtual one) leaves the displays in charge.
+        assert_eq!(super::pick_adapter(&adapters(), &[panel(AMD_IGPU)], Some((0x1af4, 0x1050))), Some(1));
     }
 
     #[test]
     fn pick_adapter_falls_back_to_low_power_without_a_match() {
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor((0x8086, 0x1234))]), Some(1));
-        assert_eq!(super::pick_adapter(&adapters(), &[monitor((0x8086, 0x1234)), monitor((0x8086, 0x5678))]), Some(1));
-        assert_eq!(super::pick_adapter(&[], &[monitor(NVIDIA)]), None);
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor((0x8086, 0x1234))], None), Some(1));
+        assert_eq!(super::pick_adapter(&adapters(), &[monitor((0x8086, 0x1234)), monitor((0x8086, 0x5678))], None), Some(1));
+        assert_eq!(super::pick_adapter(&[], &[monitor(NVIDIA)], None), None);
     }
 
     #[test]
@@ -1150,5 +1232,14 @@ mod tests {
             assert_eq!(mode & 0o077, 0, "only the owner can read the token: {mode:o}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// X11 startup notification and docks match a window to its launcher by `StartupWMClass`,
+    /// so it has to be the class the window carries: the app id, on Wayland and X11 alike.
+    #[test]
+    fn the_desktop_entry_names_the_window_class() {
+        let entry = include_str!("../../../packaging/linux/ai.storyteller.pdfcraft.desktop");
+        let class = entry.lines().find_map(|line| line.strip_prefix("StartupWMClass="));
+        assert_eq!(class, Some(super::APP_ID));
     }
 }

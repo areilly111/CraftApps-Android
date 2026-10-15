@@ -79,7 +79,7 @@ fn a_targeted_layer_gets_an_opacity_mask() {
     run(&mut s, "layer.target", json!({"id": layer.0}));
     assert_eq!(run(&mut s, "transparency.makeOpacityMask", json!({}))["id"], json!(layer.0));
     run(&mut s, "transparency.stopEditingOpacityMask", json!({}));
-    assert!(node(&s, layer).mask.is_some());
+    assert!(node(&s, layer).extras().mask.is_some());
     assert_eq!(s.doc().unwrap().selection.target, Some(layer), "the masked layer stays targeted");
 }
 

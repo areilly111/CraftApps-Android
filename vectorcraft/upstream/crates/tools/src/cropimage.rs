@@ -273,7 +273,7 @@ mod tests {
             link: None,
             placement: Default::default(),
         };
-        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(im))).unwrap();
+        d.insert(Some(l), 0, Node::new(id, NodeKind::Image(Box::new(im)))).unwrap();
         let mut s = Selection::default();
         s.add(id);
         (d, s)

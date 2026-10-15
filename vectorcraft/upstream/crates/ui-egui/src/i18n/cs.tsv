@@ -5,10 +5,23 @@
 # common Czech desktop-software conventions (commands in the infinitive, menus as nouns); no other
 # application's Czech localisation was consulted or copied.
 #
-# Coverage: every menu label (tested: `menu_catalogs_translate_every_menu_label`); panels and dialogs fall
-# back to English. Left in English on purpose (`MENU_KEEP_AS_IS` in the tests): the product name,
-# language names, OpenType, the built-in workspace names and the bracketed perspective grid preset
-# names.
+# Panels, dialogs, tooltips, command labels, plurals and status/error messages were added later in
+# the same clean-room way, drafted with AI assistance (Claude) from the English meaning; not yet
+# reviewed by a native speaker. Vocabulary: pracovní plocha (artboard), cesta (path), kotevní bod
+# (anchor point), úchyt (handle), tah (stroke), výplň (fill), přechod (gradient), vzorník and
+# položka vzorníku (Swatches panel, a swatch), vzorek (pattern), krytí (opacity), prolnutí (blend),
+# režim míchání (blending mode), přednastavení (preset), rozložit (expand), uvolnit (release),
+# vektorizace obrazu (Image Trace). Counts without a plural row read "Label: {n}".
+#
+# Coverage: every menu string, tl! literal, plural, status and error message (enforced in tests:
+# `complete_menus` and `COMPLETE_MESSAGES`). Left in English on purpose (`MENU_KEEP_AS_IS` in the
+# tests): the product name, language names, OpenType, the built-in workspace names and the
+# bracketed perspective grid preset names. Keep placeholders, ellipses and the leading/trailing
+# spaces of fragments when editing.
+	New Design	Nový návrh
+	Delete Design	Odstranit návrh
+	Paste Design	Vložit návrh
+	Select Unused	Vybrat nepoužité
 	Glowing Edges…	Zářící okraje…
 	About VectorCraft	O aplikaci VectorCraft
 	Align to Path	Zarovnat k cestě
@@ -120,6 +133,7 @@
 	Horizontal Align Right	Vodorovně zarovnat doprava
 	Vertical Align Top	Svisle zarovnat nahoru
 	Vertical Align Center	Svisle zarovnat na střed
+	Horizontal & Vertical Align Center	Vodorovně a svisle zarovnat na střed
 	Vertical Align Bottom	Svisle zarovnat dolů
 	Group	Seskupit
 	Ungroup	Oddělit
@@ -157,7 +171,7 @@
 	Join	Spojit
 	Average…	Zprůměrovat…
 	Outline Stroke	Převést tah na obrys
-	Offset Path…	Posunout cestu…
+	Offset Path…	Odsadit cestu…
 	Reverse Path Direction	Obrátit směr cesty
 	Simplify…	Zjednodušit…
 	Add Anchor Points	Přidat kotevní body
@@ -214,6 +228,8 @@
 	Type…	Typ…
 	Data…	Údaje…
 	Design…	Návrh…
+	Graph Design	Návrh grafu
+	Graph Marker	Značka grafu
 	Column…	Sloupec…
 	Marker…	Značka…
 	Collect for Export	Shromáždit pro export
@@ -292,7 +308,7 @@
 	Horizontal	Vodorovně
 	Vertical	Svisle
 	Select	Výběr
-	All	Vybrat vše
+	All	Vše
 	All on Active Artboard	Vše na aktivní pracovní ploše
 	Deselect	Zrušit výběr
 	Reselect	Znovu vybrat
@@ -360,7 +376,8 @@
 	Twist…	Zkroucení…
 	Zig Zag…	Cikcak…
 	Pathfinder	Operace s cestami
-	Add	Sjednotit
+	Add	Přidat
+@id	pathfinder.add	Sjednotit
 	Intersect	Protnout
 	Exclude	Vyloučit
 	Subtract	Odečíst
@@ -496,7 +513,7 @@
 	Reset Bar Position	Obnovit polohu panelu
 	Tools	Nástroje
 	Toolbars	Panely nástrojů
-	Advanced	Rozšířený
+	Advanced	Rozšířené
 	Double Column	Dva sloupce
 	Actions	Akce
 	Asset Export	Export prvků
@@ -515,7 +532,7 @@
 	Layers	Vrstvy
 	Libraries	Knihovny
 	Links	Propojení
-	{count} linked image(s) changed on disk. Show the new versions?	Na disku se změnilo {count} propojených obrázků. Zobrazit nové verze?
+	{count} linked image(s) changed on disk. Show the new versions?	Počet propojených obrázků změněných na disku: {count}. Zobrazit nové verze?
 	Update Changed Links	Aktualizovat změněná propojení
 @msg	Updated {_1} linked file(s) changed on disk	Aktualizováno propojených souborů změněných na disku: {_1}
 	Magic Wand	Kouzelná hůlka
@@ -628,6 +645,7 @@
 	% of all commits	% všech commitů
 	Lines +/−	Řádky +/−
 	Drag to move	Přetažením přesunete
+	Drag to move out of the set	Přetažením přesunete mimo sadu
 	Drag to float as a toolbar	Přetažením vytvoříte plovoucí panel nástrojů
 	Put back in the toolbar	Vrátit do panelu nástrojů
 	Float Panel	Plovoucí panel
@@ -639,8 +657,8 @@
 	Hide VectorCraft	Skrýt VectorCraft
 	Hide Others	Skrýt ostatní
 	Minimize	Minimalizovat
-	Zoom	Zvětšit
-	Bring All to Front	Převést vše do popředí
+	Zoom	Zvětšení
+	Bring All to Front	Přenést vše do popředí
 	Settings	Nastavení
 	General	Obecné
 	Selection & Anchor Display	Výběr a zobrazení kotevních bodů
@@ -655,8 +673,10 @@
 	Appearance of Black	Vzhled černé
 	Devices	Zařízení
 	A file dialog is open: choose there first	Je otevřené dialogové okno souboru: nejprve vyberte v něm
+	The document was closed while its file dialog was open	Dokument byl zavřen, zatímco bylo otevřené jeho dialogové okno souboru
+	The dialog was closed before its file dialog answered	Dialogové okno se zavřelo dřív, než odpovědělo jeho dialogové okno souboru
 	Shaper	Shaper
-	Expand Shaper Group	Rozšířit skupinu Shaper
+	Expand Shaper Group	Rozložit skupinu Shaper
 	Release Shaper Group	Uvolnit skupinu Shaper
 	Select Shaper Face	Vybrat oblast Shaper
 	Constrain	Omezit
@@ -694,6 +714,14 @@
 	Ocean Ripple…	Vlnky na hladině…
 	Rename Data Set	Přejmenovat sadu dat
 	Rename Variable	Přejmenovat proměnnou
+# Shared panel docking
+	Activate Panel	Aktivovat panel
+	Change Panel Layout	Změnit rozložení panelů
+	Close Panel	Zavřít panel
+	Move Panel	Přesunout panel
+	Group with	Seskupit s
+	Resize panels	Změnit velikost panelů
+	Resize panel window	Změnit velikost okna panelu
 
 # Interactive Revolve controls.
 	Lighting	Osvětlení
@@ -716,8 +744,8 @@
 	Drag rings to rotate. Shift snaps to 15°.	Otáčejte přetažením prstenců. Shift nastaví kroky po 15°.
 	Drag the light, or its rings. Shift snaps to 15°.	Přetáhněte světlo nebo jeho prstence. Shift nastaví kroky po 15°.
 lighting	Light	Světlo
-	Keep visible surfaces only when expanding	Při rozšíření ponechat pouze viditelné povrchy
-	Trim covered geometry on Expand Appearance. Live preview keeps the full surface. Transparent paints and surfaces exceeding visibility limits retain all faces.	Při rozšíření vzhledu oříznout zakrytou geometrii. Živý náhled zachová celý povrch. Průhledné výplně a povrchy překračující limity výpočtu viditelnosti zachovají všechny plochy.
+	Keep visible surfaces only when expanding	Při rozložení ponechat pouze viditelné povrchy
+	Trim covered geometry on Expand Appearance. Live preview keeps the full surface. Transparent paints and surfaces exceeding visibility limits retain all faces.	Při rozložení vzhledu oříznout zakrytou geometrii. Živý náhled zachová celý povrch. Průhledné výplně a povrchy překračující limity výpočtu viditelnosti zachovají všechny plochy.
 	Left	Vlevo
 	Right	Vpravo
 	Offset	Odsazení
@@ -731,3 +759,3744 @@ lighting	Light	Světlo
 	Spatter…	Rozstřik…
 	Sprayed Strokes…	Stříkané tahy…
 	Sumi-e…	Sumi-e…
+	Vertical Guide	Svislé vodítko
+	Horizontal Guide	Vodorovné vodítko
+
+# Menu, command and shell labels
+	Align center	Zarovnat na střed
+	Align left	Zarovnat doleva
+	Align right	Zarovnat doprava
+	Browser	Prohlížeč
+	Color Guide Options…	Možnosti průvodce barvami…
+	Color Picker…	Výběr barvy…
+	Coming soon — tracked in the parity plan	Připravujeme — sledováno v plánu parity
+	Command Dialog	Dialogové okno příkazu
+	Copy Selected Style	Kopírovat vybraný styl
+	Corners…	Rohy…
+	Define Perspective Grid…	Definovat perspektivní mřížku…
+	Delete Workspace	Odstranit pracovní prostor
+	Document Raster Effects Settings Dialog	Dialogové okno Nastavení rastrových efektů dokumentu
+	Drop Shadow	Vržený stín
+	DXF Options Dialog	Dialogové okno Možnosti DXF
+	Edit Toolbar	Upravit panel nástrojů
+	Edit Views	Upravit zobrazení
+	Effect…	Efekt…
+	EPS Options Dialog	Dialogové okno Možnosti EPS
+	Expand Layers Panel Rows	Rozbalit řádky panelu Vrstvy
+	Export CSS…	Exportovat CSS…
+	Export Keyboard Shortcuts…	Exportovat klávesové zkratky…
+	File Info Dialog	Dialogové okno Informace o souboru
+	Go to Artboard	Přejít na pracovní plochu
+	Graphic Style Options…	Možnosti grafického stylu…
+	Home	Domů
+	Import Keyboard Shortcuts…	Importovat klávesové zkratky…
+	Justify all lines	Do bloku včetně posledního řádku
+	Justify with last line aligned left	Do bloku, poslední řádek vlevo
+	Keyboard Shortcut Conflicts	Konflikty klávesových zkratek
+	Keyboard Shortcut Set	Sada klávesových zkratek
+	Interface Language	Jazyk rozhraní
+	Last Effect: {name}	Poslední efekt: {name}
+	Last Effect: {}	Poslední efekt: {}
+	Limit Color Guide to Library	Omezit průvodce barvami na knihovnu
+	List Keyboard Shortcuts	Vypsat klávesové zkratky
+	List Workspaces	Vypsat pracovní prostory
+	Menu Dialog	Dialogové okno nabídky
+	Merge Graphic Styles…	Sloučit grafické styly…
+	New Color Group…	Nová skupina barev…
+	New Layer Options…	Možnosti nové vrstvy…
+	New Swatch…	Nová položka vzorníku…
+	No saved views (View → New View…)	Žádná uložená zobrazení (Zobrazení → Nové zobrazení…)
+	One Point Perspective Preset 1	Přednastavení jednobodové perspektivy 1
+	One Point Perspective Preset 2	Přednastavení jednobodové perspektivy 2
+	One Point Perspective Preset 3	Přednastavení jednobodové perspektivy 3
+	One Point Perspective Preset 4	Přednastavení jednobodové perspektivy 4
+	One Point Perspective Preset 5	Přednastavení jednobodové perspektivy 5
+	Open Recent File 1	Otevřít nedávný soubor 1
+	Open Recent File 10	Otevřít nedávný soubor 10
+	Open Recent File 11	Otevřít nedávný soubor 11
+	Open Recent File 12	Otevřít nedávný soubor 12
+	Open Recent File 13	Otevřít nedávný soubor 13
+	Open Recent File 14	Otevřít nedávný soubor 14
+	Open Recent File 15	Otevřít nedávný soubor 15
+	Open Recent File 16	Otevřít nedávný soubor 16
+	Open Recent File 17	Otevřít nedávný soubor 17
+	Open Recent File 18	Otevřít nedávný soubor 18
+	Open Recent File 19	Otevřít nedávný soubor 19
+	Open Recent File 2	Otevřít nedávný soubor 2
+	Open Recent File 20	Otevřít nedávný soubor 20
+	Open Recent File 21	Otevřít nedávný soubor 21
+	Open Recent File 22	Otevřít nedávný soubor 22
+	Open Recent File 23	Otevřít nedávný soubor 23
+	Open Recent File 24	Otevřít nedávný soubor 24
+	Open Recent File 25	Otevřít nedávný soubor 25
+	Open Recent File 26	Otevřít nedávný soubor 26
+	Open Recent File 27	Otevřít nedávný soubor 27
+	Open Recent File 28	Otevřít nedávný soubor 28
+	Open Recent File 29	Otevřít nedávný soubor 29
+	Open Recent File 3	Otevřít nedávný soubor 3
+	Open Recent File 30	Otevřít nedávný soubor 30
+	Open Recent File 4	Otevřít nedávný soubor 4
+	Open Recent File 5	Otevřít nedávný soubor 5
+	Open Recent File 6	Otevřít nedávný soubor 6
+	Open Recent File 7	Otevřít nedávný soubor 7
+	Open Recent File 8	Otevřít nedávný soubor 8
+	Open Recent File 9	Otevřít nedávný soubor 9
+	Options for Selection…	Možnosti výběru…
+	Panel Options…	Možnosti panelu…
+	Panels	Panely
+	Perspective Plane Options…	Možnosti perspektivní roviny…
+	Placement Options…	Možnosti umístění…
+	Plug-in…	Zásuvný modul…
+	Preview in Browser	Náhled v prohlížeči
+	Printer Setup…	Nastavení tiskárny…
+	Printers	Tiskárny
+	Recent File	Nedávný soubor
+	Recent Font	Nedávné písmo
+	Recent Font 1	Nedávné písmo 1
+	Recent Font 10	Nedávné písmo 10
+	Recent Font 11	Nedávné písmo 11
+	Recent Font 12	Nedávné písmo 12
+	Recent Font 13	Nedávné písmo 13
+	Recent Font 14	Nedávné písmo 14
+	Recent Font 15	Nedávné písmo 15
+	Recent Font 2	Nedávné písmo 2
+	Recent Font 3	Nedávné písmo 3
+	Recent Font 4	Nedávné písmo 4
+	Recent Font 5	Nedávné písmo 5
+	Recent Font 6	Nedávné písmo 6
+	Recent Font 7	Nedávné písmo 7
+	Recent Font 8	Nedávné písmo 8
+	Recent Font 9	Nedávné písmo 9
+	Redo {name}	Znovu: {name}
+	Redo {}	Znovu: {}
+	Missing Fonts Dialog	Dialogové okno Chybějící písma
+	Find Fonts in Folder…	Najít písma ve složce…
+	Rename Workspace	Přejmenovat pracovní prostor
+	Reset Keyboard Shortcuts	Obnovit klávesové zkratky
+	Reset {name}	Obnovit {name}
+	Reset {}	Obnovit {}
+	Save Document Info…	Uložit informace o dokumentu…
+	Save PDF Dialog	Dialogové okno Uložit PDF
+	Saved Selection 1	Uložený výběr 1
+	Saved Selection 10	Uložený výběr 10
+	Saved Selection 11	Uložený výběr 11
+	Saved Selection 12	Uložený výběr 12
+	Saved Selection 13	Uložený výběr 13
+	Saved Selection 14	Uložený výběr 14
+	Saved Selection 15	Uložený výběr 15
+	Saved Selection 16	Uložený výběr 16
+	Saved Selection 17	Uložený výběr 17
+	Saved Selection 18	Uložený výběr 18
+	Saved Selection 19	Uložený výběr 19
+	Saved Selection 2	Uložený výběr 2
+	Saved Selection 20	Uložený výběr 20
+	Saved Selection 21	Uložený výběr 21
+	Saved Selection 22	Uložený výběr 22
+	Saved Selection 23	Uložený výběr 23
+	Saved Selection 24	Uložený výběr 24
+	Saved Selection 25	Uložený výběr 25
+	Saved Selection 3	Uložený výběr 3
+	Saved Selection 4	Uložený výběr 4
+	Saved Selection 5	Uložený výběr 5
+	Saved Selection 6	Uložený výběr 6
+	Saved Selection 7	Uložený výběr 7
+	Saved Selection 8	Uložený výběr 8
+	Saved Selection 9	Uložený výběr 9
+	Select Tool	Vybrat nástroj
+	Set Keyboard Shortcut	Nastavit klávesovou zkratku
+	Set Zoom	Nastavit zvětšení
+	Show Package	Zobrazit balíček
+	Show Panel	Zobrazit panel
+	Spot Colors…	Přímé barvy…
+	Swatch Options…	Možnosti položky vzorníku…
+	Three Point Perspective Preset 1	Přednastavení tříbodové perspektivy 1
+	Three Point Perspective Preset 2	Přednastavení tříbodové perspektivy 2
+	Three Point Perspective Preset 3	Přednastavení tříbodové perspektivy 3
+	Three Point Perspective Preset 4	Přednastavení tříbodové perspektivy 4
+	Three Point Perspective Preset 5	Přednastavení tříbodové perspektivy 5
+	Tool Option	Možnost nástroje
+	Tool Options…	Možnosti nástroje…
+	Toolbar: Advanced / Basic	Panel nástrojů: rozšířený / základní
+	Toolbar: Single/Double Column	Panel nástrojů: jeden / dva sloupce
+	Toolbar: Add Tool	Panel nástrojů: přidat nástroj
+	Toolbar: Remove Tool	Panel nástrojů: odebrat nástroj
+	Toolbar: Reset	Panel nástrojů: obnovit
+	Two Point Perspective Preset 1	Přednastavení dvoubodové perspektivy 1
+	Two Point Perspective Preset 2	Přednastavení dvoubodové perspektivy 2
+	Two Point Perspective Preset 3	Přednastavení dvoubodové perspektivy 3
+	Two Point Perspective Preset 4	Přednastavení dvoubodové perspektivy 4
+	Two Point Perspective Preset 5	Přednastavení dvoubodové perspektivy 5
+	Undo {name}	Zpět: {name}
+	Undo {}	Zpět: {}
+	User Graphic Style Library 1	Uživatelská knihovna grafických stylů 1
+	User Graphic Style Library 10	Uživatelská knihovna grafických stylů 10
+	User Graphic Style Library 2	Uživatelská knihovna grafických stylů 2
+	User Graphic Style Library 3	Uživatelská knihovna grafických stylů 3
+	User Graphic Style Library 4	Uživatelská knihovna grafických stylů 4
+	User Graphic Style Library 5	Uživatelská knihovna grafických stylů 5
+	User Graphic Style Library 6	Uživatelská knihovna grafických stylů 6
+	User Graphic Style Library 7	Uživatelská knihovna grafických stylů 7
+	User Graphic Style Library 8	Uživatelská knihovna grafických stylů 8
+	User Graphic Style Library 9	Uživatelská knihovna grafických stylů 9
+	User Swatch Library 1	Uživatelská knihovna vzorníku 1
+	User Swatch Library 10	Uživatelská knihovna vzorníku 10
+	User Swatch Library 2	Uživatelská knihovna vzorníku 2
+	User Swatch Library 3	Uživatelská knihovna vzorníku 3
+	User Swatch Library 4	Uživatelská knihovna vzorníku 4
+	User Swatch Library 5	Uživatelská knihovna vzorníku 5
+	User Swatch Library 6	Uživatelská knihovna vzorníku 6
+	User Swatch Library 7	Uživatelská knihovna vzorníku 7
+	User Swatch Library 8	Uživatelská knihovna vzorníku 8
+	User Swatch Library 9	Uživatelská knihovna vzorníku 9
+	View {n}	Zobrazení {n}
+	Width Point Edit…	Upravit bod šířky…
+	 to search every command	 prohledáte všechny příkazy
+	Anchor Point	Kotevní bod
+	Anchors:	Kotevní body:
+	Click	Kliknutí
+	Click an anchor point	Kliknutí na kotevní bod
+	Click or drag	Kliknutí nebo tažení
+	Click the first point	Kliknutí na první bod
+	Connect Selected End Points	Spojit vybrané koncové body
+	Convert Selected Anchor Points to Corner	Převést vybrané kotevní body na rohové
+	Convert Selected Anchor Points to Smooth	Převést vybrané kotevní body na hladké
+	Convert:	Převést:
+	Double-click	Dvojklik
+	Drag	Tažení
+	Drag a handle	Tažení úchytu
+	Enter	Enter
+	Esc	Esc
+	Fit All	Přizpůsobit vše
+	Fit on Screen	Přizpůsobit obrazovce
+	Help › Search Commands…	Nápověda › Hledat příkazy…
+	Name* @ 66.67 % (RGB/Preview)	Název* @ 66,67 % (RGB/náhled)
+	Name* @ 66.67% (RGB/Preview)	Název* @ 66,67 % (RGB/náhled)
+	No Document	Žádný dokument
+	Press 	Klávesou 
+	Search commands and tools	Hledat příkazy a nástroje
+	Style:	Styl:
+	Switch workspace	Přepnout pracovní prostor
+	Show all open documents	Zobrazit všechny otevřené dokumenty
+	Use 	Příkazem 
+	 the object to select  |  	 na objekt jej vybere  |  
+	 to select multiple objects  |  	 vybere více objektů  |  
+	 the object to duplicate	 objektu jej duplikuje
+	 an anchor or path segment to select it  |  	 na kotevní bod nebo segment cesty jej vybere  |  
+	 to move  |  	 přesouvá  |  
+	 to add	 přidá do výběru
+	 to add a corner point  |  	 přidá rohový bod  |  
+	 to add a smooth point  |  	 přidá hladký bod  |  
+	 to close  |  	 uzavře cestu  |  
+	 to finish	 dokončí
+	 to add smooth points  |  	 přidává hladké body  |  
+	 to toggle corner  |  	 přepne roh  |  
+	 to create point type  |  	 vytvoří bodový text  |  
+	 to create area type  |  	 vytvoří text v oblasti  |  
+	 to exit editing	 ukončí úpravy
+	 to draw  |  	 kreslí  |  
+	 to constrain proportions  |  	 zachová proporce  |  
+	 from center  |  	 kreslí od středu  |  
+	 for exact size	 zadá přesnou velikost
+	 to set the reference point  |  	 nastaví referenční bod  |  
+	 to transform  |  	 transformuje  |  
+	 for exact values	 zadá přesné hodnoty
+	 to pan the view	 posouvá zobrazení
+	 to zoom in  |  	 zvětší  |  
+	 to zoom out  |  	 zmenší  |  
+	 to zoom into an area	 zvětší vybranou oblast
+	Hold	Podržení
+	 right or left to zoom in or out  |  	 doprava nebo doleva zvětšuje nebo zmenšuje  |  
+	 to keep zooming	 plynule mění zvětšení
+	 an object to copy its attributes  |  	 na objekt převezme jeho atributy  |  
+	 to apply the selection's to it  |  	 na něj použije atributy výběru  |  
+	 to sample a color	 nabere barvu
+	 across a selected object to set the gradient direction	 přes vybraný objekt nastaví směr přechodu
+	 to select an artboard  |  	 vybere pracovní plochu  |  
+	 on the canvas to create one	 na plátně vytvoří novou
+	 a stroke to add a width point  |  	 tahu přidá bod šířky  |  
+	 to change one side  |  	 změní jednu stranu  |  
+	 to select more points  |  	 vybere další body  |  
+	 a point to edit it  |  	 na bod jej upraví  |  
+	 to remove points	 odstraní body
+	 the art to add a pin  |  	 na kresbu přidá špendlík  |  
+	 to select more pins  |  	 vybere další špendlíky  |  
+	 a pin to warp  |  	 špendlíku deformuje  |  
+	 near a selected pin to rotate  |  	 poblíž vybraného špendlíku otáčí  |  
+	 to remove pins	 odstraní špendlíky
+	 across paths to push them along  |  	 přes cesty je posouvá  |  
+	 to size the brush (	 mění velikost štětce (
+	 keeps its proportions)	 zachová proporce)
+	 over paths, and hold still to keep going  |  	 na cestách, podržením na místě pokračuje  |  
+	 over paths to roughen their outlines  |  	 na cestách zdrsní jejich obrysy  |  
+	 to move in perspective  |  	 přesouvá v perspektivě  |  
+	 to copy  |  	 kopíruje  |  
+	 while dragging to move perpendicular to the plane  |  	 během tažení přesouvá kolmo k rovině  |  
+	 to scale in perspective	 mění velikost v perspektivě
+	 an object, then another to blend them  |  	 na objekt a pak na další je prolne  |  
+	 to blend from it  |  	 prolne od něj  |  
+	 to set spacing and orientation	 nastaví rozestupy a orientaci
+	Apply	Použít
+	Change Screen Mode (F)	Změnit režim obrazovky (F)
+	Color (,)	Barva (,)
+	Draw Behind	Kreslit za
+	Draw Inside	Kreslit dovnitř
+	Draw Normal	Kreslit normálně
+	Expand:	Rozložit:
+	Gradient (.)	Přechod (.)
+	H:	V:
+	Modify	Úpravy
+	Navigate	Pohled
+	None (/)	Žádná (/)
+	Select All Pins	Vybrat všechny špendlíky
+	Show Mesh	Zobrazit síť
+	Toggle single/double column	Přepnout jeden / dva sloupce
+	W:	Š:
+	Drag to float the toolbar	Přetažením vytvoříte plovoucí panel nástrojů
+	Drag to the window's left edge to dock	Přetažením k levému okraji okna panel ukotvíte
+
+# Tools
+	Crystallize	Krystalizace
+	Add Anchor Point Tool	Nástroj Přidat kotevní bod
+	Anchor Point Tool	Nástroj Kotevní bod
+	Arc Tool	Nástroj Oblouk
+	Area Graph Tool	Nástroj Plošný graf
+	Area Type Tool	Nástroj Text v oblasti
+	Artboard Tool	Nástroj Pracovní plocha
+	Bar Graph Tool	Nástroj Pruhový graf
+	Blend Tool	Nástroj Prolnutí
+	Bloat Tool	Nástroj Vyboulení
+	Blob Brush Tool	Nástroj Štětec skvrn
+	Column Graph Tool	Nástroj Sloupcový graf
+	Crystallize Tool	Nástroj Krystalizace
+	Delete Anchor Point Tool	Nástroj Odstranit kotevní bod
+	Direct Selection Tool	Nástroj Přímý výběr
+	Ellipse Tool	Nástroj Elipsa
+	Eraser Tool	Nástroj Guma
+	Eyedropper Tool	Nástroj Kapátko
+	Flare Tool	Nástroj Odlesk
+	Free Transform Tool	Nástroj Volná transformace
+	Gradient Tool	Nástroj Přechod
+	Group Selection Tool	Nástroj Výběr skupiny
+	Hand Tool	Nástroj Ručička
+	Join Tool	Nástroj Spojení
+	Lasso Tool	Nástroj Laso
+	Line Cut Tool	Nástroj Řez čarou
+	Line Graph Tool	Nástroj Spojnicový graf
+	Line Segment Tool	Nástroj Úsečka
+	Live Paint Selection Tool	Nástroj Výběr živé malby
+	Magic Wand Tool	Nástroj Kouzelná hůlka
+	Measure Tool	Nástroj Měřítko
+	Mesh Tool	Nástroj Síť
+	Mirror & Cut Tool	Nástroj Zrcadlit a řezat
+	Paintbrush Tool	Nástroj Štětec
+	Path Eraser Tool	Nástroj Guma na cesty
+	Pencil Tool	Nástroj Tužka
+	Perspective Grid Tool	Nástroj Perspektivní mřížka
+	Perspective Selection Tool	Nástroj Výběr v perspektivě
+	Pie Graph Tool	Nástroj Výsečový graf
+	Polar Grid Tool	Nástroj Polární mřížka
+	Polygon Tool	Nástroj Mnohoúhelník
+	Print Tiling Tool	Nástroj Dlaždice tisku
+	Pucker Tool	Nástroj Smrštění
+	Puppet Warp Tool	Nástroj Loutková deformace
+	Radar Graph Tool	Nástroj Paprskový graf
+	Rectangle Cut Tool	Nástroj Řez obdélníkem
+	Rectangle Tool	Nástroj Obdélník
+	Rectangular Grid Tool	Nástroj Obdélníková mřížka
+	Reflect Tool	Nástroj Zrcadlení
+	Reshape Tool	Nástroj Přetvarování
+	Rotate Tool	Nástroj Otočení
+	Rotate View Tool	Nástroj Otočení zobrazení
+	Rounded Rectangle Tool	Nástroj Zaoblený obdélník
+	Scale Tool	Nástroj Změna velikosti
+	Scallop Tool	Nástroj Vroubkování
+	Scatter Graph Tool	Nástroj Bodový graf
+	Scissors Tool	Nástroj Nůžky
+	Selection Tool	Nástroj Výběr
+	Shape Builder Tool	Nástroj Tvorba tvarů
+	Shaper Tool	Nástroj Shaper
+	Shear Tool	Nástroj Zkosení
+	Slice Selection Tool	Nástroj Výběr řezu
+	Slice Tool	Nástroj Řez
+	Smooth Tool	Nástroj Vyhlazení
+	Spiral Tool	Nástroj Spirála
+	Stacked Bar Graph Tool	Nástroj Skládaný pruhový graf
+	Stacked Column Graph Tool	Nástroj Skládaný sloupcový graf
+	Star Tool	Nástroj Hvězda
+	Symbol Screener Tool	Nástroj Průhlednost symbolů
+	Symbol Scruncher Tool	Nástroj Zhuštění symbolů
+	Symbol Shifter Tool	Nástroj Posun symbolů
+	Symbol Sizer Tool	Nástroj Velikost symbolů
+	Symbol Spinner Tool	Nástroj Otáčení symbolů
+	Symbol Sprayer Tool	Nástroj Rozprašovač symbolů
+	Symbol Stainer Tool	Nástroj Obarvení symbolů
+	Symbol Styler Tool	Nástroj Stylování symbolů
+	Touch Type Tool	Nástroj Dotykový text
+	Twirl Tool	Nástroj Zatočení
+	Type on a Path Tool	Nástroj Text na cestě
+	Type Tool	Nástroj Text
+	Vertical Area Type Tool	Nástroj Svislý text v oblasti
+	Vertical Type on a Path Tool	Nástroj Svislý text na cestě
+	Vertical Type Tool	Nástroj Svislý text
+	Warp Tool	Nástroj Pokřivení
+	Width Tool	Nástroj Šířka
+	Wrinkle Tool	Nástroj Zvrásnění
+	Zoom Tool	Nástroj Lupa
+
+# Panels
+	Action {n}	Akce {n}
+	Begin Recording	Zahájit záznam
+	Center on Artboard	Vystředit na pracovní ploše
+	Default Actions	Výchozí akce
+	Duplicate and Offset 10 pt	Duplikovat a posunout o 10 pt
+	No actions. Press ● to record.	Žádné akce. Stisknutím ● spustíte záznam.
+	Outline Text	Text převedený na křivky
+	Play Current Selection	Přehrát aktuální výběr
+	Reflect Horizontal	Zrcadlit vodorovně
+	Rotate 90° CW	Otočit o 90° po směru hodin
+	Set 1	Sada 1
+	Stop Playing/Recording	Zastavit přehrávání či záznam
+	Unite and Simplify	Sjednotit a zjednodušit
+	● Recording	● Záznam
+	Align to Artboard	Zarovnat k pracovní ploše
+	Align to Glyph Bounds	Zarovnat k hranicím glyfů
+	Align to Key Object	Zarovnat ke klíčovému objektu
+	Align to Selection	Zarovnat k výběru
+	Align To:	Zarovnat k:
+	Cancel Key Object	Zrušit klíčový objekt
+	Distribute Objects:	Rozmístit objekty:
+	Distribute Spacing:	Rozmístit mezery:
+	Horizontal Distribute Center	Vodorovně rozmístit středy
+	Horizontal Distribute Left	Vodorovně rozmístit levé okraje
+	Horizontal Distribute Right	Vodorovně rozmístit pravé okraje
+	Horizontal Distribute Space	Vodorovně rozmístit mezery
+	Vertical Distribute Bottom	Svisle rozmístit dolní okraje
+	Vertical Distribute Center	Svisle rozmístit středy
+	Vertical Distribute Space	Svisle rozmístit mezery
+	Vertical Distribute Top	Svisle rozmístit horní okraje
+	Add New Effect	Přidat nový efekt
+	Click to choose a swatch, Shift-click to mix a colour	Kliknutím vyberete položku vzorníku, Shift+kliknutím namícháte barvu
+	Click to toggle visibility	Kliknutím přepnete viditelnost
+	Dashed	Čárkovaný
+	Delete Selected Item	Odstranit vybranou položku
+	Double-click to edit the characters' paint	Dvojklikem upravíte barvu znaků
+	Double-click to target the contents	Dvojklikem zacílíte obsah
+	Drag onto art to apply this appearance	Přetažením na kresbu použijete tento vzhled
+	Duplicate Selected Item	Duplikovat vybranou položku
+	Fill:	Výplň:
+	Hide Thumbnail	Skrýt miniaturu
+	Mixed Appearances	Smíšené vzhledy
+	Mixed Objects	Smíšené objekty
+	No options	Žádné možnosti
+	No Selection	Nic není vybráno
+	Offset X	Posun X
+	Opacity: 50% Multiply	Krytí: 50 % Násobit
+	Opacity: Default	Krytí: výchozí
+	Opacity: {value}	Krytí: {value}
+	Rectangle: Sunshine	Obdélník: Sluneční svit
+	Redefine Graphic Style “{name}”	Předefinovat grafický styl „{name}“
+	Show Thumbnail	Zobrazit miniaturu
+	Artboard Options: edit with the Artboard tool	Možnosti pracovní plochy: upravte nástrojem Pracovní plocha
+	Delete Artboards	Odstranit pracovní plochy
+	Delete Empty Artboards	Odstranit prázdné pracovní plochy
+	Duplicate Artboards	Duplikovat pracovní plochy
+	Move Down	Posunout dolů
+	Move Up	Posunout nahoru
+	Open a document to see its artboards.	Otevřete dokument, abyste viděli jeho pracovní plochy.
+	Rearrange All Artboards	Přeuspořádat všechny pracovní plochy
+	Move Artwork with Artboard	Přesouvat kresbu s pracovní plochou
+	Scale Artwork with Artboard	Měnit velikost kresby s pracovní plochou
+	Add Selected Artwork (Alt: as one asset)	Přidat vybranou kresbu (Alt: jako jeden prvek)
+	Add Selected Artwork as Multiple Assets	Přidat vybranou kresbu jako více prvků
+	Double-click to rename	Dvojklikem přejmenujete
+	Drag art here, or select it and click +. Hold Alt for one asset of several objects.	Přetáhněte sem kresbu, nebo ji vyberte a klikněte na +. Podržením Alt vytvoříte z více objektů jeden prvek.
+	Export the selected assets (else all of them)	Exportovat vybrané prvky (jinak všechny)
+	Export {count} Selected	Exportovat vybrané ({count})
+	Select All Assets	Vybrat všechny prvky
+	Don't Show Center	Nezobrazovat střed
+	Hide Note	Skrýt poznámku
+	Image Map:	Mapa obrázku:
+	Note:	Poznámka:
+	Open the URL in the web browser	Otevřít URL ve webovém prohlížeči
+	Overprint Fill	Přetisk výplně
+	Overprint Stroke	Přetisk tahu
+	Recent URLs	Nedávné URL
+	Reverse Path Direction Off	Obrácený směr cesty vypnut
+	Reverse Path Direction On	Obrácený směr cesty zapnut
+	Show Center	Zobrazit střed
+	Show Note	Zobrazit poznámku
+	URL:	URL:
+	Use Even-Odd Fill Rule	Použít pravidlo výplně sudá-lichá
+	Use Non-Zero Winding Fill Rule	Použít pravidlo výplně nenulového vinutí
+	Brush Libraries (on the roadmap)	Knihovny štětců (v plánu)
+	List View	Zobrazení seznamu
+	New Art Brush from Selection	Nový obrazový štětec z výběru
+	New Bristle Brush	Nový štětinový štětec
+	New Calligraphic Brush	Nový kaligrafický štětec
+	New Pattern Brush from Selection	Nový vzorkový štětec z výběru
+	New Scatter Brush from Selection	Nový rozptylový štětec z výběru
+	No brushes	Žádné štětce
+	Select art and use New Brush to make one.	Vyberte kresbu a štětec vytvořte příkazem Nový štětec.
+	Show {kind} Brushes	Zobrazit štětce: {kind}
+	Thumbnail View	Zobrazení miniatur
+	All Caps	Verzálky
+	Character Alignment	Zarovnání znaků
+	Character Rotation	Otočení znaků
+	Em Box Bottom/Left	Dolní/levý okraj čtverčíku
+	Em Box Center	Střed čtverčíku
+	Em Box Top/Right	Horní/pravý okraj čtverčíku
+	Fractional Widths	Zlomkové šířky
+	Hide Options	Skrýt možnosti
+	Horizontal Scale %	Vodorovná změna velikosti %
+	Kerning (0 = Auto)	Vyrovnání párů (0 = automaticky)
+	Leading	Proklad
+	No Break	Nezalamovat
+	Proportional Metrics	Proporcionální metrika
+	Digits	Číslice
+	Arabic	Arabské
+	Hindi	Hindské
+	Farsi	Perské
+	Reset Panel	Obnovit panel
+	Roman Baseline	Latinková účaří
+	Select a text object to edit its character attributes.	Vyberte textový objekt, abyste mohli upravit atributy jeho znaků.
+	Show Options	Zobrazit možnosti
+	Small Caps	Kapitálky
+	Small Caps (on the roadmap)	Kapitálky (v plánu)
+	Standard Vertical Roman Alignment	Standardní svislé zarovnání latinky
+	Strikethrough	Přeškrtnutí
+	Character:	Znak:
+	Character options	Možnosti znaků
+	Subscript	Dolní index
+	Subscript (on the roadmap)	Dolní index (v plánu)
+	Superscript	Horní index
+	Superscript (on the roadmap)	Horní index (v plánu)
+	System Layout	Systémové rozvržení
+	Tate-chu-yoko	Tate-chu-yoko
+	Underline	Podtržení
+	Vertical Scale %	Svislá změna velikosti %
+	Axis	Osa
+	ICF Top/Right	ICF horní/pravý
+	ICF Bottom/Left	ICF dolní/levý
+	Copy Color Value (Hex)	Kopírovat hodnotu barvy (hex)
+	Create New Swatch…	Vytvořit novou položku vzorníku…
+	Name 40%	Název 40 %
+	Out of Gamut Warning	Upozornění na barvu mimo gamut
+	Out of Web Color Warning	Upozornění na barvu mimo webovou paletu
+	Web Safe RGB	Webově bezpečné RGB
+	{warning}: click to correct to the closest color ({hex})	{warning}: kliknutím opravíte na nejbližší barvu ({hex})
+	Edit or Apply Colors	Upravit nebo použít barvy
+	Limit colors to swatch library	Omezit barvy na knihovnu vzorníku
+	Limit colors to swatch library: {name}	Omezit barvy na knihovnu vzorníku: {name}
+	Save color group to Swatch panel	Uložit skupinu barev do panelu Vzorník
+	Save Colors as Swatches	Uložit barvy jako položky vzorníku
+	Save selected colors as swatches	Uložit vybrané barvy jako položky vzorníku
+	Set base color	Nastavit základní barvu
+	Set base color to the current color	Nastavit základní barvu na aktuální barvu
+	Show Tints/Shades	Zobrazit světlé a tmavé tóny
+	Show Vivid/Muted	Zobrazit syté a tlumené
+	Show Warm/Cool	Zobrazit teplé a studené
+	Click to select, double-click to edit	Kliknutím vyberete, dvojklikem upravíte
+	Color Theme	Barevný motiv
+	Delete theme	Odstranit motiv
+	Edit Theme	Upravit motiv
+	Edit theme	Upravit motiv
+	Make a theme on Create and save it.	Motiv vytvořte na kartě Vytvořit a uložte ho.
+	My Themes	Moje motivy
+	New theme from the current color	Nový motiv z aktuální barvy
+	No saved themes	Žádné uložené motivy
+	Rule:	Pravidlo:
+	Save changes to {name}	Uložit změny do {name}
+	Save theme to My Themes	Uložit motiv do Mých motivů
+	Set the selected color to the current color	Nastavit vybranou barvu jako aktuální barvu
+	Copied the CSS of {rules} object(s)	Zkopírováno CSS objektů: {rules}
+	Copy All Styles	Kopírovat všechny styly
+	Exported {path}	Exportováno: {path}
+	Generate CSS: the whole document's CSS while nothing is selected	Generovat CSS: CSS celého dokumentu, když není nic vybráno
+	No CSS	Žádné CSS
+	Select objects to see their CSS, or Generate CSS for the whole document.	Vyberte objekty, abyste viděli jejich CSS, nebo vygenerujte CSS pro celý dokument.
+	The selected objects have no CSS of their own (see below).	Vybrané objekty nemají vlastní CSS (viz níže).
+	Units: {units}	Jednotky: {units}
+	{count} more rules: Export writes every one.	Další pravidla ({count}): Export zapíše všechna.
+	{count} unnamed objects left out: name them, or turn on Unnamed Objects in the panel menu.	Vynecháno nepojmenovaných objektů: {count}. Pojmenujte je, nebo v nabídce panelu zapněte Nepojmenované objekty.
+	All Categories	Všechny kategorie
+	Save…	Uložit…
+	Selection Only	Pouze výběr
+	{title} (selection)	{title} (výběr)
+	Changed since the last Refresh.	Změněno od posledního obnovení.
+	Click to zoom in, Alt-click to zoom out, drag to pan, double-click to fit	Kliknutím zvětšíte, Alt+kliknutím zmenšíte, tažením posunete, dvojklikem přizpůsobíte
+	Fit in Window	Přizpůsobit oknu
+	Open a document to preview its flattening.	Otevřete dokument, abyste viděli náhled jeho sloučení.
+	Overprints:	Přetisky:
+	Preview the document as it is now	Náhled dokumentu v aktuálním stavu
+	Raster/Vector Balance:	Poměr rastru a vektorů:
+	Refresh	Obnovit
+	Save Transparency Flattener Preset…	Uložit přednastavení sloučení průhlednosti…
+	Basic Latin	Základní latinka
+	Currency & Symbols	Měny a symboly
+	Double-click to insert	Dvojklikem vložíte
+	Entire Font	Celé písmo
+	glyph {id}	glyf {id}
+	Greek & Cyrillic	Řečtina a cyrilice
+	Latin Extended	Rozšířená latinka
+	Latin-1 Supplement	Doplněk Latin-1
+	No fonts are available.	Nejsou k dispozici žádná písma.
+	Select text or click into text with the Type tool to insert glyphs	Glyfy vložíte, když vyberete text nebo do něj kliknete nástrojem Text
+	Show:	Zobrazit:
+	Use the Selected Text's Font	Použít písmo vybraného textu
+	Aspect Ratio	Poměr stran
+	Click the art with the Gradient tool to add or select points.	Body přidáte nebo vyberete kliknutím na kresbu nástrojem Přechod.
+	Click the ramp or a type button to apply a gradient.	Přechod použijete kliknutím na pruh nebo na tlačítko typu.
+	Color:	Barva:
+	Delete Stop	Odstranit zarážku
+	Edit Gradient	Upravit přechod
+	Edit the selected point's colour in the Color panel	Upravit barvu vybraného bodu v panelu Barva
+	Edit the stop	Upravit zarážku
+	Eyedropper: click the art to sample the stop's colour	Kapátko: kliknutím na kresbu naberete barvu zarážky
+	Gradient across stroke	Přechod napříč tahem
+	Gradient along stroke	Přechod podél tahu
+	Gradient Fill: click to apply, drag onto art	Přechodová výplň: kliknutím použijete, přetáhněte na kresbu
+	Gradient swatches	Přechody ve vzorníku
+	Gradient within stroke	Přechod uvnitř tahu
+	Linear Gradient	Lineární přechod
+	Lines: clicks add points joined by a line	Čáry: kliknutím přidáte body spojené čárou
+	No gradient swatches	Ve vzorníku nejsou žádné přechody
+	Points: clicks add free points	Body: kliknutím přidáte volné body
+	Radial Gradient	Kruhový přechod
+	Reset to White, Black	Obnovit na bílou a černou
+	Reverse Gradient	Obrátit přechod
+	Save to Swatches	Uložit do vzorníku
+	Delete Graphic Style (Alt-click: without asking)	Odstranit grafický styl (Alt+kliknutí: bez dotazu)
+	Delete the graphic style “{name}”?	Odstranit grafický styl „{name}“?
+	Delete these {n} graphic styles?	Odstranit tyto grafické styly ({n})?
+	Delete this {n} graphic style?	Odstranit tento grafický styl ({n})?
+	Graphic Style Libraries Menu	Nabídka knihoven grafických stylů
+	New Graphic Style (Alt-click to name it)	Nový grafický styl (Alt+kliknutím jej pojmenujete)
+	New Graphic Style…	Nový grafický styl…
+	No graphic styles	Žádné grafické styly
+	Objects using them keep their look but are no longer linked.	Objekty, které je používají, si ponechají vzhled, ale už nebudou propojené.
+	Open a document to see its graphic styles.	Otevřete dokument, abyste viděli jeho grafické styly.
+	Open Graphic Style Library	Otevřít knihovnu grafických stylů
+	Select styled art and click New Graphic Style.	Vyberte stylovanou kresbu a klikněte na Nový grafický styl.
+	Use Square for Previews	Náhledy na čtverci
+	Use Text for Previews	Náhledy na textu
+	{percent}% opacity	krytí {percent} %
+	History Options…	Možnosti historie…
+	Open a document to see its history.	Otevřete dokument, abyste viděli jeho historii.
+	Abutting	Sousedící
+	Black and White	Černobílé
+	Corners	Rohy
+	Ignore White	Ignorovat bílou
+	Palette:	Paleta:
+	Limited	Omezená
+	Full Tone	Plné tóny
+	Document Library	Knihovna dokumentu
+	Library:	Knihovna:
+	Tracing Presets	Přednastavení vektorizace
+	Method:	Metoda:
+	Mode:	Režim:
+	Noise	Šum
+	Create:	Vytvořit:
+	Fills	Výplně
+	Strokes	Tahy
+	Overlapping	Překrývající se
+	Paths: {paths}    Anchors: {anchors}    Colors: {colors}	Cesty: {paths}    Kotevní body: {anchors}    Barvy: {colors}
+	Reset to Default	Obnovit výchozí
+	Select an image to trace	Vyberte obraz k vektorizaci
+	Snap Curves To Lines	Přichytit křivky k úsečkám
+	Tracing Result with Outlines	Výsledek vektorizace s obrysy
+	Source Image	Zdrojový obraz
+	Threshold	Práh
+	Trace	Vektorizovat
+	Trace the image with the Default preset	Vektorizovat obraz s přednastavením Výchozí
+	Size: {size}  Tracking: {tracking}	Velikost: {size}  Prostrkání: {tracking}
+	<Opacity Mask>	<Maska krytí>
+	Create New Layer	Vytvořit novou vrstvu
+	Create New Sublayer	Vytvořit novou podvrstvu
+	Search All	Hledat ve všem
+	Graphics	Grafika
+	Local Libraries	Místní knihovny
+	Add Content	Přidat obsah
+	Click to apply to the selected type	Kliknutím použijete na vybraný text
+	Create New Library…	Vytvořit novou knihovnu…
+	Rename Library…	Přejmenovat knihovnu…
+	Delete the library “{name}”?	Odstranit knihovnu „{name}“?
+	Drag art or swatches here, or use + to add the selection's colors and text styles.	Přetáhněte sem kresbu nebo položky vzorníku, nebo tlačítkem + přidejte barvy a textové styly výběru.
+	Its graphics, colors and text styles are deleted from this machine.	Její grafika, barvy a textové styly budou z tohoto počítače odstraněny.
+	Keep graphics, colors and text styles here to use them in any document. Libraries are stored on this machine — no account required.	Uchovávejte zde grafiku, barvy a textové styly a používejte je v libovolném dokumentu. Knihovny se ukládají v tomto počítači — není potřeba žádný účet.
+	This library is empty	Tato knihovna je prázdná
+	No results	Žádné výsledky
+	No items in this library match “{query}”.	Žádná položka v této knihovně neodpovídá „{query}“.
+	Right-click an item to move it into this group.	Kliknutím pravým tlačítkem na položku ji přesunete do této skupiny.
+	New Group	Nová skupina
+	New Group…	Nová skupina…
+	Move to Group	Přesunout do skupiny
+	No Group	Bez skupiny
+	Rename Group…	Přejmenovat skupinu…
+	Delete Group	Odstranit skupinu
+	Import Library…	Importovat knihovnu…
+	Export Library…	Exportovat knihovnu…
+	Close Library	Zavřít knihovnu
+	Next Library	Další knihovna
+	No matches.	Žádné shody.
+	Other Libraries	Jiné knihovny
+	Previous Library	Předchozí knihovna
+	Swatch exchange files keep solid colors only.	Soubory pro výměnu vzorníku uchovávají pouze plné barvy.
+	This library is empty.	Tato knihovna je prázdná.
+	Color Space	Barevný prostor
+	Created	Vytvořeno
+	Dimensions	Rozměry
+	Embedded {n} image(s)	Vloženo obrázků: {n}
+	Embedded {n} image(s); {missing} missing: relink them first	Vloženo obrázků: {n}; chybí {missing}: nejprve je znovu propojte
+	File › Place… brings in an image, linked or embedded.	Soubor › Umístit… přidá obrázek, propojený nebo vložený.
+	Format	Formát
+	Medium Thumbnails	Střední miniatury
+	Missing: {path}	Chybí: {path}
+	Modified	Upraveno
+	Modified since it was read: {path}	Upraveno od načtení: {path}
+	No Thumbnails	Bez miniatur
+	Nothing matches the Show filter.	Filtru Zobrazit nic neodpovídá.
+	PPI	PPI
+	Relinked {n} image(s)	Znovu propojeno obrázků: {n}
+	Relinked {n} image(s); not in that folder: {}	Znovu propojeno obrázků: {n}; nejsou v dané složce: {}
+	Relinked {} image(s)	Znovu propojeno obrázků: {}
+	Relink…	Znovu propojit…
+	Find Linked Files	Najít propojené soubory
+	Find Linked Files in Folder…	Najít propojené soubory ve složce…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	Pro každý propojený soubor vyberte soubor, ke kterému jej chcete znovu propojit. Soubory s velikostí a obsahem uloženými s propojením jsou uvedeny jako první.
+	Same file	Stejný soubor
+	Same size	Stejná velikost
+	Don't Relink	Znovu nepropojovat
+	Copy into the document's folder	Kopírovat do složky dokumentu
+	Select an image to see its Link Info.	Vyberte obrázek, abyste viděli informace o propojení.
+	Show Embedded	Zobrazit vložené
+	Show Link Info	Zobrazit informace o propojení
+	Show Modified	Zobrazit upravené
+	Small Thumbnails	Malé miniatury
+	Status	Stav
+	Unembedded to {}	Vložení zrušeno, uloženo do: {}
+	Update Link	Aktualizovat propojení
+	Updated {} image(s)	Aktualizováno obrázků: {}
+	Break Link	Zrušit propojení
+	Tolerance:	Tolerance:
+	Transparency Options	Možnosti průhlednosti
+	Color Mixer (Shift-click the chip)	Míchání barev (Shift+kliknutí na políčko)
+	Fill: click for swatches, Shift-click for the color mixer	Výplň: kliknutím otevřete vzorník, Shift+kliknutím míchání barev
+	Stroke: click for swatches, Shift-click for the color mixer	Tah: kliknutím otevřete vzorník, Shift+kliknutím míchání barev
+	This panel is on the roadmap (see the parity plan).	Tento panel je v plánu (viz plán parity).
+	Open a document to navigate it.	Otevřete dokument, abyste v něm mohli navigovat.
+	View Artboard Only	Zobrazit jen pracovní plochu
+	Contextual Alternates	Kontextové alternativy
+	Default Figure	Výchozí číslice
+	Discretionary Ligatures	Volitelné ligatury
+	Figure:	Číslice:
+	Fractions	Zlomky
+	Ligatures are off while the text is tracked.	Ligatury jsou vypnuté, když má text prostrkání.
+	Ordinals	Řadové číslovky
+	Proportional Oldstyle	Proporcionální minuskové
+	Reset OpenType Features	Obnovit funkce OpenType
+	Select text to set its OpenType features.	Vyberte text, abyste mohli nastavit jeho funkce OpenType.
+	Standard Ligatures	Standardní ligatury
+	Swash	Ozdobné tvary
+	Tabular Lining	Tabulkové verzálkové
+	Tabular Oldstyle	Tabulkové minuskové
+	Every-line Composer	Sazba všech řádků
+	First-line Left Indent	Odsazení prvního řádku zleva
+	Hyphenation…	Dělení slov…
+	Justification…	Zarovnání do bloku…
+	Justify with last line aligned center	Do bloku, poslední řádek na střed
+	Justify with last line aligned right	Do bloku, poslední řádek vpravo
+	Left Indent	Odsazení zleva
+	Left-to-Right Paragraph Direction	Směr odstavce zleva doprava
+	Line-end Punctuation Half Width	Interpunkce na konci řádku poloviční šířky
+	Mojikumi Set	Sada Mojikumi
+	Kinsoku Set	Sada Kinsoku
+	Hard	Pevné
+	Right Indent	Odsazení zprava
+	Right-to-Left Paragraph Direction	Směr odstavce zprava doleva
+	Roman Hanging Punctuation	Visící latinková interpunkce
+	Select a text object to edit its paragraph attributes.	Vyberte textový objekt, abyste mohli upravit atributy jeho odstavce.
+	Single-line Composer	Sazba jednoho řádku
+	Space After Paragraph	Mezera za odstavcem
+	Space Before Paragraph	Mezera před odstavcem
+	Top-to-Top Leading	Proklad od horní k horní
+	Bottom-to-Bottom Leading	Proklad od dolní k dolní
+	Burasagari	Burasagari
+	Force	Vynutit
+	Expand applies to compound shapes (Alt-click a shape mode) — on the roadmap	Rozložení se týká složených tvarů (Alt+kliknutí na režim tvaru) — v plánu
+	Expand Compound Shape	Rozložit složený tvar
+	Make Compound Shape	Vytvořit složený tvar
+	Pathfinder Options…	Možnosti operací s cestami…
+	Pathfinders:	Operace s cestami:
+	Release Compound Shape	Uvolnit složený tvar
+	Repeat Pathfinder	Zopakovat operaci s cestami
+	Repeat {name}	Zopakovat {name}
+	Trap…	Přesah barev…
+	Bottom in Front	Spodní vpředu
+	Brick by Column	Cihly po sloupcích
+	Brick by Row	Cihly po řádcích
+	Brick Offset:	Posun cihel:
+	Copies:	Kopie:
+	Dim Copies to:	Ztlumit kopie na:
+	H Spacing:	Vodorovná mezera:
+	Height:	Výška:
+	Hex by Column	Šestiúhelníky po sloupcích
+	Hex by Row	Šestiúhelníky po řádcích
+	Left in Front	Levý vpředu
+	No document	Žádný dokument
+	Open a document to edit its patterns.	Otevřete dokument, abyste mohli upravit jeho vzorky.
+	Overlap:	Překrytí:
+	Pattern options are available in pattern editing mode.	Možnosti vzorku jsou dostupné v režimu úprav vzorku.
+	Right in Front	Pravý vpředu
+	Select art and choose Object › Pattern › Make.	Vyberte kresbu a zvolte Objekt › Vzorek › Vytvořit.
+	Show Swatch Bounds	Zobrazit hranice položky vzorníku
+	Show Tile Edge	Zobrazit okraj dlaždice
+	Size Tile to Art	Velikost dlaždice podle kresby
+	Tile Type:	Typ dlaždice:
+	Top in Front	Horní vpředu
+	V Spacing:	Svislá mezera:
+	Width:	Šířka:
+	Appearance panel	Panel Vzhled
+	Arrange: Bring to Front	Uspořádat: přenést do popředí
+	Draw:	Kreslení:
+	Edit Artboards	Upravit pracovní plochy
+	Flip Along Horizontal Axis	Překlopit podle vodorovné osy
+	Flip Along Vertical Axis	Překlopit podle svislé osy
+	Hyphenate	Dělit slova
+	Isolate Group	Izolovat skupinu
+	Landscape	Na šířku
+	More Pathfinder options	Další možnosti operací s cestami
+	More Align options	Další možnosti zarovnání
+	More Paragraph options	Další možnosti odstavce
+	No document open	Není otevřen žádný dokument
+	Quick Actions	Rychlé akce
+	Rearrange All	Přeuspořádat vše
+	Rulers & Grids	Pravítka a mřížky
+	Select a text object	Vyberte textový objekt
+	Show Grid (⌘')	Zobrazit mřížku (⌘')
+	Show Rulers (⌘R)	Zobrazit pravítka (⌘R)
+	Smart Guides (⌘U)	Chytrá vodítka (⌘U)
+	Snap Options	Možnosti přichytávání
+	Type:	Typ:
+	All colours are within the CMYK gamut	Všechny barvy jsou v gamutu CMYK
+	Assign:	Přiřadit:
+	Color Settings	Nastavení barev
+	Gamut Check	Kontrola gamutu
+	Intent:	Záměr:
+	No document open.	Není otevřen žádný dokument.
+	Overprint Preview (separations)	Náhled přetisků (separace)
+	Show All Plates	Zobrazit všechny desky
+	Show all plates	Zobrazit všechny desky
+	Show/hide plate (Alt-click: only this plate)	Zobrazit/skrýt desku (Alt+kliknutí: jen tato deska)
+	Simulate Paper	Simulovat papír
+	Use Black Point Compensation	Použít kompenzaci černého bodu
+	Working CMYK (don't tag)	Pracovní CMYK (neoznačovat)
+	{name} (spot)	{name} (přímá)
+	Add to Profiles…	Přidat do profilů…
+	Align Stroke to Center	Zarovnat tah na střed
+	Align Stroke to Inside	Zarovnat tah dovnitř
+	Align Stroke to Outside	Zarovnat tah ven
+	Align Stroke:	Zarovnání tahu:
+	Align:	Zarovnání:
+	Arrowheads:	Šipky:
+	Bevel Join	Zkosený spoj
+	Butt Cap	Useknuté zakončení
+	Cap:	Zakončení:
+	Corner:	Roh:
+	End arrowhead	Koncová šipka
+	Exact dash lengths	Přesné délky čárek
+	Fit dashes to corners and ends	Přizpůsobit čárky rohům a koncům
+	Flip Across	Překlopit napříč
+	Flip Along	Překlopit podél
+	gap	mezera
+	Limit:	Limit:
+	Link start and end arrowhead scales	Propojit velikost počáteční a koncové šipky
+	Miter Join	Ostrý spoj
+	Profile:	Profil:
+	Projecting Cap	Přesahující zakončení
+	Round Cap	Zaoblené zakončení
+	Round Join	Zaoblený spoj
+	Scale:	Velikost:
+	Start arrowhead	Počáteční šipka
+	Stroke options	Možnosti tahu
+	Swap start and end arrowheads	Prohodit počáteční a koncovou šipku
+	Tip extends past the end point	Hrot přesahuje koncový bod
+	Tip on the end point	Hrot na koncovém bodu
+	Variable Width Profile	Profil proměnné šířky
+	Weight:	Tloušťka:
+	Art using a deleted global swatch keeps its colour.	Kresba, která používá odstraněnou globální položku vzorníku, si barvu ponechá.
+	Color Group: {name}	Skupina barev: {name}
+	Delete these {count} swatches and groups?	Odstranit tyto položky vzorníku a skupiny ({count})?
+	Delete “{name}”?	Odstranit „{name}“?
+	Document Swatches	Vzorník dokumentu
+	Edit or Apply Color Group	Upravit nebo použít skupinu barev
+	Edit or Apply Color Group…	Upravit nebo použít skupinu barev…
+	Global Process Color	Globální procesní barva
+	Global Process Color, CMYK	Globální procesní barva, CMYK
+	Large List View	Velký seznam
+	Large Thumbnail View	Velké miniatury
+	Medium Thumbnail View	Střední miniatury
+	Open a document to see its swatches.	Otevřete dokument, abyste viděli jeho vzorník.
+	Open Swatch Library	Otevřít knihovnu vzorníku
+	Process Color	Procesní barva
+	Show All Swatches	Zobrazit všechny položky vzorníku
+	Show Color Groups	Zobrazit skupiny barev
+	Show Color Swatches	Zobrazit barvy
+	Show Find Field	Zobrazit pole hledání
+	Show Gradient Swatches	Zobrazit přechody
+	Show List View	Zobrazit jako seznam
+	Show Pattern Swatches	Zobrazit vzorky
+	Show Swatch Kinds	Zobrazit druhy položek
+	Show Thumbnail View	Zobrazit jako miniatury
+	Small List View	Malý seznam
+	Small Thumbnail View	Malé miniatury
+	Swatch Libraries Menu	Nabídka knihoven vzorníku
+	User Library	Uživatelská knihovna
+	{kind} Gradient	{kind} přechod
+	{kind}, {model}	{kind}, {model}
+	No symbols in this document	V tomto dokumentu nejsou žádné symboly
+	Select art and click New Symbol to make one.	Vyberte kresbu a symbol vytvořte tlačítkem Nový symbol.
+	Symbol Libraries (on the roadmap)	Knihovny symbolů (v plánu)
+	Align On:	Zarovnat na:
+	Center-Justified Tab	Tabulátor zarovnaný na střed
+	Above Text	Nad textem
+	Position Panel Above Text	Umístit panel nad text
+	Click to add a tab stop, drag to move it, drag it off the ruler to delete it	Kliknutím přidáte zarážku tabulátoru, tažením ji přesunete, tažením mimo pravítko ji odstraníte
+	Decimal-Justified Tab	Tabulátor zarovnaný na desetinnou čárku
+	Delete Tab	Odstranit tabulátor
+	Leader:	Vodicí znak:
+	Left-Justified Tab	Tabulátor zarovnaný doleva
+	No text selected	Není vybrán žádný text
+	Repeat Tab	Opakovat tabulátor
+	Right-Justified Tab	Tabulátor zarovnaný doprava
+	Select a text object to set its tab stops.	Vyberte textový objekt, abyste mohli nastavit jeho zarážky tabulátoru.
+	Select text	Vyberte text
+	+ Add Scale	+ Přidat měřítko
+	Add Selected Artwork as One Asset	Přidat vybranou kresbu jako jeden prvek
+	Export Settings	Nastavení exportu
+	No assets	Žádné prvky
+	Remove Selected Assets	Odebrat vybrané prvky
+	Suffix	Přípona
+	Absolute Position	Absolutní pozice
+	Export All…	Exportovat vše…
+	Export Selected CSS…	Exportovat vybrané CSS…
+	No selection	Nic není vybráno
+	Rasterize Unsupported Art	Rastrovat nepodporovanou kresbu
+	Unnamed Objects	Nepojmenované objekty
+	Width and Height	Šířka a výška
+	Add New	Přidat nový
+	Delete Point	Odstranit bod
+	Location:	Umístění:
+	Spread:	Rozptyl:
+	Clip to Bounding Box	Oříznout podle ohraničovacího rámečku
+	Effective PPI	Efektivní PPI
+	Embed Image(s)	Vložit obrázky
+	Embedded Image	Vložený obrázek
+	Large Thumbnails	Velké miniatury
+	Linked	Propojený
+	Location	Umístění
+	No images	Žádné obrázky
+	Relink to Folder…	Znovu propojit ke složce…
+	Show Missing	Zobrazit chybějící
+	Sort by Status	Seřadit podle stavu
+	Clear Overrides	Vymazat přepsání
+	Create New {kind} Style	Vytvořit nový styl ({kind})
+	Delete {kind} Style	Odstranit styl ({kind})
+	Duplicate {kind} Style	Duplikovat styl ({kind})
+	New {kind} Style…	Nový styl ({kind})…
+	Redefine {kind} Style	Předefinovat styl ({kind})
+	{kind} Style Options…	Možnosti stylu ({kind})…
+	Angle:	Úhel:
+	Ellipse Properties:	Vlastnosti elipsy:
+	Invert Pie	Obrátit výseč
+	Side Length:	Délka strany:
+	Make Sides Equal	Vyrovnat strany
+	Pie End Angle:	Koncový úhel výseče:
+	Pie Start Angle:	Počáteční úhel výseče:
+	Corner Radius:	Poloměr rohu:
+	Radius:	Poloměr:
+	Round	Zaoblený
+	Flip Horizontal	Překlopit vodorovně
+	Flip Vertical	Překlopit svisle
+	Polygon Properties:	Vlastnosti mnohoúhelníku:
+	Rectangle Properties:	Vlastnosti obdélníku:
+	Shape Properties:	Vlastnosti tvaru:
+	Sides:	Strany:
+	Transform options	Možnosti transformace
+	Transform Both	Transformovat obojí
+	Transform Object Only	Transformovat pouze objekt
+	Transform Pattern Only	Transformovat pouze vzorek
+	Use Registration Point for Symbol	Použít registrační bod symbolu
+	Click to edit the mask; Alt-click to view only the mask; Shift-click to disable or enable it	Kliknutím upravíte masku; Alt+kliknutím zobrazíte jen masku; Shift+kliknutím ji vypnete nebo zapnete
+	Hide Thumbnails	Skrýt miniatury
+	Invert Mask	Invertovat masku
+	Isolate Blending	Izolovat míchání
+	Knockout Group	Vykrajovací skupina
+	Link the mask	Propojit masku
+	Make Mask	Vytvořit masku
+	Opacity & Mask Define Knockout Shape	Krytí a maska určují tvar vykrojení
+	Select the art (and, on top of it, the mask object)	Vyberte kresbu (a nad ní objekt masky)
+	Show Thumbnails	Zobrazit miniatury
+	Stop editing the opacity mask	Ukončit úpravy masky krytí
+	Unlink the mask	Zrušit propojení masky
+	Data Sets	Sady dat
+	Data Set	Sada dat
+	Select Bound Object	Vybrat svázaný objekt
+	Select All Bound Objects	Vybrat všechny svázané objekty
+	Multiple objects	Více objektů
+
+# Dialogs
+	Graphics: {adapter}	Grafika: {adapter}
+	Part of ArtCraft. MIT OR Apache-2.0. Fonts: Source Sans 3, Inter, JetBrains Mono (OFL). Icons: Lucide (ISC) + VectorCraft.	Součást ArtCraft. MIT OR Apache-2.0. Písma: Source Sans 3, Inter, JetBrains Mono (OFL). Ikony: Lucide (ISC) + VectorCraft.
+	Version {version} — open-source vector illustration in pure Rust.	Verze {version} — open-source vektorová ilustrace v čistém Rustu.
+	Align to Page	Zarovnat ke stránce
+	Smooth Color	Plynulá barva
+	Specified Distance	Zadaná vzdálenost
+	Specified Steps	Zadaný počet kroků
+	Direction:	Směr:
+	Scatter Brush Options	Možnosti rozptylového štětce
+	Art Brush Options	Možnosti obrazového štětce
+	Pattern Brush Options	Možnosti vzorkového štětce
+	Scatter:	Rozptyl:
+	Rotation:	Otočení:
+	Rotation relative to:	Otočení vzhledem k:
+	Brush Scale Options	Možnosti velikosti štětce
+	Scale Proportionately	Měnit velikost proporcionálně
+	Stretch to Fit Stroke Length	Roztáhnout na délku tahu
+	Stretch Between Guides	Roztáhnout mezi vodítky
+	Start:	Začátek:
+	End:	Konec:
+	Left to Right	Zleva doprava
+	Right to Left	Zprava doleva
+	Top to Bottom	Shora dolů
+	Bottom to Top	Zdola nahoru
+	Outer Corner Tile	Dlaždice vnějšího rohu
+	Side Tile	Boční dlaždice
+	Inner Corner Tile	Dlaždice vnitřního rohu
+	Start Tile	Počáteční dlaždice
+	End Tile	Koncová dlaždice
+	Fit	Přizpůsobení
+	Stretch to fit	Roztáhnout
+	Add space to fit	Přidat mezery
+	Approximate path	Přibližná cesta
+	Colorization	Obarvení
+	Tints	Tóny
+	Tints and Shades	Světlé a tmavé tóny
+	Hue Shift	Posun odstínu
+	Key Color:	Klíčová barva:
+	Size:	Velikost:
+	Calligraphic Brush Options	Možnosti kaligrafického štětce
+	Bristle Brush Options	Možnosti štětinového štětce
+	Roundness:	Zakulacení:
+	Shape:	Tvar:
+	Bristle Length:	Délka štětin:
+	Bristle Density:	Hustota štětin:
+	Bristle Thickness:	Tloušťka štětin:
+	Paint Opacity:	Krytí barvy:
+	Stiffness:	Tuhost:
+	Round Point	Kulatý hrot
+	Flat Point	Plochý hrot
+	Round Blunt	Kulatý tupý
+	Flat Blunt	Plochý tupý
+	Round Curve	Kulatý zakřivený
+	Flat Curve	Plochý zakřivený
+	Round Angle	Kulatý šikmý
+	Flat Angle	Plochý šikmý
+	Round Fan	Kulatý vějíř
+	Flat Fan	Plochý vějíř
+	Adjust Options:	Možnosti úprav:
+	Color Mode:	Barevný režim:
+	Convert	Převést
+	Global	Globální
+	Green	Zelená
+	Shifts the tints of global and spot colors; other colors stay.	Posune tóny globálních a přímých barev; ostatní barvy zůstanou.
+	Tint	Tón
+	Color Guide Options	Možnosti průvodce barvami
+	Less	Méně
+	Steps:	Kroky:
+	Variation:	Variace:
+	Color Models	Barevné modely
+	Color Picker	Výběr barvy
+	Color Swatches	Položky vzorníku
+	Only Web Colors	Jen webové barvy
+	Original: click to restore	Původní: kliknutím obnovíte
+	Ascender	Horní dotah
+	Descender	Dolní dotah
+	On Left Side	Na levé straně
+	On Right Side	Na pravé straně
+	On Both Sides	Na obou stranách
+	Short	Krátký
+	Full Width	Plná šířka
+	Chamfer	Sražený
+	Inverted Round	Obráceně zaoblený
+	Bleed:	Spadávka:
+	Discard White Overprint in Output	Ve výstupu zahodit přetisk bílé
+	Double Quotes:	Dvojité uvozovky:
+	Export and Clipboard Transparency Flattener Settings	Nastavení sloučení průhlednosti pro export a schránku
+	Export:	Export:
+	Grid Colors:	Barvy mřížky:
+	Grid Size:	Velikost mřížky:
+	Highlight Substituted Fonts	Zvýraznit nahrazená písma
+	Highlight Substituted Glyphs	Zvýraznit nahrazené glyfy
+	Language:	Jazyk:
+	Position	Poloha
+	Preserve Text Appearance	Zachovat vzhled textu
+	Preserve Text Editability	Zachovat upravitelnost textu
+	Show Images in Outline Mode	Zobrazovat obrázky v režimu obrysů
+	Simulate Colored Paper	Simulovat barevný papír
+	Single Quotes:	Jednoduché uvozovky:
+	Small Caps:	Kapitálky:
+	Subscript:	Dolní index:
+	Superscript:	Horní index:
+	Transparency Grid	Mřížka průhlednosti
+	Units:	Jednotky:
+	Use Typographer's Quotes	Používat typografické uvozovky
+	Center Artwork	Vystředit kresbu
+	DXF Import Options	Možnosti importu DXF
+	Layout:	Rozvržení:
+	Merge Layers	Sloučit vrstvy
+	Place DXF	Umístit DXF
+	Scale Lineweights	Měnit tloušťku čar
+	Scale to Fit Artboard	Přizpůsobit pracovní ploše
+	Scaling	Měřítko
+	Alter Paths for Appearance	Upravit cesty podle vzhledu
+	DXF Options	Možnosti DXF
+	Export Option	Možnost exportu
+	Export Selected Art Only	Exportovat jen vybranou kresbu
+	Number of Colors:	Počet barev:
+	Raster File Format:	Formát rastrového souboru:
+	True colour needs version 2004 or later: the nearest of 256 colours is written.	Plné barvy vyžadují verzi 2004 nebo novější: zapíše se nejbližší z 256 barev.
+	Type becomes outlines, and strokes a CAD line can't draw become filled shapes.	Text se převede na křivky a tahy, které čára CAD nedokáže vykreslit, se stanou vyplněnými tvary.
+	Type stays text, and every stroke is a line with its lineweight and dashes.	Text zůstane textem a každý tah bude čárou s vlastní tloušťkou a čárkováním.
+	Version:	Verze:
+	Spin	Otáčení
+	Good	Dobrá
+	Best	Nejlepší
+	Amount	Míra
+	Contrast	Kontrast
+	Edit the applied effect, or add another one?	Upravit použitý efekt, nebo přidat další?
+	Input White	Vstupní bílá
+	Output Black	Výstupní černá
+	Preserve Lightness	Zachovat světlost
+	Ridges per segment:	Hřebeny na segment:
+	Temperature	Teplota
+	{effect} is already applied	Efekt {effect} je již použit
+	Odd Fields	Liché půlsnímky
+	Even Fields	Sudé půlsnímky
+	Duplication	Duplikace
+	Interpolation	Interpolace
+	Anti-Alias	Vyhlazování
+	Bend:	Ohyb:
+	Distort Appearance	Deformovat vzhled
+	Distort Linear Gradients	Deformovat lineární přechody
+	Distort Pattern Fills	Deformovat výplně vzorkem
+	Distortion	Deformace
+	Envelope Mesh	Síť obálky
+	Maintain Envelope Shape	Zachovat tvar obálky
+	Preserve Shape Using:	Zachovat tvar pomocí:
+	Reset Envelope Mesh	Obnovit síť obálky
+	Reset Envelope Shape	Obnovit tvar obálky
+	V:	S:
+	Warp Options	Možnosti pokřivení
+	Compatible Gradient and Gradient Mesh Printing	Kompatibilní tisk přechodů a přechodových sítí
+	Embed Fonts (for other applications)	Vložit písma (pro jiné aplikace)
+	EPS Options	Možnosti EPS
+	Include CMYK PostScript in RGB Files	Zahrnout CMYK PostScript do souborů RGB
+	Include Document Thumbnails	Zahrnout miniatury dokumentu
+	Include Linked Files	Zahrnout propojené soubory
+	Opaque	Neprůhledné
+	PostScript:	PostScript:
+	Transparency is flattened with the preset. Type is written as outlines; gradients as bands of colour.	Průhlednost se sloučí podle přednastavení. Text se zapíše jako křivky, přechody jako barevné pruhy.
+	Transparency is flattened with the preset. Type is written as outlines; gradients stay smooth.	Průhlednost se sloučí podle přednastavení. Text se zapíše jako křivky, přechody zůstanou plynulé.
+	Expand Gradient To	Rozložit přechod na
+	Gradient Mesh	Přechodová síť
+	Specify:	Zadat:
+	Export As	Exportovat jako
+	One file per artboard: <name>-<artboard>.{ext}	Jeden soubor na pracovní plochu: <name>-<artboard>.{ext}
+	One page per artboard.	Jedna stránka na pracovní plochu.
+	The bounds of the visible art.	Hranice viditelné kresby.
+	Use Artboards	Použít pracovní plochy
+	Choose a folder	Vyberte složku
+	Create Sub-folders	Vytvořit podsložky
+	Export Asset	Exportovat prvek
+	Export to:	Exportovat do:
+	Format Settings	Nastavení formátu
+	Formats:	Formáty:
+	Full Document	Celý dokument
+	Include Bleed	Zahrnout spadávku
+	No assets yet. Collect art with Object › Collect for Export, or drag it into the Asset Export panel.	Zatím žádné prvky. Kresbu shromážděte příkazem Objekt › Shromáždit pro export, nebo ji přetáhněte do panelu Export prvků.
+	Open Location after Export	Po exportu otevřít umístění
+	PDF Preset:	Přednastavení PDF:
+	Prefix:	Předpona:
+	Remove	Odebrat
+	Select:	Vybrat:
+	Your browser downloads the files (several as one .zip).	Soubory stáhne váš prohlížeč (více souborů jako jeden .zip).
+	Cap	Zakončení
+	Dash Pattern	Vzor čárkování
+	Eyedropper Applies:	Kapátko použije:
+	Eyedropper Picks Up:	Kapátko nabere:
+	Focal Fill	Aktivní výplň
+	Focal Stroke	Aktivní tah
+	Miter Limit	Limit ostrého spoje
+	Point Sample	Bodový vzorek
+	Raster Sample Size:	Velikost rastrového vzorku:
+	Weight	Tloušťka
+	3 x 3 Average	Průměr 3 × 3
+	5 x 5 Average	Průměr 5 × 5
+	Author Title:	Funkce autora:
+	Author:	Autor:
+	Copyright Info URL:	URL informací o autorských právech:
+	Copyright Notice:	Upozornění o autorských právech:
+	Copyright Status:	Stav autorských práv:
+	Created:	Vytvořeno:
+	Dates	Data
+	Description:	Popis:
+	Document Title:	Název dokumentu:
+	Keywords:	Klíčová slova:
+	Modified:	Upraveno:
+	Rating:	Hodnocení:
+	Remove “{keyword}”	Odebrat „{keyword}“
+	Separate several keywords with commas.	Více klíčových slov oddělte čárkami.
+	Flare Tool Options	Možnosti nástroje Odlesk
+	Rings	Prstence
+	Brightness:	Jas:
+	Growth:	Nárůst:
+	Fuzziness:	Rozmazání:
+	Number:	Počet:
+	Longest:	Nejdelší:
+	Path:	Cesta:
+	Largest:	Největší:
+	Anti-alias Rasters	Vyhlazovat rastry
+	Clip Complex Regions	Oříznout složité oblasti
+	Convert All Strokes to Outlines	Převést všechny tahy na obrysy
+	Convert All Text to Outlines	Převést veškerý text na křivky
+	Gradient and Mesh Resolution:	Rozlišení přechodů a sítí:
+	Line Art and Text Resolution:	Rozlišení perokreseb a textu:
+	Preserve Alpha Transparency	Zachovat průhlednost alfa
+	Preserve Overprints and Spot Colors	Zachovat přetisky a přímé barvy
+	Rasters	Rastry
+	Replaces the saved preset of that name.	Nahradí uložené přednastavení se stejným názvem.
+	Save Preset…	Uložit přednastavení…
+	Vectors	Vektory
+	A saved copy of the selected preset	Uložená kopie vybraného přednastavení
+	Built-in presets don't change: New makes a copy you can edit.	Vestavěná přednastavení se nemění: tlačítko Nový vytvoří kopii, kterou lze upravit.
+	Horizontal %	Vodorovně %
+	Include Cmy Blacks	Zahrnout černé z CMY
+	Make all bleed settings the same	Nastavit všechny spadávky stejně
+	Make the bleed values differ	Nastavit různé hodnoty spadávky
+	Miter Limit:	Limit ostrého spoje:
+	Radius 1	Poloměr 1
+	Radius 2	Poloměr 2
+	Radius1	Poloměr 1
+	Radius2	Poloměr 2
+	Relative	Relativní
+	Absolute	Absolutní
+	Vertical %	Svisle %
+	Miter	Ostrý
+	Bevel	Zkosený
+	A lower value follows the stroke closely; a higher one gives fewer points and smoother curves.	Nižší hodnota sleduje tah přesně, vyšší dává méně bodů a hladší křivky.
+	Accurate	Přesné
+	Close paths when ends are within:	Uzavřít cesty, když jsou konce do:
+	Edit selected paths within:	Upravovat vybrané cesty do:
+	Fidelity:	Věrnost:
+	Fill new strokes	Vyplňovat nové tahy
+	The document has no colour swatches.	Dokument nemá ve vzorníku žádné barvy.
+	Style Name:	Název stylu:
+	Crop To	Oříznout na
+	e.g. 1-3, 5	např. 1-3, 5
+	First Page	První stránka
+	Import PDF	Importovat PDF
+	Last Page	Poslední stránka
+	Next Page	Další stránka
+	of {count}	z {count}
+	Previous Page	Předchozí stránka
+	“{file}” is protected by a password.	Soubor „{file}“ je chráněn heslem.
+	Dim Images to:	Ztlumit obrázky na:
+	Light Blue	Světle modrá
+	Layers Panel Options	Možnosti panelu Vrstvy
+	Row Size:	Velikost řádků:
+	Show Layers Only	Zobrazit pouze vrstvy
+	Thumbnails:	Miniatury:
+	Anchor Points	Kotevní body
+	Brush Affects:	Štětec ovlivňuje:
+	Complexity:	Složitost:
+	Detail:	Podrobnost:
+	Global Brush Dimensions	Globální rozměry štětce
+	Horizontal:	Vodorovně:
+	In Tangent Handles	Vstupní tečné úchyty
+	Out Tangent Handles	Výstupní tečné úchyty
+	Show Brush Size	Zobrazit velikost štětce
+	Simplify:	Zjednodušení:
+	Twirl Rate:	Rychlost zatočení:
+	Use Pressure Pen	Použít tlak pera
+	Vertical:	Svisle:
+	{shortcut} with the tool sizes the brush	{shortcut} s nástrojem mění velikost štětce
+	{tool} Options	Možnosti: {tool}
+	{tool} Tool Options	Možnosti nástroje {tool}
+	These fonts aren't available. Their text shows in another font.	Tato písma nejsou k dispozici. Jejich text se zobrazuje jiným písmem.
+	Search Fonts Folder	Prohledat složku s písmy
+	Add Fonts	Přidat písma
+	Find Fonts	Najít písma
+	Stop	Zastavit
+	Searching…	Hledání…
+	Not found	Nenalezeno
+	{folders} folder(s) and {files} file(s) searched	Prohledáno složek: {folders}, souborů: {files}
+	{count} folder(s) skipped, such as other apps' and the system's folders and hidden ones	Přeskočeno složek: {count} (např. složky jiných aplikací, systému a skryté složky)
+	{count} folder(s) or file(s) couldn't be read	Nepodařilo se přečíst složek nebo souborů: {count}
+	The search stopped at its limit: search a smaller folder.	Hledání se zastavilo na limitu: prohledejte menší složku.
+	Copy only fonts you own or are licensed to install.	Kopírujte jen písma, která vlastníte nebo máte licenci instalovat.
+	VectorCraft copies the fonts to {folder}.	VectorCraft zkopíruje písma do {folder}.
+	Apply to All ({count} more missing)	Použít na všechny (chybí ještě {count})
+	Ignore	Ignorovat
+	Linked File Not Found	Propojený soubor nebyl nalezen
+	Replace it with another file, or ignore it: its images keep showing the preview saved with the document.	Nahraďte jej jiným souborem, nebo jej ignorujte: jeho obrázky dál zobrazují náhled uložený s dokumentem.
+	Replace…	Nahradit…
+	Update Modified Links	Aktualizovat upravená propojení
+	{count} linked image(s) changed since this document was saved. Show the new versions?	Počet propojených obrázků změněných od uložení dokumentu: {count}. Zobrazit nové verze?
+	Dialog	Dialogové okno
+	Convert Process to Global	Převést procesní na globální
+	Create From:	Vytvořit z:
+	Include Swatches for Tints	Zahrnout položky vzorníku pro tóny
+	Selected Artwork	Vybraná kresba
+	Selected Swatches	Vybrané položky vzorníku
+	Advanced Options	Rozšířené možnosti
+	Background Contents	Obsah pozadí
+	Background Contents:	Obsah pozadí:
+	BLANK DOCUMENT PRESETS	PŘEDNASTAVENÍ PRÁZDNÝCH DOKUMENTŮ
+	Bleed	Spadávka
+	Change to Right-to-Left Layout	Změnit na rozvržení zprava doleva
+	Columns:	Sloupce:
+	Create Document	Vytvořit dokument
+	Documents you create appear here.	Zde se zobrazí dokumenty, které vytvoříte.
+	More Settings	Další nastavení
+	New from Template	Nový ze šablony
+	Number of Artboards:	Počet pracovních ploch:
+	Orientation:	Orientace:
+	PRESET DETAILS	PODROBNOSTI PŘEDNASTAVENÍ
+	Preset Name	Název přednastavení
+	Preset {}	Přednastavení {}
+	Presets you save with the Save Preset button appear here.	Zde se zobrazí přednastavení uložená tlačítkem Uložit přednastavení.
+	Preview Mode	Režim náhledu
+	RECENT	NEDÁVNÉ
+	SAVED	ULOŽENÉ
+	Templates…	Šablony…
+	Transparent (Default)	Průhledné (výchozí)
+	Save for Office Documents	Uložit pro kancelářské dokumenty
+	Transparent Background	Průhledné pozadí
+	Choose…	Vybrat…
+	Copy Fonts Used in the Document	Kopírovat písma použitá v dokumentu
+	Copy Links	Kopírovat propojené soubory
+	Create Report	Vytvořit zprávu
+	Fonts whose licence doesn't allow embedding are not copied.	Písma, jejichž licence nepovoluje vkládání, se nekopírují.
+	Package collects a saved document with its linked files and fonts.	Sbalení shromáždí uložený dokument s jeho propojenými soubory a písmy.
+	Package created	Balíček vytvořen
+	Packaged {n} file(s) in {folder}{note}	Zabaleno souborů: {n} do {folder}{note}
+	Packaged {n} file(s){note}	Zabaleno souborů: {n}{note}
+	Relink Linked Files to the Document	Znovu propojit propojené soubory s dokumentem
+	Save the document first?	Nejprve uložit dokument?
+	{count} file(s) in {folder}{note}. Show the package folder?	Souborů: {count} v {folder}{note}. Zobrazit složku balíčku?
+	{count} linked file(s) not found	Nenalezeno propojených souborů: {count}
+	fonts not copied: {fonts}	nezkopírovaná písma: {fonts}
+	Built-in presets are read-only: New… starts an editable copy.	Vestavěná přednastavení jsou jen pro čtení: Nový… vytvoří kopii, kterou lze upravit.
+	1 {unit} on the artboard stands for {real} {unit} in the scene.	1 {unit} na pracovní ploše odpovídá {real} {unit} ve scéně.
+	Grid Color & Opacity	Barva a krytí mřížky
+	Gridline every:	Čára mřížky každých:
+	Horizon Height:	Výška horizontu:
+	Horizontal Grid:	Vodorovná mřížka:
+	Left Grid:	Levá mřížka:
+	Perspective Grid Settings	Nastavení perspektivní mřížky
+	Real World:	Skutečný svět:
+	Right Grid:	Pravá mřížka:
+	Save Grid as Preset	Uložit mřížku jako přednastavení
+	Save these settings as a preset	Uložit toto nastavení jako přednastavení
+	Third Vanishing Point:	Třetí úběžník:
+	Viewing Angle:	Úhel pohledu:
+	Viewing Distance:	Vzdálenost pohledu:
+	Show Active Plane Widget	Zobrazit ovladač aktivní roviny
+	Widget Position:	Poloha ovladače:
+	Copy All Objects	Kopírovat všechny objekty
+	Do Not Move	Nepřesouvat
+	Horizontal Plane	Vodorovná rovina
+	Left Plane	Levá rovina
+	Move All Objects	Přesunout všechny objekty
+	Right Plane	Pravá rovina
+	Built-in presets don't change: New… starts an editable copy.	Vestavěná přednastavení se nemění: Nový… vytvoří kopii, kterou lze upravit.
+	One Point	Jednobodová
+	Perspective grid presets	Přednastavení perspektivní mřížky
+	Three Point	Tříbodová
+	Two Point	Dvoubodová
+	User Preset	Uživatelské přednastavení
+	Click to place each file at 100%, or drag to size it; arrow keys switch files, Esc skips one.	Kliknutím umístíte každý soubor ve 100 %, tažením nastavíte jeho velikost; šipky přepínají soubory, Esc jeden přeskočí.
+	Keep a link to an image file instead of only embedding it	Ponechat propojení na soubor obrázku, ne jen ho vložit
+	Place onto a new locked, dimmed template layer below the current layer	Umístit do nové zamčené, ztlumené vrstvy šablony pod aktuální vrstvou
+	Swap the selected object for the file, keeping its place and transform	Nahradit vybraný objekt souborem se zachováním jeho polohy a transformace
+	On: one locked object showing the document, updated when it changes.	Zapnuto: jeden zamčený objekt zobrazující dokument, aktualizovaný při jeho změně.
+	Off: an editable copy of its art, embedded in this document.	Vypnuto: upravitelná kopie jeho kresby vložená do tohoto dokumentu.
+	Images: link to the file instead of only embedding it.	Obrázky: propojit se souborem místo pouhého vložení.
+	VectorCraft documents: one locked object, updated when the file changes.	Dokumenty VectorCraft: jeden zamčený objekt, aktualizovaný při změně souboru.
+	Alignment:	Zarovnání:
+	Applies when the linked file is relinked or updated.	Platí při opětovném propojení nebo aktualizaci propojeného souboru.
+	Bounds (Fill Proportionally)	Hranice (vyplnit proporcionálně)
+	Bounds (Fit Proportionally)	Hranice (přizpůsobit proporcionálně)
+	File Dimensions	Rozměry souboru
+	Transforms	Transformace
+	Background Color:	Barva pozadí:
+	Client-side (.html)	Na straně klienta (.html)
+	Color Reduction:	Redukce barev:
+	Lossless (lossy WebP isn't available yet)	Bezeztrátový (ztrátový WebP zatím není k dispozici)
+	Scans:	Průchody:
+	Server-side (.map)	Na straně serveru (.map)
+	{format} Options	Možnosti {format}
+	0.2 (quality) to 100 (speed)	0,2 (kvalita) až 100 (rychlost)
+	All the art	Veškerá kresba
+	Artboard {number}	Pracovní plocha {number}
+	Auto-Rotate (turn the paper to each artboard)	Automaticky otočit (natočit papír ke každé pracovní ploše)
+	Automatic flatness	Automatická plochost
+	Can't print these settings: see the Summary	S tímto nastavením nelze tisknout: viz Souhrn
+	CMYK colours print with their own values; off, they go through the colour settings too.	Barvy CMYK se tisknou s vlastními hodnotami; při vypnutí projdou také nastavením barev.
+	Collate	Kompletovat
+	Composite colours are converted to it; separations separate with it when it is a CMYK profile.	Kompozitní barvy se na něj převádějí; separace podle něj separují, pokud je to profil CMYK.
+	Convert All Spot Colors to Process	Převést všechny přímé barvy na procesní
+	Default Printer	Výchozí tiskárna
+	Document Ink Options	Možnosti inkoustů dokumentu
+	Download:	Stahování:
+	Drag the art to move it on the paper	Přetažením přesunete kresbu na papíře
+	Each page prints as one image, at the document's raster effects resolution.	Každá stránka se tiskne jako jeden obraz v rozlišení rastrových efektů dokumentu.
+	Edit Print Preset	Upravit přednastavení tisku
+	Emulsion:	Emulze:
+	Every option is at its default.	Všechny možnosti mají výchozí hodnotu.
+	Flatness:	Plochost:
+	Frequencies and angles are the output device's to apply.	Frekvence a úhly použije výstupní zařízení.
+	General › Placement › X	Obecné › Umístění › X
+	How colours outside the press's gamut are separated.	Jak se separují barvy mimo gamut tiskového stroje.
+	Ignore Artboards (all the art as one page)	Ignorovat pracovní plochy (veškerá kresba jako jedna stránka)
+	Image:	Obraz:
+	Marks and Bleed	Značky a spadávka
+	Media	Médium
+	New Print Preset	Nové přednastavení tisku
+	Next page	Další stránka
+	No printer settings to open here	Zde nelze otevřít žádné nastavení tiskárny
+	None (keep transparency)	Žádné (zachovat průhlednost)
+	Nothing to print	Není co tisknout
+	Open a document to preview its pages	Otevřete dokument, abyste viděli náhled jeho stránek
+	Output › Mode	Výstup › Režim
+	Overprint and Transparency Flattener Options	Možnosti přetisku a sloučení průhlednosti
+	Place the pages with the placement again	Znovu rozmístit stránky podle umístění
+	Placement:	Umístění:
+	Preserve CMYK Numbers	Zachovat hodnoty CMYK
+	Previous page	Předchozí stránka
+	Print Layers:	Tisknout vrstvy:
+	Print Preset:	Přednastavení tisku:
+	Printer	Tiskárna
+	Printer profile:	Profil tiskárny:
+	Printer:	Tiskárna:
+	Rendering intent:	Záměr vykreslení:
+	Same As Source	Stejné jako zdroj
+	Save these settings as a print preset	Uložit toto nastavení jako přednastavení tisku
+	Scaling:	Měřítko:
+	Separations list the document's inks here: one page per ink that prints.	Zde jsou uvedeny inkousty dokumentu pro separace: jedna stránka na každý tištěný inkoust.
+	Setup…	Nastavení…
+	Skip Blank Artboards	Přeskočit prázdné pracovní plochy
+	The edge of the paper the printer can't reach: the art goes inside it, and the preview shows it dashed.	Okraj papíru, kam tiskárna nedosáhne: kresba se umístí dovnitř a náhled jej ukazuje čárkovaně.
+	The page as it prints	Stránka tak, jak se vytiskne
+	The Print Tiling tool placed the pages.	Stránky rozmístil nástroj Dlaždice tisku.
+	The system's settings of this printer	Systémové nastavení této tiskárny
+	Tile Full Pages	Dlaždice z celých stránek
+	Tile Range:	Rozsah dlaždic:
+	tile {number}	dlaždice {number}
+	Tiles are numbered across, then down; leave the range empty for every tile.	Dlaždice se číslují po řádcích, pak dolů; prázdný rozsah znamená všechny dlaždice.
+	Transverse (the page a quarter turn on the paper)	Napříč (stránka otočená na papíře o čtvrt otáčky)
+	Unprintable margin:	Netisknutelný okraj:
+	{pages} in all, {count} per copy	celkem {pages}, na kopii {count}
+	{page} of {count}	{page} z {count}
+	PDF File	Soubor PDF
+	[Default] is protected: New… starts an editable copy.	[Default] je chráněno: Nový… vytvoří kopii, kterou lze upravit.
+	A new preset starting from the selected one	Nové přednastavení vycházející z vybraného
+	Differences from {preset}:	Rozdíly oproti {preset}:
+	Edit…	Upravit…
+	None.	Žádné.
+	Presets:	Přednastavení:
+	Save the selected preset to a file	Uložit vybrané přednastavení do souboru
+	Embed ICC Profile	Vložit profil ICC
+	Flat Image	Sloučený obraz
+	Include Hidden Layers	Zahrnout skryté vrstvy
+	Maximum Editability	Maximální upravitelnost
+	Options:	Možnosti:
+	Write Layers	Zapsat vrstvy
+	Anti-alias	Vyhlazování
+	Around Object	Kolem objektu
+	Background:	Pozadí:
+	Changing these settings changes how raster effects look when exported, flattened or expanded.	Změna těchto nastavení mění vzhled rastrových efektů při exportu, sloučení nebo rozložení.
+	Color Model:	Barevný model:
+	Create Clipping Mask	Vytvořit ořezovou masku
+	Preserve Spot Colors	Zachovat přímé barvy
+	Resolution:	Rozlišení:
+	Transparent	Průhledné
+	Layout Order:	Pořadí rozvržení:
+	Change to Left-to-Right Layout	Změnit na rozvržení zleva doprava
+	Artboards: {n}	Pracovní plochy: {n}
+	Rows:	Řádky:
+	Assign	Přiřadit
+	Color Group:	Skupina barev:
+	Color Library	Knihovna barev
+	Colors:	Barvy:
+	Current Colors ({total})	Aktuální barvy ({total})
+	Harmony Rules:	Pravidla harmonie:
+	Keep this row's colors (exclude)	Ponechat barvy tohoto řádku (vyloučit)
+	Limit to Library:	Omezit na knihovnu:
+	Link harmony colors	Propojit barvy harmonie
+	Merge colors into one row	Sloučit barvy do jednoho řádku
+	No colors to recolor (preserved colors are left out).	Žádné barvy k přebarvení (zachované barvy jsou vynechány).
+	Preserve:	Zachovat:
+	Randomly change color order	Náhodně změnit pořadí barev
+	Randomly change saturation and brightness	Náhodně změnit sytost a jas
+	Recolor this row	Přebarvit tento řádek
+	Reset the rows to the artwork's colors	Obnovit řádky na barvy kresby
+	Separate colors into rows	Rozdělit barvy do řádků
+	Unlink harmony colors	Zrušit propojení barev harmonie
+	1 Color Job	Zakázka s 1 barvou
+	2 Color Job	Zakázka se 2 barvami
+	3 Color Job	Zakázka se 3 barvami
+	Recover Documents	Obnovit dokumenty
+	Restored documents open unsaved: save them to keep them.	Obnovené dokumenty se otevřou neuložené: pokud je chcete zachovat, uložte je.
+	VectorCraft didn't quit normally last time. These documents had unsaved changes:	VectorCraft se minule neukončil normálně. Tyto dokumenty měly neuložené změny:
+	Do you want to save the changes you made to “{name}”?	Chcete uložit změny provedené v dokumentu „{name}“?
+	Don't Save	Neukládat
+	Your changes will be lost if you don't save them.	Pokud změny neuložíte, budou ztraceny.
+	< 1 sec	< 1 s
+	[Unnamed]	[Bez názvu]
+	Amount:	Míra:
+	Anti-aliasing:	Vyhlazování:
+	Artboard:	Pracovní plocha:
+	Color Table	Tabulka barev
+	Color Table ({n} color)	Tabulka barev ({n} barva)
+	Color Table ({n} colors)	Tabulka barev (barvy: {n})
+	Convert to sRGB	Převést na sRGB
+	Delete this saved preset	Odstranit toto uložené přednastavení
+	Dither:	Rozptýlení:
+	Downloaded {} file(s)	Staženo souborů: {}
+	Fit in View	Přizpůsobit zobrazení
+	Format:	Formát:
+	High	Vysoká
+	ICC Profile	Profil ICC
+	Image Size	Velikost obrazu
+	Interlaced	Prokládaný
+	Lossy:	Ztrátovost:
+	Low	Nízká
+	Matte:	Podklad:
+	Maximum	Maximální
+	Metadata:	Metadata:
+	Needs the desktop app	Vyžaduje desktopovou aplikaci
+	Optimized	Optimalizovaný
+	Order:	Pořadí:
+	Original	Původní
+	Output:	Výstup:
+	Percent:	Procento:
+	Preview in Browser needs the desktop app (the web downloads files instead)	Náhled v prohlížeči vyžaduje desktopovou aplikaci (webová verze místo toho stahuje soubory)
+	Progressive	Progresivní
+	Quality {quality}	Kvalita {quality}
+	Quality:	Kvalita:
+	Reduction:	Redukce:
+	Save the settings as a preset	Uložit nastavení jako přednastavení
+	Saved {n} files beside {path}	Uloženo souborů: {n} vedle {path}
+	Shown with the optimised preview.	Zobrazeno s optimalizovaným náhledem.
+	Slices:	Řezy:
+	Unlock	Odemknout
+	Unshift	Zrušit posun
+	Very High	Velmi vysoká
+	Web Shift	Posun k webové barvě
+	Web Snap:	Přichytávání k webovým barvám:
+	{secs} sec	{secs} s
+	Create PDF-Compatible File	Vytvořit soubor kompatibilní s PDF
+	Embed ICC Profiles	Vložit profily ICC
+	File Name:	Název souboru:
+	Save As	Uložit jako
+	Save as Template	Uložit jako šablonu
+	Save each artboard to a separate file	Uložit každou pracovní plochu do samostatného souboru
+	All printer's marks	Všechny tiskové značky
+	Bleeds	Spadávky
+	Bottom:	Dole:
+	Changes allowed:	Povolené změny:
+	Color bars	Kalibrační pruhy
+	Color conversion:	Převod barev:
+	Color images	Barevné obrazy
+	Compatibility:	Kompatibilita:
+	Compress text and line art	Komprimovat text a perokresbu
+	Compression	Komprese
+	Compression › Color › Above Ppi	Komprese › Barevné › Nad ppi
+	Compression:	Komprese:
+	Condition identifier:	Identifikátor podmínky:
+	Convert text to outlines	Převést text na křivky
+	Create PDF layers from layers and sublayers	Vytvořit vrstvy PDF z vrstev a podvrstev
+	Description	Popis
+	Destination:	Cíl:
+	Document open password	Heslo pro otevření dokumentu
+	Document profile	Profil dokumentu
+	Edit PDF Preset	Upravit přednastavení PDF
+	Embed page thumbnails	Vložit miniatury stránek
+	Enable copying of text, images and other content	Povolit kopírování textu, obrázků a dalšího obsahu
+	Enable plaintext metadata	Povolit nešifrovaná metadata
+	Enable text access for screen readers	Povolit přístup k textu pro čtečky obrazovky
+	Encryption: {name} (set by Compatibility)	Šifrování: {name} (určeno kompatibilitou)
+	Error	Chyba
+	Every option matches {base}.	Všechny možnosti odpovídají: {base}.
+	Files of a PDF standard can't be password-protected.	Soubory podle standardu PDF nelze chránit heslem.
+	Files of this standard tag their colours with ICC profiles.	Soubory tohoto standardu označují své barvy profily ICC.
+	Flattener preset:	Přednastavení sloučení:
+	General › Thumbnails	Obecné › Miniatury
+	Grayscale images	Obrazy ve stupních šedi
+	Include non-printing layers	Zahrnout netisknutelné vrstvy
+	Left:	Vlevo:
+	Mark as trapped	Označit jako s přesahy barev
+	Marks and Bleeds	Značky a spadávky
+	Monochrome images	Jednobarevné obrazy
+	New PDF Preset	Nové přednastavení PDF
+	of characters used	použitých znaků
+	Offset:	Posun:
+	On	Zapnuto
+	Open password:	Heslo pro otevření:
+	Optimize for fast web view	Optimalizovat pro rychlé zobrazení na webu
+	Output condition:	Výstupní podmínka:
+	Output Intent	Výstupní záměr
+	Output intent profile:	Profil výstupního záměru:
+	Overprint and Transparency Flattener	Přetisk a sloučení průhlednosti
+	Overprint:	Přetisk:
+	Page information	Informace o stránce
+	PDF 1.3 files have no transparency: the preset flattens it.	Soubory PDF 1.3 nemají průhlednost: přednastavení ji sloučí.
+	PDF/A files carry their own output intent.	Soubory PDF/A nesou vlastní výstupní záměr.
+	PDF/X-1a files are CMYK: every colour is converted to the destination (blank: the output intent's CMYK profile), untagged.	Soubory PDF/X-1a jsou v CMYK: každá barva se převede do cíle (prázdný: profil CMYK výstupního záměru), bez označení.
+	Permissions	Oprávnění
+	Permissions password:	Heslo oprávnění:
+	Preserve editing capabilities	Zachovat možnosti úprav
+	Preset name:	Název přednastavení:
+	Printer mark type:	Typ tiskových značek:
+	Printing allowed:	Povolený tisk:
+	Profile inclusion:	Zahrnutí profilu:
+	Range:	Rozsah:
+	Registration marks	Registrační značky
+	Registry name:	Název registru:
+	Require a password to open the document	Vyžadovat heslo pro otevření dokumentu
+	Restrict printing, editing and other tasks	Omezit tisk, úpravy a další činnosti
+	Right:	Vpravo:
+	Save as preset:	Uložit jako přednastavení:
+	Save PDF	Uložit PDF
+	Security	Zabezpečení
+	Standard:	Standard:
+	Subset fonts below:	Podmnožina písem pod:
+	the preset	přednastavení
+	Top:	Nahoře:
+	Trim mark weight:	Tloušťka ořezových značek:
+	Trim marks	Ořezové značky
+	Use document bleed settings	Použít nastavení spadávky dokumentu
+	View PDF after saving	Po uložení zobrazit PDF
+	Warnings	Upozornění
+	CMYK profile in effect	Platný profil CMYK
+	Save Graphic Style Library	Uložit knihovnu grafických stylů
+	Selected Styles Only	Pouze vybrané styly
+	A File…	Soubor…
+	GPL palettes keep solid colours only, as RGB.	Palety GPL uchovávají pouze plné barvy, a to jako RGB.
+	Save Swatch Library	Uložit knihovnu vzorníku
+	Save To:	Uložit do:
+	Saved to User Defined: {}	Uloženo do uživatelských knihoven: {}
+	Selected Swatches Only	Pouze vybrané položky vzorníku
+	User Defined Libraries	Uživatelské knihovny
+	Line Segment Tool Options	Možnosti nástroje Úsečka
+	Alt:	Alt:
+	Divide Horizontally Into	Rozdělit vodorovně na
+	Divide Vertically Into	Rozdělit svisle na
+	Matte	Podklad
+	Message:	Zpráva:
+	N slices …, evenly spaced	N řezů …, rovnoměrně rozmístěných
+	per slice	na řez
+	Slice Type:	Typ řezu:
+	slices across, evenly spaced	řezů vedle sebe, rovnoměrně rozmístěných
+	slices down, evenly spaced	řezů pod sebou, rovnoměrně rozmístěných
+	Target:	Cíl:
+	Text Displayed in Cell:	Text zobrazený v buňce:
+	The cell shows the type object's text as HTML.	Buňka zobrazuje text textového objektu jako HTML.
+	Lab Spot Colors:	Přímé barvy Lab:
+	Lab Values	Hodnoty Lab
+	Show and print from the Lab definition; PDF files carry it as the ink's alternate color.	Zobrazovat a tisknout podle definice Lab; soubory PDF ji nesou jako alternativní barvu inkoustu.
+	Show and separate through the working CMYK space, as in older documents.	Zobrazovat a separovat přes pracovní prostor CMYK jako ve starších dokumentech.
+	CMYK Equivalents	Ekvivalenty CMYK
+	Convert To Outlines	Převést na křivky
+	Decimal:	Desetinná místa:
+	Embed Fonts (Glyphs Used)	Vložit písma (použité glyfy)
+	Fewer <tspan> Elements	Méně prvků <tspan>
+	Font:	Písmo:
+	Hide Code	Skrýt kód
+	Images:	Obrázky:
+	Include Metadata	Zahrnout metadata
+	Internal CSS	Interní CSS
+	Layer Names	Názvy vrstev
+	Minify	Minimalizovat
+	Minimal	Minimální
+	Object IDs:	ID objektů:
+	Presentation Attributes	Prezentační atributy
+	Preserve Editing Capabilities	Zachovat možnosti úprav
+	Responsive	Responzivní
+	Show Code	Zobrazit kód
+	Style Attributes	Atributy stylu
+	Style Attributes (Entity References)	Atributy stylu (odkazy na entity)
+	Styling:	Stylování:
+	SVG Profile:	Profil SVG:
+	Unicode (UTF-16)	Unicode (UTF-16)
+	Unicode (UTF-8)	Unicode (UTF-8)
+	Unique	Jedinečné
+	Conflict {n} of {count}	Konflikt {n} z {count}
+	Keep the pasted color as a new swatch with a numbered name.	Ponechat vloženou barvu jako novou položku vzorníku s očíslovaným názvem.
+	Pasted	Vložená
+	This document already has a swatch named “{name}” with another color.	Tento dokument už má položku vzorníku s názvem „{name}“ a jinou barvou.
+	Use the document's swatch: pasted colors take its color.	Použít položku vzorníku dokumentu: vložené barvy převezmou její barvu.
+	Color Type:	Typ barvy:
+	Swatch Name:	Název položky vzorníku:
+	Diameter:	Průměr:
+	Symbolism Tools Options	Možnosti nástrojů symbolů
+	Symbol Set Density:	Hustota sady symbolů:
+	Intensity:	Intenzita:
+	Place PDF	Umístit PDF
+	Collect Links in a Separate Folder	Shromáždit propojené soubory do samostatné složky
+	Folder Name:	Název složky:
+	Color Management	Správa barev
+	Summary	Souhrn
+	Download	Stáhnout
+	Export Artboard	Exportovat pracovní plochu
+	Encoding:	Kódování:
+	Line Endings:	Konce řádků:
+	Text Export Options	Možnosti exportu textu
+	Character Set:	Znaková sada:
+	Join the lines of each paragraph	Spojit řádky každého odstavce
+	Line Breaks	Zalomení řádků
+	Mac	Mac
+	or more spaces with a tab	nebo více mezer tabulátorem
+	Platform:	Platforma:
+	Remove blank lines between paragraphs	Odstranit prázdné řádky mezi odstavci
+	Spaces	Mezery
+	Text Import Options	Možnosti importu textu
+	Unicode	Unicode
+	Byte Order:	Pořadí bajtů:
+	Compress (RLE)	Komprimovat (RLE)
+	Depth:	Hloubka:
+	File Format:	Formát souboru:
+	Flip Row Order	Obrátit pořadí řádků
+	LZW Compression	Komprese LZW
+	Copy (make a transformed copy)	Kopírovat (vytvořit transformovanou kopii)
+	Reference Point	Referenční bod
+	Reflect X	Zrcadlit X
+	Reflect Y	Zrcadlit Y
+	Kind	Druh
+	Variable	Proměnná
+	no data set to edit	žádná sada dat k úpravě
+	New Name	Nový název
+	no variable to rename	žádná proměnná k přejmenování
+	no data set to rename	žádná sada dat k přejmenování
+	Variable Options	Možnosti proměnné
+	Define a variable first	Nejprve definujte proměnnou
+	Adjust Adjoining Width Points	Upravit sousední body šířky
+	Keep both sides the same width	Zachovat stejnou šířku obou stran
+	Side 1:	Strana 1:
+	Side 2:	Strana 2:
+	Total Width:	Celková šířka:
+	Width Point Edit	Úprava bodu šířky
+
+# Command labels and other interface strings
+	Art	Obrazový
+	Bristle	Štětinový
+	Calligraphic	Kaligrafický
+	Dots	Body
+	Fixed	Pevný
+	Pressure	Tlak
+	Random	Náhodný
+	Scatter	Rozptylový
+	Color Burn	Ztmavit barvy
+	Color Dodge	Zesvětlit barvy
+	Darken	Ztmavit
+	Exclusion	Vyloučit
+	Hard Light	Tvrdé světlo
+	Lighten	Zesvětlit
+	Luminosity	Světlost
+	Overlay	Překrýt
+	Soft Light	Měkké světlo
+	Crosshatch	Křížové šrafování
+	Fine Dots	Jemné tečky
+	Medium Dots	Střední tečky
+	Grainy Dots	Zrnité tečky
+	Coarse Dots	Hrubé tečky
+	Short Lines	Krátké čáry
+	Medium Lines	Střední čáry
+	Long Lines	Dlouhé čáry
+	Short Strokes	Krátké tahy
+	Medium Strokes	Střední tahy
+	Long Strokes	Dlouhé tahy
+	Soft	Měkké
+	Screen	Závoj
+axis	Horizontal	Vodorovná
+axis	Vertical	Svislá
+	Sprinkles	Posypání
+	Clumped	Shluky
+	Contrasty	Kontrastní
+	Enlarged	Zvětšené
+	Stippled	Tečkované
+	Speckle	Skvrnité
+	Brick	Cihla
+	Burlap	Pytlovina
+	Canvas	Plátno
+	Sandstone	Pískovec
+	Bottom Left	Vlevo dole
+	Top Left	Vlevo nahoře
+	Top Right	Vpravo nahoře
+	Bottom Right	Vpravo dole
+effect	Soft	Měkký
+	Blocks	Bloky
+	Frosted	Matné sklo
+	Tiny Lens	Drobné čočky
+	Right Diagonal	Pravá diagonála
+	Left Diagonal	Levá diagonála
+effect	Horizontal	Vodorovný
+effect	Vertical	Svislý
+	Diamond	Kosočtverec
+	Ellipse	Elipsa
+	Add Effect	Přidat efekt
+	Add New Fill	Přidat novou výplň
+	Add New Stroke	Přidat nový tah
+	Appearance Item	Položka vzhledu
+	Clear Appearance	Vymazat vzhled
+	Duplicate Item	Duplikovat položku
+	Eyedropper	Kapátko
+	Move Appearance	Přesunout vzhled
+	Reduce to Basic Appearance	Zredukovat na základní vzhled
+	Remove Item	Odebrat položku
+	Reorder Appearance Item	Změnit pořadí položky vzhledu
+	Select Appearance Item	Vybrat položku vzhledu
+	Show All Hidden Attributes	Zobrazit všechny skryté atributy
+	Target Contents	Zacílit obsah
+theme	Appearance	Motiv
+	Asset Export Settings	Nastavení exportu prvků
+	Assets	Prvky
+	Export Assets	Exportovat prvky
+	Remove Asset	Odebrat prvek
+	Rename Asset	Přejmenovat prvek
+	Fill Rule	Pravidlo výplně
+	Apply Brush	Použít štětec
+	Break Link to Symbol	Zrušit propojení se symbolem
+	Brush Definition	Definice štětce
+	Brush Options…	Možnosti štětce…
+	Current Brush	Aktuální štětec
+	Current Symbol	Aktuální symbol
+	Delete Brush	Odstranit štětec
+	Delete Symbol	Odstranit symbol
+	Duplicate Brush	Duplikovat štětec
+	Duplicate Symbol	Duplikovat symbol
+	Edit Symbol	Upravit symbol
+	Expand Brush Strokes	Rozložit tahy štětcem
+	New Brush…	Nový štětec…
+	New Symbol	Nový symbol
+	New Symbol…	Nový symbol…
+	Place Symbol Instance	Umístit instanci symbolu
+	Redefine Symbol	Předefinovat symbol
+	Remove Brush Stroke	Odebrat tah štětcem
+	Replace Symbol	Nahradit symbol
+	Select All Instances	Vybrat všechny instance
+	Symbol Sprayer	Rozprašovač symbolů
+	Symbolism Tool	Nástroj symbolů
+	Image Trace Presets	Přednastavení vektorizace obrazu
+	Live Paint Bucket	Kbelík živé malby
+	Live Paint Bucket (Stroke)	Kbelík živé malby (tah)
+	Live Paint Info	Informace o živé malbě
+	Shape Builder	Tvorba tvarů
+	Shape Builder Regions	Oblasti tvorby tvarů
+	Image Trace View	Zobrazení vektorizace obrazu
+	Edge	Okraj
+	Clipboard as PDF	Schránka jako PDF
+	Clipboard as PNG	Schránka jako PNG
+	Clipboard as Text	Schránka jako text
+	Clipboard Formats	Formáty schránky
+	Load Image into Clipboard	Načíst obraz do schránky
+	Load Metafile into Clipboard	Načíst metasoubor do schránky
+	Load PDF into Clipboard	Načíst PDF do schránky
+	Load Text into Clipboard	Načíst text do schránky
+	Clipboard as SVG	Schránka jako SVG
+	Load SVG into Clipboard	Načíst SVG do schránky
+	Swatch Conflicts	Konflikty položek vzorníku
+	Saturate	Upravit sytost
+	Convert Color	Převést barvu
+	Convert Document Color Mode	Převést barevný režim dokumentu
+	Gamut Warning	Upozornění na gamut
+	Load Color Profile…	Načíst barevný profil…
+	Plates	Desky
+	Spot Color	Přímá barva
+	Add to Swatches	Přidat do vzorníku
+	Delete Theme	Odstranit motiv
+	Save Theme	Uložit motiv
+	dash	čárka
+	Missing	Chybí
+	[Normal Paragraph Style]	[Normální styl odstavce]
+	Arc	Oblouk
+	Auto Size New Area Type	Automatická velikost nového textu v oblasti
+	Create Path	Vytvořit cestu
+	Create Text	Vytvořit text
+	Drawing Mode	Režim kreslení
+	Line	Čára
+	Line Segment	Úsečka
+	Polar Grid	Polární mřížka
+	Polygon	Mnohoúhelník
+	Rectangular Grid	Obdélníková mřížka
+	Horizontal Dividers:	Vodorovné dělicí čáry:
+	Vertical Dividers:	Svislé dělicí čáry:
+	Rounded Rectangle	Zaoblený obdélník
+	Spiral	Spirála
+	Export CSS	Exportovat CSS
+	Generate CSS	Generovat CSS
+	Line Cut	Řez čarou
+	Mirror & Cut	Zrcadlit a řezat
+	Rectangle Cut	Řez obdélníkem
+	Active Perspective Plane	Aktivní perspektivní rovina
+	Delete Width Point	Odstranit bod šířky
+	Draw in Perspective	Kreslit v perspektivě
+	Move in Perspective	Přesunout v perspektivě
+	Move Plane	Posunout rovinu
+	Nudge in Perspective	Postrčit v perspektivě
+	Puppet Warp	Loutková deformace
+	Puppet Warp Pins	Špendlíky loutkové deformace
+	Show Perspective Grid	Zobrazit perspektivní mřížku
+	Width Point	Bod šířky
+	Width Profile	Profil šířky
+	Objects	Objekty
+	Paths	Cesty
+	Add Guide	Přidat vodítko
+	Edit Selection	Upravit výběr
+	Recall Selection	Vyvolat výběr
+	Remove Guide	Odebrat vodítko
+	Saved Selections	Uložené výběry
+	Select Guides	Vybrat vodítka
+	Move Guide to Layer	Přesunout vodítko do vrstvy
+	Blob Brush	Štětec skvrn
+	Convert Anchor Point	Převést kotevní bod
+	Curvature	Zakřivení
+	Delete Anchor Point	Odstranit kotevní bod
+	Eraser	Guma
+	Knife	Nůž
+	Path Eraser	Guma na cesty
+	Pencil	Tužka
+	Reshape Segment	Přetvarovat segment
+	Split Path	Rozdělit cestu
+	Activate Document	Aktivovat dokument
+	Delete	Odstranit
+	Document JSON	JSON dokumentu
+	Duplicate	Duplikovat
+	Find Objects	Najít objekty
+	Inspect Document	Prozkoumat dokument
+	Inspect Object	Prozkoumat objekt
+	Begin Undo Group	Zahájit skupinu kroků zpět
+	End Undo Group	Ukončit skupinu kroků zpět
+	Apply Effect	Použít efekt
+	Duplicate Effect	Duplikovat efekt
+	Effect Options	Možnosti efektu
+	Effects	Efekty
+	Move Effect	Přesunout efekt
+	Remove Effect	Odebrat efekt
+	Expand Options	Možnosti rozložení
+	File Info	Informace o souboru
+	Batch	Dávka
+	DXF Info	Informace o DXF
+	Export Document	Exportovat dokument
+	Export DXF	Exportovat DXF
+	Export EPS	Exportovat EPS
+	Export for Screens	Exportovat pro obrazovky
+	Export for Screens Settings	Nastavení exportu pro obrazovky
+	Export PDF	Exportovat PDF
+	File Formats	Formáty souborů
+	Flattener presets	Přednastavení sloučení
+	Format Options	Možnosti formátu
+	Layer	Vrstva
+	Link	Propojení
+	Model	Model
+	Open Document	Otevřít dokument
+	Password	Heslo
+	PDF Info	Informace o PDF
+	PDF Settings	Nastavení PDF
+	Print presets	Přednastavení tisku
+	Save Document	Uložit dokument
+	Serialize Document	Serializovat dokument
+	Shapes	Tvary
+	Outlines	Obrysy
+	Artboard	Pracovní plocha
+	Windows	Windows
+	Delete Transparency Flattener Preset	Odstranit přednastavení sloučení průhlednosti
+	Export Transparency Flattener Presets	Exportovat přednastavení sloučení průhlednosti
+	Import Transparency Flattener Presets	Importovat přednastavení sloučení průhlednosti
+	Save Transparency Flattener Preset	Uložit přednastavení sloučení průhlednosti
+	Transparency Flattener Presets	Přednastavení sloučení průhlednosti
+	to	na
+	Missing Fonts	Chybějící písma
+	Find Font Files	Najít soubory písem
+	Add Font Files	Přidat soubory písem
+	Font List	Seznam písem
+	Fonts in Document	Písma v dokumentu
+	Refresh Font List	Obnovit seznam písem
+	Replace Font	Nahradit písmo
+	Select Text by Font	Vybrat text podle písma
+	Add Freeform Line	Přidat volnou čáru
+	Add Freeform Point	Přidat volný bod
+	Delete Freeform Point	Odstranit volný bod
+	Edit Freeform Point	Upravit volný bod
+	Freeform Gradient	Volný přechod
+	Select Freeform Point	Vybrat volný bod
+	Split Freeform Line	Rozdělit volnou čáru
+	Gradient Vector	Vektor přechodu
+	Select Gradient Stop	Vybrat zarážku přechodu
+	Create Graph	Vytvořit graf
+	Graph Data	Data grafu
+	Graph Type	Typ grafu
+	Vector Halftone	Vektorový polotón
+	spot	přímá
+	Text	Text
+	Artboard Options	Možnosti pracovní plochy
+	Artboard Options…	Možnosti pracovní plochy…
+	Collect in New Layer	Shromáždit do nové vrstvy
+	Delete Artboard	Odstranit pracovní plochu
+	Delete Selection	Odstranit výběr
+	Duplicate Selection	Duplikovat výběr
+	Highlight Rows	Zvýrazňovat řádky
+	Layer Options	Možnosti vrstvy
+	Layer Options…	Možnosti vrstvy…
+	Make/Release Clipping Mask	Vytvořit/uvolnit ořezovou masku
+	Move Rows	Přesunout řádky
+	New Artboard	Nová pracovní plocha
+	New Layer…	Nová vrstva…
+	New Sublayer…	Nová podvrstva…
+	Paste Remembers Layers	Vložení si pamatuje vrstvy
+	Reorder	Změnit pořadí
+	Select Art	Vybrat kresbu
+	Set Current Layer	Nastavit aktuální vrstvu
+	Flatten Artwork	Sloučit kresbu
+	Locate Object	Najít objekt
+	Lock Others	Zamknout ostatní
+	Merge Selected	Sloučit vybrané
+	Outline Others	Ostatní jako obrysy
+	Preview All Layers	Náhled všech vrstev
+	Release to Layers (Build)	Uvolnit do vrstev (nárůst)
+	Release to Layers (Sequence)	Uvolnit do vrstev (sekvence)
+	Reverse Order	Obrátit pořadí
+	Show All Layers	Zobrazit všechny vrstvy
+	Unlock All Layers	Odemknout všechny vrstvy
+	English: USA	Angličtina: USA
+	Move	Přesunout
+	Character Style	Styl znaků
+	Paragraph Style	Styl odstavce
+	Style	Styl
+	Create New Library	Vytvořit novou knihovnu
+	Add to Library	Přidat do knihovny
+	Delete Library	Odstranit knihovnu
+	Delete Library Item	Odstranit položku knihovny
+	Import Library	Importovat knihovnu
+	Export Library	Exportovat knihovnu
+	New Library Group	Nová skupina knihovny
+	Rename Library Group	Přejmenovat skupinu knihovny
+	Delete Library Group	Odstranit skupinu knihovny
+	Move Library Item to Group	Přesunout položku knihovny do skupiny
+	Rename Library	Přejmenovat knihovnu
+	Show Library	Zobrazit knihovnu
+	Use Library Item	Použít položku knihovny
+	Graphic	Grafika
+	Check Links	Zkontrolovat propojení
+	Embed Image	Vložit obrázek
+	Go To Link	Přejít na propojení
+	Link Info	Informace o propojení
+	Placement Options	Možnosti umístění
+	Relink	Znovu propojit
+	Unembed	Zrušit vložení
+	Add Mesh Line	Přidat čáru sítě
+	Add Spine Point	Přidat bod páteře
+	Blend Info	Informace o prolnutí
+	Blend Options	Možnosti prolnutí
+	Delete Mesh Point	Odstranit bod sítě
+	Delete Spine Point	Odstranit bod páteře
+	Envelope Info	Informace o obálce
+	Envelope Options	Možnosti obálky
+	Expand Gradient Mesh	Rozložit přechodovou síť
+	Make Envelope	Vytvořit obálku
+	Move Envelope Mesh Point	Přesunout bod sítě obálky
+	Move Mesh Point	Přesunout bod sítě
+	Move Spine Point	Přesunout bod páteře
+	Reshape Spine Segment	Přetvarovat segment páteře
+	Reset with Mesh	Obnovit sítí
+	Reset with Warp	Obnovit pokřivením
+	Set Mesh Point Color	Nastavit barvu bodu sítě
+	Edit Opacity Mask	Upravit masku krytí
+	Opacity Mask	Maska krytí
+	Stop Editing Opacity Mask	Ukončit úpravy masky krytí
+	View Opacity Mask	Zobrazit masku krytí
+	New Opacity Masks Are Clipping	Nové masky krytí ořezávají
+	New Opacity Masks Are Inverted	Nové masky krytí jsou invertované
+	Rasterize	Rastrovat
+	Transform Each	Transformovat jednotlivě
+	New Art Appearance	Vzhled nové kresby
+	New Art Has Basic Appearance	Nová kresba má základní vzhled
+	Delete Preset	Odstranit přednastavení
+	High (300 ppi)	Vysoké (300 ppi)
+	Medium (150 ppi)	Střední (150 ppi)
+	New Document Presets	Přednastavení nového dokumentu
+	Phone 390×844	Telefon 390×844
+	Postcard	Pohlednice
+	Grid by Row	Mřížka po řádcích
+	Grid by Column	Mřížka po sloupcích
+	Arrange by Row	Uspořádat po řádcích
+	Arrange by Column	Uspořádat po sloupcích
+	Save Preset	Uložit přednastavení
+	Screen (72 ppi)	Obrazovka (72 ppi)
+	Social Square Post 1080×1080	Čtvercový příspěvek pro sociální sítě 1080×1080
+	Distribute	Rozmístit
+	Distribute Spacing	Rozmístit mezery
+	Enter Isolation Mode	Přejít do izolovaného režimu
+	Live Shape Properties	Vlastnosti živého tvaru
+	Nudge	Postrčit
+	Object Properties	Vlastnosti objektu
+	Reflect	Zrcadlit
+	Rotate	Otočit
+	Set Bounds	Nastavit hranice
+	Shear	Zkosit
+	Disable Opacity Mask	Vypnout masku krytí
+	Enable Opacity Mask	Zapnout masku krytí
+	Link Opacity Mask	Propojit masku krytí
+	Make Opacity Mask	Vytvořit masku krytí
+	Opacity Mask Info	Informace o masce krytí
+	Opacity Mask Options	Možnosti masky krytí
+	Page Isolated Blending	Izolované míchání stránky
+	Page Knockout Group	Vykrajovací skupina stránky
+	Release Opacity Mask	Uvolnit masku krytí
+	Transparency Info	Informace o průhlednosti
+	Unlink Opacity Mask	Zrušit propojení masky krytí
+	Overprint	Přetisk
+	Package	Balíček
+	Apply Last Color	Použít poslední barvu
+	Apply Last Gradient	Použít poslední přechod
+	Complement	Doplněk
+	Default Fill and Stroke	Výchozí výplň a tah
+	Fill	Výplň
+	Fill and Stroke	Výplň a tah
+	Invert	Invertovat
+	Recent Colors	Nedávné barvy
+	Swap Fill and Stroke	Prohodit výplň a tah
+	Toggle Fill/Stroke Focus	Přepnout aktivní výplň/tah
+	Character / Paragraph	Znak / Odstavec
+	Copy Artboard	Kopírovat pracovní plochu
+	Cut Artboard	Vyjmout pracovní plochu
+	Move Artboard Up/Down	Posunout pracovní plochu nahoru/dolů
+	Add Anchor (Pen)	Přidat kotevní bod (pero)
+	Add Anchor Point	Přidat kotevní bod
+	Average	Zprůměrovat
+	Close Path	Uzavřít cestu
+	Convert Anchor Points	Převést kotevní body
+	Cut Path	Rozdělit cestu
+	Delete Anchor Points	Odstranit kotevní body
+	Move Anchors	Přesunout kotevní body
+	Move Direction Handle	Přesunout směrový úchyt
+	Reshape	Přetvarovat
+	Set Anchors	Nastavit kotevní body
+	Minus Front	Odečíst přední
+	Offset Path	Odsadit cestu
+	Simplify	Zjednodušit
+	Split Into Grid	Rozdělit do mřížky
+	Unite	Sjednotit
+	Delete Pattern	Odstranit vzorek
+	Done	Hotovo
+	Expand Repeat	Rozložit opakování
+	List Patterns	Vypsat vzorky
+	Repeat Options	Možnosti opakování
+	Save a Copy	Uložit kopii
+	Transform Patterns	Transformovat vzorky
+	Delete PDF Preset	Odstranit přednastavení PDF
+	Export PDF Presets	Exportovat přednastavení PDF
+	Import PDF Presets	Importovat přednastavení PDF
+	PDF Preset	Přednastavení PDF
+	PDF Presets	Přednastavení PDF
+	Save PDF Preset	Uložit přednastavení PDF
+	Define Perspective Grid	Definovat perspektivní mřížku
+	Delete Perspective Grid Preset	Odstranit přednastavení perspektivní mřížky
+	Export Perspective Grid Presets	Exportovat přednastavení perspektivní mřížky
+	Import Perspective Grid Presets	Importovat přednastavení perspektivní mřížky
+	Perspective Grid Options	Možnosti perspektivní mřížky
+	Perspective Grid Preset	Přednastavení perspektivní mřížky
+	Perspective Grid Presets	Přednastavení perspektivní mřížky
+	Save Perspective Grid Preset	Uložit přednastavení perspektivní mřížky
+	Image Info	Informace o obrazu
+	Load Place Cursor	Načíst kurzor umístění
+	Placed File Info	Informace o umístěném souboru
+	Install Plug-in	Nainstalovat zásuvný modul
+	List Plug-ins	Vypsat zásuvné moduly
+	Plug-in Info	Informace o zásuvném modulu
+	Remove Plug-in	Odebrat zásuvný modul
+	Run Plug-in	Spustit zásuvný modul
+	Smooth	Hladký
+	Corner	Rohový
+	White	Bílá
+	30° Angles	Úhly 30°
+	45° Angles	Úhly 45°
+	60° Angles	Úhly 60°
+	90° & 45° & 30° Angles	Úhly 90°, 45° a 30°
+	90° & 45° Angles	Úhly 90° a 45°
+	90° Angles	Úhly 90°
+	Additional Plug-ins Folder	Další složka zásuvných modulů
+	Additional Fonts Folder	Další složka písem
+	Alignment Guides	Vodítka zarovnání
+	Anchor Points, Handle, and Bounding Box Display	Zobrazení kotevních bodů, úchytů a ohraničovacího rámečku
+	Anchor/Path Labels	Popisky kotevních bodů a cest
+	Angles	Úhly
+	Animated Zoom	Animované zvětšení
+	Anti-aliased Artwork	Vyhlazená kresba
+	Appearance Panel	Panel Vzhled
+	Ask When Modified	Při změně se zeptat
+	Auto-Collapse Iconic Panels	Automaticky sbalovat panely v ikonách
+	Show Tool Group Labels	Zobrazit popisky skupin nástrojů
+	Automatically	Automaticky
+	Automatically Save Recovery Data	Automaticky ukládat data pro obnovení
+	Baseline Shift	Posun účaří
+	Brightness	Jas
+	Canvas Color	Barva plátna
+	Centimeters	Centimetry
+	Command Click to Select Objects Behind	Kliknutím s Cmd vybírat objekty vzadu
+	Constrain Angle	Úhel omezení
+	Constrain Width and Height Proportions	Zachovat proporce šířky a výšky
+	Construction Guides	Konstrukční vodítka
+	Curvature Tool	Nástroj Zakřivení
+	Data Recovery	Obnovení dat
+	Default Language	Výchozí jazyk
+	Disable Auto Add/Delete	Vypnout automatické přidávání/odstraňování
+	Display All Blacks Accurately	Zobrazovat všechny černé přesně
+	Display All Blacks as Rich Black	Zobrazovat všechny černé jako sytou černou
+	Display Bitmaps as Anti-aliased Images in Pixel Preview	Zobrazovat bitmapy v náhledu obrazových bodů vyhlazené
+	Display Options	Možnosti zobrazení
+	Display Print Size at 100% Zoom	Zobrazovat tiskovou velikost při zvětšení 100 %
+	Double Click To Isolate	Izolovat dvojklikem
+	Dutch	Nizozemština
+	East Asian Type	Východoasijské písmo
+	Enable Background Export	Povolit export na pozadí
+	Enable Background Save	Povolit ukládání na pozadí
+	Enable in-menu font previews	Povolit náhledy písem v nabídce
+	Enable Missing Glyph Protection	Povolit ochranu chybějících glyfů
+	Enable Rubber Band for	Povolit gumovou čáru pro
+	Enable Touch Gestures	Povolit dotyková gesta
+	Enable Touch Workspace	Povolit dotykový pracovní prostor
+	English: UK	Angličtina: Spojené království
+	Every (minutes)	Každých (minut)
+	Exceptions (comma separated)	Výjimky (oddělené čárkou)
+	Feet	Stopy
+	Files	Soubory
+	Fill New Type Objects With Placeholder Text	Vyplňovat nové textové objekty zástupným textem
+	Folder	Složka
+	Font Preview Size	Velikost náhledu písma
+	Get Preferences	Získat předvolby
+	GPU Performance	Výkon GPU
+	Graphics Processor	Grafický procesor
+	Gridline every	Čára mřížky každých
+	Grids In Back	Mřížky vzadu
+	Handles	Úchyty
+	Hide Corner Widget for angles greater than	Skrýt ovladač rohů pro úhly větší než
+	High Performance (discrete)	Vysoký výkon (samostatná)
+	Highlight Alternate Glyphs	Zvýraznit alternativní glyfy
+	Highlight anchors on mouse over	Zvýrazňovat kotevní body pod ukazatelem
+	History States	Stavy historie
+	Hollow	Duté
+	Identify Objects By	Identifikovat objekty podle
+	Include SVG Code	Zahrnout kód SVG
+	Italian	Italština
+	Keyboard Increment	Krok klávesnice
+	Language Options	Možnosti jazyka
+	Large	Velké
+	Large Tabs	Velké karty
+	Legacy vector clipboard	Starší vektorová schránka
+	Legacy vector clipboard (no transparency)	Starší vektorová schránka (bez průhlednosti)
+	Line Color	Barva čar
+	Lines	Čáry
+	List Preferences	Vypsat předvolby
+	Manually	Ručně
+	Mark Older Files as [Converted] When Opened	Při otevření označit starší soubory jako [Converted]
+	Match User Interface Brightness	Odpovídat jasu uživatelského rozhraní
+	Light Gray	Světle šedá
+	Medium Gray	Středně šedá
+	Dark Gray	Tmavě šedá
+	Measurement Labels	Popisky měření
+	Meters	Metry
+	Move Locked and Hidden Artwork with Artboard	Přesouvat zamčenou a skrytou kresbu s pracovní plochou
+	Number of Recent Files to Display	Počet zobrazených nedávných souborů
+	Number of Recent Fonts	Počet nedávných písem
+	Numbers Without Units Are Points	Čísla bez jednotek jsou body
+	Object Highlighting	Zvýraznění objektů
+	Object Name	Název objektu
+	Object Selection by Path Only	Výběr objektu pouze podle cesty
+	On Copy	Při kopírování
+	On Paste	Při vložení
+	On Screen	Na obrazovce
+	Open Documents As Tabs	Otevírat dokumenty jako karty
+	Options	Možnosti
+	Output All Blacks Accurately	Ve výstupu všechny černé přesně
+	Output All Blacks as Rich Black	Ve výstupu všechny černé jako sytou černou
+	Override Character Color	Přepsat barvu znaků
+	Paste Offset	Posun při vložení
+	Pattern Editing	Úpravy vzorku
+	Pen Tool	Nástroj Pero
+	Picas	Pica
+	Portuguese	Portugalština
+	Preserve Appearance and Overprints	Zachovat vzhled a přetisky
+	Preserve Paths	Zachovat cesty
+	Primary	Primární
+	Printing / Exporting	Tisk / export
+	Real-time Drawing and Editing	Kreslení a úpravy v reálném čase
+	Render Threads (-1 = Automatic)	Vlákna vykreslování (-1 = automaticky)
+	Reset Preferences	Obnovit předvolby
+	Scale Corners	Měnit velikost rohů
+	Scale Cursor Proportional to UI	Měnit velikost kurzoru úměrně rozhraní
+	Scale Strokes & Effects	Měnit velikost tahů a efektů
+	Scratch Disks	Odkládací disky
+	Secondary	Sekundární
+	Select Same Tint %	Vybírat stejné % tónu
+	Set Preference	Nastavit předvolbu
+	Show East Asian Options	Zobrazit východoasijské možnosti
+	Show Font Names in English	Zobrazovat názvy písem anglicky
+	Show handles when multiple anchors are selected	Zobrazit úchyty při výběru více kotevních bodů
+	Show Indic Options	Zobrazit indické možnosti
+	Show Pixel Grid (Above 600% Zoom)	Zobrazit mřížku obrazových bodů (nad 600 %)
+	Show Slice Numbers	Zobrazit čísla řezů
+	Show The Home Screen When No Documents Are Open	Zobrazit domovskou obrazovku, když nejsou otevřeny dokumenty
+	Show Tool Tips	Zobrazovat popisky nástrojů
+	Size/Leading	Velikost/proklad
+	Snapping Tolerance	Tolerance přichytávání
+	Spacing Guides	Vodítka rozestupů
+	Spanish	Španělština
+	Subdivisions	Dělení
+	Templates Folder	Složka šablon
+	Tile Edge Color	Barva okraje dlaždice
+	Tolerance	Tolerance
+	Tracking	Prostrkání
+	Transform Panel	Panel Transformace
+	Transform Pattern Tiles	Transformovat dlaždice vzorku
+	Transform Tools	Transformační nástroje
+	Turn off Data Recovery for complex documents	Vypnout obnovení dat pro složité dokumenty
+	Type Object Selection by Path Only	Výběr textového objektu pouze podle cesty
+	UI Scaling	Měřítko rozhraní
+	Use Compression	Použít kompresi
+	Use Japanese Crop Marks	Použít japonské ořezové značky
+	Use Low Resolution Proxy for Linked EPS	Pro propojené EPS použít zástupce v nízkém rozlišení
+	Use Precise Cursors	Používat přesné kurzory
+	Use Preview Bounds	Použít hranice náhledu
+	When pasting text	Při vkládání textu
+	XML ID	XML ID
+	Yards	Yardy
+	Zoom to Selection	Zvětšit na výběr
+	Zoom with Mouse Wheel	Zvětšovat kolečkem myši
+	Scrub Numeric Fields by Dragging	Měnit číselné hodnoty tažením
+	Linux Display Server	Zobrazovací server Linuxu
+	Print Preview	Náhled tisku
+	Print Setup	Nastavení tisku
+	Bitmap	Bitmapa
+	Delete Print Preset	Odstranit přednastavení tisku
+	Export Print Presets	Exportovat přednastavení tisku
+	Import Print Presets	Importovat přednastavení tisku
+	Print Preset	Přednastavení tisku
+	Print Presets	Přednastavení tisku
+	Save Print Preset	Uložit přednastavení tisku
+	Print Tiling Pages	Stránky dlaždic tisku
+	Document Raster Effects Settings	Nastavení rastrových efektů dokumentu
+	Artwork Colors	Barvy kresby
+	Randomize Colors	Náhodné barvy
+	Recolor Artwork	Přebarvit kresbu
+	Reduce Colors	Zredukovat barvy
+	Discard Recovered Documents	Zahodit obnovené dokumenty
+	Recovery Data	Data pro obnovení
+	Restore Recovered Documents	Otevřít obnovené dokumenty
+	Save Recovery Data	Uložit data pro obnovení
+	Untitled	Bez názvu
+	Add to Selection	Přidat do výběru
+	Select Anchors	Vybrat kotevní body
+	Select Segments	Vybrat segmenty
+	Select Objects	Vybrat objekty
+	Toggle Selection	Přepnout výběr
+	Create Slice	Vytvořit řez
+	Delete Slices	Odstranit řezy
+	Divide Slices	Rozdělit řezy
+	List Slices	Vypsat řezy
+	Move Slices	Přesunout řezy
+	Select Slices	Vybrat řezy
+	Set Slice Rectangle	Nastavit obdélník řezu
+	Slice Options	Možnosti řezu
+	Add to Profiles	Přidat do profilů
+	Delete Profile	Odstranit profil
+	Reset Profiles	Obnovit profily
+	Stroke Options	Možnosti tahu
+	Width Profiles	Profily šířky
+	Apply Graphic Style	Použít grafický styl
+	Break Link to Graphic Style	Zrušit propojení s grafickým stylem
+	Delete Graphic Style	Odstranit grafický styl
+	Duplicate Graphic Style	Duplikovat grafický styl
+	Graphic Style Options	Možnosti grafického stylu
+	Graphic Styles Options	Možnosti grafických stylů
+	List Graphic Styles	Vypsat grafické styly
+	Merge Graphic Styles	Sloučit grafické styly
+	Move Graphic Style	Přesunout grafický styl
+	New Graphic Style	Nový grafický styl
+	Redefine Graphic Style	Předefinovat grafický styl
+	Rename Graphic Style	Přejmenovat grafický styl
+	Add to Graphic Styles	Přidat do grafických stylů
+	Graphic Style Library	Knihovna grafických stylů
+	Add Used Colors	Přidat použité barvy
+	Delete Swatch	Odstranit položku vzorníku
+	Duplicate Swatch	Duplikovat položku vzorníku
+	Merge Swatches	Sloučit položky vzorníku
+	Move Swatch	Přesunout položku vzorníku
+	New Color Group	Nová skupina barev
+	New Swatch	Nová položka vzorníku
+	Select All Unused	Vybrat všechny nepoužité
+	Sort by Kind	Seřadit podle druhu
+	Sort by Name	Seřadit podle názvu
+	Spot Colors	Přímé barvy
+	Swatch Options	Možnosti položky vzorníku
+	Ungroup Color Group	Zrušit skupinu barev
+	Copy to User Defined	Kopírovat do uživatelských
+	Swatch Library	Knihovna vzorníku
+	Clear All Tabs	Vymazat všechny tabulátory
+	Set Tab Stops	Nastavit zarážky tabulátoru
+	Tab Stops	Zarážky tabulátoru
+	Flare	Odlesk
+	Rays	Paprsky
+	Rectangle	Obdélník
+	Paintbrush	Štětec
+	Small	Malé
+	Black and White Logo	Černobílé logo
+	Flat Logo	Ploché logo
+	Keep Formatting	Zachovat formátování
+	Keep Plain Text	Zachovat prostý text
+	Clip	Oříznout
+	PDF	PDF
+	no document	žádný dokument
+	Blue	Modrá
+	Custom	Vlastní
+	Document Setup	Nastavení dokumentu
+	French	Francouzština
+	German	Němčina
+	Inches	Palce
+	Japanese	Japonština
+	Millimeters	Milimetry
+	Points	Body
+effect	Points	Body
+	Adjust Colors	Upravit barvy
+	Place	Umístit
+	Discard Empty Type	Zahodit prázdný text
+	Copyright	Autorská práva
+	Other	Jiné
+	Print	Tisk
+	Solid	Plné
+	Difference	Rozdíl
+	Flatten Transparency	Sloučit průhlednost
+	Fonts	Písma
+	Off	Vypnuto
+	above	nad
+	Square	Čtverec
+	Update Links	Aktualizovat propojení
+	Liquify	Zkapalnění
+	Corner Radius	Poloměr rohu
+	Move Guide	Přesunout vodítko
+axis	Both	Obě
+	Letter	Letter
+	Portrait	Na výšku
+	Recent	Nedávné
+	Saved	Uložené
+	Web 1920×1080	Web 1920×1080
+	Yellow	Žlutá
+	Auto	Automaticky
+	Center	Střed
+	Transform in Perspective	Transformovat v perspektivě
+	Grayscale	Stupně šedi
+	Embed	Vložit
+	Star	Hvězda
+	Power Saving (integrated)	Úsporný režim (integrovaná)
+	Target	Cíl
+	X11 (XWayland)	X11 (XWayland)
+	Print as Bitmap	Tisknout jako bitmapu
+	Draft	Koncept
+	Default	Výchozí
+	Magenta	Purpurová
+	Page	Stránka
+	Print Tiling	Dlaždice tisku
+	Edit Color Group	Upravit skupinu barev
+	Marks	Značky
+	Color Mode	Barevný režim
+	Templates	Šablony
+	Halo	Svatozář
+	Multiply	Násobit
+	Red	Červená
+	Grays	Šedé
+	Color Group	Skupina barev
+	Library	Knihovna
+	English	English
+	List Folder	Vypsat složku
+	Area Type Options	Možnosti textu v oblasti
+	Reshape Type Area	Přetvarovat oblast textu
+	Scale	Měřítko
+	Feet & Inches	Stopy a palce
+	Pixels	Obrazové body
+	More	Více
+	Show	Zobrazit
+	Copy Width Point	Kopírovat bod šířky
+	Duplicate Artboard	Duplikovat pracovní plochu
+	Area / Path Type	Text v oblasti / na cestě
+	Decrease Font Size	Zmenšit velikost písma
+	Increase Font Size	Zvětšit velikost písma
+	Step Type	Krokovat text
+	Get Text Range	Získat rozsah textu
+	Punctuation	Interpunkce
+	[Normal Character Style]	[Normální styl znaků]
+	Text Wrap Options	Možnosti obtékání textu
+	Threads	Zřetězení
+	Orientation	Orientace
+	Set Text	Nastavit text
+	Insert Character	Vložit znak
+	Replace	Nahradit
+	Type on a Path Options	Možnosti textu na cestě
+	Highlight Variable	Zvýraznit proměnnou
+	New Variable	Nová proměnná
+	List Variables	Vypsat proměnné
+	Bind Variable	Svázat proměnnou
+	New Data Set	Nová sada dat
+	List Data Sets	Vypsat sady dat
+	Select Data Set	Vybrat sadu dat
+	Edit Data Set	Upravit sadu dat
+	Visibility	Viditelnost
+	New View	Nové zobrazení
+	Saved Views	Uložená zobrazení
+	Magic Wand Options	Možnosti kouzelné hůlky
+	Magic Wand Settings	Nastavení kouzelné hůlky
+	Delete Save for Web Preset	Odstranit přednastavení Uložit pro web
+	Save for Web	Uložit pro web
+	Save for Web Presets	Přednastavení Uložit pro web
+	Save for Web Preview	Náhled Uložit pro web
+	Save for Web Settings	Nastavení Uložit pro web
+	Save Save for Web Preset	Uložit přednastavení Uložit pro web
+	Eyedropper Options	Možnosti kapátka
+	Free Distort	Volná deformace
+	Move Artboard	Přesunout pracovní plochu
+	Sample Color	Nabrat barvu
+	Angle	Úhel
+	Black	Černá
+	Bottom	Dole
+	Bounds	Hranice
+	Colors	Barvy
+	Cyan	Azurová
+	Discard	Zahodit
+	Document	Dokument
+	Encoding	Kódování
+	Frequency	Frekvence
+	Height	Výška
+	Image	Obraz
+	Ink	Inkoust
+	Lab	Lab
+	Medium	Střední
+	Name	Název
+	None	Žádné
+	Normal	Normální
+	Pages	Stránky
+	Regular	Normální
+	Source Sans 3	Source Sans 3
+	Template	Šablona
+	Top	Nahoře
+	Width	Šířka
+	:	:
+effect	Regular	Pravidelný
+	Saving Poster.vectorcraft	Ukládání Poster.vectorcraft
+	Community	Komunita
+	Hide Bar	Skrýt panel
+	More Options	Další možnosti
+	Show Properties Panel	Zobrazit panel Vlastnosti
+	Isolate	Izolovat
+	Lock (⌘2)	Zamknout (⌘2)
+	New file	Nový soubor
+	Open	Otevřít
+	Quickly start a new file	Rychle začít nový soubor
+	Recent Files	Nedávné soubory
+	Vector illustration — fast, open, scriptable.	Vektorová ilustrace — rychlá, otevřená, skriptovatelná.
+	Welcome to VectorCraft	Vítejte ve VectorCraftu
+	ArtCraft website	Web ArtCraft
+	Discord	Discord
+	Join our Discord	Připojit se k našemu Discordu
+	Join the ArtCraft community on Discord (discord.gg/artcraft)	Připojte se ke komunitě ArtCraft na Discordu (discord.gg/artcraft)
+	Source code on GitHub	Zdrojový kód na GitHubu
+	All Tools	Všechny nástroje
+	Draw	Kresba
+	Reset	Obnovit
+	  — missing	  — chybí
+	(closest)	(nejbližší)
+	Change	Změnit
+	Change All	Změnit vše
+	Find	Najít
+	Find Font	Najít písmo
+	Fonts in Document: {count}	Písma v dokumentu: {count}
+	In the selected objects	Ve vybraných objektech
+	Find in Folder…	Najít ve složce…
+	Replace With Font	Nahradit písmem
+	  — substituted by {style}	  — nahrazeno řezem {style}
+	  — {n} characters from another font	  — znaky z jiného písma: {n}
+	Drag to float the panel group	Přetažením vytvoříte plovoucí skupinu panelů
+	Put back in the dock	Vrátit do doku
+	All Scripts	Všechny systémy písma
+	Any Kind	Libovolný druh
+	Decorative	Dekorativní
+	Favorites	Oblíbené
+	Latin	Latinka
+	Thai	Thajština
+	Monospaced	Neproporcionální
+	No matching fonts	Žádná odpovídající písma
+	Rounded	Zaoblené
+	Sans Serif / Gothic	Bezpatkové / gothic
+	Script / Brush	Psací / štětcové
+	Serif / Mincho	Patkové / mincho
+	Changes made since it was last saved will be lost.	Změny provedené od posledního uložení budou ztraceny.
+	Can't open “{name}”.	„{name}“ nelze otevřít.
+	Downloaded {what}	Staženo: {what}
+	Exported {count} file(s) to {folder}	Exportováno souborů: {count} do {folder}
+	Exported {what}	Exportováno: {what}
+	Exported {what} with {} note(s): {first}	Exportováno: {what}, poznámky ({}): {first}
+	Exporting {}	Exportování {}
+	Imported {what}: {}	Importováno {what}: {}
+	Installed plug-in {}	Nainstalován zásuvný modul {}
+	Opened with {} note(s): {}	Otevřeno, poznámky ({}): {}
+	Revert to the saved version of “{name}”?	Vrátit se k uložené verzi dokumentu „{name}“?
+	Replace “{name}”, the file this document was opened from?	Nahradit „{name}“, soubor, ze kterého byl tento dokument otevřen?
+	Opening it left out what VectorCraft can't read yet ({what}), so replacing it loses that for good. Save under another name to keep it.	Při otevírání bylo vynecháno, co VectorCraft zatím neumí přečíst ({what}), takže nahrazením se to nenávratně ztratí. Chcete-li to zachovat, uložte dokument pod jiným názvem.
+	Saved {path}	Uloženo: {path}
+	Saved {path} with {} note(s): {first}	Uloženo: {path}, poznámky ({}): {first}
+	Saving	Ukládání
+	Saving {}	Ukládání {}
+	Search commands and tools…	Hledat příkazy a nástroje…
+	Dashed Line	Čárkovaná čára
+	Panel menu	Nabídka panelu
+	Unembed…	Zrušit vložení…
+	Applies the next time VectorCraft starts.	Projeví se při příštím spuštění VectorCraftu.
+	Enable Contextual Task Bar	Povolit kontextový panel úloh
+	Next	Další
+	OK	OK
+	Preferences	Předvolby
+	Previous	Předchozí
+	Restore every preference to its default (applied on OK)	Obnovit všechny předvolby na výchozí hodnoty (použije se po OK)
+	Smaller ↔ Larger	Menší ↔ Větší
+	Smart Guides (View → Smart Guides)	Chytrá vodítka (Zobrazení → Chytrá vodítka)
+	Couldn't save recovery data: {e}	Data pro obnovení nelze uložit: {e}
+	Discarded {} recovered document(s)	Zahozeno obnovených dokumentů: {}
+	Restored {} recovered document(s): save them to keep them	Obnoveno dokumentů: {}; pokud je chcete zachovat, uložte je
+	Saved recovery data for {title}	Data pro obnovení uložena pro {title}
+	Saving recovery data for {}	Ukládání dat pro obnovení pro {}
+	Alt	Alt
+	Backspace	Backspace
+	Cmd	Cmd
+	Ctrl	Ctrl
+	Shift	Shift
+	Couldn't copy to the system clipboard: {e}	Nelze kopírovat do systémové schránky: {e}
+	Couldn't paste from the clipboard: {e}	Nelze vložit ze schránky: {e}
+	Channel	Kanál
+	Circle	Kruh
+	Clip to Art	Oříznout podle kresby
+	Colorize	Obarvit
+	Gamma	Gama
+	Hue	Odstín
+	Input Black	Vstupní černá
+	Keep Original	Zachovat originál
+	Lightness	Světlost
+	Mono	Jednobarevný
+	Output White	Výstupní bílá
+	Saturation	Sytost
+	Screens	Rastry
+	Add Swatches	Přidat položky vzorníku
+	Apply to All	Použít na všechny
+	Swatch Conflict	Konflikt položek vzorníku
+	Axis:	Osa:
+	Free	Volné
+	Keep:	Ponechat:
+	Search	Hledat
+	Classic Defaults	Klasické výchozí
+	Uniform	Jednotný
+	Include Blacks with CMY:	Zahrnout černé s CMY:
+	Recolor	Přebarvit
+	Swatch Tiles	Dlaždice vzorníku
+	Baseline	Účaří
+	Flip:	Převrátit:
+	Spacing:	Rozestupy:
+	Output	Výstup
+	Export…	Exportovat…
+	Import…	Importovat…
+	Load Profile…	Načíst profil…
+	Embedded	Vložený
+	Image Tracing	Vektorizace obrazu
+	Linked File	Propojený soubor
+	Preset:	Přednastavení:
+	View:	Zobrazení:
+	Tracing Result	Výsledek vektorizace
+	Outlines with Source Image	Obrysy se zdrojovým obrazem
+	SVG Options	Možnosti SVG
+	Maximize	Maximalizovat
+	Restore	Obnovit
+	Align Objects:	Zarovnat objekty:
+	Default Fill and Stroke (D)	Výchozí výplň a tah (D)
+	Fill (X), double-click for the Color Picker	Výplň (X), dvojklikem otevřete výběr barvy
+	Opacity:	Krytí:
+	Shape Modes:	Režimy tvarů:
+	Stroke (X), double-click for the Color Picker	Tah (X), dvojklikem otevřete výběr barvy
+	Stroke:	Tah:
+	Swap Fill and Stroke (Shift+X)	Prohodit výplň a tah (Shift+X)
+	Manage Workspaces	Spravovat pracovní prostory
+	Name:	Název:
+	New	Nový
+	New Workspace	Nový pracovní prostor
+	Rename	Přejmenovat
+	Save the current layout under this name	Uložit aktuální rozložení pod tímto názvem
+	Saves the current bars, toolbar and panel layout.	Uloží aktuální lišty, panel nástrojů a rozložení panelů.
+	Workspace {i}	Pracovní prostor {i}
+	Glowing Edges	Zářící okraje
+	Edge Width	Šířka okraje
+	Edge Brightness	Jas okraje
+	Smoothness	Vyhlazení
+	Color Halftone	Barevný polotón
+	Mezzotint	Mezzotinta
+	Pointillize	Pointilismus
+	Max. Radius	Max. poloměr
+	Channel 1	Kanál 1
+	Channel 2	Kanál 2
+	Channel 3	Kanál 3
+	Channel 4	Kanál 4
+	Cell Size	Velikost buňky
+	Radial Blur	Radiální rozostření
+	Smart Blur	Chytré rozostření
+	Unsharp Mask	Maska rozostření
+	Gaussian Blur	Gaussovské rozostření
+	Method	Metoda
+	Quality	Kvalita
+	Radius	Poloměr
+	Apply Character Style	Použít styl znaků
+	Apply Paragraph Style	Použít styl odstavce
+	Character Style Options	Možnosti stylu znaků
+	Flip	Překlopit
+	Couldn't {} {name}: {e}	Akci {} nelze provést pro {name}: {e}
+	Create PDF layers from top-level layers	Vytvořit vrstvy PDF z vrstev nejvyšší úrovně
+	Delete Character Style	Odstranit styl znaků
+	Delete Layer	Odstranit vrstvu
+	Delete Paragraph Style	Odstranit styl odstavce
+	Duplicate Character Style	Duplikovat styl znaků
+	Duplicate Layer	Duplikovat vrstvu
+	Duplicate Paragraph Style	Duplikovat styl odstavce
+	Spacing	Rozestupy
+	Mojikumi	Mojikumi
+	N pt per	N pt na
+	New Character Style	Nový styl znaků
+	New Paragraph Style	Nový styl odstavce
+	Paragraph Style Options	Možnosti stylu odstavce
+	Redefine Character Style	Předefinovat styl znaků
+	Redefine Paragraph Style	Předefinovat styl odstavce
+	Rename Character Style	Přejmenovat styl znaků
+	Rename Paragraph Style	Přejmenovat styl odstavce
+	Select All Art on Layer	Vybrat veškerou kresbu ve vrstvě
+	Settings…	Nastavení…
+	Joins	Spoje
+	Drag art, colors and text styles here to reuse them across documents. Libraries are stored on this machine — no account required.	Přetáhněte sem kresbu, barvy a textové styly a používejte je v různých dokumentech. Knihovny se ukládají v tomto počítači — není potřeba žádný účet.
+	De-Interlace	Odstranit prokládání
+	Eliminate	Odstranit
+	Create New Fields by	Vytvořit nová pole pomocí
+	Craquelure	Krakelování
+	Grain	Zrno
+	Mosaic Tiles	Mozaikové dlaždice
+	Patchwork	Patchwork
+	Stained Glass	Vitráž
+	Texturizer	Texturovač
+	Crack Spacing	Rozestup prasklin
+	Crack Depth	Hloubka prasklin
+	Crack Brightness	Jas prasklin
+	Grain Type	Typ zrna
+	Tile Size	Velikost dlaždice
+	Grout Width	Šířka spár
+	Lighten Grout	Zesvětlit spáry
+	Square Size	Velikost čtverce
+	Relief	Reliéf
+	Border Thickness	Tloušťka okraje
+	Light Intensity	Intenzita světla
+	Light Direction	Směr světla
+	Value Axis	Osa hodnot
+	Diffuse Glow	Rozptýlená záře
+	Glass	Sklo
+	Ocean Ripple	Vlnky na hladině
+	Graininess	Zrnitost
+	Glow Amount	Míra záře
+	Clear Amount	Míra vyčištění
+	Ripple Size	Velikost vlnek
+	Ripple Magnitude	Síla vlnek
+	Accented Edges	Zdůrazněné okraje
+	Angled Strokes	Šikmé tahy
+	Dark Strokes	Tmavé tahy
+	Ink Outlines	Obrysy tuší
+	Spatter	Rozstřik
+	Sprayed Strokes	Stříkané tahy
+	Sumi-e	Sumi-e
+	Direction Balance	Vyvážení směru
+	Stroke Length	Délka tahu
+	Sharpness	Ostrost
+	Strength	Síla
+	Balance	Vyvážení
+	Black Intensity	Intenzita černé
+	White Intensity	Intenzita bílé
+	Dark Intensity	Intenzita tmavých
+	Spray Radius	Poloměr rozstřiku
+	Stroke Direction	Směr tahu
+	Stroke Width	Šířka tahu
+	Stroke Pressure	Tlak tahu
+
+# Plurals: one|few|other
+@plural	{n} item|{n} items	{n} položka|{n} položky|{n} položek
+@plural	Color Table ({n} color)|Color Table ({n} colors)	Tabulka barev ({n} barva)|Tabulka barev ({n} barvy)|Tabulka barev ({n} barev)
+@plural	Delete this {n} graphic style?|Delete these {n} graphic styles?	Odstranit {n} grafický styl?|Odstranit {n} grafické styly?|Odstranit {n} grafických stylů?
+@plural	{n} Layer|{n} Layers	{n} vrstva|{n} vrstvy|{n} vrstev
+@plural	{n} Object|{n} Objects	{n} objekt|{n} objekty|{n} objektů
+@plural	{n} area highlighted|{n} areas highlighted	Zvýrazněna {n} oblast|Zvýrazněny {n} oblasti|Zvýrazněno {n} oblastí
+@plural	{n} color|{n} colors	{n} barva|{n} barvy|{n} barev
+@plural	{n} fill|{n} fills	{n} výplň|{n} výplně|{n} výplní
+@plural	{n} glyph|{n} glyphs	{n} glyf|{n} glyfy|{n} glyfů
+@plural	{n} object highlighted|{n} objects highlighted	Zvýrazněn {n} objekt|Zvýrazněny {n} objekty|Zvýrazněno {n} objektů
+@plural	{n} star|{n} stars	{n} hvězda|{n} hvězdy|{n} hvězd
+@plural	{n} step|{n} steps	{n} krok|{n} kroky|{n} kroků
+@plural	{n} stroke|{n} strokes	{n} tah|{n} tahy|{n} tahů
+
+# Status and error messages
+@msg	no library `{id}`	knihovna `{id}` neexistuje
+@msg	select some type first	nejprve vyberte text
+@msg	{_1} has no {_2} style	{_1} nemá styl {_2}
+@msg	a layer couldn't be read	vrstvu nelze přečíst
+@msg	it has more than one artboard	má více než jednu pracovní plochu
+@msg	it has no page	nemá žádnou stránku
+@msg	it has too many text objects	má příliš mnoho textových objektů
+@msg	it has too much text	má příliš mnoho textu
+@msg	its editing data doesn't say where its artboard is	z jeho dat pro úpravy není zřejmé, kde je pracovní plocha
+@msg	its editing data has no layers	jeho data pro úpravy nemají žádné vrstvy
+@msg	its editing data is damaged	jeho data pro úpravy jsou poškozená
+@msg	its editing data is for a different page	jeho data pro úpravy patří k jiné stránce
+@msg	its layers use {_1}, which aren't read yet	jeho vrstvy používají {_1}, což zatím nelze načíst
+@msg	its page has text, and its layers have no text objects to put it in	jeho stránka obsahuje text, ale vrstvy nemají žádné textové objekty, kam by ho bylo možné umístit
+@msg	its type is to come in as outlines, which only its page has	jeho text se má načíst jako křivky, které má jen jeho stránka
+@msg	the art on them differs from the page's in {_1}% of it	kresba na nich se od stránky liší v {_1} % plochy
+@msg	`to` must be "corner" or "smooth"	`to` musí být "corner" nebo "smooth"
+@msg	BMP files are RGB or grayscale: colorModel rgb or gray	soubory BMP jsou RGB nebo ve stupních šedi: colorModel rgb nebo gray
+@msg	Blend colors: select at least three objects with filled colours	Prolnout barvy: vyberte alespoň tři objekty s barevnou výplní
+@msg	Combine Slices: the slices have no bounds	Spojit řezy: řezy nemají hranice
+@msg	Convert to Artboards: selection has no area	Převést na pracovní plochy: výběr nemá žádnou plochu
+@msg	Convert to Shape: no rectangles or ellipses selected	Převést na tvar: nejsou vybrány žádné obdélníky ani elipsy
+@msg	Copied the CSS of {rules} object(s)	Zkopírováno CSS objektů: {rules}
+@msg	Corners edits the corners of a path	Rohy upravuje rohy cesty
+@msg	Couldn't copy to the system clipboard: {e}	Nelze kopírovat do systémové schránky: {e}
+@msg	Couldn't open {name}: {e}	{name} nelze otevřít: {e}
+@msg	Couldn't place {name}: the document it was dropped on was closed	{name} nelze umístit: dokument, na který byl přetažen, byl zavřen
+@msg	Couldn't read {name}: {e}	{name} nelze přečíst: {e}
+@msg	Couldn't save recovery data: {e}	Data pro obnovení nelze uložit: {e}
+@msg	Create Outlines: select text objects	Převést na křivky: vyberte textové objekty
+@msg	Create from Guides: the document has no artboard	Vytvořit z vodítek: dokument nemá žádnou pracovní plochu
+@msg	Create from Guides: the guides make more than {MAX_PIECES} slices	Vytvořit z vodítek: vodítka vytvářejí více než {MAX_PIECES} řezů
+@msg	Create from Selection: the selection has no area	Vytvořit z výběru: výběr nemá žádnou plochu
+@msg	Data Recovery has nowhere to keep copies: set Preferences → File Handling → Data Recovery → Folder (recoveryFolder)	Obnovení dat nemá kam ukládat kopie: nastavte Předvolby → Práce se soubory → Obnovení dat → Složka (recoveryFolder)
+@msg	direct-select anchor points to cut at (not the end points of open paths)	nástrojem Přímý výběr vyberte kotevní body, kde se má cesta rozdělit (ne koncové body otevřených cest)
+@msg	Divide Objects Below: select a path	Rozdělit objekty pod: vyberte cestu
+@msg	Divide Objects Below: select exactly one path	Rozdělit objekty pod: vyberte právě jednu cestu
+@msg	Downloaded {_1} file(s)	Staženo souborů: {_1}
+@msg	Downloaded {what}	Staženo: {what}
+@msg	Expand Appearance: the selection has a basic appearance	Rozložit vzhled: výběr má základní vzhled
+@msg	Expand: no brush strokes selected	Rozložit: nejsou vybrány žádné tahy štětcem
+@msg	Expand: no gradient fills	Rozložit: žádné přechodové výplně
+@msg	Expand: nothing to expand	Rozložit: není co rozložit
+@msg	Exported {count} file(s) to {folder}	Exportováno souborů: {count} do {folder}
+@msg	Exported {path}	Exportováno: {path}
+@msg	Flatten Transparency: select objects to flatten	Sloučit průhlednost: vyberte objekty ke sloučení
+@msg	Flatten Transparency: {e}	Sloučit průhlednost: {e}
+@msg	Image Trace: the traced image is missing	Vektorizace obrazu: vektorizovaný obraz chybí
+@msg	Imported {what}: {_1}	Importováno {what}: {_1}
+@msg	Installed plug-in {_1}	Nainstalován zásuvný modul {_1}
+@msg	Internal error: {msg} (please report this bug)	Vnitřní chyba: {msg} (nahlaste prosím tuto chybu)
+@msg	Live Paint Merge: select a Live Paint group and the paths to add	Sloučit živou malbu: vyberte skupinu živé malby a cesty, které chcete přidat
+@msg	Live Paint: select paths or compound paths	Živá malba: vyberte cesty nebo složené cesty
+@msg	Live Paint: these paths are too degenerate to paint	Živá malba: tyto cesty jsou příliš degenerované, aby je bylo možné malovat
+@msg	Make Guides: select paths	Vytvořit vodítka: vyberte cesty
+@msg	No saved selections (Select → Save Selection…)	Žádné uložené výběry (Výběr → Uložit výběr…)
+@msg	No saved views (View → New View…)	Žádná uložená zobrazení (Zobrazení → Nové zobrazení…)
+@msg	Offset Path: select paths	Odsadit cestu: vyberte cesty
+@msg	Opened with {_1} note(s): {_2}	Otevřeno, poznámky ({_1}): {_2}
+@msg	Opened {url}	Otevřeno {url}
+@msg	Outline Stroke: no stroked paths selected	Převést tah na obrys: nejsou vybrány žádné cesty s tahem
+@msg	PDF settings are not an object	nastavení PDF nejsou objekt
+@msg	PDF writer error: {0}	chyba zápisu PDF: {0}
+@msg	Packaged {n} file(s) in {folder}{note}	Zabaleno souborů: {n} do {folder}{note}
+@msg	Packaged {n} file(s){note}	Zabaleno souborů: {n}{note}
+@msg	Preview in Browser needs the desktop app (the web downloads files instead)	Náhled v prohlížeči vyžaduje desktopovou aplikaci (webová verze místo toho stahuje soubory)
+@msg	Release Guides: no guides	Uvolnit vodítka: žádná vodítka
+@msg	Release: no layer to put the rectangle in	Uvolnit: chybí vrstva, do které by šel obdélník umístit
+@msg	Replace Spine: select a blend and a path	Nahradit páteř: vyberte prolnutí a cestu
+@msg	select two or more objects to distribute	k rozmístění vyberte dva nebo více objektů
+@msg	select paths or anchor points	vyberte cesty nebo kotevní body
+@msg	SVG parse error: {0}	chyba při analýze SVG: {0}
+@msg	Save for Web: the image is empty	Uložit pro web: obraz je prázdný
+@msg	Save writes {_1}, not {_2}: use document.export for other formats	Uložení zapisuje {_1}, ne {_2}: pro jiné formáty použijte document.export
+@msg	Saved recovery data for {title}	Data pro obnovení uložena pro {title}
+@msg	Saved to User Defined: {_1}	Uloženo do uživatelských knihoven: {_1}
+@msg	Saved {path}	Uloženo: {path}
+@msg	Select text or click into text with the Type tool to insert glyphs	Glyfy vložíte, když vyberete text nebo do něj kliknete nástrojem Text
+@msg	Shape Builder: no region under the pointer	Tvorba tvarů: pod ukazatelem není žádná oblast
+@msg	Shape Builder: select paths or compound paths	Tvorba tvarů: vyberte cesty nebo složené cesty
+@msg	Show All Hidden Attributes: nothing is hidden	Zobrazit všechny skryté atributy: nic není skryto
+@msg	Split Into Grid: select paths large enough for the grid	Rozdělit do mřížky: vyberte cesty dost velké pro mřížku
+@msg	Targa files are RGB: colorModel rgb	soubory Targa jsou RGB: colorModel rgb
+@msg	Text Wrap: select a wrap object	Obtékání textu: vyberte objekt obtékání
+@msg	`aspect` must be a number (%)	`aspect` musí být číslo (%)
+@msg	`at` must be [x, y]	`at` musí být [x, y]
+@msg	`color` must be a colour	`color` musí být barva
+@msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` musí být příkaz, jehož položka nabídky otevírá dialogové okno (viz ui.menuDialog)
+@msg	`freeform.points` must be an array	`freeform.points` musí být pole
+@msg	`freeform.lines` must be an array	`freeform.lines` musí být pole
+@msg	`gradient` must be an object	`gradient` musí být objekt
+@msg	`library` is a library id or name (see {list})	`library` je ID nebo název knihovny (viz {list})
+@msg	`mode` applies to freeform gradients	`mode` platí pro volné přechody
+@msg	`sampleSize` must be 1, 3 or 5	`sampleSize` musí být 1, 3 nebo 5
+@msg	`stops` must be an array	`stops` musí být pole
+@msg	`svg` must be an object of SVG options (see document.formats)	`svg` musí být objekt s možnostmi SVG (viz document.formats)
+@msg	`{_1}` is no save command	`{_1}` není příkaz pro uložení
+@msg	`{area}` is no recovery area name	`{area}` není název oblasti obnovení
+@msg	`{color}` is not a colour (#rrggbb or a preset name)	`{color}` není barva (#rrggbb nebo název přednastavení)
+@msg	`{id}` has no envelope dialog	`{id}` nemá dialogové okno obálky
+@msg	`{keep}` is not a side of this axis	`{keep}` není strana této osy
+@msg	`{key}` must be `auto` or a language code such as `en` or `zh-hant`	`{key}` musí být `auto` nebo kód jazyka, například `en` nebo `zh-hant`
+@msg	`{key}` must be a #rrggbb colour	`{key}` musí být barva #rrggbb
+@msg	`{key}` must be a number	`{key}` musí být číslo
+@msg	`{key}` must be a string	`{key}` musí být řetězec
+@msg	`{key}` must be a whole number	`{key}` musí být celé číslo
+@msg	`{key}` must be a whole number between {min} and {max} (got {x})	`{key}` musí být celé číslo mezi {min} a {max} (zadáno {x})
+@msg	`{key}` must be between {min} and {max} (got {x})	`{key}` musí být mezi {min} a {max} (zadáno {x})
+@msg	`{key}` must be one of {_1}	`{key}` musí být jedno z {_1}
+@msg	`{key}` must be true or false	`{key}` musí být true nebo false
+@msg	`{k}` must be [x, y]	`{k}` musí být [x, y]
+@msg	`{name}` has no options	`{name}` nemá žádné možnosti
+@msg	`{name}` is a built-in workspace; choose another name	`{name}` je vestavěný pracovní prostor; zvolte jiný název
+@msg	`{name}` is a process colour: tints apply to global and spot colours	`{name}` je procesní barva: tóny platí pro globální a přímé barvy
+@msg	`{name}` is no recovery entry name	`{name}` není název položky obnovení
+@msg	`{name}` isn't a colour swatch	`{name}` není barevná položka vzorníku
+@msg	`{path}` must be a bool or an object of bools	`{path}` musí být bool nebo objekt hodnot bool
+@msg	`{s}` is not a colour (#rrggbb or a preset name)	`{s}` není barva (#rrggbb nebo název přednastavení)
+@msg	`{tool}` isn't a Liquify tool	`{tool}` není nástroj zkapalnění
+@msg	`{tool}` isn't a freehand tool	`{tool}` není nástroj pro kreslení od ruky
+@msg	`{to}` is not an available name	`{to}` není dostupný název
+@msg	a PostScript error ({name} in `{op}`)	chyba PostScriptu ({name} v `{op}`)
+@msg	a PostScript error ({name} in `{op}`), in {procs}	chyba PostScriptu ({name} v `{op}`), v {procs}
+@msg	a PostScript error ({name} in `{op}`: {at})	chyba PostScriptu ({name} v `{op}`: {at})
+@msg	a PostScript error ({name} in `{op}`: {at}), in {procs}	chyba PostScriptu ({name} v `{op}`: {at}), v {procs}
+@msg	a PostScript error ({name})	chyba PostScriptu ({name})
+@msg	a bitmap is empty	bitmapa je prázdná
+@msg	a bitmap is too large to read	bitmapa je příliš velká na načtení
+@msg	a colour index is 0 to {_1}, not {n}	index barvy je 0 až {_1}, ne {n}
+@msg	a colour is an index, #rrggbb or a preset name, not {v}	barva je index, #rrggbb nebo název přednastavení, ne {v}
+@msg	a document needs at least one artboard	dokument potřebuje alespoň jednu pracovní plochu
+@msg	a document needs at least one layer	dokument potřebuje alespoň jednu vrstvu
+@msg	a freeform gradient keeps at least one point	volný přechod si ponechává alespoň jeden bod
+@msg	a gradient needs at least two stops	přechod potřebuje alespoň dvě zarážky
+@msg	a graphic style named `{to}` already exists	grafický styl s názvem `{to}` už existuje
+@msg	a page is missing	chybí stránka
+@msg	a page out of range	stránka mimo rozsah
+@msg	a page tree kid isn't a reference	potomek stromu stránek není odkaz
+@msg	a page tree node has no kids	uzel stromu stránek nemá potomky
+@msg	a page's placement is not finite	umístění stránky není konečné
+@msg	a preset named `{_1}` exists	přednastavení s názvem `{_1}` existuje
+@msg	a slice size must be a positive number of points	velikost řezu musí být kladný počet bodů
+@msg	a stream runs past the end	datový proud přesahuje konec souboru
+@msg	a stream's length is wrong	délka datového proudu je chybná
+@msg	a stream's length isn't a number	délka datového proudu není číslo
+@msg	add a format to export	přidejte formát pro export
+@msg	already editing a pattern	vzorek se už upravuje
+@msg	an object can't be read	objekt nelze přečíst
+@msg	an object in perspective would leave the edited grid	objekt v perspektivě by opustil upravovanou mřížku
+@msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art nebo type
+@msg	artboard {0} does not exist	pracovní plocha {0} neexistuje
+@msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	v tomto měřítku má kresba {w} × {h} pt, víc než pojme plátno: zvolte menší měřítko nebo ji přizpůsobte pracovní ploše
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	osa musí být "vertical", "horizontal" nebo úhel ve stupních, ne `{v}`
+@msg	background {other}: transparent, white, black or a colour such as "#ff8800"	pozadí {other}: transparent, white, black nebo barva jako "#ff8800"
+@msg	bad color {v}	chybná barva {v}
+@msg	bad colour `{hex}` (#rrggbb)	chybná barva `{hex}` (#rrggbb)
+@msg	bad page tree	chybný strom stránek
+@msg	bad shortcut	chybná klávesová zkratka
+@msg	bad stream length	chybná délka datového proudu
+@msg	bad trailer	chybný trailer
+@msg	balance must be between 0 and 100	vyvážení musí být mezi 0 a 100
+@msg	batch step {_1} (`{id}`) failed: {e}	krok dávky {_1} (`{id}`) selhal: {e}
+@msg	brightness must be dark|mediumDark|mediumLight|light	jas musí být dark|mediumDark|mediumLight|light
+@msg	can't encode the document: {0}	dokument nelze zakódovat: {0}
+@msg	can't parse shortcut `{c}`	klávesovou zkratku `{c}` nelze analyzovat
+@msg	can't parse shortcut `{s}` for `{k}`	klávesovou zkratku `{s}` pro `{k}` nelze analyzovat
+@msg	can't save version {0}: VectorCraft writes versions {MIN_VERSION} to {VERSION}	verzi {0} nelze uložit: VectorCraft zapisuje verze {MIN_VERSION} až {VERSION}
+@msg	can't write .{ext} images	obrázky .{ext} nelze zapisovat
+@msg	cannot distort a zero-size bounding box	ohraničovací rámeček nulové velikosti nelze deformovat
+@msg	cannot read PDF: {0}	PDF nelze přečíst: {0}
+@msg	cannot split an open path at its end point	otevřenou cestu nelze rozdělit v jejím koncovém bodu
+@msg	closing needs three anchors	uzavření vyžaduje tři kotevní body
+@msg	check an asset to export	zaškrtněte prvek k exportu
+@msg	choice must be "merge" or "add", not `{choice}`	volba musí být "merge" nebo "add", ne `{choice}`
+@msg	choose a direction to divide in	zvolte směr rozdělení
+@msg	choose a folder to export to	zvolte složku pro export
+@msg	choose a location for the package	zvolte umístění balíčku
+@msg	clipboard is empty	schránka je prázdná
+@msg	colorTable.{what}: `{h}` is not a colour such as "#ff8800"	colorTable.{what}: `{h}` není barva jako "#ff8800"
+@msg	colorTable.{what}: at most {MAX_TABLE} colours	colorTable.{what}: nejvýše {MAX_TABLE} barev
+@msg	command `{0}` is not available right now: {1}	příkaz `{0}` nyní není k dispozici: {1}
+@msg	compound paths can only contain paths	složené cesty mohou obsahovat jen cesty
+@msg	compressed (RLE) bitmaps can't be read yet	komprimované bitmapy (RLE) zatím nelze načíst
+@msg	damaged	poškozeno
+@msg	decimals must be {_1}–{_2} (got {_3})	počet desetinných míst musí být {_1}–{_2} (zadáno {_3})
+@msg	divide into 1 to {MAX_PIECES} slices	rozdělit lze na 1 až {MAX_PIECES} řezů
+@msg	effect {k} is `{_1}`, not `{id}`	efekt {k} je `{_1}`, ne `{id}`
+@msg	empty brush stroke	prázdný tah štětcem
+@msg	empty cutter	prázdný řezací objekt
+@msg	empty path	prázdná cesta
+@msg	file version {0} is newer than this VectorCraft supports ({VERSION})	verze souboru {0} je novější, než tento VectorCraft podporuje ({VERSION})
+@msg	freeform point {i} needs `at` [x, y] and a valid `color`	volný bod {i} potřebuje `at` [x, y] a platnou `color`
+@msg	freeform line {i} must be an array of point indices	volná čára {i} musí být pole indexů bodů
+@msg	give both `start` and `end` [x, y] (or neither)	zadejte `start` i `end` [x, y] (nebo ani jedno)
+@msg	give corners of the path: anchors where its sides meet at an angle	zadejte rohy cesty: kotevní body, kde se její strany stýkají pod úhlem
+@msg	give horizontal or vertical	zadejte horizontal nebo vertical
+@msg	give the path `id` and the width point `index`	zadejte `id` cesty a `index` bodu šířky
+@msg	guides are locked	vodítka jsou zamčená
+@msg	image '{key}' has no pixels and was left out	obrázek '{key}' nemá žádné obrazové body a byl vynechán
+@msg	image data `{_1}` is missing	chybí obrazová data `{_1}`
+@msg	image would be too large; lower the resolution	obraz by byl příliš velký; snižte rozlišení
+@msg	index must be a number or first, previous, next or last	index musí být číslo nebo first, previous, next či last
+@msg	index must be a number or first, previous, next or last, not `{other}`	index musí být číslo nebo first, previous, next či last, ne `{other}`
+@msg	installing from a path is not available on the web; pass the module as `dataBase64`	instalace z cesty není na webu k dispozici; předejte modul jako `dataBase64`
+@msg	internal error in `{cmd}`: {msg} (the document was left as it was before; please report this bug)	vnitřní chyba v `{cmd}`: {msg} (dokument zůstal ve stavu před příkazem; nahlaste prosím tuto chybu)
+@msg	internal error: {msg} (please report this bug)	vnitřní chyba: {msg} (nahlaste prosím tuto chybu)
+@msg	invalid PDF setting: {0}	neplatné nastavení PDF: {0}
+@msg	invalid image data for `{0}`	neplatná obrazová data pro `{0}`
+@msg	invalid parameters for `{cmd}`: {msg}	neplatné parametry pro `{cmd}`: {msg}
+@msg	is not an image VectorCraft reads	není obraz, který VectorCraft umí přečíst
+@msg	it uses `{at}`, which VectorCraft's PostScript reader doesn't know	používá `{at}`, které čtečka PostScriptu ve VectorCraftu nezná
+@msg	it uses `{at}`, which VectorCraft's PostScript reader doesn't know, in {procs}	používá `{at}`, které čtečka PostScriptu ve VectorCraftu nezná, v {procs}
+@msg	its Windows metafile preview was opened instead, which may simplify the art	místo něj byl otevřen jeho náhled ve formátu Windows metafile, který může kresbu zjednodušit
+@msg	its preview was placed instead, at screen resolution	místo něj byl umístěn jeho náhled v rozlišení obrazovky
+@msg	join needs open paths	spojení vyžaduje otevřené cesty
+@msg	lang must be one of {_1}	lang musí být jedno z {_1}
+@msg	layers can't be wrap objects	vrstvy nemohou být objekty obtékání
+@msg	missing `folder`	chybí `folder`
+@msg	missing `id` (see plugin.list)	chybí `id` (viz plugin.list)
+@msg	missing `name`	chybí `name`
+@msg	missing `tool`	chybí `tool`
+@msg	missing index	chybí index
+@msg	multiple windows land with M11.5	více oken přijde s M11.5
+@msg	name the file	pojmenujte soubor
+@msg	no CSS to copy: select objects with CSS of their own	žádné CSS ke kopírování: vyberte objekty s vlastním CSS
+@msg	no Live Paint edge near that point	poblíž tohoto bodu není žádná hrana živé malby
+@msg	no Live Paint face at that point	v tomto bodě není žádná plocha živé malby
+@msg	no PNG encoder	chybí kodér PNG
+@msg	no active document	žádný aktivní dokument
+@msg	no active perspective plane	žádná aktivní perspektivní rovina
+@msg	no anchor points selected	nejsou vybrány žádné kotevní body
+@msg	no app to open files here	zde chybí aplikace pro otevírání souborů
+@msg	no artboard	žádná pracovní plocha
+@msg	no artboard {i} (0-based; the document has {_1})	pracovní plocha {i} neexistuje (číslováno od 0; dokument jich má {_1})
+@msg	no artboard {i} (0-based; the document has {count})	pracovní plocha {i} neexistuje (číslováno od 0; dokument jich má {count})
+@msg	no artboards named	nejsou zadány žádné pracovní plochy
+@msg	no artwork	žádná kresba
+@msg	no blend options	žádné možnosti prolnutí
+@msg	no bounds	žádné hranice
+@msg	no brush named `{name}`	štětec s názvem `{name}` neexistuje
+@msg	no brush selected	není vybrán žádný štětec
+@msg	no catalog	chybí katalog
+@msg	no changes since the last save	od posledního uložení nejsou žádné změny
+@msg	no clock to keep a heartbeat by	chybí hodiny, podle kterých by šlo udržovat signál aktivity
+@msg	no colour group `{g}`	skupina barev `{g}` neexistuje
+@msg	no cross-reference table	chybí tabulka křížových odkazů
+@msg	no current layer	žádná aktuální vrstva
+@msg	no data	žádná data
+@msg	no dialog open	není otevřeno žádné dialogové okno
+@msg	no document	žádný dokument
+@msg	no document open	není otevřen žádný dokument
+@msg	no effect applied yet	zatím nebyl použit žádný efekt
+@msg	no effect at index {k}	na indexu {k} není žádný efekt
+@msg	no end record	chybí koncový záznam
+@msg	no file manager here	zde není správce souborů
+@msg	no file reader	chybí čtení souborů
+@msg	no file system here	zde není souborový systém
+@msg	no file writer	chybí zápis souborů
+@msg	no files to place	žádné soubory k umístění
+@msg	no format to export to	žádný formát pro export
+@msg	no free recovery area	žádná volná oblast pro obnovení
+@msg	no gradient stop or freeform point is selected	není vybrána žádná zarážka přechodu ani volný bod
+@msg	no graphic style `{name}`	grafický styl `{name}` neexistuje
+@msg	no graphic style `{n}`	grafický styl `{n}` neexistuje
+@msg	no interaction in progress	neprobíhá žádná interakce
+@msg	no key object	žádný klíčový objekt
+@msg	no library `{key}` (see {list})	knihovna `{key}` neexistuje (viz {list})
+@msg	no native format	chybí nativní formát
+@msg	no pages	žádné stránky
+@msg	no pattern `{name}`	vzorek `{name}` neexistuje
+@msg	no perspective grid preset named `{name}`	přednastavení perspektivní mřížky s názvem `{name}` neexistuje
+@msg	no plug-in {0} is installed	zásuvný modul {0} není nainstalován
+@msg	no plug-in {id} is installed	zásuvný modul {id} není nainstalován
+@msg	no point {i} (the gradient has {_1})	bod {i} neexistuje (přechod jich má {_1})
+@msg	no preset editor	chybí editor přednastavení
+@msg	no previous transform	žádná předchozí transformace
+@msg	no print preset named `{base}`	přednastavení tisku s názvem `{base}` neexistuje
+@msg	no print preset named `{name}`	přednastavení tisku s názvem `{name}` neexistuje
+@msg	no print service	chybí tisková služba
+@msg	no revert command	chybí příkaz pro návrat k uložené verzi
+@msg	no saved PDF preset named `{name}` (built-in presets are read-only: start a new one from them)	uložené přednastavení PDF s názvem `{name}` neexistuje (vestavěná přednastavení jsou jen pro čtení: vytvořte z nich nové)
+@msg	no saved presets	žádná uložená přednastavení
+@msg	no saved print preset named `{name}` ({DEFAULT_PRESET} is protected: start a new one from it)	uložené přednastavení tisku s názvem `{name}` neexistuje ({DEFAULT_PRESET} je chráněné: vytvořte z něj nové)
+@msg	no saved profiles	žádné uložené profily
+@msg	no saved selections	žádné uložené výběry
+@msg	no saved themes	žádné uložené motivy
+@msg	no segment {segment} on line {line}	na čáře {line} není segment {segment}
+@msg	no selected slice in the image: select slices, or save all of them	v obraze není vybrán žádný řez: vyberte řezy, nebo uložte všechny
+@msg	no selection bounds	výběr nemá hranice
+@msg	no slice selected	není vybrán žádný řez
+@msg	no such action	taková akce neexistuje
+@msg	no such anchor	takový kotevní bod neexistuje
+@msg	no such artboard	taková pracovní plocha neexistuje
+@msg	no such document	takový dokument neexistuje
+@msg	no such layer or object	taková vrstva ani objekt neexistuje
+@msg	no such object {0}	objekt {0} neexistuje
+@msg	no such perspective grid preset	takové přednastavení perspektivní mřížky neexistuje
+@msg	no such recent file	takový nedávný soubor neexistuje
+@msg	no such recent font	takové nedávné písmo neexistuje
+@msg	no such saved selection	takový uložený výběr neexistuje
+@msg	no such segment	takový segment neexistuje
+@msg	no such subpath	taková dílčí cesta neexistuje
+@msg	no such user library	taková uživatelská knihovna neexistuje
+@msg	no such view	takové zobrazení neexistuje
+@msg	no such width point	takový bod šířky neexistuje
+@msg	no swatch `{name}`	položka vzorníku `{name}` neexistuje
+@msg	no swatch library `{l}` (see swatch.library.list)	knihovna vzorníku `{l}` neexistuje (viz swatch.library.list)
+@msg	no symbol instances selected	nejsou vybrány žádné instance symbolů
+@msg	no target object has an opacity mask: select one or give `id`	žádný cílový objekt nemá masku krytí: vyberte nějaký, nebo zadejte `id`
+@msg	no threaded text selected	není vybrán žádný zřetězený text
+@msg	no user library folder here	zde není složka uživatelských knihoven
+@msg	no user workspace `{from}`	uživatelský pracovní prostor `{from}` neexistuje
+@msg	node {_1} is not text	uzel {_1} není text
+@msg	not a DXF drawing	nejde o výkres DXF
+@msg	not a VectorCraft file: {0}	nejde o soubor VectorCraft: {0}
+@msg	not a VectorCraft shortcut set (missing `overrides`)	nejde o sadu klávesových zkratek VectorCraft (chybí `overrides`)
+@msg	not a graphic style library (format `{_1}`)	nejde o knihovnu grafických stylů (formát `{_1}`)
+@msg	not a stored central record	nejde o uložený centrální záznam
+@msg	not a valid plug-in module: {0}	neplatný modul zásuvného modulu: {0}
+@msg	not an EMF or WMF file	nejde o soubor EMF ani WMF
+@msg	not found	nenalezeno
+@msg	not in pattern editing mode	není aktivní režim úprav vzorku
+@msg	nothing encoded	nic nebylo zakódováno
+@msg	nothing selected	nic není vybráno
+@msg	nothing to align	není co zarovnat
+@msg	nothing to distort	není co deformovat
+@msg	nothing to export: the document has no visible art (or turn on Use Artboards)	není co exportovat: dokument nemá žádnou viditelnou kresbu (nebo zapněte Použít pracovní plochy)
+@msg	nothing to preview	není co zobrazit v náhledu
+@msg	nothing to print	není co tisknout
+@msg	nothing to redo	není co opakovat
+@msg	nothing to save: the document has no visible art	není co uložit: dokument nemá žádnou viditelnou kresbu
+@msg	nothing to undo	není co vrátit
+@msg	nothing to warp	není co pokřivit
+@msg	nothing to wrap	není co obtékat
+@msg	object {0} cannot have children	objekt {0} nemůže mít potomky
+@msg	object {id} is not a path	objekt {id} není cesta
+@msg	object {id} is not a selected top-level object	objekt {id} není vybraný objekt nejvyšší úrovně
+@msg	page size {w} × {h}	velikost stránky {w} × {h}
+@msg	page {0} does not exist (the PDF has {1})	stránka {0} neexistuje (PDF jich má {1})
+@msg	paste unavailable	vložení není k dispozici
+@msg	path is already closed	cesta už je uzavřená
+@msg	paths contain invalid coordinates	cesty obsahují neplatné souřadnice
+@msg	paths: give at least one file	paths: zadejte alespoň jeden soubor
+@msg	pattern missing	chybí vzorek
+@msg	patterns nested too deeply are filled with mid-grey	příliš hluboko vnořené vzorky se vyplní středně šedou
+@msg	percent must be above 0 and at most 6400, not {p}	procento musí být větší než 0 a nejvýše 6400, ne {p}
+@msg	pick a colour, gradient or pattern to save as a swatch	vyberte barvu, přechod nebo vzorek, který se má uložit do vzorníku
+@msg	plane must be left, right or ground	rovina musí být left, right nebo ground
+@msg	plug-in ABI: {0}	ABI zásuvného modulu: {0}
+@msg	plug-in exceeded its {0}	zásuvný modul překročil limit: {0}
+@msg	plug-in failed: {0}	zásuvný modul selhal: {0}
+@msg	plug-in manifest: {0}	manifest zásuvného modulu: {0}
+@msg	plug-in output: {0}	výstup zásuvného modulu: {0}
+@msg	plug-in parameters: {0}	parametry zásuvného modulu: {0}
+@msg	plug-in trapped: {0}	zásuvný modul narazil na chybu: {0}
+@msg	print settings are not an object	nastavení tisku nejsou objekt
+@msg	printing isn't available here	tisk zde není k dispozici
+@msg	range `{s}` is empty	rozsah `{s}` je prázdný
+@msg	range `{s}`: `{part}` names no number	rozsah `{s}`: `{part}` neobsahuje číslo
+@msg	range `{s}`: `{part}` runs backwards	rozsah `{s}`: `{part}` jde pozpátku
+@msg	range `{s}`: `{t}` is not a number from 1 to {count}	rozsah `{s}`: `{t}` není číslo od 1 do {count}
+@msg	recovery copy `{file}`: {e}	kopie pro obnovení `{file}`: {e}
+@msg	resolutions must be between 1 and 2400 ppi	rozlišení musí být mezi 1 a 2400 ppi
+@msg	result would exceed the canvas (coordinates out of range)	výsledek by přesáhl plátno (souřadnice mimo rozsah)
+@msg	scale must be a number from {_1} to {_2}, not {_3}	měřítko musí být číslo od {_1} do {_2}, ne {_3}
+@msg	scale must be a number from {_1} to {_2}, not {s}	měřítko musí být číslo od {_1} do {_2}, ne {s}
+@msg	select (or target) objects whose appearance isn't basic	vyberte (nebo zacilte) objekty, jejichž vzhled není základní
+@msg	select a Live Paint group	vyberte skupinu živé malby
+@msg	select a blend	vyberte prolnutí
+@msg	select a clip group	vyberte ořezovou skupinu
+@msg	select a gradient mesh	vyberte přechodovou síť
+@msg	select a linked image: an embedded one has no file	vyberte propojený obrázek: vložený nemá soubor
+@msg	select a repeat	vyberte opakování
+@msg	select a stroke with a variable width	vyberte tah s proměnnou šířkou
+@msg	select a symbol instance	vyberte instanci symbolu
+@msg	select an Image Trace object	vyberte objekt vektorizace obrazu
+@msg	could not decode image: {0}	obraz nelze dekódovat: {0}
+@msg	image is empty	obraz je prázdný
+@msg	the image is {width} × {height} pixels, more than Image Trace takes ({max} megapixels)	obraz má {width} × {height} obrazových bodů, víc, než vektorizace obrazu zpracuje ({max} megapixelů)
+@msg	this trace would make more than {max} anchor points, more than the document can show smoothly: raise Noise, lower Paths or Colors, or pick a lower-fidelity preset	tato vektorizace by vytvořila více než {max} kotevních bodů, víc, než dokument plynule zobrazí: zvyšte Šum, snižte Cesty nebo Barvy, nebo zvolte přednastavení s nižší věrností
+@msg	select an envelope	vyberte obálku
+@msg	select an image	vyberte obraz
+@msg	select an object in perspective	vyberte objekt v perspektivě
+@msg	select artwork (or a colour group) to recolor	vyberte kresbu (nebo skupinu barev) k přebarvení
+@msg	select at least two objects	vyberte alespoň dva objekty
+@msg	select objects, not layers	vyberte objekty, ne vrstvy
+@msg	select one path, or give its `id`	vyberte jednu cestu, nebo zadejte její `id`
+@msg	select paths to join	vyberte cesty ke spojení
+@msg	select the art to repeat	vyberte kresbu k opakování
+@msg	select the artwork to warp	vyberte kresbu k pokřivení
+@msg	select the objects to transform in perspective	vyberte objekty k transformaci v perspektivě
+@msg	select two or more graphic styles to merge	vyberte dva nebo více grafických stylů ke sloučení
+@msg	select type in perspective	vyberte text v perspektivě
+@msg	selection has no bounds	výběr nemá hranice
+@msg	shadings of an unknown type were left out	stínování neznámého typu byla vynechána
+@msg	shadings of more than 4096 patches or triangles were left out	stínování s více než 4096 záplatami nebo trojúhelníky byla vynechána
+@msg	shadings whose functions are of an unknown type are filled with their middle colour	stínování s funkcemi neznámého typu jsou vyplněna jejich střední barvou
+@msg	shortcut for `{k}` must be a string	klávesová zkratka pro `{k}` musí být řetězec
+@msg	stop {i} needs `offset`	zarážka {i} potřebuje `offset`
+@msg	stop {i} needs a valid `color`	zarážka {i} potřebuje platnou `color`
+@msg	stop {i}: `{k}` must be a number	zarážka {i}: `{k}` musí být číslo
+@msg	the EMF header is damaged	hlavička EMF je poškozená
+@msg	the PDF has no pages	PDF nemá žádné stránky
+@msg	the PDF is no longer loaded	PDF už není načteno
+@msg	the PDF is password-protected: give its password	PDF je chráněno heslem: zadejte heslo
+@msg	the PDF password is wrong	heslo k PDF je chybné
+@msg	the Save PDF dialog didn't open	dialogové okno Uložit PDF se neotevřelo
+@msg	the WMF header is damaged	hlavička WMF je poškozená
+@msg	the art could not be sampled	z kresby nelze nabrat vzorek
+@msg	the art has no bounds	kresba nemá hranice
+@msg	the art is too light for any dots	kresba je pro tečky příliš světlá
+@msg	the artboard to fit must be a positive size up to {_1} pt	pracovní plocha k přizpůsobení musí mít kladnou velikost do {_1} pt
+@msg	the background worker stopped	úloha na pozadí se zastavila
+@msg	the compressed file unpacks to more than {_1} MB	komprimovaný soubor se rozbalí na více než {_1} MB
+@msg	the document has never been saved	dokument nebyl nikdy uložen
+@msg	the document has no artboard	dokument nemá pracovní plochu
+@msg	the document has no artboards	dokument nemá žádné pracovní plochy
+@msg	the document has no patterns	dokument nemá žádné vzorky
+@msg	the document has no slices	dokument nemá žádné řezy
+@msg	the document has no symbols	dokument nemá žádné symboly
+@msg	the drawing has no layout `{_1}` (it has {_2})	výkres nemá rozvržení `{_1}` (má {_2})
+@msg	the drawing is no longer loaded	výkres už není načten
+@msg	the drawing is too large to open	výkres je příliš velký na otevření
+@msg	the export region is empty	oblast exportu je prázdná
+@msg	the export region is not finite	oblast exportu není konečná
+@msg	the export returned unreadable data	export vrátil nečitelná data
+@msg	the export wrote no file	export nezapsal žádný soubor
+@msg	the file holds only a placeholder page, not its art (it was saved without PDF compatibility): save it again with PDF compatibility on, or as PDF or SVG	soubor obsahuje jen zástupnou stránku, ne svou kresbu (byl uložen bez kompatibility s PDF): uložte jej znovu se zapnutou kompatibilitou s PDF, nebo jako PDF či SVG
+@msg	the file was read up to an error ({why}): what follows it was left out	soubor byl přečten až po chybu ({why}): to, co následuje, bylo vynecháno
+@msg	the file's preview header points outside the file	hlavička náhledu souboru ukazuje mimo soubor
+@msg	the image's pixels don't match its size	obrazové body obrazu neodpovídají jeho velikosti
+@msg	the layer has no objects to clip by	vrstva nemá žádné objekty, podle kterých by šlo ořezávat
+@msg	the layer or group is locked	vrstva nebo skupina je zamčená
+@msg	the guide is on a hidden or locked layer	vodítko je ve skryté nebo zamčené vrstvě
+@msg	the target layer is locked or hidden	cílová vrstva je zamčená nebo skrytá
+@msg	the layer to flatten into is hidden	vrstva, do které se má sloučit, je skrytá
+@msg	the object already has an opacity mask	objekt už má masku krytí
+@msg	the object has no geometry	objekt nemá žádnou geometrii
+@msg	the object has no opacity mask	objekt nemá masku krytí
+@msg	the object has no stroke	objekt nemá tah
+@msg	the object is beyond the plane's horizon	objekt je za horizontem roviny
+@msg	the object isn't in perspective	objekt není v perspektivě
+@msg	the object isn't on a perspective plane	objekt není na perspektivní rovině
+@msg	the object would cross the horizon of the perspective plane	objekt by překročil horizont perspektivní roviny
+@msg	the objects would leave the grid	objekty by opustily mřížku
+@msg	the package came back damaged	balíček se vrátil poškozený
+@msg	the pointer is beyond the plane's horizon	ukazatel je za horizontem roviny
+@msg	the preview image is empty	obraz náhledu je prázdný
+@msg	the print job has no data	tisková úloha nemá žádná data
+@msg	the scale is not a usable number	měřítko není použitelné číslo
+@msg	the selected stroke's profile is already listed as {_1}	profil vybraného tahu už je v seznamu jako {_1}
+@msg	the selection has no URL (or they differ)	výběr nemá URL (nebo se URL liší)
+@msg	the selection isn't in perspective	výběr není v perspektivě
+@msg	the stroke has no weight	tah nemá tloušťku
+@msg	the thumbnail image is malformed	obraz miniatury je chybně utvořený
+@msg	the top object must be a path, compound path or text object to use as a clipping mask	horní objekt musí být cesta, složená cesta nebo textový objekt, aby jej šlo použít jako ořezovou masku
+@msg	the {tool} tool has no options	nástroj {tool} nemá žádné možnosti
+@msg	there are no objects to release	nejsou žádné objekty k uvolnění
+@msg	there are no printer settings to open here	zde nelze otevřít žádné nastavení tiskárny
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	tento soubor PostScript nelze přečíst ({why}): uložte jej jako PDF nebo SVG v aplikaci, ve které vznikl
+@msg	this file's PostScript couldn't be read ({why}): {what}	PostScript tohoto souboru nelze přečíst ({why}): {what}
+@msg	this format holds one artboard: export several as PDF or with document.exportForScreens	tento formát pojme jednu pracovní plochu: více jich exportujte jako PDF nebo pomocí document.exportForScreens
+@msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	toto je výkres DWG, který nelze přečíst: uložte jej v aplikaci CAD jako ASCII DXF a otevřete ten
+@msg	this is a PostScript file (an .ai saved in an older format or without PDF compatibility, or an EPS file), which can't be opened yet: save it as PDF, PDF-compatible .ai or SVG	toto je soubor PostScript (.ai uložený ve starším formátu nebo bez kompatibility s PDF, nebo soubor EPS), který zatím nelze otevřít: uložte jej jako PDF, .ai kompatibilní s PDF nebo SVG
+@msg	this is not a PostScript file	toto není soubor PostScript
+@msg	tool shortcuts must be a single key (optionally with Shift)	zkratky nástrojů musí být jediná klávesa (volitelně se Shift)
+@msg	truncated	zkráceno
+@msg	unknown command `{0}`	neznámý příkaz `{0}`
+@msg	unknown effect `{id}`	neznámý efekt `{id}`
+@msg	unknown format	neznámý formát
+@msg	unknown format `{f}` (Save writes {_1})	neznámý formát `{f}` (Uložit zapisuje {_1})
+@msg	unknown freeform mode `{m}` (points, lines)	neznámý režim volného přechodu `{m}` (points, lines)
+@msg	unknown gradient kind `{k}` (linear, radial, freeform)	neznámý druh přechodu `{k}` (linear, radial, freeform)
+@msg	unknown highlight `{h}`	neznámé zvýraznění `{h}`
+@msg	unknown option `{path}.{k}`	neznámá možnost `{path}.{k}`
+@msg	unknown overprints `{o}` (preserve, simulate or discard)	neznámé přetisky `{o}` (preserve, simulate nebo discard)
+@msg	unknown panel `{raw}`	neznámý panel `{raw}`
+@msg	unknown preference `{key}`	neznámá předvolba `{key}`
+@msg	unknown preset (one of {_1})	neznámé přednastavení (jedno z {_1})
+@msg	unknown preset `{name}` (high, medium, low or a saved one: see flattener.presets.list)	neznámé přednastavení `{name}` (high, medium, low nebo uložené: viz flattener.presets.list)
+@msg	unknown preset `{name}` (see flattener.presets.list)	neznámé přednastavení `{name}` (viz flattener.presets.list)
+@msg	unknown preset `{name}` (see webExport.presets.list)	neznámé přednastavení `{name}` (viz webExport.presets.list)
+@msg	unknown side `{other}` (left|right|top|bottom)	neznámá strana `{other}` (left|right|top|bottom)
+@msg	unknown tool `{tool}`	neznámý nástroj `{tool}`
+@msg	unknown tool `{t}`	neznámý nástroj `{t}`
+@msg	unknown tool or command `{key}`	neznámý nástroj nebo příkaz `{key}`
+@msg	unknown workspace (one of {_1})	neznámý pracovní prostor (jeden z {_1})
+@msg	unsupported: {0}	nepodporováno: {0}
+@msg	version {0} files can't be compressed: only version {COMPRESSED_SINCE} and later open compressed files	soubory verze {0} nelze komprimovat: komprimované soubory otevírá až verze {COMPRESSED_SINCE} a novější
+@msg	width and height are at least 1 pixel	šířka i výška jsou alespoň 1 obrazový bod
+@msg	workspace name can't be empty	název pracovního prostoru nesmí být prázdný
+@msg	{C}: no effect at index {from}	{C}: na indexu {from} není žádný efekt
+@msg	{_1} failed: {e}	{_1} selhalo: {e}
+@msg	{_1} files can be opened but not written (see document.formats)	soubory {_1} lze otevřít, ale ne zapisovat (viz document.formats)
+@msg	{_1} font families available	Dostupné rodiny písem: {_1}
+@msg	{_1} is a live effect (Effect › Plug-ins)	{_1} je živý efekt (Efekt › Zásuvné moduly)
+@msg	{_1} is already used by {_2}	{_1} už používá {_2}
+@msg	{_1} linked file(s) can't be read here: their previews show	propojené soubory ({_1}) zde nelze přečíst: zobrazují se jejich náhledy
+@msg	{_1} linked image(s) changed on disk: Update Links shows the new versions	propojené obrázky ({_1}) se na disku změnily: nové verze zobrazí Aktualizovat propojení
+@msg	{_1}: not saved, so not closed	{_1}: neuloženo, proto nezavřeno
+@msg	{bpp}-bit bitmaps can't be read	{bpp}bitové bitmapy nelze přečíst
+@msg	{command} didn't create an object	{command} nevytvořil žádný objekt
+@msg	{label} produced an empty result	{label} vytvořil prázdný výsledek
+@msg	{label}: lost track of a shape's style	{label}: ztratil se styl tvaru
+@msg	{label}: select paths	{label}: vyberte cesty
+@msg	{label}: select paths, compound paths, groups or text	{label}: vyberte cesty, složené cesty, skupiny nebo text
+@msg	{label}…	{label}…
+@msg	{name}: CRC mismatch	{name}: nesouhlasí CRC
+@msg	{name}: no local header	{name}: chybí lokální hlavička
+@msg	{name}: no such recovery entry	{name}: taková položka obnovení neexistuje
+@msg	{path} can't be found: relink it first	{path} nelze najít: nejprve jej znovu propojte
+@msg	{path}: no file system here (pass dataBase64 to open; omit the path to get dataBase64)	{path}: zde není souborový systém (k otevření předejte dataBase64; vynecháním cesty dataBase64 získáte)
+@msg	{path}: {e}	{path}: {e}
+@msg	{status} ({e})	{status} ({e})
+@msg	Couldn't place {name}: {e}	{name} nelze umístit: {e}
+@msg	Couldn't paste from the clipboard: {e}	Nelze vložit ze schránky: {e}
+@msg	Saved {path} with {_1} note(s): {first}	Uloženo: {path}, poznámky ({_1}): {first}
+@msg	Exported {what} with {_1} note(s): {first}	Exportováno: {what}, poznámky ({_1}): {first}
+@msg	Exported {what}	Exportováno: {what}
+@msg	Saved {n} files beside {path}	Uloženo souborů: {n} vedle {path}
+@msg	Saving	Ukládání
+@msg	Saving {_1}	Ukládání {_1}
+@msg	Exporting {_1}	Exportování {_1}
+@msg	Saving recovery data for {_1}	Ukládání dat pro obnovení pro {_1}
+@msg	Discarded {_1} recovered document(s)	Zahozeno obnovených dokumentů: {_1}
+@msg	Restored {_1} recovered document(s): save them to keep them	Obnoveno dokumentů: {_1}; pokud je chcete zachovat, uložte je
+@msg	Embedded {n} image(s); {missing} missing: relink them first	Vloženo obrázků: {n}; chybí {missing}: nejprve je znovu propojte
+@msg	Embedded {n} image(s)	Vloženo obrázků: {n}
+@msg	Relinked {_1} image(s)	Znovu propojeno obrázků: {_1}
+@msg	Relinked {n} image(s)	Znovu propojeno obrázků: {n}
+@msg	Relinked {n} image(s); not in that folder: {_1}	Znovu propojeno obrázků: {n}; nejsou v dané složce: {_1}
+@msg	Updated {_1} image(s)	Aktualizováno obrázků: {_1}
+@msg	Unembedded to {_1}	Vložení zrušeno, uloženo do: {_1}
+@msg	Reset {_1}	Obnoveno: {_1}
+@msg	Sent to {_1}	Odesláno do {_1}
+@msg	{_1} files	Soubory {_1}
+@msg	The graphics were lost and have been restarted	Grafika byla ztracena a byla restartována
+@msg	The graphics processor tried first couldn't show the window, so VectorCraft started again on {summary}	Grafický procesor zkoušený jako první nedokázal zobrazit okno, proto se VectorCraft znovu spustil na {summary}
+@msg	Loading VectorCraft…	Načítání VectorCraftu…
+@msg	VectorCraft failed to start: {e}	VectorCraft se nepodařilo spustit: {e}
+@msg	A browser with WebGPU or WebGL2 is required.	Je potřeba prohlížeč s WebGPU nebo WebGL2.
+@msg	The graphics were lost and couldn't be restarted.	Grafika byla ztracena a nepodařilo se ji restartovat.
+@msg	Your unsaved changes are kept in this browser: reload the page to get them back.	Vaše neuložené změny zůstávají v tomto prohlížeči: obnovte stránku a získáte je zpět.
+@msg	Reload the page to go on (changes not saved yet may be lost).	Pokračujte obnovením stránky (dosud neuložené změny se mohou ztratit).
+@msg	tool (a tool id) is required	tool (ID nástroje) je povinný
+@msg	{tool} isn't in a toolbar group of several tools	{tool} není ve skupině panelu nástrojů s více nástroji
+@msg	onto must name a panel floating in another group	onto musí určovat panel plovoucí v jiné skupině
+@msg	below and above must name a panel floating in another group	below a above musí určovat panel plovoucí v jiné skupině
+@msg	give only one of onto, below and above	zadejte jen jedno z onto, below a above
+@msg	column must be true or a number from 1	column musí být true nebo číslo od 1
+@msg	x and y must both be numbers	x i y musí být čísla
+@msg	"{0}" is not a colour: write it as #rrggbb	„{0}“ není barva: zapište ji jako #rrggbb
+@msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	nejde o logo s plnými barvami ({_1} % jeho plných ploch odpovídá několika plným barvám), takže režim Ploché logo by z jeho přechodů udělal skvrny: použijte místo toho režim Barva
+@msg	`{what}` closes nothing	`{what}` nic neuzavírá
+@msg	`{what}` closes something it didn't open	`{what}` uzavírá něco, co neotevřel
+@msg	a path has too many points	cesta má příliš mnoho bodů
+@msg	it ends inside a layer	končí uvnitř vrstvy
+@msg	it has art outside its layers	má kresbu mimo své vrstvy
+@msg	it has more than {MAX_NODES} objects	má více než {MAX_NODES} objektů
+@msg	it has no layers	nemá žádné vrstvy
+@msg	it has too many values in a row	má příliš mnoho hodnot v řadě
+@msg	it has {_1}, which VectorCraft doesn't read from it yet	obsahuje {_1}, což z něj VectorCraft zatím nečte
+@msg	its objects are nested too deeply	jeho objekty jsou vnořené příliš hluboko
+@msg	its section ending with `%{end}` doesn't end	jeho oddíl končící `%{end}` nemá konec
+@msg	objects with several fills or strokes, effects or brushes came in as their drawn look ({_1}): their appearance isn't editable yet	objekty s více výplněmi nebo tahy, efekty či štětci byly načteny jako vykreslený vzhled ({_1}): jejich vzhled zatím nelze upravovat
+@msg	gradient “{name}” isn't defined in the file: a plain colour stands in for it	přechod „{name}“ není v souboru definován: zastupuje ho plná barva
+@msg	an image VectorCraft can't read was left out	obrázek, který VectorCraft neumí přečíst, byl vynechán
+@msg	an image whose data is cut short was left out	obrázek s useknutými daty byl vynechán
+@msg	its editing data doesn't say where its art is	z jeho dat pro úpravy není zřejmé, kde je kresba
+@msg	this file was saved without PDF compatibility, and its editing data can't be read ({why})	tento soubor byl uložen bez kompatibility s PDF a jeho data pro úpravy nelze přečíst ({why})
+@msg	No fonts are missing in this document	V tomto dokumentu nechybí žádná písma
+@msg	VectorCraft doesn't search other apps' or the system's folders: {path}	VectorCraft neprohledává složky jiných aplikací ani systému: {path}
+@msg	VectorCraft doesn't search the Shared or Public folder in Users: {path}	VectorCraft neprohledává složku Shared ani Public ve složce Users: {path}
+@msg	{path} is not a folder	{path} není složka
+@msg	the search couldn't start: try again in a moment	hledání nelze spustit: zkuste to za chvíli znovu
+@msg	searching a folder isn't available on the web	prohledávání složky není na webu k dispozici
+@msg	every search thread stopped on an internal error (please report this bug)	všechna vlákna hledání se zastavila na vnitřní chybě (nahlaste prosím tuto chybu)
+@msg	VectorCraft's Fonts folder isn't set here: the desktop app and vectorcraft-cli set it	složka Fonts VectorCraftu zde není nastavena: nastavuje ji desktopová aplikace a vectorcraft-cli
+@msg	choose the font files to add	vyberte soubory písem, které chcete přidat
+@msg	{n} font file(s) are now in {folder}	soubory písem ({n}) jsou nyní ve složce {folder}
+@msg	{n} font file(s) are now in {folder}; {failed} couldn't be added: {reason}	soubory písem ({n}) jsou nyní ve složce {folder}; nepodařilo se přidat {failed}: {reason}
+@msg	{n} font(s) aren't available here: their text shows in another font	písma ({n}) zde nejsou k dispozici: jejich text se zobrazuje jiným písmem
+@msg	not a file	nejde o soubor
+@msg	not a font file	nejde o soubor písma
+@msg	that document is no longer open	tento dokument už není otevřen
+@msg	larger than 256 MB	větší než 256 MB
+@msg	the files come to more than 1 GB: add fewer at a time	soubory mají dohromady více než 1 GB: přidávejte jich méně najednou
+@msg	every numbered name for it is taken in the Fonts folder	ve složce Fonts jsou obsazena všechna číslovaná jména pro tento soubor
+@msg	every numbered name for {name} is taken in the document's folder	ve složce dokumentu jsou obsazena všechna číslovaná jména pro {name}
+@msg	No linked files to look for	Žádné propojené soubory k vyhledání
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	Znovu propojeno obrázků: {n}; nepodařilo se znovu propojit {name}: {reason}
+@msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` je odkaz na krok {r}, který vyhodnocují jen `run` a `command_batch`
+@msg	`ids` must be an array of object ids, not {v}	`ids` musí být pole ID objektů, ne {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` musí být pole indexů kotevních bodů, ne {v}
+@msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: výsledek kroku {i} takovou hodnotu nemá (pro samotný znak $ napište $$)
+@msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: před tímto krokem není krok {i} (kroky se číslují od 0; pro samotný znak $ napište $$)
+@msg	object ids are non-negative integers, not {v}	ID objektů jsou nezáporná celá čísla, ne {v}
+@msg	automation filesystem access is not granted: read authority is absent: {path}	přístup automatizace k systému souborů není udělen: chybí oprávnění ke čtení: {path}
+@msg	automation filesystem access is not granted: write authority is absent: {path}	přístup automatizace k systému souborů není udělen: chybí oprávnění k zápisu: {path}
+@msg	automation path rejected: outside the read root {root}: {path}	cesta automatizace odmítnuta: mimo kořen pro čtení {root}: {path}
+@msg	automation path rejected: outside the write root {root}: {path}	cesta automatizace odmítnuta: mimo kořen pro zápis {root}: {path}
+@msg	automation path rejected: path is empty	cesta automatizace odmítnuta: cesta je prázdná
+@msg	automation path rejected: a link that leads nowhere: {path}	cesta automatizace odmítnuta: odkaz, který nikam nevede: {path}
+@msg	automation path rejected: cannot resolve {path}: {e}	cesta automatizace odmítnuta: {path} nelze vyhodnotit: {e}
+@msg	automation path rejected: parent traversal below a folder that doesn't exist: {path}	cesta automatizace odmítnuta: přechod do nadřazené složky pod složkou, která neexistuje: {path}
+@msg	automation path rejected: reserved device names are not allowed: {path}	cesta automatizace odmítnuta: rezervované názvy zařízení nejsou povoleny: {path}
+@msg	Multichannel PSD files can't be read: save it in RGB, CMYK or Grayscale mode	vícekanálové soubory PSD nelze přečíst: uložte jej v režimu RGB, CMYK nebo stupně šedi
+@msg	not a PSD file	nejde o soubor PSD
+@msg	the PSD file has an unknown colour mode ({m})	soubor PSD má neznámý barevný režim ({m})
+@msg	the PSD file's image data uses an unknown compression ({m})	obrazová data souboru PSD používají neznámou kompresi ({m})
+@msg	the PSD image is too large to read ({_1} × {_2} pixels)	obraz PSD je příliš velký na přečtení ({_1} × {_2} obrazových bodů)
+@msg	zipped 32-bit PSD image data with prediction can't be read	zazipovaná 32bitová obrazová data PSD s predikcí nelze přečíst
+@msg	{depth}-bit PSD files in this colour mode can't be read	{depth}bitové soubory PSD v tomto barevném režimu nelze přečíst
+@msg	the PSD file is cut short	soubor PSD je useknutý
+@msg	the PSD file's header is damaged	hlavička souboru PSD je poškozená
+@msg	the PSD file's image data can't be read: {e}	obrazová data souboru PSD nelze přečíst: {e}
+@msg	Imported library {name}	Importována knihovna {name}
+@msg	Invalid panel layout; restored the default dock	Neplatné rozložení panelů; obnoveno výchozí ukotvení
+@msg	action is required	action je povinné
+@msg	anchor must name a registered panel	anchor musí určovat registrovaný panel
+@msg	before must name a panel	before musí určovat panel
+@msg	docking action contains an unknown panel or an excessive split path	akce ukotvení obsahuje neznámý panel nebo příliš dlouhou cestu rozdělení
+@msg	group must be true or false	group musí být true nebo false
+@msg	move requires a destination panel	přesun vyžaduje cílový panel
+@msg	move requires an existing destination panel	přesun vyžaduje existující cílový panel
+@msg	onto must name a floating panel	onto musí určovat plovoucí panel
+@msg	panel group is empty	skupina panelů je prázdná
+@msg	panel must name a registered panel	panel musí určovat registrovaný panel
+@msg	saved panel layout is invalid; reset the workspace first	uložené rozložení panelů je neplatné; nejprve obnovte pracovní prostor
+@msg	zone must be a string	zone musí být řetězec
+@msg	zone must be tab, center, left, right, top or bottom	zone musí být tab, center, left, right, top nebo bottom
+@msg	{key} must be a finite coordinate	{key} musí být konečná souřadnice
+@msg	x and y must be provided together	x a y musí být zadány společně
+@msg	invalid restored panel group	neplatná obnovená skupina panelů
+@msg	invalid native panel set	neplatná nativní sada panelů
+@msg	missing panel layout	chybí rozložení panelů
+@msg	unsupported native docking operation	nepodporovaná nativní operace ukotvení
+@msg	this kind of brush has no options dialog yet	tento druh štětce zatím nemá dialogové okno možností
+	Ruler Origin	Počátek pravítek
+	Reset Ruler Origin	Obnovit počátek pravítek
+	Column Width:	Šířka sloupce:
+	Import Data…	Importovat data…
+	Number of Decimals:	Počet desetinných míst:
+	Switch x/y	Prohodit x/y
+	Transpose	Transponovat
+	Phone 393×852	Telefon 393×852
+	Phone 430×932	Telefon 430×932
+	Phone 360×800	Telefon 360×800
+	Phone 412×915	Telefon 412×915
+	Phone 375×667	Telefon 375×667
+	Tablet 768×1024	Tablet 768×1024
+	Tablet 820×1180	Tablet 820×1180
+	Tablet 834×1194	Tablet 834×1194
+	Tablet 1024×1366	Tablet 1024×1366
+	Tablet 800×1280	Tablet 800×1280
+	Watch 184×224	Hodinky 184×224
+	Watch 198×242	Hodinky 198×242
+	Web 1600×900	Web 1600×900
+	Web 1440×900	Web 1440×900
+	Web 1366×768	Web 1366×768
+	Web 1280×800	Web 1280×800
+	Web 1024×768	Web 1024×768
+	Legal	Legal
+	Tabloid	Tabloid
+	A3	A3
+	A4	A4
+	A5	A5
+	B4	B4
+	B5	B5
+	HDTV 1080p	HDTV 1080p
+	HDTV 720p	HDTV 720p
+	4K UHD	4K UHD
+	8K UHD	8K UHD
+	2K Cinema	Kino 2K
+	4K Cinema	Kino 4K
+	Greeting Card	Blahopřání
+	Square 8 × 8 in	Čtverec 8 × 8 in
+	Poster 18 × 24 in	Plakát 18 × 24 in
+	Poster 24 × 36 in	Plakát 24 × 36 in
+	Logo 1000×1000	Logo 1000×1000
+	Business Card 3.5 × 2 in	Vizitka 3,5 × 2 in
+	Business Card 85 × 55 mm	Vizitka 85 × 55 mm
+	Letterhead Letter	Hlavičkový papír Letter
+	Letterhead A4	Hlavičkový papír A4
+	Envelope DL	Obálka DL
+	Envelope #10	Obálka #10
+	Social Portrait Post 1080×1350	Portrétní příspěvek pro sociální sítě 1080×1350
+	Social Landscape Post 1200×630	Příspěvek na šířku pro sociální sítě 1200×630
+	Social Story 1080×1920	Příběh pro sociální sítě 1080×1920
+	Social Tall Post 1000×1500	Vysoký příspěvek pro sociální sítě 1000×1500
+	Profile Cover 1500×500	Úvodní obrázek profilu 1500×500
+	Page Cover 1640×624	Úvodní obrázek stránky 1640×624
+	Video Banner 2560×1440	Banner videa 2560×1440
+	Video Thumbnail 1280×720	Miniatura videa 1280×720
+# Keyboard Shortcuts dialog (shortcut_editor.rs)
+	Keyboard Shortcuts	Klávesové zkratky
+	Set:	Sada:
+	Reset to Defaults	Obnovit výchozí hodnoty
+	Tool	Nástroj
+	Command	Příkaz
+	Shortcut	Zkratka
+	Menu Commands	Příkazy nabídky
+	Press keys…	Stiskněte klávesy…
+	Use Default	Použít výchozí
+	Go to Conflict	Přejít ke konfliktu
+	Remove the shortcut	Odebrat zkratku
+	Click, then press the new shortcut (Esc cancels)	Klikněte a stiskněte novou zkratku (Esc zruší)
+	All shortcuts reset to defaults.	Všechny zkratky byly obnoveny na výchozí hodnoty.
+	Imported. Press OK to keep the imported set.	Importováno. Importovanou sadu zachováte stisknutím OK.
+	⚠ {chord} was already used by {names} — it has been removed there.	Pozor: zkratka {chord} už byla použita pro {names} — tam byla odebrána.
+	VectorCraft Defaults	Výchozí VectorCraft
+@plural	{n} shortcut is assigned more than once|{n} shortcuts are assigned more than once	{n} zkratka je přiřazena více než jednou|{n} zkratky jsou přiřazeny více než jednou|{n} zkratek je přiřazeno více než jednou
+# Print dialog: overprints note and choice labels
+	Simulate prints overprints as Overprint Preview shows them; separations always keep them. A preset flattens transparency before printing (PostScript files always flatten it).	Možnost Simulovat vytiskne přetisky tak, jak je ukazuje Náhled přetisků; separace je vždy zachovávají. Přednastavení před tiskem sloučí průhlednost (soubory PostScript ji sloučí vždy).
+	Preserve	Zachovat
+	Simulate	Simulovat
+	Portrait (flipped)	Na výšku (převrácené)
+	Landscape (flipped)	Na šířku (převrácené)
+	Visible & Printable Layers	Viditelné a tisknutelné vrstvy
+	Visible Layers	Viditelné vrstvy
+	All Layers	Všechny vrstvy
+	Do Not Scale	Neměnit měřítko
+	Fit to Page	Přizpůsobit stránce
+	Custom Scale	Vlastní měřítko
+	Tile Imageable Areas	Dlaždice z potisknutelných oblastí
+	Composite	Kompozitní
+	Separations	Separace
+	Up (right reading)	Nahoru (čitelné)
+	Down (right reading)	Dolů (čitelné)
+	Positive	Pozitiv
+	Negative	Negativ
+	Subset	Podmnožina
+	Complete	Úplná
+	[Custom]	[Vlastní]
+	[Default]	[Výchozí]
+# PDF options: choice labels
+	No downsampling	Bez převzorkování
+	Subsample	Podvzorkování
+	Bicubic	Bikubické
+	Minimum	Minimální
+	Run Length	Délka běhu
+	Roman	Římské
+	No conversion	Bez převodu
+	Convert to destination	Převést do cíle
+	Convert to destination (preserve numbers)	Převést do cíle (zachovat hodnoty)
+	Don't include profiles	Nezahrnovat profily
+	Include all profiles	Zahrnout všechny profily
+	Include destination profile	Zahrnout cílový profil
+	Include tagged source profiles	Zahrnout označené zdrojové profily
+	Low resolution (150 ppi)	Nízké rozlišení (150 ppi)
+	High resolution	Vysoké rozlišení
+	Inserting, deleting and rotating pages	Vkládání, mazání a otáčení stránek
+	Filling in form fields and signing	Vyplňování formulářových polí a podepisování
+	Commenting, filling in form fields and signing	Komentování, vyplňování formulářových polí a podepisování
+	Any except extracting pages	Vše kromě extrahování stránek
+	Bounding Box	Ohraničovací rámeček
+# New Document preset categories
+	Mobile	Mobil
+	Film & Video	Film a video
+	Art & Illustration	Umění a ilustrace
+	Branding	Branding
+	Social	Sociální sítě
+# Arrowheads (Stroke panel)
+	Triangle	Trojúhelník
+	Triangle (open)	Trojúhelník (otevřený)
+	Circle (open)	Kruh (otevřený)
+	Square (open)	Čtverec (otevřený)
+	Bar	Příčka
+	Arrow	Šipka
+	Arrow (open)	Šipka (otevřená)
+	Barbed	S protihroty
+	Half Arrow (left)	Poloviční šipka (vlevo)
+	Half Arrow (right)	Poloviční šipka (vpravo)
+	Concave	Vkleslá
+	Double Bar	Dvojitá příčka
+	Feather	Pírko
+	Dot on Bar	Tečka na příčce
+	Chevron	Véčko
+	Double Arrow	Dvojitá šipka
+	Cross	Kříž
+	Plus	Plus
+	Hexagon	Šestiúhelník
+	Hexagon (open)	Šestiúhelník (otevřený)
+	Tag	Štítek
+	Tag (open)	Štítek (otevřený)
+	Half Circle	Půlkruh
+	Drop	Kapka
+	Slash	Lomítko
+	Double Slash	Dvojité lomítko
+	Diamond (open)	Kosočtverec (otevřený)
+	Reverse Triangle	Obrácený trojúhelník
+	Swallowtail	Vlaštovčí ocas
+	Bracket	Závorka
+	Fork	Vidlice
+	Leaf	List
+	Kite	Deltoid
+	Triangle to Bar	Trojúhelník k příčce
+	Oval	Ovál
+# Colour harmony rules (Color Guide, Recolor Artwork, Color Themes)
+	Complementary	Komplementární
+	Complementary 2	Komplementární 2
+	Split Complementary	Rozdělená komplementární
+	Left Complement	Levý doplněk
+	Right Complement	Pravý doplněk
+	Analogous	Analogická
+	Analogous 2	Analogická 2
+	Monochromatic	Monochromatická
+	Shades	Tmavé tóny
+	Triad	Triáda
+	Triad 2	Triáda 2
+	Triad 3	Triáda 3
+	Tetrad	Tetráda
+	Tetrad 2	Tetráda 2
+	Tetrad 3	Tetráda 3
+	Compound	Složená
+	Compound 2	Složená 2
+	High Contrast	Vysoký kontrast
+	High Contrast 2	Vysoký kontrast 2
+	High Contrast 3	Vysoký kontrast 3
+	Pentagram	Pentagram
+# Rendering intents, recolor methods, gradient kinds
+	Perceptual	Percepční
+	Relative Colorimetric	Relativní kolorimetrický
+	Absolute Colorimetric	Absolutní kolorimetrický
+	Exact	Přesná
+	Preserve Tints	Zachovat světlé tóny
+	Scale Tints	Změnit měřítko světlých tónů
+	Linear	Lineární
+	Freeform	Volný
+# DXF options
+	8 Colors	8 barev
+	16 Colors	16 barev
+	256 Colors	256 barev
+	True Colors	Plné barvy
+	Preserve Appearance	Zachovat vzhled
+	Maximize Editability	Maximalizovat upravitelnost
+# Layers panel: generated names <Kind>
+	Clip Group	Ořezová skupina
+	Guide	Vodítko
+	Symbol	Symbol
+	Envelope	Obálka
+	Mesh	Síť
+	Placed Document	Umístěný dokument
+	Radial Repeat	Kruhové opakování
+	Grid Repeat	Mřížkové opakování
+	Mirror Repeat	Zrcadlové opakování
+# Generic parameter dialog (command.rs): Area Type Options
+	Auto Size	Automatická velikost
+	Shrink Text to Fit	Zmenšit text, aby se vešel
+	Ascent	Výška nad účařím
+	Cap Height	Výška verzálek
+	x Height	Výška x
+	Justify	Do bloku
+	First Baseline	První účaří
+	Vertical Align	Svislé zarovnání
+	Save Selection	Uložit výběr
+# Liquify tools
+	Twirl	Zatočení
+	Pucker	Smrštění
+	Bloat	Vyboulení
+	Scallop	Vroubkování
+	Wrinkle	Zvrásnění
+# File Info, Flattener Preview, Flattener presets
+	Unknown	Neznámý
+	Copyrighted	Chráněno autorským právem
+	Public Domain	Volné dílo
+	None (Color Preview)	Žádné (náhled barev)
+	Rasterized Complex Regions	Rastrované složité oblasti
+	Transparent Objects	Průhledné objekty
+	All Affected Objects	Všechny dotčené objekty
+	Expanded Patterns	Rozložené vzorky
+	Outlined Strokes	Tahy převedené na křivky
+	Outlined Text	Text převedený na křivky
+	All Rasterized Regions	Všechny rastrované oblasti
+	High Resolution	Vysoké rozlišení
+	Medium Resolution	Střední rozlišení
+	Low Resolution	Nízké rozlišení
+# Save for Web, EPS, raster export options
+	Copyright and Contact Info	Autorská práva a kontaktní údaje
+	All Slices	Všechny řezy
+	Selected Slices	Vybrané řezy
+	No Slices	Žádné řezy
+	Images Only	Jen obrazy
+	HTML and Images	HTML a obrazy
+	Selective	Selektivní
+	Adaptive	Adaptivní
+	Black & White	Černobílá
+	No Dither	Bez rozptylu
+	Diffusion	Difuze
+	Unsorted	Neseřazeno
+	Sort by Hue	Řadit podle odstínu
+	Sort by Luminance	Řadit podle jasu
+	Sort by Popularity	Řadit podle četnosti
+	Baseline (Standard)	Základní (standardní)
+	Baseline Optimized	Základní optimalizovaná
+	Art Optimized	Optimalizováno pro kresbu
+	Type Optimized	Optimalizováno pro text
+	Language Level 2	Jazyková úroveň 2
+	Language Level 3	Jazyková úroveň 3
+	TIFF (Black & White)	TIFF (černobílý)
+	TIFF (8-bit Color)	TIFF (8bitová barva)
+	1 bit	1 bit
+	4 bit	4 bity
+	8 bit	8 bitů
+	16 bit	16 bitů
+	24 bit	24 bitů
+	32 bit	32 bitů
+	16 bits/pixel	16 bitů na pixel
+	24 bits/pixel	24 bitů na pixel
+	32 bits/pixel	32 bitů na pixel
+	DWG (use DXF)	DWG (použijte DXF)
+	Artistic	Umělecké
+	Film Grain…	Filmové zrno…
+	Highlight Area	Oblast světel
+
+# Czech render-site follow-up (AI drafts; native review requested).
+file-filter	All readable files	Všechny čitelné soubory
+file-filter	All placeable files	Všechny soubory pro umístění
+file-filter	Swatch libraries	Knihovny vzorníků
+file-filter	Flattener presets	Přednastavení sloučení průhlednosti
+file-filter	PDF presets	Přednastavení PDF
+file-filter	Print presets	Přednastavení tisku
+file-filter	SVG Compressed	Komprimované SVG
+file-filter	PDF-compatible .ai	.ai kompatibilní s PDF
+file-filter	VectorCraft Template	Šablona VectorCraft
+file-filter	Templates	Šablony
+diagnostics	render	vykreslení
+diagnostics	ui	rozhraní
+	Preset {number}	Přednastavení {number}
+	PRs	PR
+	@{login}: {prs}, {commits}, +{added} / −{deleted} lines (Δ {delta}), +{binary_added} / −{binary_deleted} binary assets, {first} – {last}	@{login}: {prs}, {commits}, řádky +{added} / −{deleted} (Δ {delta}), binární soubory +{binary_added} / −{binary_deleted}, {first} – {last}
+@plural	{n} PR|{n} PRs	{n} PR|{n} PR|{n} PR
+@plural	{n} commit|{n} commits	{n} commit|{n} commity|{n} commitů
+gradient-kind	Radial	Kruhový
+mark-style	Japanese	Japonské
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	komprimovaný soubor se rozbalí na více, než VectorCraft přečte ({_1} MB dokumentu, {_2} MB na obrázek)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	dokument je příliš velký pro komprimované uložení ({0}): uložte ho s vypnutou volbou Použít kompresi
+@msg	the file stopped being read (please report this bug)	čtení souboru se přerušilo (nahlaste prosím tuto chybu)
+	Concentric Dividers:	Soustředné dělicí čáry:
+	Radial Dividers:	Radiální dělicí čáry:

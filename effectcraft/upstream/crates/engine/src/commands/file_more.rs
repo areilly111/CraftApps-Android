@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use effectcraft_color::Label;
-use effectcraft_project::{AlphaMode, Comp, Footage, FootageKind, ItemId, ItemKind, LayerSource, Project, Solid};
+use effectcraft_project::{AlphaMode, Comp, Footage, FootageKind, ItemId, ItemKind, LayerSource, Project, Solid, limits};
 use effectcraft_time::{FrameRate, Tick};
 use serde_json::{Value, json};
 
@@ -84,12 +84,12 @@ fn save_copy(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn rate_of(p: &Value) -> FrameRate {
-    f_p(p, "frameRate").map(FrameRate::from_f64).unwrap_or(FrameRate::FPS_29_97)
+    f_p(p, "frameRate").map(|f| limits::frame_rate(FrameRate::from_f64(f), FrameRate::FPS_29_97)).unwrap_or(FrameRate::FPS_29_97)
 }
 
 fn placeholder_footage(p: &Value) -> Footage {
-    let w = p.get("width").and_then(Value::as_u64).unwrap_or(1920) as u32;
-    let h = p.get("height").and_then(Value::as_u64).unwrap_or(1080) as u32;
+    let w = p.get("width").and_then(Value::as_u64).map_or(1920, limits::size);
+    let h = p.get("height").and_then(Value::as_u64).map_or(1080, limits::size);
     Footage {
         path: String::new(),
         kind: FootageKind::Video,
@@ -133,8 +133,8 @@ fn solid_from(p: &Value, s: &Session) -> Solid {
     .unwrap_or([0.5, 0.5, 0.5]);
     Solid {
         color,
-        width: p.get("width").and_then(Value::as_u64).map(|v| v as u32).unwrap_or(cw).max(1),
-        height: p.get("height").and_then(Value::as_u64).map(|v| v as u32).unwrap_or(ch).max(1),
+        width: p.get("width").and_then(Value::as_u64).map(limits::size).unwrap_or(cw).max(1),
+        height: p.get("height").and_then(Value::as_u64).map(limits::size).unwrap_or(ch).max(1),
         pixel_aspect: 1.0,
     }
 }
@@ -620,7 +620,8 @@ impl Interpretation {
             ),
         };
         it.invert_alpha = super::b_p(p, "invertAlpha");
-        it.loops = p.get("loop").and_then(Value::as_u64).map(|v| v.clamp(1, 9999) as u32);
+        // The Interpret Footage form sends numbers as floats (3.0), which `as_u64` rejects.
+        it.loops = f_p(p, "loop").filter(|x| x.is_finite()).map(|v| v.round().clamp(1.0, 9999.0) as u32);
         it.par = f_p(p, "pixelAspect").filter(|x| *x > 0.0);
         it.fields = match str_p(p, "fields") {
             Some(f) => Some(effectcraft_project::FieldOrder::parse(f).ok_or_else(|| bad(cmd, "fields: off|upper|lower"))?),

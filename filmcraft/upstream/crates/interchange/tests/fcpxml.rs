@@ -152,7 +152,10 @@ fn golden_connected_clips() {
     assert!(s.audio_tracks.iter().flat_map(|t| &t.items).all(|i| i.item != boats.item));
     // marker on a primary element is a timeline marker
     assert_eq!(s.markers.len(), 1);
-    assert_eq!((s.markers[0].name.as_str(), s.markers[0].comment.as_str(), s.markers[0].start), ("Seagull", "nice", r.tick_of(24)));
+    assert_eq!(
+        (s.markers[0].name.as_str(), s.markers[0].comment.as_str(), s.markers[0].start, s.markers[0].duration),
+        ("Seagull", "nice", r.tick_of(24), filmcraft_time::Tick::ZERO)
+    );
     // event became a bin
     assert!(p.root.children.iter().any(|c| matches!(c, filmcraft_project::BinEntry::Bin(b) if b.name == "Day 1")));
     assert!(!rep.has_warnings(), "{rep}");

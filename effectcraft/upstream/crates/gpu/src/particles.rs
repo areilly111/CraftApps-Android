@@ -6,7 +6,6 @@
 use std::sync::{Mutex, OnceLock};
 
 use effectcraft_effects::psim::{ParticleSystem, SimParticle, SimRequest};
-use wgpu::util::DeviceExt;
 
 use crate::context::GpuContext;
 
@@ -152,7 +151,7 @@ pub(crate) fn simulate(g: &GpuContext, req: &SimRequest) -> Option<Vec<SimPartic
     };
     let d = &g.device;
     let births: Vec<u8> = req.births.iter().flat_map(|b| b.to_le_bytes()).collect();
-    let births = d.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("births"), contents: &births, usage: wgpu::BufferUsages::STORAGE });
+    let births = g.buffer_init(Some("births"), &births, wgpu::BufferUsages::STORAGE);
     let prev = prev.unwrap_or_else(|| {
         d.create_buffer(&wgpu::BufferDescriptor { label: Some("particles"), size: STATE_BYTES, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false })
     });
@@ -162,11 +161,7 @@ pub(crate) fn simulate(g: &GpuContext, req: &SimRequest) -> Option<Vec<SimPartic
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
-    let ub = d.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("particles"),
-        contents: &uniforms(req, n, s0, prev_n),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
+    let ub = g.buffer_init(Some("particles"), &uniforms(req, n, s0, prev_n), wgpu::BufferUsages::UNIFORM);
     let bg = d.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &p.bgl,

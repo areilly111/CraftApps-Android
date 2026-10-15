@@ -583,3 +583,107 @@ fn nothing_is_dropped_when_a_stream_cannot_be_checked() {
         assert_eq!(build(s), kept, "{dict:?}");
     }
 }
+
+/// `data` as ASCII85 text with the `~>` end marker, as ASCII85Decode reads it.
+fn ascii85(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for chunk in data.chunks(4) {
+        let mut word = [0u8; 4];
+        word[..chunk.len()].copy_from_slice(chunk);
+        let mut v = u32::from_be_bytes(word);
+        let mut digits = [0u8; 5];
+        for d in digits.iter_mut().rev() {
+            *d = (v % 85) as u8 + b'!';
+            v /= 85;
+        }
+        out.extend_from_slice(&digits[..chunk.len() + 1]);
+    }
+    out.extend_from_slice(b"~>");
+    out
+}
+
+/// `data` as hex digits with the `>` end marker, as ASCIIHexDecode reads it.
+fn ascii_hex(data: &[u8]) -> Vec<u8> {
+    let mut out: Vec<u8> = data.iter().flat_map(|b| format!("{b:02X}").into_bytes()).collect();
+    out.push(b'>');
+    out
+}
+
+fn filtered(names: &[&str], raw: Vec<u8>) -> Stream {
+    let mut d = Dict::new();
+    d.set(b"Filter".to_vec(), Object::Array(names.iter().map(|n| Object::name(n)).collect()));
+    Stream::from_raw(d, raw)
+}
+
+/// A one-page document whose page content is `content`, with the content's reference.
+fn with_content(content: Stream) -> (Document, ObjRef) {
+    let mut doc = Document::new_empty();
+    let pg = page(&mut doc, &[], "");
+    let c = doc.add(Object::Stream(content));
+    doc.update_dict(pg, |d| d.set(b"Contents".to_vec(), Object::Ref(c))).unwrap();
+    (doc, c)
+}
+
+fn vector_ops() -> Vec<u8> {
+    "0 0 m 612 792 l S\n".repeat(400).into_bytes()
+}
+
+#[test]
+fn ascii_wrappers_come_off_filtered_streams_and_the_inner_data_is_unchanged() {
+    let ops = vector_ops();
+    let inner = Stream::flate(Dict::new(), &ops).raw.to_vec();
+    for (outer, encoded) in [("ASCII85Decode", ascii85(&inner)), ("ASCIIHexDecode", ascii_hex(&inner))] {
+        let source = filtered(&[outer, "FlateDecode"], encoded);
+        let (mut doc, c) = with_content(source.clone());
+        let r = optimize(&mut doc, &Settings::default()).unwrap();
+        assert_eq!(r.streams_compressed, 1, "{outer}");
+        let after = stream(&doc, c);
+        assert_eq!(after.dict.get(b"Filter"), Some(&Object::Array(vec![Object::name("FlateDecode")])), "{outer}");
+        assert_eq!(after.raw.to_vec(), inner, "{outer}: the inner Flate bytes are kept exactly");
+        assert_eq!(after.decoded_strict().unwrap(), ops, "{outer}");
+        assert!(after.raw.len() < source.raw.len(), "{outer}");
+    }
+}
+
+#[test]
+fn streams_the_wrapper_stripping_does_not_touch_stay_unchanged() {
+    let inner = Stream::flate(Dict::new(), &vector_ops()).raw.to_vec();
+    let wrapped = ascii85(&inner);
+    let mut with_parms = filtered(&["ASCII85Decode", "FlateDecode"], wrapped.clone());
+    with_parms.dict.set(b"DecodeParms".to_vec(), Object::Dict(Dict::new()));
+    let mut image = filtered(&["ASCII85Decode", "FlateDecode"], wrapped.clone());
+    image.dict.set(b"Subtype".to_vec(), Object::name("Image"));
+    let mut objstm = filtered(&["ASCII85Decode", "FlateDecode"], wrapped.clone());
+    objstm.dict.set(b"Type".to_vec(), Object::name("ObjStm"));
+    let mut metadata = filtered(&["ASCII85Decode", "FlateDecode"], wrapped.clone());
+    metadata.dict.set(b"Type".to_vec(), Object::name("Metadata"));
+    let cases = [
+        ("malformed ASCII85", filtered(&["ASCII85Decode", "FlateDecode"], b"{{ not ASCII85 ~>".to_vec())),
+        ("malformed ASCIIHex", filtered(&["ASCIIHexDecode", "FlateDecode"], b"G0>".to_vec())),
+        ("DecodeParms", with_parms),
+        ("single ASCII filter", filtered(&["ASCII85Decode"], wrapped.clone())),
+        ("image", image),
+        ("object stream", objstm),
+        ("metadata", metadata),
+        ("crypt after the wrapper", filtered(&["ASCII85Decode", "Crypt", "FlateDecode"], wrapped.clone())),
+        ("tiny", filtered(&["ASCII85Decode", "FlateDecode"], ascii85(b"ab"))),
+        ("single Flate", Stream::flate(Dict::new(), &vector_ops())),
+    ];
+    for (label, s) in cases {
+        let (mut doc, c) = with_content(s.clone());
+        let r = optimize(&mut doc, &Settings::default()).unwrap();
+        assert_eq!(r.streams_compressed, 0, "{label}");
+        assert_eq!(stream(&doc, c), s, "{label}");
+    }
+}
+
+#[test]
+fn a_second_run_leaves_the_stripped_stream_alone() {
+    let inner = Stream::flate(Dict::new(), &vector_ops()).raw.to_vec();
+    let (mut doc, c) = with_content(filtered(&["ASCII85Decode", "FlateDecode"], ascii85(&inner)));
+    optimize(&mut doc, &Settings::default()).unwrap();
+    let once = stream(&doc, c);
+    let r = optimize(&mut doc, &Settings::default()).unwrap();
+    assert_eq!(r.streams_compressed, 0);
+    assert_eq!(stream(&doc, c), once);
+}

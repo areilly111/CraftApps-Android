@@ -1,7 +1,6 @@
 //! The expression editor of the Timeline, following Settings ▸ Scripting & Expressions:
 //! Font Size, Syntax Highlighting, Line Numbers, Auto-complete (Tab accepts), Bracket Matching
-//! and Word Wrap; and the Composition panel's expression error banner (Show Expression Error
-//! Banner).
+//! and Word Wrap. The Composition viewer uses the shared diagnostics in `expr_bar`.
 
 use effectcraft_engine::prefs::Scripting;
 use egui::text::{LayoutJob, TextFormat};
@@ -9,13 +8,42 @@ use egui::{Color32, FontId, Rect, Stroke, pos2, vec2};
 
 use crate::theme::Tokens;
 
-/// Syntax colours.
-const KEYWORD: Color32 = Color32::from_rgb(0xc6, 0x8a, 0xe6);
-const NUMBER: Color32 = Color32::from_rgb(0xe0, 0xb4, 0x6c);
-const STRING: Color32 = Color32::from_rgb(0x9c, 0xd0, 0x7a);
-const COMMENT: Color32 = Color32::from_rgb(0x80, 0x88, 0x90);
-const API: Color32 = Color32::from_rgb(0x6c, 0xb8, 0xf0);
-const BRACKET_BG: Color32 = Color32::from_rgb(0x4a, 0x55, 0x6a);
+/// Syntax colours, and the matched brackets' background.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Syntax {
+    pub keyword: Color32,
+    pub number: Color32,
+    pub string: Color32,
+    pub comment: Color32,
+    pub api: Color32,
+    pub bracket_bg: Color32,
+}
+
+impl Syntax {
+    /// The colours for the theme: on the Light theme's light expression field, darker ones that
+    /// stay readable (#644).
+    pub fn for_tokens(t: &Tokens) -> Syntax {
+        if t.kind.is_light() {
+            Syntax {
+                keyword: Color32::from_rgb(0x7a, 0x2f, 0xa8),
+                number: Color32::from_rgb(0x8a, 0x4b, 0x00),
+                string: Color32::from_rgb(0x2c, 0x6a, 0x10),
+                comment: Color32::from_rgb(0x52, 0x5a, 0x62),
+                api: Color32::from_rgb(0x0a, 0x57, 0x94),
+                bracket_bg: Color32::from_rgb(0xd0, 0xdc, 0xf0),
+            }
+        } else {
+            Syntax {
+                keyword: Color32::from_rgb(0xc6, 0x8a, 0xe6),
+                number: Color32::from_rgb(0xe0, 0xb4, 0x6c),
+                string: Color32::from_rgb(0x9c, 0xd0, 0x7a),
+                comment: Color32::from_rgb(0x80, 0x88, 0x90),
+                api: Color32::from_rgb(0x6c, 0xb8, 0xf0),
+                bracket_bg: Color32::from_rgb(0x4a, 0x55, 0x6a),
+            }
+        }
+    }
+}
 
 const KEYWORDS: &[&str] = &[
     "var",
@@ -184,7 +212,7 @@ pub fn completions(text: &str, cursor: usize) -> (String, Vec<&'static str>) {
 }
 
 /// Colour runs for JavaScript: (byte start, byte end, colour).
-pub fn highlight(text: &str, base: Color32) -> Vec<(usize, usize, Color32)> {
+pub fn highlight(text: &str, base: Color32, sx: &Syntax) -> Vec<(usize, usize, Color32)> {
     let b = text.as_bytes();
     let mut out = vec![];
     let mut i = 0;
@@ -195,35 +223,35 @@ pub fn highlight(text: &str, base: Color32) -> Vec<(usize, usize, Color32)> {
             while i < b.len() && b[i] != b'\n' {
                 i += 1;
             }
-            COMMENT
+            sx.comment
         } else if c == b'/' && b.get(i + 1) == Some(&b'*') {
             i += 2;
             while i < b.len() && !(b[i] == b'*' && b.get(i + 1) == Some(&b'/')) {
                 i += 1;
             }
             i = (i + 2).min(b.len());
-            COMMENT
+            sx.comment
         } else if c == b'"' || c == b'\'' || c == b'`' {
             i += 1;
             while i < b.len() && b[i] != c {
                 i += if b[i] == b'\\' { 2 } else { 1 };
             }
             i = (i + 1).min(b.len());
-            STRING
+            sx.string
         } else if c.is_ascii_digit() {
             while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'.') {
                 i += 1;
             }
-            NUMBER
+            sx.number
         } else if c.is_ascii_alphabetic() || c == b'_' || c == b'$' {
             while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'$') {
                 i += 1;
             }
             let w = &text[start..i];
             if KEYWORDS.contains(&w) {
-                KEYWORD
+                sx.keyword
             } else if COMPLETIONS.contains(&w) {
-                API
+                sx.api
             } else {
                 base
             }
@@ -246,9 +274,9 @@ fn byte_of(text: &str, ci: usize) -> usize {
 }
 
 /// The layout job of the editor text: syntax colours, the matched brackets' background, wrap.
-fn layout(text: &str, font: FontId, base: Color32, p: &Scripting, brackets: Option<(usize, usize)>, wrap: f32) -> LayoutJob {
+fn layout(text: &str, font: FontId, base: Color32, sx: &Syntax, p: &Scripting, brackets: Option<(usize, usize)>, wrap: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let runs = if p.syntax_highlighting { highlight(text, base) } else { vec![(0, text.len(), base)] };
+    let runs = if p.syntax_highlighting { highlight(text, base, sx) } else { vec![(0, text.len(), base)] };
     let marks: Vec<usize> = brackets.filter(|_| p.bracket_matching).map(|(a, b)| vec![byte_of(text, a), byte_of(text, b)]).unwrap_or_default();
     for (s, e, col) in runs {
         // Split runs at the marked brackets.
@@ -263,7 +291,7 @@ fn layout(text: &str, font: FontId, base: Color32, p: &Scripting, brackets: Opti
         cuts.sort_unstable();
         cuts.dedup();
         for w in cuts.windows(2) {
-            let bg = if marks.contains(&w[0]) { BRACKET_BG } else { Color32::TRANSPARENT };
+            let bg = if marks.contains(&w[0]) { sx.bracket_bg } else { Color32::TRANSPARENT };
             job.append(&text[w[0]..w[1]], 0.0, TextFormat { font_id: font.clone(), color: col, background: bg, ..Default::default() });
         }
     }
@@ -281,8 +309,9 @@ pub fn editor(ui: &mut egui::Ui, id: egui::Id, buf: &mut String, rect: Rect, p: 
     let cursor = egui::TextEdit::load_state(ui.ctx(), id).and_then(|s| s.cursor.char_range()).map(|r| r.primary.index.0);
     let brackets = cursor.and_then(|c| matching_bracket(buf, c));
     let pc = p.clone();
+    let sx = Syntax::for_tokens(t);
     let mut layouter = move |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap: f32| {
-        let job = layout(text.as_str(), font.clone(), color, &pc, brackets, wrap);
+        let job = layout(text.as_str(), font.clone(), color, &sx, &pc, brackets, wrap);
         ui.fonts_mut(|f| f.layout_job(job))
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(er));
@@ -351,44 +380,69 @@ pub fn editor(ui: &mut egui::Ui, id: egui::Id, buf: &mut String, rect: Rect, p: 
     out.response.response
 }
 
-/// Settings ▸ Scripting & Expressions ▸ Show Expression Error Banner: the first failing
-/// expression of the comp at the current time, in a banner along the bottom of the viewer
-/// (click it to reveal the property).
-pub fn error_banner(app: &mut crate::EffectcraftApp, ui: &egui::Ui, area: Rect) {
-    if !app.session.prefs.scripting.error_banner {
-        return;
+#[cfg(test)]
+mod contrast_tests {
+    use super::*;
+    use crate::theme::ThemeKind;
+
+    /// WCAG contrast ratio of two opaque sRGB colours.
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let lum = |c: Color32| {
+            let f = |v: u8| {
+                let v = v as f32 / 255.0;
+                if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            };
+            0.2126 * f(c.r()) + 0.7152 * f(c.g()) + 0.0722 * f(c.b())
+        };
+        let (x, y) = (lum(a), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
-    let Some(cid) = app.session.active_comp_id() else { return };
-    let key = (app.session.revision, cid.0, app.session.time().0);
-    let id = egui::Id::new("expr-error-banner");
-    let cached: Option<((u64, u64, i64), Vec<serde_json::Value>)> = ui.ctx().data(|d| d.get_temp(id));
-    let errors = match cached {
-        Some((k, e)) if k == key => e,
-        _ => {
-            let e = app.session.expression_errors(cid);
-            ui.ctx().data_mut(|d| d.insert_temp(id, (key, e.clone())));
-            e
+
+    /// #644: on every theme, effect names stay readable on Effect Controls' headers, and the
+    /// expression field's text (every syntax colour, enabled and disabled expressions, matched
+    /// brackets, line numbers) on its background; the switch icons show on their wells.
+    #[test]
+    fn custom_painted_surfaces_keep_text_readable_on_every_theme() {
+        for kind in [ThemeKind::Dark, ThemeKind::Darker, ThemeKind::Light] {
+            let t = Tokens::for_kind(kind);
+            let sx = Syntax::for_tokens(&t);
+            for (what, bg) in [("effect header", t.fx_header), ("active effect header", t.fx_header_active)] {
+                assert!(contrast(t.text, bg) >= 4.5, "{kind:?}: effect name on {what}: {:.2}", contrast(t.text, bg));
+            }
+            assert!(contrast(t.icon, t.switch_well) >= 3.0, "{kind:?}: switch icons on their wells");
+            if !kind.is_light() {
+                continue;
+            }
+            let fg = [
+                ("keyword", sx.keyword),
+                ("number", sx.number),
+                ("string", sx.string),
+                ("comment", sx.comment),
+                ("api", sx.api),
+                ("enabled expression", t.expr_text),
+                ("disabled expression", t.text_dim),
+                ("line numbers", t.text_faint),
+            ];
+            for (what, c) in fg {
+                assert!(contrast(c, t.expr_bg) >= 4.5, "{kind:?}: {what} on the expression field: {:.2}", contrast(c, t.expr_bg));
+                assert!(contrast(c, sx.bracket_bg) >= 4.0, "{kind:?}: {what} on a matched bracket: {:.2}", contrast(c, sx.bracket_bg));
+            }
+            // The dark theme's syntax colours would not do on the light field.
+            let dark = Syntax::for_tokens(&Tokens::for_kind(ThemeKind::Dark));
+            assert!([dark.keyword, dark.number, dark.string, dark.api].iter().all(|c| contrast(*c, t.expr_bg) < 4.5));
         }
-    };
-    let Some(first) = errors.first() else { return };
-    let layer = first["layer"].as_u64().unwrap_or(0);
-    let lname = app.session.active_comp().and_then(|c| c.layer(effectcraft_engine::project::LayerId(layer))).map(|l| l.name.clone()).unwrap_or_default();
-    let msg = format!(
-        "⚠ Expression error{}: {} ▸ {}: {}",
-        if errors.len() > 1 { format!(" (1 of {})", errors.len()) } else { String::new() },
-        lname,
-        first["name"].as_str().unwrap_or(""),
-        first["error"].as_str().unwrap_or("").lines().next().unwrap_or("")
-    );
-    let r = Rect::from_min_max(pos2(area.min.x, area.max.y - 22.0), area.max);
-    let p = ui.painter();
-    p.rect_filled(r, 0.0, Color32::from_rgb(0xf0, 0xc0, 0x30));
-    p.text(pos2(r.min.x + 8.0, r.center().y), egui::Align2::LEFT_CENTER, msg, Tokens::ui(11.5), Color32::BLACK);
-    app.auto.add("viewer.expressionErrorBanner", r, "Expression error banner");
-    if ui.interact(r, id.with("click"), egui::Sense::click()).clicked() {
-        let p = serde_json::json!({"props": [{"layer": layer, "prop": first["prop"]}]});
-        if let Err(e) = crate::menus::invoke(app, ui.ctx(), "timeline.revealProps", p) {
-            app.ui.status = e;
-        }
+    }
+
+    /// Syntax highlighting uses the theme's colours.
+    #[test]
+    fn highlight_uses_the_theme_palette() {
+        let t = Tokens::for_kind(ThemeKind::Light);
+        let sx = Syntax::for_tokens(&t);
+        let text = "var amount = 12; // note";
+        let runs = highlight(text, t.expr_text, &sx);
+        let col = |s: &str| runs.iter().find(|(a, e, _)| text.get(*a..*e) == Some(s)).map(|r| r.2);
+        assert_eq!(col("var"), Some(sx.keyword));
+        assert_eq!(col("12"), Some(sx.number));
+        assert_eq!(col("// note"), Some(sx.comment));
     }
 }

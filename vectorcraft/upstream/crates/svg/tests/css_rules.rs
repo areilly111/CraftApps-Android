@@ -30,7 +30,7 @@ fn rect(d: &mut Document, (x, y, w, h): (f64, f64, f64, f64), radius: f64) -> No
         Appearance::basic(fill, Paint::solid(Color::rgb8(0, 0, 255)), 2.0),
     );
     if let NodeKind::Path { live, .. } = &mut n.kind {
-        *live = Some(LiveShape::Rectangle { w, h, radii: [radius; 4], kinds: Default::default(), xf: Affine::translate((x, y)) });
+        *live = Some(Box::new(LiveShape::Rectangle { w, h, radii: [radius; 4], kinds: Default::default(), xf: Affine::translate((x, y)) }));
     }
     n
 }
@@ -74,19 +74,19 @@ fn rectangle_gives_background_border_and_radius() {
 fn live_corners_give_per_corner_radii_and_only_round_ones() {
     let mut d = doc();
     let mut n = rect(&mut d, (0.0, 0.0, 100.0, 50.0), 0.0);
-    if let NodeKind::Path { live: Some(LiveShape::Rectangle { radii, kinds, .. }), .. } = &mut n.kind {
+    if let Some(LiveShape::Rectangle { radii, kinds, .. }) = n.live_shape_mut() {
         *radii = [0.0, 8.0, 0.0, 4.0];
         kinds[0] = CornerKind::Chamfer;
     }
     let id = add(&mut d, n);
     assert_eq!(prop(&one(&d, id, &CssOptions::default()), "border-radius"), Some("0 8px 0 4px"), "a square corner's kind doesn't matter");
-    if let Some(NodeKind::Path { live: Some(LiveShape::Rectangle { kinds, .. }), .. }) = d.node_mut(id).map(|n| &mut n.kind) {
+    if let Some(LiveShape::Rectangle { kinds, .. }) = d.node_mut(id).and_then(|n| n.live_shape_mut()) {
         kinds[1] = CornerKind::InvertedRound;
     }
     assert!(prop(&one(&d, id, &CssOptions::default()), "border-radius").is_none(), "CSS can't cut a corner in");
     // A radius past half the shorter side is drawn at half of it (#442), and exported so: CSS
     // would draw it larger, its neighbours leaving room.
-    if let Some(NodeKind::Path { live: Some(LiveShape::Rectangle { radii, kinds, .. }), .. }) = d.node_mut(id).map(|n| &mut n.kind) {
+    if let Some(LiveShape::Rectangle { radii, kinds, .. }) = d.node_mut(id).and_then(|n| n.live_shape_mut()) {
         *radii = [60.0, 8.0, 0.0, 4.0];
         *kinds = Default::default();
     }
@@ -99,7 +99,7 @@ fn ellipses_round_fully_and_options_change_units_and_names() {
     let mut e =
         Node::path(d.alloc_id(), shapes::ellipse(Rect::new(0.0, 0.0, 72.0, 36.0)), Appearance::basic(Paint::solid(Color::BLACK), Paint::None, 0.0));
     if let NodeKind::Path { live, .. } = &mut e.kind {
-        *live = Some(LiveShape::Ellipse { w: 72.0, h: 36.0, pie: (0.0, 360.0), xf: Affine::IDENTITY });
+        *live = Some(Box::new(LiveShape::Ellipse { w: 72.0, h: 36.0, pie: (0.0, 360.0), xf: Affine::IDENTITY }));
     }
     let e = add(&mut d, e);
     let a = rect(&mut d, (0.0, 0.0, 10.0, 10.0), 0.0);
@@ -188,7 +188,7 @@ fn shared_properties_read_as_svg_export_writes_them() {
 fn gradients_give_css_gradients() {
     let mut d = doc();
     let mut n = rect(&mut d, (0.0, 0.0, 200.0, 100.0), 0.0);
-    n.appearance = Appearance::basic(Paint::Gradient(Box::new(GradientPaint::new(Gradient::default()))), Paint::None, 0.0);
+    n.appearance = Appearance::basic(Paint::Gradient(Box::new(GradientPaint::new(Gradient::default()))), Paint::None, 0.0).into();
     let id = add(&mut d, n);
     let r = one(&d, id, &CssOptions::default());
     assert_eq!(prop(&r, "background-image"), Some("linear-gradient(90deg, #ffffff 0%, #000000 100%)"));
@@ -196,13 +196,13 @@ fn gradients_give_css_gradients() {
     let mut g = GradientPaint::new(Gradient::default());
     g.geom = Some(GradientGeom { start: Point::new(100.0, 0.0), end: Point::new(100.0, 50.0), aspect: 1.0, focal: None });
     let mut n = rect(&mut d, (0.0, 0.0, 200.0, 100.0), 0.0);
-    n.appearance = Appearance::basic(Paint::Gradient(Box::new(g)), Paint::None, 0.0);
+    n.appearance = Appearance::basic(Paint::Gradient(Box::new(g)), Paint::None, 0.0).into();
     let id = add(&mut d, n);
     assert_eq!(prop(&one(&d, id, &CssOptions::default()), "background-image"), Some("linear-gradient(180deg, #ffffff 0%, #000000 50%)"));
     // Radial: a circle at the box's centre.
     let radial = GradientPaint::new(Gradient { kind: GradientKind::Radial, ..Gradient::default() });
     let mut n = rect(&mut d, (0.0, 0.0, 100.0, 100.0), 0.0);
-    n.appearance = Appearance::basic(Paint::Gradient(Box::new(radial)), Paint::None, 0.0);
+    n.appearance = Appearance::basic(Paint::Gradient(Box::new(radial)), Paint::None, 0.0).into();
     let id = add(&mut d, n);
     let bg = one(&d, id, &CssOptions::default()).props.into_iter().find(|(k, _)| *k == "background-image").unwrap().1;
     assert!(bg.starts_with("radial-gradient(circle ") && bg.contains(" at 50px 50px, #ffffff 0%, #000000 100%)"), "{bg}");

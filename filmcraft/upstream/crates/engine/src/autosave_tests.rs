@@ -177,6 +177,28 @@ fn auto_save_ring_rotates_and_can_save_the_project() {
 }
 
 #[test]
+fn scan_keeps_snapshot_when_session_metadata_is_unreadable() {
+    // #894: a stale session with a snapshot must not be deleted because session.json is missing
+    // or corrupt — the recovered project would vanish from the list and the file would be gone.
+    let d = temp_dir("recover-nometa");
+    let root = autosave::recovery_root(&d);
+    let sess = root.join("123-1");
+    std::fs::create_dir_all(&sess).unwrap();
+    let snap = filmcraft_format::encode(&filmcraft_project::Project::default(), false);
+    std::fs::write(sess.join("snapshot.fcproj"), snap).unwrap();
+    std::fs::write(sess.join("session.json"), b"not json {").unwrap();
+    let found = autosave::scan_candidates(&d, None);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].id, "123-1");
+    assert!(sess.join("snapshot.fcproj").is_file(), "snapshot must survive the scan");
+    std::fs::remove_file(sess.join("session.json")).unwrap();
+    let found = autosave::scan_candidates(&d, None);
+    assert_eq!(found.len(), 1, "missing metadata still lists the snapshot");
+    assert!(sess.join("snapshot.fcproj").is_file());
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn portable_marker_keeps_data_next_to_the_executable() {
     // #139: a portable install must not write to %APPDATA%.
     let d = temp_dir("portable");

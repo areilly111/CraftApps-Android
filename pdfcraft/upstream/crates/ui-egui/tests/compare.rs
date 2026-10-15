@@ -98,7 +98,7 @@ fn export_to_word_html_and_rtf() {
     let mut app = PdfCraftApp::new();
     app.set_option("language", "en").unwrap();
     app.open_bytes("e.pdf", None, doc).unwrap();
-    for ext in ["docx", "html", "rtf"] {
+    for ext in ["docx", "pptx", "html", "rtf"] {
         let out = dir.join(format!("e.{ext}"));
         app.save_override = Some(out.to_string_lossy().into_owned());
         assert!(app.execute(&format!("export.{ext}")));

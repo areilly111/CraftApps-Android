@@ -526,6 +526,29 @@ fn a_hidden_object_comes_back_and_is_captured_hidden() {
     s.execute("variable.bind", &json!({"variable": "More", "ids": [r.0]})).unwrap();
 }
 
+/// A row that hides selected objects deselects them, the key object included. Undo shows them
+/// and selects them again with the key object.
+#[test]
+fn a_row_that_hides_selected_objects_deselects_them() {
+    let mut s = session();
+    let (r, q) = (rect(&mut s), rect(&mut s));
+    s.execute("variable.define", &json!({"name": "Show", "kind": "visibility"})).unwrap();
+    s.execute("variable.bind", &json!({"variable": "Show", "ids": [r.0]})).unwrap();
+    s.execute("dataset.new", &json!({"name": "Hidden", "values": {"Show": false}})).unwrap();
+    s.execute("select.set", &json!({"ids": [r.0, q.0]})).unwrap();
+    s.execute("select.key", &json!({"id": r.0})).unwrap();
+
+    s.execute("dataset.select", &json!({"name": "Hidden"})).unwrap();
+    assert!(!s.doc().unwrap().doc.node(r).unwrap().visible);
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![q], None), "r, the key object, is hidden");
+
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.doc().unwrap().doc.node(r).unwrap().visible);
+    let sel = s.doc().unwrap().selection.clone();
+    assert_eq!((sel.objects, sel.key), (vec![r, q], Some(r)), "undo selects r again as the key object");
+}
+
 /// Variables and datasets are separate namespaces: renaming a variable leaves a dataset of
 /// the same name, and which dataset is active, alone.
 #[test]

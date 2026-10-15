@@ -318,7 +318,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             }
         }
     } else {
-        ui.label(format!("{} plane(s)", s.planes.len()));
+        ui.label(crate::i18n::trn(crate::i18n::current(), s.planes.len() as u64, "{n} plane", "{n} planes"));
         if ui.button(tl!("Remove Planes")).clicked() {
             s.planes.clear();
             s.update_grid();

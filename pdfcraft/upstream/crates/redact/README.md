@@ -33,6 +33,9 @@ A verification pass re-reads each redacted page and fails the operation if any g
 image is still under an area. Content that can't be decoded makes the operation fail rather than
 leave it unredacted.
 
+Structure cleanup resolves named MCIDs and indirect content references. Form content
+references are updated to the cleaned copy; unchanged sibling descriptions remain.
+
 ## Remove hidden information / Sanitize
 
 ```rust

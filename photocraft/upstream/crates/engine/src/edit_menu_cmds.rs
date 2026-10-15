@@ -269,6 +269,11 @@ fn purge(s: &mut Session, what: &str) -> Result<Value> {
             freed = freed.saturating_add(masks);
             items.push("mask cache");
         }
+        let stages = crate::smart_cmds::purge_stack_cache();
+        if stages > 0 {
+            freed = freed.saturating_add(stages);
+            items.push("smart filter cache");
+        }
     }
     s.edit_state.fade = None;
     let msg = if items.is_empty() { "nothing to purge".to_string() } else { format!("purged {}", items.join(", ")) };
@@ -286,7 +291,11 @@ fn can_purge_histories(s: &Session) -> std::result::Result<(), String> {
 }
 fn can_purge_all(s: &Session) -> std::result::Result<(), String> {
     can_purge_histories(s).or_else(|_| can_purge_clipboard(s)).or_else(|_| {
-        if photocraft_compose::effect_cache_bytes() > 0 || photocraft_compose::masks::cache_bytes() > 0 { Ok(()) } else { Err("nothing to purge".into()) }
+        if photocraft_compose::effect_cache_bytes() > 0 || photocraft_compose::masks::cache_bytes() > 0 || crate::smart_cmds::stack_cache_bytes() > 0 {
+            Ok(())
+        } else {
+            Err("nothing to purge".into())
+        }
     })
 }
 
@@ -331,13 +340,14 @@ fn content_aware_fill(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// Delete and Fill Selection (#1286): Photoshop's one-click removal from the selection-tool
-/// context menu. Content-Aware Fill with its default settings into the layer, no dialog.
+/// context menu. Content-Aware Fill into the layer, no dialog, sampling as Edit › Fill does (the
+/// whole window, measured on Photoshop 25.4) with the default colour adaptation.
 fn delete_and_fill(s: &mut Session, _: &Value) -> Result<Value> {
-    content_aware_fill_as(s, &json!({}), "edit.deleteAndFillSelection", "Delete and Fill Selection")
+    content_aware_fill_as(s, &json!({"sampling": "rectangular"}), "edit.deleteAndFillSelection", "Delete and Fill Selection")
 }
 
 fn content_aware_fill_as(s: &mut Session, p: &Value, cmd: &'static str, label: &'static str) -> Result<Value> {
-    use photocraft_algo::content_aware::{FillOptions, color_level, fill_with, rotation_level};
+    use photocraft_algo::content_aware::{FillOptions, auto_sampling_with, color_level, fill_owned, rotation_level};
     let id = pixel_layer(s).map_err(EngineError::Other)?;
     let st = s.active().ok_or(EngineError::NoDocument)?;
     let doc = st.doc.clone();
@@ -346,14 +356,17 @@ fn content_aware_fill_as(s: &mut Session, p: &Value, cmd: &'static str, label: &
     if hb.is_empty() {
         return Err(bad(cmd, "the selection is outside the canvas"));
     }
-    // The canvas is at most i32 wide, so the extent fits; saturate anyway rather than wrap (#963).
-    let ext = i32::try_from(hb.width().max(hb.height())).unwrap_or(i32::MAX);
     let sampling = str_or(p, "sampling", "auto").to_string();
     let custom_mask: Option<Surface> = p.get("channel").and_then(|v| channel_mask(&doc, v)).cloned();
     let custom_rect = if p.get("area").is_some() { Some(rect_param(p, "area", cmd)?) } else { None };
+    // Photoshop's window (`content_aware::sampling_window`) for Auto and Rectangular; `margin`
+    // asks for a rectangle that far around the selection instead.
     let window = match sampling.as_str() {
-        "auto" => hb.inflate(crate::fill_cmds::sampling_margin(hb)),
-        "rectangular" => hb.inflate(int(p, "margin").map_or(ext.max(16), |m| m.clamp(0, 100_000) as i32)),
+        "auto" => crate::fill_cmds::sampling_window(hb, doc.bounds()),
+        "rectangular" => match int(p, "margin") {
+            Some(m) => hb.inflate(m.clamp(0, 100_000) as i32),
+            None => crate::fill_cmds::sampling_window(hb, doc.bounds()),
+        },
         "custom" => {
             let r = match (custom_rect, custom_mask.as_ref()) {
                 (Some(r), _) => r,
@@ -388,56 +401,90 @@ fn content_aware_fill_as(s: &mut Session, p: &Value, cmd: &'static str, label: &
         label,
         true,
         move |ctx| {
+            use rayon::prelude::*;
+
+            use crate::fill_cmds::{read_window, read_window_cover, read_window_mask};
             ctx.progress(0.0, label);
+            let cancel = || ctx.cancelled();
             let surf = doc.layer(id).and_then(|l| l.surface()).ok_or(EngineError::NoLayer(id))?;
-            let img = surf.read_region(window);
-            let mut cover = vec![0.0f32; w * h];
-            let mut hole = vec![false; w * h];
-            let mut source = vec![true; w * h];
-            for y in 0..h {
-                if y % 64 == 0 {
-                    ctx.check()?;
-                }
-                for x in 0..w {
-                    let (dx, dy) = (window.x0 + x as i32, window.y0 + y as i32);
-                    let i = y * w + x;
-                    cover[i] = sel.sample_channel(dx, dy, 0);
-                    hole[i] = cover[i] > 0.0;
-                    if sampling == "custom" {
-                        source[i] = match (custom_rect, custom_mask.as_ref()) {
-                            (Some(r), _) => r.contains(dx, dy),
-                            (None, Some(m)) => m.sample_channel(dx, dy, 0) > 0.5,
-                            _ => true,
-                        };
-                    }
-                }
+            let img = read_window(surf, window, &cancel).ok_or(EngineError::Cancelled)?;
+            let hole = read_window_cover(&sel, window, &cancel).ok_or(EngineError::Cancelled)?;
+            let mut source = match (sampling.as_str(), custom_rect, custom_mask.as_ref()) {
+                ("custom", Some(r), _) => (0..w * h).into_par_iter().map(|i| r.contains(window.x0 + (i % w) as i32, window.y0 + (i / w) as i32)).collect(),
+                ("custom", None, Some(m)) => read_window_mask(m, window, &cancel).ok_or(EngineError::Cancelled)?.par_iter().map(|v| *v > 0.5).collect(),
+                _ => vec![true; w * h],
+            };
+            ctx.check()?;
+            // Auto: only what looks like the selection's surroundings.
+            if sampling == "auto" {
+                source = auto_sampling_with(w, h, n, &img, &hole, &photocraft_raster::Interrupt::cancel_only(&cancel)).map_err(|_| EngineError::Cancelled)?;
             }
             ctx.check()?;
-            let filled = ctx.stage(0.05, 1.0, label, |ctl| fill_with(w, h, n, &img, &hole, &source, &opts, ctl)).map_err(|_| EngineError::Cancelled)?;
-            Ok((img, cover, hole, filled))
+            // The fill changes only the selected pixels: keep the original and the coverage over
+            // their bounds for the apply step, and fill the window's pixels themselves.
+            let (bx0, by0, bx1, by1) = mask_bounds(w, h, &hole);
+            let original: Vec<f32> = (by0..by1).flat_map(|y| img[(y * w + bx0) * n..(y * w + bx1) * n].iter().copied()).collect();
+            let at = |x: usize, y: usize| (window.x0 + x as i32, window.y0 + y as i32);
+            let ((x0, y0), (x1, y1)) = (at(bx0, by0), at(bx1, by1));
+            let cover = read_window_mask(&sel, Rect::new(x0, y0, x1, y1), &cancel).ok_or(EngineError::Cancelled)?;
+            let n_hole = cover.iter().filter(|c| **c > 0.0).count();
+            let filled = ctx.stage(0.05, 1.0, label, |ctl| fill_owned(w, h, n, img, &hole, &source, &opts, ctl)).map_err(|_| EngineError::Cancelled)?;
+            Ok(FilledWindow { filled, bounds: (bx0, by0, bx1, by1), original, cover, n_hole })
         },
-        move |s, (img, cover, hole, filled)| apply_content_aware_fill(s, label, id, &output, fmt, window, &img, &cover, &hole, &filled),
+        move |s, done| apply_content_aware_fill(s, label, id, &output, fmt, window, done),
     )
+}
+
+/// A Content-Aware Fill's result for its apply step: the filled window (the same as the
+/// original outside the selected pixels) and, over the bounds of the selected pixels (in window
+/// coordinates), the original pixels and the selection's coverage.
+struct FilledWindow {
+    filled: Vec<f32>,
+    bounds: (usize, usize, usize, usize),
+    original: Vec<f32>,
+    cover: Vec<f32>,
+    n_hole: usize,
+}
+
+/// `f(window index, index over the bounds, coverage)` for each selected pixel of a
+/// [`FilledWindow`] (`w` wide).
+fn each_selected(w: usize, (bx0, by0, bx1, by1): (usize, usize, usize, usize), cover: &[f32], mut f: impl FnMut(usize, usize, f32)) {
+    let bw = bx1.saturating_sub(bx0);
+    for y in by0..by1 {
+        for x in bx0..bx1 {
+            let k = (y - by0) * bw + (x - bx0);
+            if let Some(&c) = cover.get(k)
+                && c > 0.0
+            {
+                f(y * w + x, k, c);
+            }
+        }
+    }
+}
+
+/// Bounds `(x0, y0, x1, y1)` of the set cells of a `w × h` mask (all zero when there are none).
+fn mask_bounds(w: usize, h: usize, m: &[bool]) -> (usize, usize, usize, usize) {
+    use rayon::prelude::*;
+    if w == 0 {
+        return (0, 0, 0, 0);
+    }
+    let rows: Vec<Option<(usize, usize)>> =
+        m.par_chunks(w).take(h).map(|row| Some((row.iter().position(|v| *v)?, row.iter().rposition(|v| *v)? + 1))).collect();
+    let mut b: Option<(usize, usize, usize, usize)> = None;
+    for (y, span) in rows.into_iter().enumerate() {
+        if let Some((x0, x1)) = span {
+            b = Some(b.map_or((x0, y, x1, y + 1), |(bx0, by0, bx1, _)| (bx0.min(x0), by0, bx1.max(x1), y + 1)));
+        }
+    }
+    b.unwrap_or((0, 0, 0, 0))
 }
 
 /// Write a Content-Aware Fill result (the job's apply step): into the layer, a new layer or a
 /// duplicate, as one undo step.
-#[allow(clippy::too_many_arguments)]
-fn apply_content_aware_fill(
-    s: &mut Session,
-    label: &str,
-    id: LayerId,
-    output: &str,
-    fmt: PixelFormat,
-    window: Rect,
-    img: &[f32],
-    cover: &[f32],
-    hole: &[bool],
-    filled: &[f32],
-) -> Result<Value> {
+fn apply_content_aware_fill(s: &mut Session, label: &str, id: LayerId, output: &str, fmt: PixelFormat, window: Rect, done: FilledWindow) -> Result<Value> {
     let n = fmt.channels();
     let (w, h) = (window.width() as usize, window.height() as usize);
-    let n_hole = hole.iter().filter(|h| **h).count();
+    let FilledWindow { mut filled, bounds, original, cover, n_hole } = done;
     let layer = s.edit(label, |doc, active| {
         let target = match output {
             "new" => {
@@ -446,14 +493,12 @@ fn apply_content_aware_fill(
                 let lf = l.surface().map(|s| s.format()).unwrap_or(fmt);
                 let ln = lf.channels();
                 px.resize(w * h * ln, 0.0);
-                for i in 0..w * h {
-                    if hole[i] {
-                        let rgba = to_rgba(&fmt, &filled[i * n..(i + 1) * n]);
-                        let mut enc = [0.0f32; 8];
-                        from_rgba_into(&lf, [rgba[0], rgba[1], rgba[2], rgba[3] * cover[i]], &mut enc);
-                        px[i * ln..(i + 1) * ln].copy_from_slice(&enc[..ln]);
-                    }
-                }
+                each_selected(w, bounds, &cover, |i, _, c| {
+                    let rgba = to_rgba(&fmt, &filled[i * n..(i + 1) * n]);
+                    let mut enc = [0.0f32; 8];
+                    from_rgba_into(&lf, [rgba[0], rgba[1], rgba[2], rgba[3] * c], &mut enc);
+                    px[i * ln..(i + 1) * ln].copy_from_slice(&enc[..ln]);
+                });
                 if let Some(s) = l.surface_mut() {
                     s.write_region(window, &px);
                     s.prune();
@@ -472,16 +517,14 @@ fn apply_content_aware_fill(
             _ => id,
         };
         let surf = writable_surface(doc, target)?;
-        let mut out = img.to_vec();
-        for (i, &k) in cover.iter().enumerate() {
-            if k > 0.0 {
-                for c in 0..n {
-                    let j = i * n + c;
-                    out[j] = img[j] + (filled[j] - img[j]) * k;
-                }
+        // The fill blended in by the coverage (elsewhere it is the original).
+        each_selected(w, bounds, &cover, |i, k, c| {
+            for ch in 0..n {
+                let (j, o) = (i * n + ch, k * n + ch);
+                filled[j] = original[o] + (filled[j] - original[o]) * c;
             }
-        }
-        surf.write_region(window, &out);
+        });
+        surf.write_region(window, &filled);
         Ok(target)
     })?;
     Ok(json!({"layer": layer.0, "filled": n_hole, "window": [window.x0, window.y0, window.width(), window.height()]}))
@@ -489,8 +532,24 @@ fn apply_content_aware_fill(
 
 // ------------------------------------------------------------------ Content-Aware Scale
 
-fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
-    use photocraft_algo::seam::{carve_with, resize_bilinear, skin_mask};
+/// Reach of Content-Aware Scale's `x`/`y`: the largest document side.
+const CAS_POSITION_LIMIT: f64 = 300_000.0;
+
+/// What Content-Aware Scale does, read from its params against the active document: the
+/// command and the transform box's live preview ([`ContentAwareScalePreview`]) share it.
+struct CasPlan {
+    doc: std::sync::Arc<Document>,
+    layer: LayerId,
+    /// The area scaled: the selection's bounds, else the layer's content.
+    region: Rect,
+    /// Where the result goes: `x`, `y` (default: the region's corner), `width`, `height`.
+    dst: Rect,
+    amount: f32,
+    protect: Option<Surface>,
+    skin_tones: bool,
+}
+
+fn cas_plan(s: &Session, p: &Value) -> Result<CasPlan> {
     let cmd = "edit.contentAwareScale";
     let id = pixel_layer(s).map_err(EngineError::Other)?;
     let st = s.active().ok_or(EngineError::NoDocument)?;
@@ -504,7 +563,7 @@ fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(EngineError::Other("nothing to scale: the layer is empty".into()));
     }
     let (w, h) = (region.width() as usize, region.height() as usize);
-    let dim = |k: &str, pct: &str, cur: usize| -> Result<usize> {
+    let dim = |k: &str, pct: &str, cur: usize| -> Result<u32> {
         let v = match (p.get(k).and_then(Value::as_f64), p.get(pct).and_then(Value::as_f64)) {
             (Some(px), _) => px,
             (None, Some(pc)) => cur as f64 * pc / 100.0,
@@ -513,19 +572,72 @@ fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
         if !(1.0..=60_000.0).contains(&v) {
             return Err(bad(cmd, format!("`{k}` must be 1..60000 px")));
         }
-        Ok(v.round() as usize)
+        Ok(v.round() as u32)
     };
     let (nw, nh) = (dim("width", "scaleX", w)?, dim("height", "scaleY", h)?);
+    let at = |k: &str, cur: i32| -> Result<i32> {
+        match p.get(k).filter(|v| !v.is_null()) {
+            None => Ok(cur),
+            Some(v) => match v.as_f64() {
+                Some(x) if (-CAS_POSITION_LIMIT..=CAS_POSITION_LIMIT).contains(&x) => Ok(x.round() as i32),
+                _ => Err(bad(cmd, format!("`{k}` must be a number of px within ±300000"))),
+            },
+        }
+    };
+    let dst = Rect::from_xywh(at("x", region.x0)?, at("y", region.y0)?, nw, nh);
     let amount = f32_or(p, "amount", 100.0).clamp(0.0, 100.0) / 100.0;
-    let fmt = surf.format();
-    let n = fmt.channels();
     // Protection: an alpha channel and/or skin tones.
-    let protect_mask: Option<Surface> = match p.get("protect").filter(|v| !v.is_null() && v.as_str() != Some("none")) {
+    let protect = match p.get("protect").filter(|v| !v.is_null() && v.as_str() != Some("none")) {
         Some(v) => Some(channel_mask(&doc, v).cloned().ok_or_else(|| bad(cmd, "`protect` must name an alpha channel (index or name) or \"none\""))?),
         None => None,
     };
     let skin_tones = bool_or(p, "protectSkinTones", false);
-    let dst = Rect::from_xywh(region.x0, region.y0, nw as u32, nh as u32);
+    Ok(CasPlan { doc, layer: id, region, dst, amount: if amount.is_finite() { amount } else { 1.0 }, protect, skin_tones })
+}
+
+/// The scaled pixels: `img` (`w`×`h`, `fmt`) seam-carved to `nw`×`nh` where the protection
+/// (`protect`, one value per pixel, and the skin tones when asked) steers the seams, blended with
+/// a plain resample by `amount` (0..1). Checks `ctx` for cancellation before every seam.
+#[allow(clippy::too_many_arguments)]
+fn cas_pixels(
+    ctx: &crate::jobs::JobCtx,
+    label: &str,
+    img: &[f32],
+    (w, h): (usize, usize),
+    fmt: PixelFormat,
+    mut protect: Option<Vec<f32>>,
+    skin_tones: bool,
+    (nw, nh): (usize, usize),
+    amount: f32,
+) -> Result<Vec<f32>> {
+    use photocraft_algo::seam::{carve_with, resize_bilinear, skin_mask};
+    let n = fmt.channels();
+    if skin_tones {
+        let rgba: Vec<f32> = img.chunks_exact(n).flat_map(|px| to_rgba(&fmt, px)).collect();
+        let skin = skin_mask(w, h, 4, &rgba);
+        protect = Some(match protect {
+            Some(pm) => pm.iter().zip(&skin).map(|(a, b)| a.max(*b)).collect(),
+            None => skin,
+        });
+    }
+    ctx.check()?;
+    let carved = if amount > 0.0 {
+        ctx.stage(0.05, 0.95, label, |ctl| carve_with(w, h, n, img, protect.as_deref(), nw, nh, ctl)).map_err(|_| EngineError::Cancelled)?
+    } else {
+        Vec::new()
+    };
+    let plain = if amount < 1.0 { resize_bilinear(w, h, n, img, nw, nh) } else { Vec::new() };
+    Ok(match (carved.is_empty(), plain.is_empty()) {
+        (false, true) => carved,
+        (true, false) => plain,
+        _ => carved.iter().zip(&plain).map(|(c, l)| l + (c - l) * amount).collect::<Vec<f32>>(),
+    })
+}
+
+fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
+    let CasPlan { doc, layer: id, region, dst, amount, protect: protect_mask, skin_tones } = cas_plan(s, p)?;
+    let (w, h) = (region.width() as usize, region.height() as usize);
+    let (nw, nh) = (dst.width() as usize, dst.height() as usize);
     let label = "Content-Aware Scale";
     // A background job when started with `Session::start` (#210): seam carving runs on a worker
     // against the document snapshot and checks for cancellation before every seam.
@@ -537,33 +649,14 @@ fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
             ctx.progress(0.0, label);
             let surf = doc.layer(id).and_then(|l| l.surface()).ok_or(EngineError::NoLayer(id))?;
             let img = surf.read_region(region);
-            let mut protect: Option<Vec<f32>> =
+            let protect: Option<Vec<f32>> =
                 protect_mask.map(|m| (0..w * h).map(|i| m.sample_channel(region.x0 + (i % w) as i32, region.y0 + (i / w) as i32, 0)).collect());
-            if skin_tones {
-                let rgba: Vec<f32> = img.chunks_exact(n).flat_map(|px| to_rgba(&fmt, px)).collect();
-                let skin = skin_mask(w, h, 4, &rgba);
-                protect = Some(match protect {
-                    Some(pm) => pm.iter().zip(&skin).map(|(a, b)| a.max(*b)).collect(),
-                    None => skin,
-                });
-            }
-            ctx.check()?;
-            let carved = if amount > 0.0 {
-                ctx.stage(0.05, 0.95, label, |ctl| carve_with(w, h, n, &img, protect.as_deref(), nw, nh, ctl)).map_err(|_| EngineError::Cancelled)?
-            } else {
-                Vec::new()
-            };
-            let plain = if amount < 1.0 { resize_bilinear(w, h, n, &img, nw, nh) } else { Vec::new() };
-            Ok(match (carved.is_empty(), plain.is_empty()) {
-                (false, true) => carved,
-                (true, false) => plain,
-                _ => carved.iter().zip(&plain).map(|(c, l)| l + (c - l) * amount).collect::<Vec<f32>>(),
-            })
+            cas_pixels(ctx, label, &img, (w, h), surf.format(), protect, skin_tones, (nw, nh), amount)
         },
         move |s, out| {
             s.edit(label, |doc, _| {
                 let surf = writable_surface(doc, id)?;
-                crate::pixels::clear_surface(surf, region, None);
+                crate::pixels::try_clear_surface(surf, region, None)?;
                 surf.write_region(dst, &out);
                 surf.prune();
                 Ok(())
@@ -571,6 +664,70 @@ fn content_aware_scale(s: &mut Session, p: &Value) -> Result<Value> {
             Ok(json!({"from": [w, h], "to": [nw, nh], "bounds": [dst.x0, dst.y0, nw, nh]}))
         },
     )
+}
+
+/// Content-Aware Scale on a reduced copy, for the transform box's live preview (#3096): the
+/// command's own carving, on the area scaled down so the longer of its sides before and after
+/// is at most `max_side` px. Prepared from the session ([`ContentAwareScalePreview::new`]) and
+/// [`run`](ContentAwareScalePreview::run) on any thread.
+pub struct ContentAwareScalePreview {
+    plan: CasPlan,
+    max_side: u32,
+}
+
+impl ContentAwareScalePreview {
+    /// `p` takes `edit.contentAwareScale`'s params; the same ones fail the same way.
+    pub fn new(s: &Session, p: &Value, max_side: u32) -> Result<Self> {
+        Ok(Self { plan: cas_plan(s, p)?, max_side: max_side.max(1) })
+    }
+
+    /// The area scaled, in document px.
+    pub fn region(&self) -> Rect {
+        self.plan.region
+    }
+
+    /// The reduced sizes of the area before and after: `[w, h, new w, new h]`.
+    fn reduced(&self) -> [usize; 4] {
+        let (region, dst) = (self.plan.region, self.plan.dst);
+        let (w, h, nw, nh) = (region.width(), region.height(), dst.width(), dst.height());
+        let k = (f64::from(w.max(h).max(nw).max(nh)) / f64::from(self.max_side)).max(1.0);
+        let side = |v: u32| ((f64::from(v) / k).round() as usize).max(1);
+        [side(w), side(h), side(nw), side(nh)]
+    }
+
+    /// The size of [`run`](Self::run)'s result, px.
+    pub fn size(&self) -> [u32; 2] {
+        let [_, _, w, h] = self.reduced();
+        [w as u32, h as u32]
+    }
+
+    /// The scaled pixels at the reduced size ([`size`](Self::size)), in the layer's format, as a
+    /// surface with its corner at the origin. Checks `ctx` for cancellation before every seam.
+    pub fn run(&self, ctx: &crate::jobs::JobCtx) -> Result<Surface> {
+        let CasPlan { doc, layer, region, dst: _, amount, protect, skin_tones } = &self.plan;
+        let surf = doc.layer(*layer).and_then(|l| l.surface()).ok_or(EngineError::NoLayer(*layer))?;
+        let fmt = surf.format();
+        let n = fmt.channels();
+        let (w, h) = (region.width(), region.height());
+        let [pw, ph, pnw, pnh] = self.reduced();
+        // Nearest samples of the area (and of the protecting channel) at the reduced size.
+        let src_x: Vec<i32> = (0..pw).map(|i| region.x0 + (((i as f64 + 0.5) * f64::from(w) / pw as f64) as i32).min(w as i32 - 1)).collect();
+        let src_y = |j: usize| region.y0 + (((j as f64 + 0.5) * f64::from(h) / ph as f64) as i32).min(h as i32 - 1);
+        let mut img = Vec::with_capacity(pw * ph * n);
+        for j in 0..ph {
+            ctx.check()?;
+            let row = surf.read_region(Rect::from_xywh(region.x0, src_y(j), w, 1));
+            for &x in &src_x {
+                let at = (x - region.x0) as usize * n;
+                img.extend_from_slice(row.get(at..at + n).ok_or_else(|| EngineError::Other("preview read out of bounds".into()))?);
+            }
+        }
+        let protect = protect.as_ref().map(|m| (0..pw * ph).map(|i| m.sample_channel(src_x[i % pw], src_y(i / pw), 0)).collect());
+        let out = cas_pixels(ctx, "Content-Aware Scale", &img, (pw, ph), fmt, protect, *skin_tones, (pnw, pnh), *amount)?;
+        let mut s = Surface::new(fmt);
+        s.write_region(Rect::from_xywh(0, 0, pnw as u32, pnh as u32), &out);
+        Ok(s)
+    }
 }
 
 // ------------------------------------------------------------------ Define Brush / Custom Shape
@@ -988,7 +1145,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Content-Aware Scale",
             ["Edit"],
             Some("Cmd+Alt+Shift+C"),
-            r##"{"width":px?,"height":px?,"scaleX":1..400=100,"scaleY":1..400=100,"amount":0..100=100,"protect":"none"|channel index|name,"protectSkinTones":bool=false}"##,
+            r##"{"width":px?,"height":px?,"scaleX":1..400=100,"scaleY":1..400=100,"x":px?,"y":px?,"amount":0..100=100,"protect":"none"|channel index|name,"protectSkinTones":bool=false}"##,
             |s| pixel_layer(s).map(|_| ()),
             content_aware_scale
         ),

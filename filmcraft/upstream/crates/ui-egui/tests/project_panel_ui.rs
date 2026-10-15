@@ -322,8 +322,21 @@ fn freeform_view_places_and_stacks_cards() {
     assert!(d.has(&format!("project.stack.{}", items[0])), "×2 badge");
     // Freeform View Options… from the panel menu
     d.click("panel.menu.Project");
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
+    let item_rect = d.rect("project.menu.freeformOptions");
+    let ctx = d.harness.ctx.clone();
+    let at = egui::pos2(item_rect[0] + item_rect[2] / 2.0, item_rect[1] + item_rect[3] / 2.0);
+    assert!(ctx.content_rect().contains(at), "bottom menu action must be reachable: {item_rect:?}");
+    d.snapshot("project-freeform-menu", None);
     d.click("project.menu.freeformOptions");
-    assert!(d.has("projectDialog.snap"));
+    let app = d.app();
+    let diagnostic = format!(
+        "dialog={:?}, controls={:?}",
+        app.ui.project_panel.dialog,
+        app.auto.elements.iter().filter(|element| element.id.starts_with("projectDialog.")).map(|element| (&element.id, element.rect)).collect::<Vec<_>>()
+    );
+    assert!(d.has("projectDialog.snap"), "{diagnostic}");
     d.click("projectDialog.snap");
     d.click("projectDialog.ok");
     assert!(d.app().session.prefs.project_panel.freeform.snap);
@@ -358,6 +371,8 @@ fn metadata_display_dialog_and_view_presets() {
     ] {
         assert!(d.has(id), "{id}");
     }
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
     d.click("project.menu.metadataDisplay");
     d.frames(4);
     assert!(matches!(d.app().ui.project_panel.dialog, Some(filmcraft_ui_egui::panels::project::ProjectDialog::MetadataDisplay { .. })));
@@ -570,6 +585,29 @@ fn new_bin_asks_for_its_name() {
     assert!(d.app().ui.project_panel.rename.is_none());
 }
 
+#[test]
+fn new_bin_then_clear_removes_the_bin() {
+    // leftover Project item selection must not keep Clear from removing the new bin
+    let mut d = project_driver();
+    d.exec("project.view.set", json!({"view": "list"}));
+    d.click("project.button.new-item");
+    d.wait_for("project.newItem.file.newColorMatte");
+    d.click("project.newItem.file.newColorMatte");
+    d.click("colorMatte.ok");
+    let items0 = d.app().session.project.items.len();
+    let bins0 = d.app().session.project.root.children.len();
+    assert!(!d.app().session.state.project_selection.is_empty());
+    d.click("project.button.file.newBin");
+    d.frames(2);
+    let bin = d.app().ui.project_panel.selected_bin.expect("the new bin is selected");
+    assert!(d.app().session.state.project_selection.is_empty(), "New Bin clears leftover item selection");
+    d.click("project.button.project.delete");
+    d.frames(2);
+    assert!(d.app().session.project.root.find_bin(filmcraft_project::BinId(bin)).is_none(), "Clear removes the new bin");
+    assert_eq!(d.app().session.project.root.children.len(), bins0);
+    assert_eq!(d.app().session.project.items.len(), items0, "clips already in the project stay");
+}
+
 // ------------------------------------------------------------------------------------ Media Browser
 
 fn media_dir(tag: &str) -> std::path::PathBuf {
@@ -666,6 +704,8 @@ fn media_browser_navigation_import_and_columns() {
     assert!(d.label("mediaBrowser.count").starts_with("2 of 2"));
     d.snapshot("media-browser-list", Some("panel.MediaBrowser"));
     d.click("panel.menu.MediaBrowser");
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
     d.click("mediaBrowser.menu.import");
     assert_eq!(d.app().session.project.items.len(), 2);
     // Shift+O opens the selection in the Source monitor (already imported: no duplicate)
@@ -718,6 +758,43 @@ fn media_browser_drag_imports_into_the_project_panel() {
     d.frames(6);
     assert_eq!(d.app().session.project.items.len(), n0 + 1, "kept after a drop on the Timeline");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Dragging one of several selected Project items onto the Timeline places all of them, back to
+/// back, as one undo step; an item outside the selection goes alone.
+#[test]
+fn dragging_a_selection_to_the_timeline_places_every_item() {
+    let mut d = Driver::demo();
+    let (bin, items) = d.footage();
+    assert!(items.len() >= 3);
+    d.exec("file.newSequence", json!({"name": "Drop", "video": 2, "audio": 2}));
+    d.ok("ui.menu.invoke", json!({"id": "projectPanel.openBin", "params": {"bin": bin, "how": "inPlace"}}));
+    let card = |i: u64| format!("project.item.{i}");
+    d.wait_for(&card(items[0]));
+    let clips = |d: &mut Driver| d.app().session.active_sequence().map(|q| q.video_tracks.iter().map(|t| t.items.len()).sum::<usize>()).unwrap_or(0);
+    let steps = d.app().session.history.undo.len();
+    let drop = json!({"id": "timeline.tracks", "fx": 0.3, "fy": 0.1});
+
+    // an item that is not selected: one clip
+    d.exec("project.select", json!({"items": [items[2]]}));
+    d.ok("ui.drag", json!({"from": {"id": card(items[0])}, "to": drop, "steps": 16}));
+    d.frames(4);
+    assert_eq!(clips(&mut d), 1, "an unselected item goes alone");
+    d.exec("edit.undo", json!({}));
+
+    // two of the selection: both, back to back, in one undo step
+    d.exec("project.select", json!({"items": [items[0], items[1]]}));
+    d.frames(2);
+    d.ok("ui.drag", json!({"from": {"id": card(items[0])}, "to": drop, "steps": 16}));
+    d.frames(4);
+    assert_eq!(clips(&mut d), 2, "the whole selection is placed");
+    let mut v1: Vec<(i64, i64)> =
+        d.app().session.active_sequence().unwrap().video_tracks.iter().flat_map(|t| t.items.iter()).map(|i| (i.start.0, i.end().0)).collect();
+    v1.sort();
+    assert_eq!(v1[0].1, v1[1].0, "back to back");
+    assert_eq!(d.app().session.history.undo.len(), steps + 1, "the drag is one undo step");
+    d.exec("edit.undo", json!({}));
+    assert_eq!(clips(&mut d), 0);
 }
 
 /// Double-clicking empty space in the Project panel opens Import, also between and beside the
@@ -961,4 +1038,57 @@ fn marquee_selects_cards_in_freeform_view() {
     marquee(&mut d, (a[0] - 6.0, a[1] - 6.0), centre(b), false);
     assert_eq!(selection(&mut d), sorted(vec![i0, i1]));
     assert!(!d.app().session.project.item(ItemId(i0)).unwrap().metadata.contains_key(FREEFORM_POS), "the marquee moved no card");
+}
+
+/// The Project selection can hold a bin beside items (one id space). Dragging the items still
+/// places them: the bin is left out instead of failing the whole drop.
+#[test]
+fn a_bin_in_the_selection_does_not_stop_the_items_being_placed() {
+    let mut d = Driver::demo();
+    let (bin, items) = d.footage();
+    d.exec("file.newSequence", json!({"name": "Drop", "video": 2, "audio": 2}));
+    d.ok("ui.menu.invoke", json!({"id": "projectPanel.openBin", "params": {"bin": bin, "how": "inPlace"}}));
+    d.wait_for(&format!("project.item.{}", items[0]));
+    d.exec("project.select", json!({"items": [items[0], bin, items[1]]}));
+    d.frames(2);
+    d.ok("ui.drag", json!({"from": {"id": format!("project.item.{}", items[0])}, "to": {"id": "timeline.tracks", "fx": 0.3, "fy": 0.1}, "steps": 16}));
+    d.frames(4);
+    let clips = d.app().session.active_sequence().map(|q| q.video_tracks.iter().map(|t| t.items.len()).sum::<usize>()).unwrap_or(0);
+    assert_eq!(clips, 2, "status: {}", d.app().ui.status);
+}
+
+/// Escape during a Media Browser drag (#580) takes the import back, even over the Timeline.
+#[test]
+fn escape_takes_back_a_media_browser_drag() {
+    let dir = media_dir("drag-escape");
+    let mut session = Session::default();
+    session.execute("file.openDemoProject", json!({})).unwrap();
+    let mut d = Driver::with(session);
+    d.ok("ui.set", json!({"workspace": "Editing"}));
+    d.ok("ui.panel.show", json!({"panel": "MediaBrowser"}));
+    d.exec("mediaBrowser.navigate", json!({"path": dir.to_string_lossy()}));
+    d.frames(3);
+    d.wait_for("mediaBrowser.entry.b-roll.wav");
+    let (n0, before) = (d.app().session.project.items.len(), d.app().session.project.to_json());
+    let e = d.rect("mediaBrowser.entry.b-roll.wav");
+    let tl = d.rect("panel.Timeline");
+    let (from, to) = (egui::pos2(e[0] + 40.0, e[1] + e[3] / 2.0), egui::pos2(tl[0] + tl[2] * 0.6, tl[1] + tl[3] * 0.75));
+    let mut send = |e: egui::Event| {
+        d.harness.input_mut().events.push(e);
+        d.frames(1);
+    };
+    let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+    send(egui::Event::PointerMoved(from));
+    send(button(from, true));
+    for k in 1..=20 {
+        send(egui::Event::PointerMoved(from.lerp(to, k as f32 / 20.0)));
+        if k == 10 {
+            send(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        }
+    }
+    send(button(to, false));
+    d.frames(6);
+    assert_eq!(d.app().session.project.items.len(), n0, "the import was taken back");
+    assert_eq!(d.app().session.project.to_json(), before, "nothing was placed on the Timeline");
+    let _ = std::fs::remove_dir_all(&dir);
 }

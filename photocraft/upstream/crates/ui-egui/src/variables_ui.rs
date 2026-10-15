@@ -17,6 +17,16 @@ pub fn owns(fields: &Map<String, Value>) -> bool {
     fields.contains_key("__variables")
 }
 
+/// Alt+Cancel (Reset): restore `__variables` from the open-time snapshot.
+pub fn reset(fields: &mut Map<String, Value>) {
+    if !owns(fields) {
+        return;
+    }
+    if let Some(orig) = fields.get("__variablesOrig").cloned() {
+        fields.insert("__variables".into(), orig);
+    }
+}
+
 /// Layers available to bind, top to bottom: (id, display name, is-text).
 fn layer_options(app: &PhotocraftApp) -> Vec<(u64, String, bool)> {
     let Some(st) = app.session.active() else { return Vec::new() };
@@ -31,6 +41,8 @@ pub fn menu(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<
             let page = if id.ends_with("dataSets") { "dataSets" } else { "define" };
             let mut f = Map::new();
             let state = app.session.active().map(|st| crate::variables_ui::to_state(&st.doc.variables)).unwrap_or_else(|| json!({"defs": [], "dataSets": []}));
+            // Snapshot at open so Alt+Reset restores the document's variables.
+            f.insert("__variablesOrig".into(), state.clone());
             f.insert("__variables".into(), state);
             f.insert("__page".into(), json!(page));
             f.insert("__label".into(), json!("Variables"));
@@ -40,6 +52,7 @@ pub fn menu(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<
             // No data set named: open the dialog on the Data Sets page to pick one.
             let mut f = Map::new();
             let state = app.session.active().map(|st| crate::variables_ui::to_state(&st.doc.variables)).unwrap_or_else(|| json!({"defs": [], "dataSets": []}));
+            f.insert("__variablesOrig".into(), state.clone());
             f.insert("__variables".into(), state);
             f.insert("__page".into(), json!("dataSets"));
             f.insert("__label".into(), json!("Variables"));
@@ -229,8 +242,22 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
         if ui.button("◀").clicked() && cur > 0 {
             cur -= 1;
         }
-        let name = sets.get(cur).and_then(|s| s.get("name")).and_then(Value::as_str).unwrap_or("(none)").to_string();
-        ui.label(format!("Data Set: {name}  ({}/{})", if sets.is_empty() { 0 } else { cur + 1 }, sets.len()));
+        let name = sets
+            .get(cur)
+            .and_then(|s| s.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| {
+                let empty = "(none)";
+                tl!(empty)
+            })
+            .to_string();
+        ui.label({
+            let template = "Data Set: {name}  ({index}/{total})";
+            crate::i18n::fmt(
+                tl!(template),
+                &[("name", &name), ("index", &(if sets.is_empty() { 0 } else { cur + 1 }).to_string()), ("total", &sets.len().to_string())],
+            )
+        });
         if ui.button("▶").clicked() && cur + 1 < sets.len() {
             cur += 1;
         }
@@ -362,6 +389,16 @@ mod tests {
         for bad in [Value::Null, json!(5), json!("s"), json!([1]), json!({"defs": "x", "dataSets": {}})] {
             assert_eq!(normalize(&bad), json!({"defs": [], "dataSets": []}), "{bad}");
         }
+    }
+
+    #[test]
+    fn alt_reset_restores_open_snapshot() {
+        let mut f = Map::new();
+        let orig = json!({"defs": [{"name": "a"}], "dataSets": []});
+        f.insert("__variables".into(), json!({"defs": [{"name": "edited"}], "dataSets": []}));
+        f.insert("__variablesOrig".into(), orig.clone());
+        reset(&mut f);
+        assert_eq!(f["__variables"], orig);
     }
 
     #[test]

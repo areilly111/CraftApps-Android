@@ -90,7 +90,7 @@ fn enter(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// The first selected object with an opacity mask.
 fn first_masked(st: &crate::DocState) -> Option<NodeId> {
-    st.selection.subjects().iter().copied().find(|i| st.doc.node(*i).is_some_and(|n| n.mask.is_some()))
+    st.selection.subjects().iter().copied().find(|i| st.doc.node(*i).is_some_and(|n| n.extras().mask.is_some()))
 }
 
 /// Enter mask editing for `id` (one undo step) and isolate the editing layer. Returns the layer.
@@ -127,8 +127,11 @@ fn view_mask(s: &mut Session, p: &Value) -> Result<Value> {
 /// Enter mask editing for `id` inside an edit: copy its mask art onto a new editing layer and
 /// select it. Returns the layer.
 pub(crate) fn begin(d: &mut Document, sel: &mut Selection, id: NodeId) -> Result<NodeId> {
-    let art =
-        d.node(id).and_then(|n| n.mask.as_ref()).map(|m| m.art.clone()).ok_or_else(|| EngineError::Other("the object has no opacity mask".into()))?;
+    let art = d
+        .node(id)
+        .and_then(|n| n.extras().mask.as_ref())
+        .map(|m| m.art.clone())
+        .ok_or_else(|| EngineError::Other("the object has no opacity mask".into()))?;
     let layer = d.add_layer(Some(MASK_EDIT_LAYER));
     let parts = mask_parts(&art);
     let mut ids = Vec::with_capacity(parts.len());
@@ -202,7 +205,7 @@ pub(crate) fn follow_history(st: &mut crate::DocState, was: Option<NodeId>) {
 pub(crate) fn sync(d: &mut Document) {
     let Some(me) = d.mask_edit else { return };
     let art: Option<Vec<Arc<Node>>> = d.node(me.layer).and_then(|l| l.children().cloned());
-    let (Some(art), true) = (art, d.node(me.object).is_some_and(|n| n.mask.is_some())) else {
+    let (Some(art), true) = (art, d.node(me.object).is_some_and(|n| n.extras().mask.is_some())) else {
         d.mask_edit = None;
         let _ = d.remove(me.layer);
         return;
@@ -212,12 +215,12 @@ pub(crate) fn sync(d: &mut Document) {
         // Several objects (or none): a group, so the mask keeps one art node.
         many => Arc::new(mask_group(many.to_vec())),
     };
-    if let Some(m) = d.node(me.object).and_then(|n| n.mask.as_ref())
+    if let Some(m) = d.node(me.object).and_then(|n| n.extras().mask.as_ref())
         && Arc::ptr_eq(&m.art, &new_art)
     {
         return;
     }
-    if let Some(m) = d.node_mut(me.object).and_then(|n| n.mask.as_mut()) {
+    if let Some(m) = d.node_mut(me.object).and_then(|n| n.extras_if_any().and_then(|e| e.mask.as_mut())) {
         m.art = new_art;
     }
 }
@@ -241,7 +244,8 @@ mod tests {
         assert_eq!(s.doc().unwrap().isolation, Some(NodeId(layer)));
         // Edit the mask art with ordinary commands: widen it; the object's mask follows live.
         s.execute("object.move", &json!({"dx": 50, "dy": 0})).unwrap();
-        let mask_bounds = |s: &Session| s.doc().unwrap().doc.node(NodeId(obj)).unwrap().mask.as_ref().unwrap().art.geometric_bounds().unwrap();
+        let mask_bounds =
+            |s: &Session| s.doc().unwrap().doc.node(NodeId(obj)).unwrap().extras().mask.as_ref().unwrap().art.geometric_bounds().unwrap();
         assert!((mask_bounds(&s).x0 - 50.0).abs() < 1e-6);
         // Drawing while editing adds to the mask.
         s.execute("shape.ellipse", &json!({"x": 180, "y": 150, "width": 40, "height": 40})).unwrap();

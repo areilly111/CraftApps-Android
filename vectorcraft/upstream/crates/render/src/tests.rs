@@ -221,7 +221,7 @@ fn masked_doc(clip: bool, invert: bool) -> Document {
     let art = Node::group(gid, vec![Arc::new(white), Arc::new(grey)]);
     let mut m = vectorcraft_doc::OpacityMask::new(art, clip);
     m.invert = invert;
-    n.mask = Some(Box::new(m));
+    n.extras_mut().mask = Some(Box::new(m));
     let l = d.layers[0].id;
     d.insert(Some(l), 0, n).unwrap();
     d
@@ -256,7 +256,7 @@ fn disabled_or_outline_mask_draws_unmasked() {
     let mut d = masked_doc(true, false);
     let id = d.layers[0].children().unwrap()[0].id;
     let n = d.node_mut(id).unwrap();
-    n.mask.as_mut().unwrap().disabled = true;
+    n.extras_mut().mask.as_mut().unwrap().disabled = true;
     let opts = RenderOptions { background: Some([255, 255, 255, 255]), ..Default::default() };
     let img = Renderer::new().render(&d, 100, 100, Affine::IDENTITY, &opts);
     assert_eq!(img.pixel(80, 50), [255, 0, 0, 255]);
@@ -376,7 +376,7 @@ fn images_take_their_nearest_pixel_without_smoothing() {
     d.images.insert("bw".into(), ImageBlob::new("image/png", png));
     let id = d.alloc_id();
     let im = ImageObject { key: "bw".into(), width: 2, height: 1, xf: Affine::scale(20.0), link: None, placement: Default::default() };
-    d.insert(Some(d.layers[0].id), 0, Node::new(id, NodeKind::Image(im))).unwrap();
+    d.insert(Some(d.layers[0].id), 0, Node::new(id, NodeKind::Image(Box::new(im)))).unwrap();
     // How many pixels across the image are neither black nor white.
     let greys = |smooth_images| {
         let r = Renderer::new().render(&d, 40, 20, Affine::IDENTITY, &RenderOptions { smooth_images, ..Default::default() });

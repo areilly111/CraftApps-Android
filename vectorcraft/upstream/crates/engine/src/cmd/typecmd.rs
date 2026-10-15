@@ -75,7 +75,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Character",
             [],
             None,
-            "{ids?|id?, font?, style?, size?: pt, leading?: pt|\"auto\", tracking?: 1/1000 em, justify?: \"auto\" (the start of each paragraph's direction)|\"left\"|\"center\"|\"right\"|\"justifyAll\", fill?: colour, features?: [\"dlig\", \"-liga\", …] OpenType, start?: byte, end?: byte} (with a range: the character attributes style that range and justify the paragraphs it touches; without: all the text)",
+            "{ids?|id?, font?, style?, size?: pt, leading?: pt|\"auto\", tracking?: 1/1000 em, justify?: \"auto\" (the start of each paragraph's direction)|\"left\"|\"center\"|\"right\"|\"justifyAll\", fill?: colour, features?: [\"dlig\", \"-liga\", …] OpenType, start?: byte, end?: byte} (size/leading are document points after object scaling; with a range: the character attributes style that range and justify the paragraphs it touches; without: all the text)",
             has_doc,
             set_style
         ),
@@ -248,14 +248,14 @@ fn create_outlines(s: &mut Session, _: &Value) -> Result<Value> {
                 }
                 let st = t.runs.get(g.run).map(|r| r.style.clone()).unwrap_or_else(|| t.first_style());
                 let mut node = shape_node(d, path, None);
-                node.appearance = st.appearance();
+                node.appearance = st.appearance().into();
                 children.push(Arc::new(node));
             }
             // Underline and strikethrough bars become paths of their run's paint too (#847).
             for (run, bar) in vectorcraft_text::decorations(&lay, vectorcraft_text::FontDb::global(), t) {
                 let st = t.runs.get(run).map(|r| r.style.clone()).unwrap_or_else(|| t.first_style());
                 let mut node = shape_node(d, PathData::from_bezpath(&bar).transformed(t.xf), None);
-                node.appearance = st.appearance();
+                node.appearance = st.appearance().into();
                 children.push(Arc::new(node));
             }
             let (par, idx, _) = d.position(tid).ok_or(EngineError::NoNode(tid))?;
@@ -287,6 +287,22 @@ pub(crate) fn text_targets(s: &Session, p: &Value, cmd: &str) -> Result<Vec<Node
         return Err(bad(cmd, "no text objects selected"));
     }
     Ok(t)
+}
+
+/// Clamp in the units shown to the user, then compensate the text's affine. Clamping
+/// the local result would make small sizes impossible after enlarging an object.
+pub(crate) fn local_type_value(t: &TextObject, value: f64, limits: (f64, f64), horizontal: bool, cmd: &str) -> Result<f64> {
+    if !value.is_finite() {
+        return Err(bad(cmd, "type dimension must be finite"));
+    }
+    let scale = t.style_scale().ok_or_else(|| bad(cmd, "text transform is collapsed or unrepresentable"))?;
+    let local = value.clamp(limits.0, limits.1) / if horizontal { scale.horizontal } else { scale.points };
+    // Bound local dimensions too: an extreme inverse scale can produce a finite size
+    // whose leading, glyph advances or layout bounds overflow before the edit's geometry check.
+    if !local.is_finite() || local.abs() > crate::MAX_COORD || (value != 0.0 && local == 0.0) {
+        return Err(bad(cmd, "type dimension cannot be represented with this text transform"));
+    }
+    Ok(local)
 }
 
 /// Optional `start`/`end` byte offsets of a text command: the character range it styles and the
@@ -415,6 +431,8 @@ fn set_style(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit("Character", |d, _| {
         for id in &ids {
             let Some(NodeKind::Text(t)) = d.node_mut(*id).map(|n| &mut n.kind) else { continue };
+            let size = size.map(|v| local_type_value(t, v, (0.1, 1296.0), false, C)).transpose()?;
+            let leading = leading.map(|v| v.map(|v| local_type_value(t, v, (0.1, 5000.0), false, C)).transpose()).transpose()?;
             let before = protect.then(|| t.runs.clone());
             style_chars(t, range, |st| {
                 if let Some(f) = &font {
@@ -428,7 +446,7 @@ fn set_style(s: &mut Session, p: &Value) -> Result<Value> {
                     st.font_version = None;
                 }
                 if let Some(v) = size {
-                    st.size = v.clamp(0.1, 1296.0);
+                    st.size = v;
                 }
                 if let Some(l) = leading {
                     st.leading = l;
@@ -451,6 +469,35 @@ fn set_style(s: &mut Session, p: &Value) -> Result<Value> {
                 t.edit_paras(span, |pa| pa.justify = j);
             }
             refresh_bounds(t);
+        }
+        // Graph labels keep a change made to all of their text through the graph being drawn again (sizes as given,
+        // not in a scaled label's own units).
+        if range.is_none() {
+            super::graph::capture_label_styles(d, &ids, &|st| {
+                if let Some(f) = &font {
+                    st.font_family = f.clone();
+                    st.font_version = None;
+                }
+                if let Some(f) = &style {
+                    st.font_style = f.clone();
+                    st.font_version = None;
+                }
+                if let Some(v) = size {
+                    st.size = v.clamp(0.1, 1296.0);
+                }
+                if let Some(l) = leading {
+                    st.leading = l;
+                }
+                if let Some(v) = tracking {
+                    st.tracking = v.clamp(-1000.0, 10000.0);
+                }
+                if let Some(f) = &fill {
+                    st.fill = f.clone();
+                }
+                if let Some(f) = &features {
+                    st.features = f.clone();
+                }
+            });
         }
         Ok(())
     })?;
@@ -636,7 +683,7 @@ fn reshape_area(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let d = Vec2::new(f64_req(p, "dx", C)?, f64_req(p, "dy", C)?);
     let node = s.doc()?.doc.node(id);
-    if area_text(node).is_none() || node.is_some_and(|n| n.perspective.is_some()) {
+    if area_text(node).is_none() || node.is_some_and(|n| n.extras().perspective.is_some()) {
         return Err(bad(C, "not area type (text in a frame) outside perspective"));
     }
     s.edit("Reshape Type Area", |doc, _| {
@@ -839,6 +886,68 @@ mod area_tests {
             assert!(runs(&s).iter().all(|r| r.style.char_align == want));
             assert_eq!(serde_json::to_value(&runs(&s)[0].style).unwrap()["charAlign"], key);
         }
+    }
+
+    /// Proportional Metrics (#966): a character attribute, saved only when on.
+    #[test]
+    fn proportional_metrics_is_a_character_attribute_saved_only_when_on() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 400, "height": 400})).unwrap();
+        let id = s.execute("text.create", &json!({"x": 10, "y": 50, "text": "雅楽"})).unwrap()["id"].as_u64().unwrap();
+        let runs = |s: &Session| match &s.doc().unwrap().doc.node(NodeId(id)).unwrap().kind {
+            NodeKind::Text(t) => t.runs.clone(),
+            _ => panic!("text"),
+        };
+        assert!(!runs(&s)[0].style.proportional_metrics);
+        assert!(serde_json::to_value(&runs(&s)[0].style).unwrap().get("proportionalMetrics").is_none());
+        s.execute("select.set", &json!({"ids": [id]})).unwrap();
+        s.execute("text.setFormat", &json!({"proportionalMetrics": true})).unwrap();
+        assert!(runs(&s).iter().all(|r| r.style.proportional_metrics));
+        assert_eq!(serde_json::to_value(&runs(&s)[0].style).unwrap()["proportionalMetrics"], true);
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!(!runs(&s)[0].style.proportional_metrics);
+        // Characters selected with the Type tool: only the range takes it (雅 is 3 bytes).
+        s.execute("text.setRangeStyle", &json!({"id": id, "start": 3, "end": 6, "proportionalMetrics": true})).unwrap();
+        let on: Vec<_> = runs(&s).iter().map(|r| (r.text.clone(), r.style.proportional_metrics)).collect();
+        assert_eq!(on, [("雅".to_string(), false), ("楽".to_string(), true)]);
+        // Styles written without it (documents from before it) read as off.
+        let old = serde_json::to_value(&runs(&s)[0].style).unwrap();
+        assert!(old.get("proportionalMetrics").is_none());
+        assert!(!serde_json::from_value::<vectorcraft_doc::CharStyle>(old).unwrap().proportional_metrics);
+    }
+
+    /// Digits (Character panel menu, Middle Eastern options): a character attribute, saved only
+    /// when set; the text keeps the digits that were typed.
+    #[test]
+    fn digits_are_a_character_attribute_saved_only_when_set() {
+        use vectorcraft_doc::Digits;
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 400, "height": 400})).unwrap();
+        let id = s.execute("text.create", &json!({"x": 10, "y": 50, "text": "صفحة 12"})).unwrap()["id"].as_u64().unwrap();
+        let runs = |s: &Session| match &s.doc().unwrap().doc.node(NodeId(id)).unwrap().kind {
+            NodeKind::Text(t) => t.runs.clone(),
+            _ => panic!("text"),
+        };
+        assert_eq!(runs(&s)[0].style.digits, Digits::Default);
+        assert!(serde_json::to_value(&runs(&s)[0].style).unwrap().get("digits").is_none());
+        s.execute("select.set", &json!({"ids": [id]})).unwrap();
+        for (key, want) in [("hindi", Digits::Hindi), ("farsi", Digits::Farsi), ("arabic", Digits::Arabic), ("default", Digits::Default)] {
+            s.execute("text.setFormat", &json!({"digits": key})).unwrap();
+            assert!(runs(&s).iter().all(|r| r.style.digits == want));
+            let saved = serde_json::to_value(&runs(&s)[0].style).unwrap();
+            assert_eq!(saved.get("digits").and_then(|v| v.as_str()), (want != Digits::Default).then_some(key));
+            // The text is as typed: only the glyphs change.
+            assert_eq!(runs(&s).iter().map(|r| r.text.as_str()).collect::<String>(), "صفحة 12");
+        }
+        s.execute("text.setFormat", &json!({"digits": "hindi"})).unwrap();
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(runs(&s)[0].style.digits, Digits::Default);
+        let err = s.execute("text.setFormat", &json!({"digits": "roman"})).unwrap_err().to_string();
+        assert!(err.contains("`digits` must be"), "{err}");
+        // Characters selected with the Type tool: only the range takes it (صفحة is 8 bytes).
+        s.execute("text.setRangeStyle", &json!({"id": id, "start": 9, "end": 11, "digits": "farsi"})).unwrap();
+        let set: Vec<_> = runs(&s).iter().map(|r| (r.text.clone(), r.style.digits)).collect();
+        assert_eq!(set, [("صفحة ".to_string(), Digits::Default), ("12".to_string(), Digits::Farsi)]);
     }
 
     #[test]

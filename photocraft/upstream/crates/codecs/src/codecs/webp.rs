@@ -9,7 +9,7 @@ use crate::Format;
 use crate::error::CodecError;
 use crate::fidelity::Plan;
 use crate::image::{ChannelLayout, DecodeWarning, Image, Metadata, SampleType};
-use crate::options::{EncodeOptions, Limits};
+use crate::options::{EncodeOptions, Limits, alloc_zeroed};
 
 const F: Format = Format::WebP;
 
@@ -23,8 +23,11 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
     let (w, h) = dec.dimensions();
     let layout = if dec.has_alpha() { ChannelLayout::Rgba } else { ChannelLayout::Rgb };
     limits.check(w, h, layout, SampleType::U8)?;
+    // VP8L back-references and VP8 skipped macroblocks compress flat areas extremely well, so the
+    // ratio is generous; it still stops a header-only file from asking for a gigabyte.
+    Limits::check_plausible(u64::from(w) * u64::from(h) * layout.channels() as u64, bytes.len(), 1 << 16)?;
     let size = dec.output_buffer_size().ok_or_else(|| err("image too large"))?;
-    let mut buf = vec![0u8; size];
+    let mut buf = alloc_zeroed::<u8>(size)?;
     dec.read_image(&mut buf).map_err(err)?;
     let icc = dec.icc_profile().ok().flatten();
     let exif = dec.exif_metadata().ok().flatten();

@@ -196,6 +196,8 @@ pub fn build(app: &EffectcraftApp) -> NativeMenu {
                                     "Servicios"
                                 } else if crate::i18n::brazilian_portuguese(app) {
                                     "Serviços"
+                                } else if crate::i18n::czech(app) {
+                                    "Služby"
                                 } else {
                                     "Services"
                                 }
@@ -314,8 +316,9 @@ pub fn state_key(app: &EffectcraftApp) -> u64 {
     s.keymaps.active.hash(&mut h);
     let v = &app.ui.viewer;
     (v.rulers, v.guides, v.snap_guides, v.lock_guides, v.grid, v.snap_grid, v.show_layer_controls, v.pasteboard).hash(&mut h);
-    v.res.label().hash(&mut h);
     (app.ui.cache_when_idle, app.session.prefs.preview.active().include_audio, &app.ui.workspace, app.dialog.is_some()).hash(&mut h);
+    // Window menu check marks: the panels on screen.
+    crate::dock::PanelKind::ALL.iter().filter(|p| crate::menus::panel_shown(app, **p)).for_each(|p| p.hash(&mut h));
     h.finish()
 }
 
@@ -345,6 +348,17 @@ fn text_field_event(command: &str, clipboard: Option<String>) -> Option<Vec<egui
 pub fn activate(app: &mut EffectcraftApp, ctx: &egui::Context, menu: &NativeMenu, id: &str) -> Result<Value, String> {
     let item = menu.find(id).ok_or_else(|| format!("no native menu item `{id}`"))?;
     let (command, params) = (item.command.clone(), item.params.clone());
+    // The menu bar takes Cmd+D and Cmd+R before the window sees them: while a confirmation that
+    // answers to the key is open, hand it back. Choosing the item with the mouse (no Cmd held)
+    // still runs it.
+    if let Some(key) = crate::panels::dialogs::command_key(app)
+        && item.accelerator.as_deref().is_some_and(|a| ["Cmd+", "Ctrl+"].iter().any(|m| a.strip_prefix(m) == Some(key.name())))
+        && ctx.input(|i| i.modifiers.command)
+    {
+        app.synthetic.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND });
+        ctx.request_repaint();
+        return Ok(Value::Null);
+    }
     if ctx.egui_wants_keyboard_input() {
         let clip = if command == "edit.paste" { app.hooks.clipboard_text.as_ref().and_then(|f| f()) } else { None };
         if let Some(events) = text_field_event(&command, clip) {
@@ -446,6 +460,27 @@ mod tests {
     }
 
     #[test]
+    fn czech_translates_macos_predefined_items() {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key": "general.language", "value": "cs"})).unwrap();
+        fn labels(nodes: &[NativeNode], out: &mut Vec<String>) {
+            for node in nodes {
+                match node {
+                    NativeNode::Predefined { label, .. } => out.push(label.clone()),
+                    NativeNode::Submenu { children, .. } => labels(children, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut translated = vec![];
+        labels(&build(&app).menus, &mut translated);
+        assert_eq!(translated, ["Služby", "Skrýt EffectCraft", "Skrýt ostatní", "Zobrazit vše"]);
+    }
+
+    #[test]
     fn hide_items_are_predefined_on_macos() {
         let spec = build(&app());
         let mut roles = vec![];
@@ -467,6 +502,32 @@ mod tests {
         } else {
             assert!(roles.is_empty());
         }
+    }
+
+    #[test]
+    fn a_confirmation_gets_its_command_key_back_from_the_menu_bar() {
+        let mut app = app();
+        let spec = build(&app);
+        let dup = spec.items().into_iter().find(|i| i.command == "edit.duplicate").map(|i| i.id.clone()).unwrap();
+        let ctx = egui::Context::default();
+        app.dialog_state.delete_items.command = Some((json!({"items": []}), json!({"items": 1, "layers": 1, "comps": 1})));
+        app.dialog = Some(crate::Dialog::DeleteItems);
+        // Chosen with the mouse, Duplicate still runs.
+        ctx.run_ui(Default::default(), |ui| {
+            let _ = activate(&mut app, ui.ctx(), &spec, &dup);
+        })
+        .textures_delta
+        .clear();
+        assert!(app.synthetic.is_empty());
+        // Cmd+D goes to the prompt instead.
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+        ctx.run_ui(raw, |ui| {
+            let _ = activate(&mut app, ui.ctx(), &spec, &dup);
+        })
+        .textures_delta
+        .clear();
+        assert!(matches!(app.synthetic.as_slice(), [egui::Event::Key { key: egui::Key::D, pressed: true, .. }]));
     }
 
     #[test]
@@ -493,6 +554,28 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Window menu entries are checked while their panel is on screen.
+    #[test]
+    fn window_menu_checks_the_panels_on_screen() {
+        use crate::dock::PanelKind;
+        let mut app = app();
+        let checked = |app: &EffectcraftApp, panel: &str| {
+            build(app).items().into_iter().find(|i| i.command == "window.panel" && i.params["panel"] == panel).and_then(|i| i.checked)
+        };
+        assert_eq!(checked(&app, "timeline"), Some(true));
+        assert_eq!(checked(&app, "tools"), Some(true));
+        assert_eq!(checked(&app, "renderQueue"), Some(false));
+        let k0 = state_key(&app);
+        app.show_panel(PanelKind::RenderQueue);
+        assert_ne!(state_key(&app), k0);
+        // A tab behind another one, a closed panel and panels under a maximized one are not shown.
+        assert_eq!((checked(&app, "renderQueue"), checked(&app, "timeline")), (Some(true), Some(false)));
+        app.ui.dock.close(PanelKind::RenderQueue);
+        assert_eq!((checked(&app, "renderQueue"), checked(&app, "timeline")), (Some(false), Some(true)));
+        app.ui.maximized = Some(PanelKind::Timeline);
+        assert_eq!((checked(&app, "timeline"), checked(&app, "project")), (Some(true), Some(false)));
     }
 
     #[test]

@@ -66,6 +66,35 @@ impl AudioOut for AndroidAudioOut {
                 None,
             ),
             // The device doesn't take f32: convert through an f32 staging buffer.
+            cpal::SampleFormat::I16 => dev.build_output_stream(
+                &config,
+                move |buf: &mut [i16], _| {
+                    let n = buf.len();
+                    // Use a temporary f32 buffer for the fill callback
+                    let mut tmp = vec![0.0f32; n];
+                    fill(&mut tmp, channels);
+                    for (o, &s) in buf.iter_mut().zip(tmp.iter()) {
+                        *o = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+                    }
+                    played.fetch_add((n / channels.max(1)) as u64, Ordering::SeqCst);
+                },
+                move |e| Self::stream_error(&failed, e),
+                None,
+            ),
+            cpal::SampleFormat::U16 => dev.build_output_stream(
+                &config,
+                move |buf: &mut [u16], _| {
+                    let n = buf.len();
+                    let mut tmp = vec![0.0f32; n];
+                    fill(&mut tmp, channels);
+                    for (o, &s) in buf.iter_mut().zip(tmp.iter()) {
+                        *o = ((s.clamp(-1.0, 1.0) * 0.5 + 0.5) * 65535.0) as u16;
+                    }
+                    played.fetch_add((n / channels.max(1)) as u64, Ordering::SeqCst);
+                },
+                move |e| Self::stream_error(&failed, e),
+                None,
+            ),
             fmt => {
                 let err = format!("unsupported sample format {fmt:?}");
                 return Err(err);

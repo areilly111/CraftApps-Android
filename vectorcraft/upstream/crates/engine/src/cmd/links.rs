@@ -66,7 +66,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Relink",
             [],
             None,
-            "{ids?: [image or placed document ids] (default: the selected ones; with folder and nothing selected, every missing link), path | folder} link images (or placed documents, each showing the same artboard of the new file) to the file at path, or each to the file of its link's name in folder; embedded images become linked; each keeps its bounds. One undo step → {relinked: [ids], notFound: [file names]}",
+            "{ids?: [image or placed document ids] (default: the selected ones; with folder and nothing selected, every missing link), path | folder, copy?: false (with path, for images of a saved document: copy the file into the document's folder and link to the copy; the names Name.png, Name 2.png … Name 99.png are tried in turn until one is free, which gets the copy, or is a file with the same contents, which is used)} link images (or placed documents, each showing the same artboard of the new file) to the file at path, or each to the file of its link's name in folder; embedded images become linked; each keeps its bounds. One undo step → {relinked: [ids], notFound: [file names], copied?: [{from, to}], kept?: [{from, to}] (with copy)}",
             has_doc,
             relink
         ),
@@ -319,6 +319,17 @@ pub(crate) fn linked_files(d: &Document, doc_path: Option<&str>) -> Vec<LinkedFi
             let bytes = found.and_then(|mut f| f.read().ok()).or_else(|| d.images.get(&g.key).filter(own).map(|b| b.bytes.to_vec()));
             LinkedFile { path: g.link.path.clone(), name: g.link.name().to_string(), found_path, bytes }
         })
+        .collect()
+}
+
+/// The linked files of the open document `st` that `links.findFiles` looks for, each with the
+/// objects in the layers that show it: the files of objects `ids` whatever their status, else the
+/// files that can't be found.
+pub(crate) fn files_to_find(st: &crate::DocState, ids: Option<&[NodeId]>) -> Vec<(LinkInfo, Vec<NodeId>)> {
+    groups(&st.doc, ids)
+        .into_iter()
+        .filter(|g| !g.ids.is_empty() && (ids.is_some() || probe(g, folder(st.path.as_deref())).0 == Status::Missing))
+        .map(|g| (g.link, g.ids))
         .collect()
 }
 
@@ -731,6 +742,15 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "links.relink";
     let st = s.doc()?;
     let folder_param = str_param(p, "folder");
+    // With copy: the saved document's folder, which the file is copied into.
+    let copy_to = match (bool_or(p, "copy", false), str_param(p, "path")) {
+        (false, _) => None,
+        (true, None) => return Err(bad(C, "copy needs path: the file to copy into the document's folder")),
+        (true, Some(_)) => {
+            let doc = st.path.as_deref().map(absolute_path).ok_or_else(|| bad(C, "save the document first: copy puts the file in its folder"))?;
+            Some(Path::new(&doc).parent().map(Path::to_path_buf).ok_or_else(|| bad(C, format!("{doc} has no folder")))?)
+        }
+    };
     // An image or a placed document, with its link.
     let image = |id: &NodeId| {
         st.doc.node(*id).and_then(|n| match &n.kind {
@@ -759,6 +779,9 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
     if ids.is_empty() {
         return Err(bad(C, "select the images to relink, or pass ids"));
     }
+    if copy_to.is_some() && ids.iter().any(|id| matches!(st.doc.node(*id).map(|n| &n.kind), Some(NodeKind::PlacedDocument(_)))) {
+        return Err(bad(C, "copy takes images only: relink placed documents where their files are"));
+    }
     // (ids, the file) per file to read.
     let mut files: Vec<(Vec<NodeId>, String)> = vec![];
     let mut not_found = vec![];
@@ -778,9 +801,9 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
         (None, None) => return Err(bad(C, "give path (a file) or folder")),
     }
     let mut reads = vec![];
+    let (mut copied, mut kept) = (vec![], vec![]);
     for (ids, path) in files {
         let bytes = read_file(&path)?;
-        let link = link_info(&path, &bytes);
         // Images show the file; placed documents each show their artboard of it.
         let mut images = vec![];
         let mut documents: Vec<((u32, bool), Vec<NodeId>)> = vec![];
@@ -796,12 +819,30 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
                 _ => images.push(id),
             }
         }
-        if !images.is_empty() {
-            let img = fileio::raster_image(&bytes).map_err(|e| bad(C, format!("{path}: {e}")))?;
+        // Read before it is copied: a file that can't be shown isn't copied.
+        let img = if images.is_empty() { None } else { Some(fileio::raster_image(&bytes).map_err(|e| bad(C, format!("{path}: {e}")))?) };
+        let mut sources = vec![];
+        for ((page, bounding), ids) in documents {
+            sources.push((page, ids, super::place::document::source(&path, &bytes, Some(&path), page, bounding, C)?));
+        }
+        let to = match &copy_to {
+            Some(dir) => {
+                let (to, new) = copy_into_folder(&path, &bytes, dir)?;
+                let pair = json!({ "from": path, "to": to });
+                if new {
+                    copied.push(pair)
+                } else {
+                    kept.push(pair)
+                }
+                to
+            }
+            None => path,
+        };
+        let link = link_info(&to, &bytes);
+        if let Some(img) = img {
             reads.push((images, Read::Image((link.clone(), img))));
         }
-        for ((page, bounding), ids) in documents {
-            let src = super::place::document::source(&path, &bytes, Some(&path), page, bounding, C)?;
+        for (page, ids, src) in sources {
             reads.push((ids, Read::Document(LinkInfo { page: Some(page), ..link.clone() }, src)));
         }
     }
@@ -811,7 +852,43 @@ fn relink(s: &mut Session, p: &Value) -> Result<Value> {
     }
     not_found.sort();
     not_found.dedup();
-    Ok(json!({ "relinked": relinked, "notFound": not_found }))
+    let mut out = json!({ "relinked": relinked, "notFound": not_found });
+    if copy_to.is_some() {
+        out["copied"] = json!(copied);
+        out["kept"] = json!(kept);
+    }
+    Ok(out)
+}
+
+/// `links.relink {copy}`: put the file at `from` (`bytes`, as just read) into the folder `dir`,
+/// never replacing a file there ([`fileio::copy_new`]) → where it is now, and whether it was
+/// copied (`false`: a file there with the same contents, of its name or a numbered one, is used).
+#[cfg(not(target_arch = "wasm32"))]
+fn copy_into_folder(from: &str, bytes: &[u8], dir: &Path) -> Result<(String, bool)> {
+    use std::io::Write as _;
+    let source = Path::new(from);
+    let name = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // Each name it takes is checked against the automation roots in force.
+    let create = |to: &Path| {
+        crate::file_access::check_write(&to.to_string_lossy()).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+        vectorcraft_format::write_new_with(to, |f| f.write_all(bytes))
+    };
+    // A file there that automation may not read isn't taken for the same file.
+    let same = |to: &Path, m: &std::fs::Metadata| {
+        m.len() == bytes.len() as u64 && crate::file_access::check_read(&to.to_string_lossy()).is_ok() && std::fs::read(to).is_ok_and(|b| b == bytes)
+    };
+    match fileio::copy_new(source, dir, create, same) {
+        Ok(Some(fileio::Placed::Copied(to))) => Ok((to.to_string_lossy().into_owned(), true)),
+        Ok(Some(fileio::Placed::Kept(to))) => Ok((to.to_string_lossy().into_owned(), false)),
+        Ok(None) => Err(EngineError::Other(format!("every numbered name for {name} is taken in the document's folder"))),
+        Err(e) => Err(EngineError::Other(format!("{}: {e}", dir.display()))),
+    }
+}
+
+/// The web has no file system: nothing is copied.
+#[cfg(target_arch = "wasm32")]
+fn copy_into_folder(_: &str, _: &[u8], _: &Path) -> Result<(String, bool)> {
+    Err(bad("links.relink", "copying a file isn't available on the web"))
 }
 
 // ---------- the Links panel ----------

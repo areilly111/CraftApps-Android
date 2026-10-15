@@ -117,6 +117,98 @@ fn dragging_over_text_with_the_highlighter_highlights_it() {
 }
 
 #[test]
+fn the_quick_bar_colour_changes_the_selected_comment() {
+    use pdfcraft_ui_egui::comments::CommentTool;
+
+    let mut h = harness(|app| app.set_option("quick", "highlight").unwrap());
+    let (a, b) = {
+        let v = &h.state().views[0];
+        (v.glyph_screen_pos(0, 4).expect("text layer"), v.glyph_screen_pos(0, 14).expect("glyph"))
+    };
+    drag(&mut h, a, b);
+    assert_eq!(comments(&h)[0].color, Some([1.0, 0.94, 0.0]));
+
+    h.get_by_label("Colour").click();
+    h.run_steps(2);
+    h.get_by_label("Blue").click();
+    h.run_steps(3);
+
+    let state = h.state();
+    let doc = state.session.get(state.views[0].id).expect("document");
+    assert_eq!(doc.comment_props(0, 0).and_then(|props| props.color), Some([0.0, 0.47, 0.84]));
+    assert_eq!(doc.can_undo(), Some("Change comment properties"), "recoloring is one undo step");
+    assert_eq!(state.comment_prefs.style(CommentTool::Highlight).color, [0.0, 0.47, 0.84]);
+}
+
+#[test]
+fn the_quick_bar_colour_changes_the_selected_arrow() {
+    use pdfcraft_ui_egui::comments::CommentTool;
+
+    // Arrows are saved as Line annotations; the Arrow tool's colour must still reach them.
+    let mut h = harness(|app| app.set_option("quick", "arrow").unwrap());
+    drag_pt(&mut h, (20.0, 20.0), (120.0, 30.0));
+    assert_eq!(comments(&h)[0].subtype, "Line");
+    assert_eq!(h.state().quick_tool, QuickTool::Comment(CommentTool::Arrow), "the arrow tool is still active");
+    assert_eq!(h.state().views[0].comments.selected, Some((0, 0)), "the new arrow is selected");
+
+    h.get_by_label("Colour").click();
+    h.run_steps(2);
+    h.get_by_label("Blue").click();
+    h.run_steps(3);
+
+    let state = h.state();
+    let doc = state.session.get(state.views[0].id).expect("document");
+    assert_eq!(doc.comment_props(0, 0).and_then(|props| props.color), Some([0.0, 0.47, 0.84]));
+    assert_eq!(doc.can_undo(), Some("Change comment properties"));
+}
+
+#[test]
+fn the_quick_bar_colour_skips_the_selected_comment_when_commenting_is_forbidden() {
+    use pdfcraft_ui_egui::comments::CommentTool;
+
+    // One page with a yellow highlight, encrypted to allow printing only (no commenting).
+    let plain = b"%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Annots [4 0 R] >> endobj
+4 0 obj << /Type /Annot /Subtype /Highlight /Rect [20 140 120 165] /QuadPoints [20 165 120 165 20 140 120 140] /C [1 0.94 0] >> endobj
+trailer << /Root 1 0 R >>
+%%EOF";
+    let mut doc = pdfcraft_cos::Document::open(std::sync::Arc::new(plain.to_vec())).expect("fixture parses");
+    doc.set_encryption(&pdfcraft_cos::NewEncryption {
+        algorithm: pdfcraft_cos::Algorithm::Aes256,
+        user_password: "",
+        owner_password: "owner",
+        permissions: 0b0100,
+        encrypt_metadata: true,
+        seed: [5; 32],
+    })
+    .expect("encrypts");
+    let bytes = pdfcraft_cos::write_full(&doc, &Default::default()).expect("writes");
+    let mut h = harness(move |app| {
+        app.open_bytes("restricted.pdf", None, bytes).expect("opens restricted");
+        app.set_option("quick", "highlight").unwrap();
+    });
+    let id = h.state().active_ids().expect("active document").1;
+    assert!(!h.state().session.get(id).expect("document").allows_annotation(), "commenting is forbidden");
+    let index = h.state().views.iter().position(|v| v.id == id).expect("view");
+    h.state_mut().views[index].comments.selected = Some((0, 0));
+    h.run_steps(2);
+
+    h.get_by_label("Colour").click();
+    h.run_steps(2);
+    h.get_by_label("Blue").click();
+    h.run_steps(3);
+
+    let state = h.state();
+    let doc = state.session.get(id).expect("document");
+    assert_eq!(doc.comment_props(0, 0).and_then(|props| props.color), Some([1.0, 0.94, 0.0]), "the comment keeps its colour");
+    assert_eq!(doc.can_undo(), None, "no edit was made");
+    assert_eq!(state.toast, None, "picking a colour is not reported as a failed edit");
+    assert_eq!(state.comment_prefs.style(CommentTool::Highlight).color, [0.0, 0.47, 0.84], "the tool default still changes");
+}
+
+#[test]
 fn a_new_highlight_opens_its_note_for_typing() {
     let mut h = harness(|app| app.set_option("quick", "highlight").unwrap());
     assert_eq!(h.state().views[0].comments.editing, None);
@@ -149,6 +241,44 @@ fn a_selection_made_first_is_marked_when_a_tool_is_picked() {
     assert_eq!(c.len(), 1);
     assert_eq!(c[0].subtype, "StrikeOut");
     assert!(h.state().views[0].selected_text().is_none(), "the selection is consumed");
+}
+
+#[test]
+fn selected_text_shows_actions_and_underlines_without_changing_tools() {
+    let mut h = harness(|_| {});
+    h.state_mut().views[0].select_text(0, 4, 8);
+    h.run_steps(3);
+    h.get_by_label("Add comment");
+    h.get_by_label("Replace text");
+    h.get_by_label("Underline").click();
+    h.run_steps(3);
+    let c = comments(&h);
+    assert_eq!(c.len(), 1);
+    assert_eq!(c[0].subtype, "Underline");
+    assert!(h.state().views[0].selected_text().is_none());
+    assert_eq!(h.state().quick_tool, QuickTool::Select);
+}
+
+#[test]
+fn selected_text_replace_action_opens_replacement_composer() {
+    let mut h = harness(|_| {});
+    h.state_mut().views[0].select_text(0, 4, 8);
+    h.run_steps(3);
+    h.get_by_label("Replace text").click();
+    h.run_steps(2);
+    h.get_by_label("Replacement text");
+    assert!(h.state().views[0].selected_text().is_none());
+}
+
+#[test]
+fn selected_text_comment_action_opens_note_composer() {
+    let mut h = harness(|_| {});
+    h.state_mut().views[0].select_text(0, 4, 8);
+    h.run_steps(3);
+    h.get_by_label("Add comment").click();
+    h.run_steps(2);
+    assert!(matches!(h.state().views[0].comments.composer.as_ref().map(|c| &c.kind), Some(pdfcraft_ui_egui::comments::ComposerKind::Note)));
+    assert!(h.state().views[0].selected_text().is_none());
 }
 
 #[test]
@@ -266,7 +396,7 @@ fn the_panel_posts_comments_and_replies() {
 
 /// The side panel's width as egui keeps it from one frame to the next.
 fn panel_width(h: &Harness<'static, PdfCraftApp>) -> f32 {
-    egui::containers::panel::PanelState::load(&h.ctx, egui::Id::new("right_panel")).expect("the side panel is shown").size().x
+    h.ctx.data(|data| data.get_temp::<egui::Rect>(egui::Id::new("pdfcraft-inspector-body"))).expect("the inspector body is shown").width()
 }
 
 #[test]
@@ -566,6 +696,35 @@ fn polygons_clouds_connected_lines_callouts_and_inserted_text() {
 }
 
 #[test]
+fn inserted_text_snaps_to_the_gap_between_characters_on_the_baseline() {
+    let mut h = harness(|app| app.set_option("quick", "caret").unwrap());
+    // "The quick brown fox", Helvetica 14 pt from x = 20 on the baseline y = 150. With the
+    // standard-14 widths "The quick b" ends at 92.366 and "r" (333/1000 em) at 97.028, so a click
+    // in the right half of "r", above the baseline, puts the tip between "r" and "o".
+    click_pt(&mut h, (95.5, 155.0));
+    field(&h, "Text to insert").type_text("x");
+    h.run_steps(2);
+    h.get_by_label("Post").click();
+    h.run_steps(3);
+    let caret = comments(&h).into_iter().find(|a| a.subtype == "Caret").expect("a caret");
+    let [x0, y0, x1, y1] = caret.rect;
+    assert!(((x0 + x1) / 2.0 - 97.03).abs() < 0.3, "tip at the r|o gap: {:?}", caret.rect);
+    assert!((y1 - 150.0).abs() < 0.3, "tip on the baseline: {:?}", caret.rect);
+    assert!((y1 - y0 - 7.0).abs() < 0.3, "half the 14 pt em: {:?}", caret.rect);
+
+    // Away from the text the caret stays where the click was, at its default size.
+    h.state_mut().set_option("quick", "caret").unwrap();
+    click_pt(&mut h, (200.0, 60.0));
+    field(&h, "Text to insert").type_text("y");
+    h.run_steps(2);
+    h.get_by_label("Post").click();
+    h.run_steps(3);
+    let away = comments(&h).into_iter().find(|a| a.subtype == "Caret" && a.contents.as_deref() == Some("y")).expect("a second caret");
+    let [x0, y0, x1, y1] = away.rect;
+    assert!(((x0 + x1) / 2.0 - 200.0).abs() < 1.0 && (y1 - 60.0).abs() < 1.0 && (y1 - y0 - 8.0).abs() < 0.3, "{:?}", away.rect);
+}
+
+#[test]
 fn the_panel_filters_by_colour_and_checkmark() {
     let mut h = harness(|app| {
         app.set_option("panel", "comments").unwrap();
@@ -785,6 +944,11 @@ fn hovering_a_comment_shows_its_author_and_text() {
     h.run_steps(3);
     h.get_by_label_contains("Check this figure");
     h.get_by_label_contains("Ada");
+    // The tip is drawn above every window. A dialog must hide it, or the author floats over the dialog.
+    h.state_mut().set_option("dialog", "shortcuts").unwrap();
+    h.hover_at(p);
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Check this figure").is_none(), "a dialog covers the page hover");
 }
 
 #[test]

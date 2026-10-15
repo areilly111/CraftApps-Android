@@ -104,8 +104,28 @@ pub(crate) fn notice(app: &mut LightcraftApp, ui: &mut egui::Ui, kind: &str) {
     ui.add_space(6.0);
 }
 
+/// The model setup was dismissed with nothing on the way: neither Settings nor a model's terms
+/// are showing, no model download or installation is running, and the photo still has no model.
+fn abandoned(app: &mut LightcraftApp) -> bool {
+    if matches!(app.ui.dialog, Some(Dialog::Settings { .. } | Dialog::DenoiseModel { .. })) {
+        return false;
+    }
+    let Some(photo) = app.model_setup.denoise.as_ref().map(|r| r.photo) else { return false };
+    if !matches!(app.session.denoise_photo_state(photo), PhotoState::NoModel) {
+        return false;
+    }
+    let Ok(v) = app.session.execute("denoise.models.downloads", &json!({})) else { return false };
+    !v["downloads"].as_array().into_iter().flatten().any(|d| matches!(d["state"].as_str(), Some("running" | "done" | "installing" | "installed")))
+}
+
 pub(crate) fn pump(app: &mut LightcraftApp, ctx: &egui::Context) {
     if app.model_setup.denoise.is_none() {
+        return;
+    }
+    if abandoned(app) {
+        // the setup was closed without installing anything: the switch goes back off (issue #922)
+        app.model_setup.denoise = None;
+        app.ui.status = tr("Pending photo action cancelled").into();
         return;
     }
     if app.session.interaction.is_some() {

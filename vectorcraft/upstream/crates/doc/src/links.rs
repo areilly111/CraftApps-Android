@@ -72,10 +72,31 @@ pub(crate) fn de_link<'de, D: Deserializer<'de>>(d: D) -> Result<Option<LinkInfo
     }))
 }
 
+/// The FNV-1a offset basis: the hash of no bytes ([`fnv1a`]).
+const FNV_BASIS: u64 = 0xcbf29ce484222325;
+
+/// The 64-bit FNV-1a hash `h` of some bytes, carried on over `bytes`.
+fn fnv1a(h: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(h, |h, x| (h ^ *x as u64).wrapping_mul(0x100000001b3))
+}
+
 /// A hash of `bytes` (FNV-1a), the same for identical files: `img` and 16 hex digits.
 pub fn hash_bytes(bytes: &[u8]) -> String {
-    let h = bytes.iter().fold(0xcbf29ce484222325u64, |h, x| (h ^ *x as u64).wrapping_mul(0x100000001b3));
-    format!("img{h:016x}")
+    format!("img{:016x}", fnv1a(FNV_BASIS, bytes))
+}
+
+/// [`hash_bytes`] of everything `r` reads, read 64 KB at a time.
+pub fn hash_reader(mut r: impl std::io::Read) -> std::io::Result<String> {
+    let mut buf = vec![0; 1 << 16];
+    let mut h = FNV_BASIS;
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) => return Ok(format!("img{h:016x}")),
+            Ok(n) => h = fnv1a(h, buf.get(..n).unwrap_or_default()),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 impl ImageBlob {
@@ -115,7 +136,7 @@ fn proxy_png(bytes: &[u8]) -> Option<Vec<u8>> {
 /// `n` and every descendant, opacity-mask art included.
 fn walk_all<'a>(n: &'a Node, f: &mut impl FnMut(&'a Node)) {
     f(n);
-    if let Some(m) = &n.mask {
+    if let Some(m) = &n.extras().mask {
         walk_all(&m.art, f);
     }
     for c in n.children().into_iter().flatten() {
@@ -127,7 +148,12 @@ impl Document {
     /// Visit every image object: in the layers, then in symbol definitions and pattern swatches,
     /// opacity-mask art included.
     pub fn visit_images<'a>(&'a self, mut f: impl FnMut(&'a Node, &'a ImageObject)) {
-        let roots = self.layers.iter().chain(self.symbols.iter().map(|s| &s.art)).chain(self.patterns.iter().flat_map(|p| &p.art));
+        let roots = self
+            .layers
+            .iter()
+            .chain(self.symbols.iter().map(|s| &s.art))
+            .chain(self.graph_designs.iter().map(|g| &g.art))
+            .chain(self.patterns.iter().flat_map(|p| &p.art));
         for root in roots {
             walk_all(root, &mut |n| {
                 if let NodeKind::Image(im) = &n.kind {
@@ -269,15 +295,19 @@ impl Document {
                 NodeKind::PlacedDocument(placed) => f(&mut placed.link),
                 _ => {}
             }
-            if let Some(mask) = &mut n.mask {
+            if let Some(mask) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
                 walk(&mut mask.art, f);
             }
             for child in n.children_mut().into_iter().flatten() {
                 walk(child, f);
             }
         }
-        let roots =
-            self.layers.iter_mut().chain(self.symbols.iter_mut().map(|s| &mut s.art)).chain(self.patterns.iter_mut().flat_map(|p| &mut p.art));
+        let roots = self
+            .layers
+            .iter_mut()
+            .chain(self.symbols.iter_mut().map(|s| &mut s.art))
+            .chain(self.graph_designs.iter_mut().map(|g| &mut g.art))
+            .chain(self.patterns.iter_mut().flat_map(|p| &mut p.art));
         for root in roots {
             walk(root, &mut f);
         }
@@ -301,15 +331,19 @@ impl Document {
             {
                 f(im);
             }
-            if let Some(m) = &mut n.mask {
+            if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
                 update(&mut m.art, pick, f);
             }
             for c in n.children_mut().into_iter().flatten() {
                 update(c, pick, f);
             }
         }
-        let roots =
-            self.layers.iter_mut().chain(self.symbols.iter_mut().map(|s| &mut s.art)).chain(self.patterns.iter_mut().flat_map(|p| &mut p.art));
+        let roots = self
+            .layers
+            .iter_mut()
+            .chain(self.symbols.iter_mut().map(|s| &mut s.art))
+            .chain(self.graph_designs.iter_mut().map(|g| &mut g.art))
+            .chain(self.patterns.iter_mut().flat_map(|p| &mut p.art));
         for root in roots {
             update(root, &pick, &mut f);
         }
@@ -336,7 +370,14 @@ mod tests {
             0,
             Node::new(
                 id,
-                NodeKind::Image(ImageObject { key: key.into(), width: 4, height: 4, xf: Affine::IDENTITY, link, placement: Default::default() }),
+                NodeKind::Image(Box::new(ImageObject {
+                    key: key.into(),
+                    width: 4,
+                    height: 4,
+                    xf: Affine::IDENTITY,
+                    link,
+                    placement: Default::default(),
+                })),
             ),
         )
         .unwrap()
@@ -355,6 +396,14 @@ mod tests {
         // Written as an object, with only what is known.
         let v = serde_json::to_value(&new).unwrap();
         assert_eq!(v["link"], serde_json::json!({"path": "/a/b.png", "size": 9, "page": 2}));
+    }
+
+    #[test]
+    fn a_reader_hashes_as_its_bytes_do() {
+        // Several 64 KB reads, and none.
+        let bytes: Vec<u8> = (0..200_000u32).map(|i| (i * 7 % 251) as u8).collect();
+        assert_eq!(hash_reader(&bytes[..]).unwrap(), hash_bytes(&bytes));
+        assert_eq!((hash_reader(&b""[..]).unwrap(), hash_bytes(b"")), ("imgcbf29ce484222325".to_string(), "imgcbf29ce484222325".to_string()));
     }
 
     #[test]

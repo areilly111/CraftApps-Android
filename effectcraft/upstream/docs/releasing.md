@@ -58,6 +58,7 @@ jobs are refused by the environment's branch rule, and no draft release is made.
 | Windows 11 ARM64 | `effectcraft-<v>-windows-arm64.msi`, `effectcraft-<v>-windows-arm64-portable.zip` | cross-compiled on `windows-latest` |
 | Linux x86_64 | `effectcraft-<v>-linux-x86_64.{AppImage,deb,rpm,tar.gz}` | `ubuntu-22.04` |
 | Linux aarch64 | `effectcraft-<v>-linux-aarch64.{AppImage,deb,rpm,tar.gz}` | `ubuntu-22.04-arm` |
+| Linux riscv64 | `effectcraft-<v>-linux-riscv64.tar.gz` | cross-compiled on `ubuntu-24.04` (CLI smoke-tested under QEMU) |
 | Linux AppImage updates | `effectcraft-<v>-linux-{x86_64,aarch64}.AppImage.zsync` | with the AppImages |
 | Flatpak x86_64, aarch64 | `effectcraft-<v>-linux-{x86_64,aarch64}.flatpak` (the Linux tarball, repackaged) | `ubuntu-24.04`, `ubuntu-24.04-arm` |
 | FreeBSD 14+ x86_64 | `effectcraft-<v>-freebsd-x86_64.tar.gz` | a FreeBSD 14.3 VM on `ubuntu-latest` |
@@ -84,6 +85,14 @@ version wherever they run. The release builds on the oldest GitHub-hosted image,
 RHEL 10. Building on a newer image would silently raise that floor. `packaging/linux/package.sh`
 builds the AppImage, `.deb`, `.rpm` and tarball; the workflow then runs the AppImage's
 `--version` as a smoke test.
+
+### Linux: riscv64
+
+GitHub has no RISC-V runners, so the `linux-riscv64` job cross-compiles on `ubuntu-24.04` for
+`riscv64gc-unknown-linux-gnu`, against riscv64 libraries (X11/Wayland/GL, ALSA) from
+ports.ubuntu.com. It ships the tarball only, needs glibc 2.39 (Ubuntu 24.04+, Debian 13+), and runs
+`effectcraft-cli --version` under `qemu-riscv64` as a smoke test. `package.sh` cross-compiles when
+`CROSS_ARCH`, `CROSS_TARGET` and `CROSS_COMPILE` are set (see its header).
 
 ### Linux: AppImage updates and Flatpak
 

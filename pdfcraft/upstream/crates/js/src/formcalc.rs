@@ -2543,7 +2543,11 @@ pub(crate) fn run_formcalc_at(
 /// [`run_formcalc`] on its own thread, abandoned after `timeout` (and told to stop itself then).
 pub fn run_formcalc_within(script: &str, event: &XfaEvent, doc: &XfaDoc, root: XfaNode, limits: Limits, timeout: std::time::Duration) -> XfaOutcome {
     let (script, event, doc) = (script.to_string(), event.clone(), doc.clone());
-    run_within("pdfcraft-formcalc", timeout, move || run_formcalc_at(&script, &event, &doc, root, limits, Some(timeout)))
+    // FormCalc has no engine to start: its time (and its own deadline) begins at once.
+    run_within("pdfcraft-formcalc", timeout, move |started| {
+        started();
+        run_formcalc_at(&script, &event, &doc, root, limits, Some(timeout))
+    })
 }
 
 #[cfg(test)]

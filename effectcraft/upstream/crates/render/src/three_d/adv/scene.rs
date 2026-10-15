@@ -543,10 +543,11 @@ pub fn extrusion_params(ctx: &EvalCtx, layer: &Layer) -> Option<model::extrude::
 /// space). Fills and strokes are both extruded (a stroke as the region it covers, bevelled like
 /// the fill), stacked in the layer's paint order (see [`model::extrude::extrude_stacked`]).
 /// Text extrudes each character in its own space, so per-character 3D animation (position,
-/// rotation, scale in Z) carries over.
+/// rotation, scale in Z) carries over. A paint whose Front / Bevel / Side / Back are coloured
+/// (shape surface items, text animators) comes as one mesh per surface, in that order.
 pub fn extruded_meshes(ctx: &EvalCtx, layer: &Layer, p: &model::extrude::ExtrudeParams) -> Vec<(Primitive, [f32; 4], Mat4)> {
-    // (paths, colour, mesh → layer, stacking level)
-    let mut groups: Vec<(Vec<kurbo::BezPath>, [f32; 4], Mat4, usize)> = vec![];
+    // (paths, colour, mesh → layer, stacking level, surface colours)
+    let mut groups: Vec<(Vec<kurbo::BezPath>, [f32; 4], Mat4, usize, crate::shapes::SurfaceColors)> = vec![];
     match layer.source {
         LayerSource::Text => {
             if let Some(tg) = crate::text::text_geom(ctx, layer) {
@@ -561,13 +562,13 @@ pub fn extruded_meshes(ctx: &EvalCtx, layer: &Layer, p: &model::extrude::Extrude
                     let op = (g.xf.opacity / 100.0).clamp(0.0, 1.0) as f32;
                     if g.apply_fill && g.fill[3] * op > 0.0 {
                         let c = [g.fill[0], g.fill[1], g.fill[2], g.fill[3] * op];
-                        groups.push((vec![g.local.clone()], c, g.m, usize::from(!stroke_on_top)));
+                        groups.push((vec![g.local.clone()], c, g.m, usize::from(!stroke_on_top), g.xf.surface_colors(c)));
                     }
                     if g.stroke_width > 0.0 && g.stroke[3] * op > 0.0 {
                         let st = effectcraft_path::StrokeStyle { width: g.stroke_width, join: effectcraft_path::Join::Round, ..Default::default() };
                         if let Some(region) = crate::shapes::stroke_region(std::slice::from_ref(&g.local), &st) {
                             let c = [g.stroke[0], g.stroke[1], g.stroke[2], g.stroke[3] * op];
-                            groups.push((vec![region], c, g.m, usize::from(stroke_on_top)));
+                            groups.push((vec![region], c, g.m, usize::from(stroke_on_top), g.xf.surface_colors(c)));
                         }
                     }
                 }
@@ -575,22 +576,32 @@ pub fn extruded_meshes(ctx: &EvalCtx, layer: &Layer, p: &model::extrude::Extrude
         }
         LayerSource::Shape => {
             if let Some(c) = layer.props.sub("contents") {
-                groups = crate::shapes::extrusion_outlines(ctx, layer, c).into_iter().enumerate().map(|(k, (ps, c))| (ps, c, Mat4::IDENTITY, k)).collect();
+                groups =
+                    crate::shapes::extrusion_outlines(ctx, layer, c).into_iter().enumerate().map(|(k, (ps, c, s))| (ps, c, Mat4::IDENTITY, k, s)).collect();
             }
         }
         _ => {}
     }
-    groups
-        .into_iter()
-        .filter_map(|(paths, color, m, level)| {
-            let cs: Vec<Vec<[f64; 2]>> = paths.iter().flat_map(|bp| contours(bp, 0.25)).collect();
-            let outlines = model::extrude::group_contours(cs);
-            if outlines.is_empty() {
-                return None;
+    let mut out = vec![];
+    for (paths, color, m, level, surfaces) in groups {
+        let cs: Vec<Vec<[f64; 2]>> = paths.iter().flat_map(|bp| contours(bp, 0.25)).collect();
+        let outlines = model::extrude::group_contours(cs);
+        if outlines.is_empty() {
+            continue;
+        }
+        if surfaces.iter().all(Option::is_none) {
+            out.push((model::extrude::extrude_stacked(&outlines, p, level), color, m));
+            continue;
+        }
+        for (mesh, s) in model::extrude::extrude_surfaces_stacked(&outlines, p, level).into_iter().zip(surfaces) {
+            if mesh.indices.is_empty() {
+                continue;
             }
-            Some((model::extrude::extrude_stacked(&outlines, p, level), color, m))
-        })
-        .collect()
+            let c = s.map_or(color, |s| [s[0], s[1], s[2], color[3]]);
+            out.push((mesh, c, m));
+        }
+    }
+    out
 }
 
 fn extruded_layer(r: &Renderer, ctx: &EvalCtx, layer: &Layer, p: &model::extrude::ExtrudeParams, b: &mut Builder) {

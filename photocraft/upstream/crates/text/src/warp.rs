@@ -37,6 +37,14 @@ pub fn psd_style(id: &str) -> Option<&'static str> {
     STYLES.iter().find(|(psd, short)| psd.to_ascii_lowercase() == l || short.to_ascii_lowercase() == l).map(|(psd, _)| *psd)
 }
 
+/// Short id (`flag`, `none`) for a PSD style name (`warpFlag`, `warpNone`): the reverse of [`psd_style`].
+pub fn short_style(psd: &str) -> Option<&'static str> {
+    if psd == "warpNone" {
+        return Some("none");
+    }
+    STYLES.iter().find(|(p, _)| *p == psd).map(|(_, short)| *short)
+}
+
 /// A warp prepared for one layout: the shared style math of
 /// [`photocraft_geom::warp::StyleWarp`] (also used by Edit › Transform › Warp) over the text box.
 #[derive(Clone, Copy, Debug)]
@@ -71,6 +79,18 @@ mod tests {
         Warp::new(&w, [0.0, -40.0, 200.0, 10.0]).unwrap()
     }
 
+    /// #218: the Warp Text dialog shows a layer's PSD style by its short id.
+    #[test]
+    fn short_ids_round_trip_with_psd_styles() {
+        assert_eq!(short_style("warpFlag"), Some("flag"));
+        assert_eq!(short_style("warpNone"), Some("none"));
+        assert_eq!(short_style("warpCustom"), None);
+        for (psd, short) in STYLES {
+            assert_eq!(short_style(psd), Some(short));
+            assert_eq!(psd_style(short_style(psd).unwrap()), Some(psd));
+        }
+    }
+
     #[test]
     fn styles_resolve_and_none_is_identity() {
         assert_eq!(psd_style("Arc"), Some("warpArc"));
@@ -101,9 +121,13 @@ mod tests {
         let w = warp("arc", 50.0);
         let mid = w.apply(100.0, -15.0);
         let end = w.apply(0.0, -15.0);
-        assert!((mid.1 - -15.0).abs() < 1e-9, "centre stays put");
+        // As in Photoshop: the bottom edge keeps its corners, the middle rises and the ends of
+        // the upper rows swing out and down along the arc.
+        let corner = w.apply(0.0, 10.0);
+        assert!(corner.0.abs() < 1e-9 && (corner.1 - 10.0).abs() < 1e-9, "{corner:?}");
+        assert!(mid.1 < -15.0, "the middle rises: {mid:?}");
         assert!(end.1 > mid.1 + 5.0, "ends drop below the centre: {end:?}");
-        assert!(end.0 > 0.0, "ends pull inwards along the arc");
+        assert!(end.0 < 0.0, "ends swing out along the arc: {end:?}");
         // A negative bend smiles.
         let s = warp("arc", -50.0);
         assert!(s.apply(0.0, -15.0).1 < -20.0);
@@ -113,7 +137,9 @@ mod tests {
     fn bulge_and_squeeze_change_height_in_the_middle() {
         let b = warp("bulge", 50.0);
         assert!(b.apply(100.0, -40.0).1 < -50.0);
+        // Squeeze (Photoshop) pinches the sides in while the top and bottom bow out a little.
         let s = warp("squeeze", 50.0);
-        assert!(s.apply(100.0, -40.0).1 > -40.0);
+        assert!(s.apply(0.0, -15.0).0 > 10.0, "{:?}", s.apply(0.0, -15.0));
+        assert!(s.apply(100.0, -40.0).1 < -40.0);
     }
 }

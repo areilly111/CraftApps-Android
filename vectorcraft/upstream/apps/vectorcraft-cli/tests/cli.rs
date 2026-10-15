@@ -94,6 +94,15 @@ fn mcp_automation_roots() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="20" height="10"/></svg>"#;
     std::fs::write(base.join("in/a.svg"), svg).unwrap();
     std::fs::write(base.join("outside/b.svg"), svg).unwrap();
+    std::fs::write(base.join("outside/victim.png"), b"keep this file").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        symlink(base.join("outside/b.svg"), base.join("in/escape.svg")).unwrap();
+        symlink(base.join("outside"), base.join("out/escape")).unwrap();
+        symlink(base.join("outside/victim.png"), base.join("out/victim.png")).unwrap();
+        symlink(base.join("outside/missing.png"), base.join("out/dangling.png")).unwrap();
+    }
     let dir = |d: &str| base.join(d).to_string_lossy().into_owned();
     let fails = |args: &[&str], why: &str| {
         let out = Command::new(BIN).args(args).stdin(Stdio::null()).output().unwrap();
@@ -114,15 +123,32 @@ fn mcp_automation_roots() {
         .unwrap();
     let call = |id: u64, name: &str, args: Value| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}});
     let file = |d: &str, f: &str| base.join(d).join(f).to_string_lossy().into_owned();
+    let mut calls = vec![
+        call(1, "open_file", json!({"path": file("in", "a.svg")})),
+        call(2, "open_file", json!({"path": file("outside", "b.svg")})),
+        call(3, "export", json!({"path": file("out", "a.png")})),
+        call(4, "export", json!({"path": file("in", "a.png")})),
+        call(5, "save_file", json!({"path": file("outside", "a.vectorcraft")})),
+        call(6, "open_file", json!({"path": file("in", "../outside/b.svg")})),
+        call(7, "export", json!({"path": file("out", "../outside/traversal.png")})),
+    ];
+    let mut expected_errors = vec![false, true, false, true, true, true, true];
+    #[cfg(unix)]
+    {
+        calls.extend([
+            call(8, "open_file", json!({"path": file("in", "escape.svg")})),
+            call(9, "export", json!({"path": file("out", "escape/escaped.png")})),
+            call(10, "export", json!({"path": file("out", "victim.png")})),
+            call(11, "export", json!({"path": file("out", "dangling.png")})),
+        ]);
+        expected_errors.extend([true; 4]);
+    }
+    // An access error is per request: the server continues and can still save inside its root.
+    calls.push(call(12, "save_file", json!({"path": file("out", "allowed.vectorcraft")})));
+    expected_errors.push(false);
     {
         let mut stdin = child.stdin.take().unwrap();
-        for m in [
-            call(1, "open_file", json!({"path": file("in", "a.svg")})),
-            call(2, "open_file", json!({"path": file("outside", "b.svg")})),
-            call(3, "export", json!({"path": file("out", "a.png")})),
-            call(4, "export", json!({"path": file("in", "a.png")})),
-            call(5, "save_file", json!({"path": file("outside", "a.vectorcraft")})),
-        ] {
+        for m in calls {
             writeln!(stdin, "{m}").unwrap();
         }
     }
@@ -130,9 +156,14 @@ fn mcp_automation_roots() {
     assert!(out.status.success());
     let replies: Vec<Value> = String::from_utf8(out.stdout).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let errors: Vec<bool> = replies.iter().map(|r| r["result"]["isError"] == true).collect();
-    assert_eq!(errors, [false, true, false, true, true], "{replies:?}");
+    assert_eq!(errors, expected_errors, "{replies:?}");
     assert!(replies[1]["result"]["content"][0]["text"].as_str().unwrap().contains("outside the read root"));
     assert!(base.join("out/a.png").is_file() && !base.join("in/a.png").exists() && !base.join("outside/a.vectorcraft").exists());
+    assert!(base.join("out/allowed.vectorcraft").is_file());
+    for denied in ["traversal.png", "escaped.png", "missing.png"] {
+        assert!(!base.join("outside").join(denied).exists(), "{denied}");
+    }
+    assert_eq!(std::fs::read(base.join("outside/victim.png")).unwrap(), b"keep this file");
 }
 
 /// End-to-end protocol sweep over stdio against the compiled binary. The in-process

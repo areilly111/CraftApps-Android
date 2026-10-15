@@ -98,6 +98,8 @@ by its own renderer. Try it yourself with `File → New → Sample Document`, or
 
 ## Quick start
 
+The egui frontend requires Rust 1.95 or newer (including its shared `craft-ui` components).
+
 ```sh
 cargo run --release -p designcraft                         # desktop app (start screen)
 cargo run --release -p designcraft -- --sample             # open the sample magazine
@@ -220,6 +222,8 @@ Installers and executables are code-signed.
 | Debian/Ubuntu | `designcraft-<ver>-linux-x86_64.deb` | `designcraft-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `designcraft-<ver>-linux-x86_64.rpm` | `designcraft-<ver>-linux-aarch64.rpm` | |
 | Tarball | `designcraft-<ver>-linux-x86_64.tar.gz` | `designcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+
+RISC-V (riscv64): `designcraft-<ver>-linux-riscv64.tar.gz` only, cross-compiled; needs glibc 2.39+ (Ubuntu 24.04 or newer).
 
 ### FreeBSD
 

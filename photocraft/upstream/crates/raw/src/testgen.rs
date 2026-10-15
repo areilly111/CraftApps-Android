@@ -368,6 +368,9 @@ fn urat(v: f64) -> (u32, u32) {
 pub enum DngStorage {
     /// One strip per `rows` rows, uncompressed at `bits` per sample (8, 12, 16…).
     Strips { rows: usize },
+    /// Adobe DNG compression 34892: baseline JPEG tiles, 8-bit luma at tile size (the reader
+    /// decodes and widens to 16 bits). Quality 60 leaves visible-but-mild artifacts.
+    LossyJpegTiles { width: usize, height: usize },
     /// Adobe DNG compression 8: zlib streams with the TIFF predictor (1 = none, 2 = horizontal
     /// differencing) applied before compressing.
     DeflateStrips { rows: usize, predictor: u16 },
@@ -388,8 +391,10 @@ pub enum DngStorage {
 pub struct DngSpec {
     pub width: usize,
     pub height: usize,
-    /// 1 (CFA) or 3 (LinearRaw).
+    /// 1 (CFA, or monochrome LinearRaw with `monochrome`) or 3 (LinearRaw).
     pub samples: usize,
+    /// With `samples` 1: a monochrome LinearRaw image (no CFA tags) instead of CFA data.
+    pub monochrome: bool,
     /// Row-major samples (`width * height * samples`).
     pub data: Vec<u16>,
     pub bits: u16,
@@ -424,6 +429,8 @@ pub struct DngSpec {
     pub orientation: u16,
     pub make: String,
     pub model: String,
+    /// Extra IFD0 entries, written after the generated ones (e.g. malformed colour tags).
+    pub ifd0_extra: Vec<(u16, Val)>,
 }
 
 impl DngSpec {
@@ -433,6 +440,7 @@ impl DngSpec {
             width,
             height,
             samples: 1,
+            monochrome: false,
             data,
             bits: 16,
             cfa: [0, 1, 1, 2],
@@ -458,7 +466,18 @@ impl DngSpec {
             profile_gain_table_map: None,
             make: "Photocraft".into(),
             model: "Synthetic".into(),
+            ifd0_extra: Vec::new(),
         }
+    }
+
+    /// A monochrome (one-sample LinearRaw) DNG around `data`, as monochrome cameras and film
+    /// scanners write them: no CFA tags and no colour matrices.
+    pub fn monochrome(width: usize, height: usize, data: Vec<u16>) -> Self {
+        DngSpec { monochrome: true, ..Self::cfa(width, height, data) }
+    }
+
+    fn is_cfa(&self) -> bool {
+        self.samples == 1 && !self.monochrome
     }
 
     fn pack(&self, rows: std::ops::Range<usize>) -> Vec<u8> {
@@ -497,14 +516,14 @@ impl DngSpec {
             (256, Val::Long(vec![self.width as u32])),
             (257, Val::Long(vec![self.height as u32])),
             (258, Val::Short(vec![self.bits; self.samples])),
-            (262, Val::Short(vec![if self.samples == 1 { 32803 } else { 34892 }])),
+            (262, Val::Short(vec![if self.is_cfa() { 32803 } else { 34892 }])),
             (277, Val::Short(vec![self.samples as u16])),
             (284, Val::Short(vec![1])),
             (50717, Val::Long(vec![self.white; self.samples])),
             (50713, Val::Short(vec![self.black_repeat.0, self.black_repeat.1])),
             (50714, Val::Long(self.black.clone())),
         ];
-        if self.samples == 1 {
+        if self.is_cfa() {
             raw.push((33421, Val::Short(vec![2, 2])));
             raw.push((33422, Val::Byte(self.cfa.to_vec())));
             raw.push((50710, Val::Byte(vec![0, 1, 2])));
@@ -559,6 +578,39 @@ impl DngSpec {
                 raw.push((278, Val::Long(vec![rows as u32])));
                 raw.push((273, Val::Blobs(offs)));
                 raw.push((279, Val::Long(lens)));
+            }
+            DngStorage::LossyJpegTiles { width: tw, height: th } => {
+                let mut offs = Vec::new();
+                let mut lens = Vec::new();
+                let s = self.samples;
+                for ty in (0..self.height).step_by(th) {
+                    for tx in (0..self.width).step_by(tw) {
+                        // Edge tiles are padded by repeating the last row / column. A 3-sample
+                        // (LinearRaw) spec writes RGB tiles, a CFA spec gray ones.
+                        let mut tile = vec![0u8; tw * th * s];
+                        for y in 0..th {
+                            for x in 0..tw {
+                                let sy = (ty + y).min(self.height - 1);
+                                let sx = (tx + x).min(self.width - 1);
+                                for c in 0..s {
+                                    tile[(y * tw + x) * s + c] = (self.data[(sy * self.width + sx) * s + c] >> 8) as u8;
+                                }
+                            }
+                        }
+                        let colour = if s == 3 { image::ExtendedColorType::Rgb8 } else { image::ExtendedColorType::L8 };
+                        let mut j = Vec::new();
+                        let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut j, 60);
+                        use image::ImageEncoder as _;
+                        enc.write_image(&tile, tw as u32, th as u32, colour).expect("jpeg tile");
+                        lens.push(j.len() as u32);
+                        offs.push(t.blob(j));
+                    }
+                }
+                raw.push((259, Val::Short(vec![34892])));
+                raw.push((322, Val::Long(vec![tw as u32])));
+                raw.push((323, Val::Long(vec![th as u32])));
+                raw.push((324, Val::Blobs(offs)));
+                raw.push((325, Val::Long(lens)));
             }
             DngStorage::Lj92Strips { rows } => {
                 let mut offs = Vec::new();
@@ -689,6 +741,7 @@ impl DngSpec {
         if let Some(m) = &self.profile_gain_table_map {
             ifd0.push((52525, Val::Undefined(m.clone())));
         }
+        ifd0.extend(self.ifd0_extra.iter().cloned());
         let i0 = t.ifd(ifd0);
         t.chain = vec![i0];
         t.build()

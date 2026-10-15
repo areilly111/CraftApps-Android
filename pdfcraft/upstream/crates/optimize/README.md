@@ -16,7 +16,9 @@ let report = optimize_with_progress(&mut doc, &settings, &mut |stage| keep_going
   An image is replaced only if the result is smaller. Left alone: CMYK and other colour spaces,
   image masks, decode arrays, more than 8 bits, JPEG 2000, JBIG2 and CCITT.
 - **Discard objects:** thumbnails, alternate images, document tags, print settings.
-- **Clean up:** Flate for streams with no filter.
+- **Clean up:** Flate for streams with no filter; for streams with an outer ASCII85 or ASCIIHex
+  layer, that layer is removed when the result is smaller (the inner filters keep their encoded
+  bytes). Streams with `/DecodeParms`, images and object streams are left alone.
 
 The engine runs Remove Hidden Information (`pdfcraft-redact`) for the user-data categories,
 then this, then merges identical objects and writes a full, compressed save

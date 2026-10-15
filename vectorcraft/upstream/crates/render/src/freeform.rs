@@ -7,7 +7,6 @@
 //! the gradient's content, so panning and redraws don't resample it.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -18,12 +17,11 @@ use vello_cpu::peniko::{Extend, ImageQuality, ImageSampler};
 use vello_cpu::{Pixmap, RenderContext};
 
 use crate::ink::Ink;
-
-/// Grids kept before the cache starts over.
-const MAX_GRIDS: usize = 128;
+use crate::lru::{self, FrameCache};
 
 thread_local! {
-    static GRIDS: RefCell<HashMap<u64, Arc<Pixmap>>> = RefCell::new(HashMap::new());
+    /// Grids by [`key`], within [`lru::FREEFORM_BUDGET`], least recently used first out.
+    static GRIDS: RefCell<FrameCache<u64, Arc<Pixmap>>> = RefCell::new(FrameCache::new(lru::FREEFORM_BUDGET, usize::MAX));
 }
 
 fn hash_color(c: &Color, h: &mut impl Hasher) {
@@ -72,17 +70,21 @@ pub(crate) fn set_freeform_paint(ctx: &mut RenderContext, g: &GradientPaint, bou
     let (cols, rows) = grid_size(b, device);
     let f = g.freeform_on(b);
     let k = key(&f, b, cols, rows, ink);
-    let pm = GRIDS.with(|c| c.borrow().get(&k).cloned()).unwrap_or_else(|| {
-        let pm = Arc::new(rasterize(&f, b, cols, rows, ink));
-        GRIDS.with(|c| {
+    let pm = GRIDS
+        .with(|c| {
             let mut c = c.borrow_mut();
-            if c.len() >= MAX_GRIDS {
-                c.clear();
-            }
-            c.insert(k, pm.clone());
+            let t = c.tick();
+            c.get(&k, t).cloned()
+        })
+        .unwrap_or_else(|| {
+            let pm = Arc::new(rasterize(&f, b, cols, rows, ink));
+            GRIDS.with(|c| {
+                let mut c = c.borrow_mut();
+                let t = c.tick();
+                c.insert(k, pm.clone(), cols as usize * rows as usize * 4, t);
+            });
+            pm
         });
-        pm
-    });
     let sampler = ImageSampler { x_extend: Extend::Pad, y_extend: Extend::Pad, quality: ImageQuality::Medium, alpha: 1.0 };
     ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(pm), sampler });
     ctx.set_paint_transform(Affine::translate(b.origin().to_vec2()) * Affine::scale_non_uniform(b.width() / cols as f64, b.height() / rows as f64));

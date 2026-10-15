@@ -238,7 +238,9 @@ impl RecoveryStore {
         static STORES: AtomicU64 = AtomicU64::new(0);
         let t = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let session = format!("{t:x}_{:x}_{:x}", std::process::id(), STORES.fetch_add(1, Ordering::Relaxed));
-        RecoveryStore { dir: recovery_dir.into(), session, savers: HashMap::new(), adopted: HashMap::new() }
+        let dir = recovery_dir.into();
+        sweep_orphans(&dir, ORPHAN_AGE);
+        RecoveryStore { dir, session, savers: HashMap::new(), adopted: HashMap::new() }
     }
 
     /// Load every recoverable document, newest first, with the entry it came from. Nothing is
@@ -283,6 +285,81 @@ impl RecoveryStore {
     }
 }
 
+/// How long recovery data must have been left untouched before [`sweep_orphans`] may remove
+/// it. Far longer than any save takes, so another running instance's in-progress first
+/// autosave (bundle written, sidecar not yet) is never mistaken for an orphan.
+#[cfg(not(target_arch = "wasm32"))]
+const ORPHAN_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Best-effort removal of recovery data nothing can ever load or clean up:
+/// - `<key>.pcraft` bundle folders with no `<key>.json` sidecar (a crash during a document's
+///   first autosave: the sidecar is written after the bundle, and `list_recovery` skips them);
+/// - `*.pcsave.tmp` files left by an interrupted atomic write (see [`crate::atomic::temp_name`])
+///   that another process created.
+///
+/// Only entries untouched for at least `min_age` are removed. Bundles with a sidecar, symlinks,
+/// and anything outside `recovery_dir` are never touched; errors are ignored.
+#[cfg(not(target_arch = "wasm32"))]
+fn sweep_orphans(recovery_dir: &Path, min_age: std::time::Duration) {
+    let Ok(rd) = std::fs::read_dir(recovery_dir) else { return };
+    let mut bundles = Vec::new();
+    for e in rd.flatten() {
+        let Ok(ft) = e.file_type() else { continue };
+        let path = e.path();
+        if ft.is_file() {
+            sweep_temp_file(&path, min_age);
+            continue;
+        }
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = e.file_name();
+        let Some(key) = name.to_str().and_then(|n| n.strip_suffix(".pcraft")) else { continue };
+        if key.is_empty() || sanitize(key) != key {
+            continue;
+        }
+        // Anything at the sidecar's path (even a broken one) keeps the bundle.
+        let has_sidecar = std::fs::symlink_metadata(recovery_dir.join(format!("{key}.json"))).is_ok();
+        let parts = [path.clone(), path.join("tiles"), path.join("blobs")];
+        if !has_sidecar && parts.iter().all(|p| untouched_for(p, min_age, true)) {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            bundles.extend(parts);
+        }
+    }
+    for dir in bundles {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            if e.file_type().is_ok_and(|ft| ft.is_file()) {
+                sweep_temp_file(&e.path(), min_age);
+            }
+        }
+    }
+}
+
+/// Remove `path` if it is an atomic-write temp file of another process, untouched for `min_age`.
+#[cfg(not(target_arch = "wasm32"))]
+fn sweep_temp_file(path: &Path, min_age: std::time::Duration) {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else { return };
+    // `.{stem}.{pid}-{n}.pcsave.tmp`
+    let Some(rest) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".pcsave.tmp")) else { return };
+    let Some((_, owner)) = rest.rsplit_once('.') else { return };
+    let Some(pid) = owner.split_once('-').and_then(|(pid, _)| pid.parse::<u32>().ok()) else { return };
+    if pid != std::process::id() && untouched_for(path, min_age, false) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Whether `path` was last modified at least `min_age` ago. Unreadable times count as recent;
+/// a missing path counts as untouched only when `missing_ok`.
+#[cfg(not(target_arch = "wasm32"))]
+fn untouched_for(path: &Path, min_age: std::time::Duration, missing_ok: bool) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) => m.modified().ok().and_then(|t| SystemTime::now().duration_since(t).ok()).is_some_and(|age| age >= min_age),
+        Err(e) => missing_ok && e.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
 fn remove_entry(dir: &Path, key: &str) -> Result<()> {
     let bundle = dir.join(format!("{key}.pcraft"));
     if bundle.exists() {
@@ -317,5 +394,47 @@ mod tests {
         let err = g.as_ref().and_then(|r| r.as_ref().err()).expect("the failure is recorded");
         let msg = err.to_string();
         assert!(msg.contains("could not start"), "{msg}");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn sweep_removes_orphaned_bundles_and_foreign_temp_files_only() {
+        let dir = std::env::temp_dir().join(format!(
+            "pcraft-sweep-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        ));
+        let doc =
+            Arc::new(Document::new("Kept", photocraft_doc::Size { width: 4, height: 4 }, photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8));
+        let saver = Autosaver::new(&dir, "kept");
+        saver.request(doc.clone(), 1, None, SaveOptions::default());
+        assert!(saver.flush().is_some_and(|r| r.is_ok()));
+        // A first autosave that crashed before its sidecar was written.
+        let orphan = dir.join("doc-crashed-1.pcraft");
+        std::fs::create_dir_all(orphan.join("tiles")).unwrap();
+        std::fs::write(orphan.join("tiles/abc.zst"), b"partial").unwrap();
+        // Stale temp files: another process's (swept) and this process's (kept, may be in flight).
+        let foreign = [dir.join(".kept.json.4294967294-3.pcsave.tmp"), dir.join("kept.pcraft/.manifest.json.4294967294-0.pcsave.tmp")];
+        let own = dir.join(format!(".kept.json.{}-9.pcsave.tmp", std::process::id()));
+        for p in foreign.iter().chain([&own]) {
+            std::fs::write(p, b"tmp").unwrap();
+        }
+        // Not ours to judge: unparsable temp names, unrelated files.
+        let other = dir.join("notes.txt");
+        std::fs::write(&other, b"user file").unwrap();
+
+        // Fresh data is never swept.
+        sweep_orphans(&dir, std::time::Duration::from_secs(3600));
+        assert!(orphan.is_dir() && foreign.iter().all(|p| p.is_file()));
+
+        sweep_orphans(&dir, std::time::Duration::ZERO);
+        assert!(!orphan.exists(), "a bundle without a sidecar is swept");
+        assert!(foreign.iter().all(|p| !p.exists()), "another process's temp files are swept");
+        assert!(own.is_file(), "this process's temp files are kept");
+        assert!(other.is_file());
+        let entries = list_recovery(&dir);
+        assert_eq!(entries.len(), 1, "the complete entry survives");
+        assert_eq!(recover(&entries[0]).unwrap(), *doc);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -2,6 +2,7 @@
 //! About dialog, the home screen, the CLI and the README agree.
 
 use icu_properties::props::Script;
+use std::path::{Path, PathBuf};
 
 /// The app's name in ArtCraft URLs (`getartcraft.com/apps/{APP}`, `github.com/storytold/{APP}`).
 pub const APP: &str = "pdfcraft";
@@ -126,6 +127,104 @@ pub fn document_url(raw: &str) -> Result<String, BlockedLink> {
         check_mail_parameters(rest)?;
     }
     Ok(url.to_string())
+}
+
+/// Maximum decoded GoToR file-spec size retained by inspection and accepted by the resolver.
+pub const MAX_REMOTE_DOCUMENT_PATH_BYTES: usize = 4096;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RemoteDocumentPathError {
+    Empty,
+    TooLong,
+    Hidden,
+    UrlOrNetwork,
+    MissingSourcePath,
+    /// The target doesn't end in `.pdf`.
+    NotPdf,
+    /// The target is a directory, device, FIFO or socket rather than a regular file.
+    NotAFile,
+    /// The target is larger than [`MAX_REMOTE_DOCUMENT_BYTES`].
+    TooLarge,
+    /// The target couldn't be read.
+    Read(String),
+}
+
+impl std::fmt::Display for RemoteDocumentPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => f.write_str("the file specification is empty"),
+            Self::TooLong => f.write_str("the file specification is too long"),
+            Self::Hidden => f.write_str("the file specification contains hidden or control characters"),
+            Self::UrlOrNetwork => f.write_str("only local document paths are supported"),
+            Self::MissingSourcePath => f.write_str("a relative link needs a source document path"),
+            Self::NotPdf => f.write_str("the linked file is not a .pdf file"),
+            Self::NotAFile => f.write_str("the linked path is not a regular file"),
+            Self::TooLarge => f.write_str("the linked file is too large to open"),
+            Self::Read(e) => write!(f, "the linked file couldn't be read: {e}"),
+        }
+    }
+}
+
+/// Resolve a PDF remote-Go-To file specification to a local path without opening it.
+/// Relative paths are based on the source document; an in-memory source has no fallback to CWD.
+pub fn resolve_remote_document_path(source: Option<&Path>, raw: &str) -> Result<PathBuf, RemoteDocumentPathError> {
+    if raw.is_empty() || raw.trim().is_empty() {
+        return Err(RemoteDocumentPathError::Empty);
+    }
+    if raw.len() > MAX_REMOTE_DOCUMENT_PATH_BYTES {
+        return Err(RemoteDocumentPathError::TooLong);
+    }
+    if raw.chars().any(hides_text) {
+        return Err(RemoteDocumentPathError::Hidden);
+    }
+    if raw.starts_with("//") || raw.starts_with("\\\\") || raw.starts_with("/\\") || raw.starts_with("\\/") {
+        return Err(RemoteDocumentPathError::UrlOrNetwork);
+    }
+    let path = Path::new(raw);
+    let drive_absolute = path.is_absolute();
+    if let Some((scheme, _)) = raw.split_once(':') {
+        let valid_scheme = scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+        let windows_drive = scheme.len() == 1 && drive_absolute;
+        if valid_scheme && !windows_drive {
+            return Err(RemoteDocumentPathError::UrlOrNetwork);
+        }
+    }
+    if drive_absolute {
+        return Ok(path.to_path_buf());
+    }
+    let source = source.ok_or(RemoteDocumentPathError::MissingSourcePath)?;
+    let parent = source.parent().ok_or(RemoteDocumentPathError::MissingSourcePath)?;
+    Ok(parent.join(path))
+}
+
+/// Largest linked PDF a GoToR link may open (1 GiB, the largest size the large-file work measures).
+pub const MAX_REMOTE_DOCUMENT_BYTES: u64 = 1 << 30;
+
+/// Read the PDF a GoToR link resolved to. The path comes from an untrusted document, so only a
+/// regular `.pdf` file of at most [`MAX_REMOTE_DOCUMENT_BYTES`] is read: a directory, a device such
+/// as `/dev/zero` or a FIFO is refused before it is opened, and a file that grows past the cap
+/// while it is read is refused too.
+pub fn read_remote_document(path: &Path) -> Result<Vec<u8>, RemoteDocumentPathError> {
+    use std::io::Read;
+    let is_pdf = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+    if !is_pdf {
+        return Err(RemoteDocumentPathError::NotPdf);
+    }
+    let meta = std::fs::metadata(path).map_err(|e| RemoteDocumentPathError::Read(e.to_string()))?;
+    if !meta.is_file() {
+        return Err(RemoteDocumentPathError::NotAFile);
+    }
+    if meta.len() > MAX_REMOTE_DOCUMENT_BYTES {
+        return Err(RemoteDocumentPathError::TooLarge);
+    }
+    let file = std::fs::File::open(path).map_err(|e| RemoteDocumentPathError::Read(e.to_string()))?;
+    let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+    file.take(MAX_REMOTE_DOCUMENT_BYTES.saturating_add(1)).read_to_end(&mut bytes).map_err(|e| RemoteDocumentPathError::Read(e.to_string()))?;
+    if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_REMOTE_DOCUMENT_BYTES) {
+        return Err(RemoteDocumentPathError::TooLarge);
+    }
+    Ok(bytes)
 }
 
 /// Email-address parameters that make an email app read a file from the user's computer: Evolution,
@@ -339,6 +438,54 @@ fn mixes_scripts(label: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remote_documents_must_be_regular_pdf_files() {
+        use super::{RemoteDocumentPathError as E, read_remote_document as read};
+        let dir = std::env::temp_dir().join(format!("pdfcraft-gotor-read-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("folder.pdf")).unwrap();
+        std::fs::write(dir.join("doc.PDF"), b"%PDF-1.7\n").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"text").unwrap();
+        assert_eq!(read(&dir.join("doc.PDF")).as_deref(), Ok(&b"%PDF-1.7\n"[..]));
+        assert_eq!(read(&dir.join("folder.pdf")), Err(E::NotAFile), "a directory is refused");
+        assert_eq!(read(&dir.join("notes.txt")), Err(E::NotPdf));
+        assert_eq!(read(&dir), Err(E::NotPdf));
+        assert!(matches!(read(&dir.join("missing.pdf")), Err(E::Read(_))));
+        #[cfg(unix)]
+        {
+            // A device (like /dev/zero, which never ends) and a FIFO (which blocks) are never opened.
+            std::os::unix::fs::symlink("/dev/zero", dir.join("zero.pdf")).unwrap();
+            assert_eq!(read(&dir.join("zero.pdf")), Err(E::NotAFile));
+            let fifo = dir.join("pipe.pdf");
+            if std::process::Command::new("mkfifo").arg(&fifo).status().is_ok_and(|s| s.success()) {
+                assert_eq!(read(&fifo), Err(E::NotAFile));
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remote_document_paths_are_local_and_source_relative() {
+        use super::{RemoteDocumentPathError as E, resolve_remote_document_path as resolve};
+        use std::path::Path;
+
+        let source = Path::new("/docs/chapter/source.pdf");
+        assert_eq!(resolve(Some(source), "../target.pdf").as_deref(), Ok(Path::new("/docs/chapter/../target.pdf")));
+        assert_eq!(resolve(Some(source), "/manual/target.pdf").as_deref(), Ok(Path::new("/manual/target.pdf")));
+        assert_eq!(resolve(None, "target.pdf"), Err(E::MissingSourcePath));
+        assert_eq!(resolve(Some(source), ""), Err(E::Empty));
+        assert_eq!(resolve(Some(source), "   "), Err(E::Empty));
+        for url in ["file:///tmp/a.pdf", "https://example.org/a.pdf", "smb://host/share/a.pdf", "ftp://host/a.pdf", "custom:target.pdf"] {
+            assert_eq!(resolve(Some(source), url), Err(E::UrlOrNetwork), "{url}");
+        }
+        for network_path in ["//server/share/a.pdf", "\\\\server\\share\\a.pdf", "\\\\?\\C:\\a.pdf", "\\\\.\\device\\a.pdf", "/\\server/share/a.pdf"]
+        {
+            assert_eq!(resolve(Some(source), network_path), Err(E::UrlOrNetwork), "{network_path:?}");
+        }
+        assert_eq!(resolve(Some(source), "folder/hidden\u{200B}.pdf"), Err(E::Hidden));
+        assert_eq!(resolve(Some(source), &"a".repeat(super::MAX_REMOTE_DOCUMENT_PATH_BYTES + 1)), Err(E::TooLong));
+    }
+
     #[test]
     fn urls_follow_the_artcraft_scheme() {
         assert_eq!(super::APP_PAGE, format!("{}/apps/{}", super::WEBSITE, super::APP));

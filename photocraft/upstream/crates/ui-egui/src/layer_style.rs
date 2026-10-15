@@ -22,6 +22,7 @@ use crate::theme::Tokens;
 use crate::{PhotocraftApp, widgets};
 
 pub(crate) mod color_picker;
+mod contour;
 
 #[derive(Clone, Copy)]
 enum P {
@@ -33,6 +34,9 @@ enum P {
     Angle,
     /// A pattern from the dialog's `patternList` field (`[[id, name], …]`).
     Pattern,
+    /// A contour (thumbnail, preset picker, Contour Editor), with the key of its Anti-aliased
+    /// checkbox when the effect has one.
+    Contour(Option<&'static str>),
 }
 
 /// Effect kinds in Photoshop's list order: (command kind, label, params).
@@ -84,15 +88,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
     const BSTYLE: &[(&str, &str)] = &[("inner", "Inner Bevel"), ("outer", "Outer Bevel"), ("emboss", "Emboss"), ("pillow", "Pillow Emboss")];
     const DIR: &[(&str, &str)] = &[("up", "Up"), ("down", "Down")];
     const SRC: &[(&str, &str)] = &[("edge", "Edge"), ("center", "Center")];
-    // The built-in contour presets (photocraft_engine::layer_style::CONTOURS).
-    const CONTOUR: &[(&str, &str)] = &[
-        ("Linear", "Linear"),
-        ("Cone", "Cone"),
-        ("Cone (Inverted)", "Cone (Inverted)"),
-        ("Domed", "Domed"),
-        ("Domed (Inverted)", "Domed (Inverted)"),
-        ("Diagonal (Descending)", "Diagonal (Descending)"),
-    ];
+    const CONTOUR: P = P::Contour(Some("antiAlias"));
     match kind {
         "dropShadow" => &[
             ("blend", "Blend Mode", P::Blend),
@@ -103,7 +99,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("distance", "Distance", P::Slider(0.0, 300.0, "px")),
             ("spread", "Spread", P::Slider(0.0, 100.0, "%")),
             ("size", "Size", P::Slider(0.0, 250.0, "px")),
-            ("contour", "Contour", P::Choice(CONTOUR)),
+            ("contour", "Contour", CONTOUR),
             ("noise", "Noise", P::Slider(0.0, 100.0, "%")),
             ("knocksOut", "Layer Knocks Out Drop Shadow", P::Check),
         ],
@@ -116,7 +112,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("distance", "Distance", P::Slider(0.0, 300.0, "px")),
             ("choke", "Choke", P::Slider(0.0, 100.0, "%")),
             ("size", "Size", P::Slider(0.0, 250.0, "px")),
-            ("contour", "Contour", P::Choice(CONTOUR)),
+            ("contour", "Contour", CONTOUR),
             ("noise", "Noise", P::Slider(0.0, 100.0, "%")),
         ],
         "outerGlow" => &[
@@ -126,7 +122,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("spread", "Spread", P::Slider(0.0, 100.0, "%")),
             ("size", "Size", P::Slider(0.0, 250.0, "px")),
             ("range", "Range", P::Slider(1.0, 100.0, "%")),
-            ("contour", "Contour", P::Choice(CONTOUR)),
+            ("contour", "Contour", CONTOUR),
             ("noise", "Noise", P::Slider(0.0, 100.0, "%")),
         ],
         "innerGlow" => &[
@@ -136,7 +132,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("source", "Source", P::Choice(SRC)),
             ("choke", "Choke", P::Slider(0.0, 100.0, "%")),
             ("size", "Size", P::Slider(0.0, 250.0, "px")),
-            ("contour", "Contour", P::Choice(CONTOUR)),
+            ("contour", "Contour", CONTOUR),
             ("noise", "Noise", P::Slider(0.0, 100.0, "%")),
         ],
         "stroke" => &[
@@ -174,6 +170,11 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("angle", "Angle", P::Angle),
             ("useGlobalLight", "Use Global Light", P::Check),
             ("altitude", "Altitude", P::Slider(0.0, 90.0, "°")),
+            ("glossContour", "Gloss Contour", P::Contour(None)),
+            // Bevel & Emboss › Contour element.
+            ("contour", "Contour", P::Check),
+            ("contourName", "", P::Contour(Some("contourAntiAlias"))),
+            ("contourRange", "Range", P::Slider(1.0, 100.0, "%")),
         ],
         "satin" => &[
             ("blend", "Blend Mode", P::Blend),
@@ -182,6 +183,7 @@ fn spec(kind: &str) -> &'static [(&'static str, &'static str, P)] {
             ("angle", "Angle", P::Angle),
             ("distance", "Distance", P::Slider(0.0, 250.0, "px")),
             ("size", "Size", P::Slider(0.0, 250.0, "px")),
+            ("contour", "Contour", CONTOUR),
             ("invert", "Invert", P::Check),
         ],
         BLENDING => &[
@@ -225,6 +227,7 @@ fn values_of(e: &Effect, light: f32) -> Value {
             set(&mut v, if matches!(e, Effect::DropShadow(_)) { "spread" } else { "choke" }, json!((s.spread * 100.0).round()));
             set(&mut v, "size", json!(s.size));
             set(&mut v, "contour", photocraft_engine::layer_style::contour_param(&s.contour));
+            set(&mut v, "antiAlias", json!(s.anti_alias));
             set(&mut v, "noise", json!((s.noise * 100.0).round()));
             if matches!(e, Effect::DropShadow(_)) {
                 set(&mut v, "knocksOut", json!(s.knocks_out));
@@ -242,6 +245,7 @@ fn values_of(e: &Effect, light: f32) -> Value {
             set(&mut v, "size", json!(g.size));
             set(&mut v, "range", json!((g.range * 100.0).round()));
             set(&mut v, "contour", photocraft_engine::layer_style::contour_param(&g.contour));
+            set(&mut v, "antiAlias", json!(g.anti_alias));
             set(&mut v, "noise", json!((g.noise * 100.0).round()));
         }
         Effect::Stroke(s) => {
@@ -315,6 +319,7 @@ fn values_of(e: &Effect, light: f32) -> Value {
             set(&mut v, "size", json!(s.size));
             set(&mut v, "invert", json!(s.invert));
             set(&mut v, "contour", photocraft_engine::layer_style::contour_param(&s.contour));
+            set(&mut v, "antiAlias", json!(s.anti_alias));
         }
         Effect::BevelEmboss(b) => {
             set(
@@ -345,6 +350,12 @@ fn values_of(e: &Effect, light: f32) -> Value {
             set(&mut v, "altitude", json!(b.altitude));
             set(&mut v, "direction", json!(if b.up { "up" } else { "down" }));
             set(&mut v, "glossContour", photocraft_engine::layer_style::contour_param(&b.gloss_contour));
+            set(&mut v, "contour", json!(b.contour.is_some()));
+            if let Some(c) = &b.contour {
+                set(&mut v, "contourName", photocraft_engine::layer_style::contour_param(&c.contour));
+                set(&mut v, "contourRange", json!((c.range * 100.0).round()));
+                set(&mut v, "contourAntiAlias", json!(c.anti_alias));
+            }
         }
     }
     v
@@ -680,6 +691,12 @@ fn save_new_style(app: &mut PhotocraftApp, f: &Map<String, Value>) {
     }
 }
 
+/// Disabled effects keep their muted labels even when their parameter page stays
+/// selected; selecting a page is distinct from enabling its effect (#2288).
+fn fx_label_color(enabled: bool, t: &Tokens) -> Color32 {
+    if enabled { t.text } else { t.text_dim }
+}
+
 /// Dialog body (left list, right parameters).
 /// The enable checkbox of an effect row.
 fn fx_checkbox_rect(row: egui::Rect) -> egui::Rect {
@@ -774,7 +791,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                         egui::Align2::LEFT_CENTER,
                         tl!(kind_label),
                         egui::FontId::proportional(12.5),
-                        if on || is_sel { t.text } else { t.text_dim },
+                        fx_label_color(on, &t),
                     );
                     // + adds another instance; − removes one once there are several.
                     if multi(kind) {
@@ -896,7 +913,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 match kind_p {
                     P::Angle => {
                         let mut v = disp.get(key).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                        if angle_row(ui, label, &mut v).changed() {
+                        if widgets::angle_dial_row(ui, label, &mut v, -180.0..=180.0).changed() {
                             let value = json!(v);
                             disp[key] = value.clone();
                             set_param(f, &selected, key, value);
@@ -970,6 +987,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                             }
                         });
                     }
+                    P::Contour(aa) => contour::row(ui, f, &selected, key, label, aa, &mut disp),
                     P::Check => {
                         let mut b = disp.get(key).and_then(Value::as_bool).unwrap_or(false);
                         if widgets::checkbox(ui, &mut b, label).changed() {
@@ -985,7 +1003,8 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             // restores it (or the factory defaults before the first Make).
             let page_kind = sel_kind != BLENDING && entry(f, &selected).is_some();
             ui.add_space(4.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            // Wrap: translated labels (ru, de) can be wider than the page column.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min).with_main_wrap(true), |ui| {
                 ui.add_enabled_ui(page_kind, |ui| {
                     if crate::widgets::secondary_button(ui, tl!("Reset to Default"), 130.0).clicked()
                         && let Ok(v) = app.run("layer.layerStyle.defaultFor", json!({"kind": sel_kind}))
@@ -1008,6 +1027,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
     if new_style {
         save_new_style(app, f);
     }
+    contour::editor(app, ui, f);
 }
 
 /// Colour channel names of a document mode, as Blending Options lists them (Channels, Blend If).
@@ -1278,50 +1298,6 @@ fn blend_if_bar(ui: &mut egui::Ui, id: egui::Id, q: &mut [u8; 4]) -> bool {
         }
     }
     changed
-}
-
-/// Light direction uses document angles: counter-clockwise from three o'clock.
-fn angle_row(ui: &mut egui::Ui, label: &str, angle: &mut f32) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!(label)).color(t.text_dim));
-        let (rect, mut dial) = ui.allocate_exact_size(vec2(42.0, 42.0), Sense::click_and_drag());
-        dial.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, ui.is_enabled(), tl!(label)));
-        if (dial.clicked() || dial.dragged())
-            && let Some(pos) = dial.interact_pointer_pos()
-        {
-            let delta = pos - rect.center();
-            if delta.length_sq() > 1.0 {
-                *angle = (-delta.y).atan2(delta.x).to_degrees().round();
-                dial.mark_changed();
-            }
-        }
-        let painter = ui.painter();
-        let radius = rect.width() / 2.0 - 2.0;
-        painter.circle(rect.center(), radius, t.field, Stroke::new(1.0, t.field_border));
-        let radians = angle.to_radians();
-        let tip = rect.center() + vec2(radians.cos(), -radians.sin()) * (radius - 4.0);
-        painter.line_segment([rect.center(), tip], Stroke::new(2.0, t.accent));
-        painter.circle_filled(rect.center(), 2.0, t.text_dim);
-        if dial.has_focus() {
-            painter.circle_stroke(rect.center(), radius + 2.0, Stroke::new(1.0, t.accent));
-            let step = ui.input(|i| {
-                i.num_presses(egui::Key::ArrowRight) as f32 + i.num_presses(egui::Key::ArrowUp) as f32
-                    - i.num_presses(egui::Key::ArrowLeft) as f32
-                    - i.num_presses(egui::Key::ArrowDown) as f32
-            });
-            if step != 0.0 {
-                *angle = (*angle + step + 180.0).rem_euclid(360.0) - 180.0;
-                dial.mark_changed();
-            }
-        }
-        let field = ui.add(egui::DragValue::new(angle).range(-180.0..=180.0).speed(1.0).suffix("°"));
-        if field.changed() {
-            dial.mark_changed();
-        }
-        dial | field
-    })
-    .inner
 }
 
 fn parse_hex(s: &str) -> Color32 {
@@ -1597,6 +1573,16 @@ mod tests {
         }
     }
 
+    /// #2288: the selected effect row must dim again when its checkbox is cleared.
+    #[test]
+    fn disabled_effect_row_uses_muted_text_even_when_selected() {
+        for theme in crate::theme::ThemeKind::ALL {
+            let tokens = Tokens::for_kind(theme);
+            assert_eq!(fx_label_color(true, &tokens), tokens.text, "{theme:?}: checked");
+            assert_eq!(fx_label_color(false, &tokens), tokens.text_dim, "{theme:?}: unchecked");
+        }
+    }
+
     #[test]
     fn blending_page_renders_for_every_mode_and_odd_fields() {
         let ctx = egui::Context::default();
@@ -1687,6 +1673,46 @@ mod tests {
         assert_eq!(blend_quad(Some(&json!([200, 10, 5, 300]))), [200, 200, 200, 255]);
         assert_eq!(blend_quad(None), [0, 0, 255, 255]);
         assert_eq!(blend_quad(Some(&json!(["x", null]))), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn contour_picker_and_editor_edit_the_effect_curve() {
+        let mut s = session();
+        s.execute("layer.layerStyle.dropShadow", json!({})).unwrap();
+        let shadow = |s: &photocraft_engine::Session| {
+            let d = s.active().unwrap();
+            match &d.doc.layer(d.active_layer.unwrap()).unwrap().effects.items[0] {
+                Effect::DropShadow(sh) => sh.contour.clone(),
+                e => panic!("{e:?}"),
+            }
+        };
+        let st = s.active().unwrap();
+        let mut f = initial_fields(st.doc.layer(st.active_layer.unwrap()).unwrap(), None, 120.0);
+        // The picker: Cone.
+        contour::pick(&mut f, "fx1", "contour", "Cone");
+        apply(&f, |cmd, p| s.execute(cmd, p).map_err(|e| e.to_string())).unwrap();
+        assert_eq!(shadow(&s), photocraft_engine::layer_style::builtin_contour("Cone").unwrap());
+
+        // The Contour Editor: drag the second point to 10 % / 30 % (between its neighbours on
+        // the measured Cone), make the first point a corner.
+        contour::open_editor(&mut f, "fx1", "contour");
+        assert!(contour::set_point(&mut f, 1, 10.0, 30.0));
+        assert!(contour::set_corner(&mut f, 0, true));
+        assert!(!contour::set_point(&mut f, 99, 10.0, 10.0), "no such point");
+        contour::close_editor(&mut f, true);
+        apply(&f, |cmd, p| s.execute(cmd, p).map_err(|e| e.to_string())).unwrap();
+        let photocraft_doc::Contour::Custom { name, points, corners } = shadow(&s) else { panic!() };
+        assert_eq!(name, "Custom", "an edited preset is no longer called Cone");
+        assert!((points[1].input - 0.1).abs() < 3e-3 && (points[1].output - 0.3).abs() < 3e-3, "{points:?}");
+        assert_eq!(corners.len(), points.len());
+        assert!(corners[0] && corners[1] && !corners[corners.len() - 1], "{corners:?}");
+
+        // Cancel restores the curve the editor opened with.
+        let before = f.clone();
+        contour::open_editor(&mut f, "fx1", "contour");
+        contour::set_point(&mut f, 1, 10.0, 10.0);
+        contour::close_editor(&mut f, false);
+        assert_eq!(f, before);
     }
 
     #[test]
@@ -1847,7 +1873,7 @@ mod tests {
         use egui_kittest::kittest::Queryable;
         let mut h = egui_kittest::Harness::builder().with_size(vec2(300.0, 100.0)).build_ui_state(
             |ui, angle| {
-                angle_row(ui, "Angle", angle);
+                widgets::angle_dial_row(ui, "Angle", angle, -180.0..=180.0);
             },
             120.0_f32,
         );

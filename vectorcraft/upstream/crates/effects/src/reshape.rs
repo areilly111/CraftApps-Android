@@ -92,7 +92,7 @@ pub fn outline_art(n: &Node, symbol_art: Option<&Node>) -> Option<Node> {
     art.isolate = false;
     // One element: its pieces never knock each other out.
     art.knockout = vectorcraft_doc::Knockout::Off;
-    art.mask = None;
+    art.extras_mut().mask = None;
     art.appearance.effects.clear();
     Some(art)
 }
@@ -141,7 +141,7 @@ pub(crate) fn as_art(n: &Node, symbol_art: Option<&Node>) -> Option<Node> {
             if let NodeKind::Path { clipping, .. } = &mut clip.kind {
                 *clipping = true;
             }
-            let image = Node { appearance: Appearance::default(), ..Node::new(n.id, n.kind.clone()) };
+            let image = Node::new(n.id, n.kind.clone());
             Node::new(n.id, NodeKind::Group { children: vec![Arc::new(clip), Arc::new(image)], clip: true })
         }
         _ => outline_art(n, symbol_art)?,
@@ -159,7 +159,7 @@ pub(crate) fn as_art(n: &Node, symbol_art: Option<&Node>) -> Option<Node> {
     out.isolate = n.isolate;
     // One element: its pieces never knock each other out.
     out.knockout = vectorcraft_doc::Knockout::Off;
-    out.mask = n.mask.clone();
+    out.extras_mut().mask = n.extras().mask.clone();
     out.appearance.effects = n.appearance.effects.iter().filter(|e| !is_geometry(&e.id)).cloned().collect();
     Some(out)
 }

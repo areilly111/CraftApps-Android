@@ -20,7 +20,7 @@ use effectcraft_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::generate::value_noise;
-use crate::util::{SRC_NAMES, Src, fit_layer, layer_rect, lerp4, map_xy, pick, premul, remap, smoothstep, src_at, unpremul};
+use crate::util::{SRC_NAMES, Src, fit_layer, layer_cover_pad, layer_rect, lerp4, map_xy, pick, premul, remap, smoothstep, src_at, unpremul};
 use crate::{Buf, EffectCtx, EffectSpec, col, num, p, popup, slider};
 
 fn spec(id: &'static str, name: &'static str, params: Vec<crate::ParamSpec>, render: crate::RenderFn) -> EffectSpec {
@@ -678,6 +678,9 @@ fn page_turn(ctx: &EffectCtx, mut b: Buf) -> Buf {
 
 fn cc_tiler(ctx: &EffectCtx, mut b: Buf) -> Buf {
     let s = (ctx.params.f("scale") / 100.0).max(0.001);
+    if !ctx.adjustment {
+        b.pad(layer_cover_pad(ctx, [b.img.width, b.img.height], b.offset, b.scale));
+    }
     let c = b.to_px(ctx.params.v2("center"));
     let blend = (ctx.params.f("blendWithOriginal") / 100.0) as f32;
     let (x0, y0, w, h) = layer_rect(ctx, &b);

@@ -114,6 +114,26 @@ fn assign_reassigns_conflicts_and_undoes() {
 }
 
 #[test]
+fn clear_close_sequence_also_clears_file_close() {
+    // #773: File ▸ Close (`file.close`, Cmd+W) aliases Close Sequence (`sequence.close`).
+    // The editor's Clear sends panel Application against `sequence.close`, which had only a
+    // Timeline binding — Cmd+W stayed on `file.close`.
+    let mut s = Session::default();
+    assert_eq!(s.shortcuts.primary("file.close").as_deref(), Some("Cmd+W"));
+    assert_eq!(s.shortcuts.primary("sequence.close").as_deref(), Some("Cmd+W"));
+    assert!(s.shortcuts.for_command("sequence.close").iter().any(|b| b.keys == "Cmd+W"));
+    let r = s.execute("shortcuts.clear", json!({"command": "sequence.close", "panel": "Application"})).unwrap();
+    assert!(r["removed"].as_u64().unwrap() >= 1, "{r}");
+    assert!(s.shortcuts.for_command("sequence.close").is_empty(), "{:?}", s.shortcuts.for_command("sequence.close"));
+    assert!(s.shortcuts.primary("file.close").is_none());
+    let w = Chord::parse("Cmd+W").unwrap();
+    assert!(s.shortcuts.resolve(&w, None, Platform::current()).is_none());
+    assert!(s.shortcuts.resolve(&w, Some("Timeline"), Platform::current()).is_none());
+    s.execute("shortcuts.set", json!({"command": "sequence.addEdit", "keys": "Cmd+W", "add": true})).unwrap();
+    assert_eq!(s.shortcuts.resolve(&w, None, Platform::current()).unwrap().command, "sequence.addEdit");
+}
+
+#[test]
 fn panel_shortcuts_override_application_ones_with_focus() {
     let s = Session::default();
     let left = Chord::parse("Left").unwrap();

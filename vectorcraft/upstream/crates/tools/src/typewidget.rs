@@ -37,7 +37,7 @@ impl TypeWidget {
         if !doc.is_editable(id) || !zoom.is_finite() || zoom <= 0.0 {
             return None;
         }
-        let n = doc.node(id).filter(|n| n.perspective.is_none())?;
+        let n = doc.node(id).filter(|n| n.extras().perspective.is_none())?;
         let NodeKind::Text(t) = &n.kind else { return None };
         let area = match t.kind {
             TextKind::Point => false,

@@ -57,11 +57,13 @@ pub fn quantize(img: &Raster, params: &TraceParams) -> Quantized {
         }
         // Logo mode traces without quantising; asked directly, it quantises like Color.
         Mode::Color | Mode::Logo => {
-            // 15-bit colour histogram with per-bin sums (exact bin means).
+            // 15-bit colour histogram with per-bin sums (exact bin means), fitted to the image's
+            // range per channel so that close tones (a dark, low-contrast photo) stay apart.
+            let hk = HistKey::new(img);
             let mut bins: Vec<Bin> = vec![Bin::default(); 1 << 15];
             for p in img.rgba.as_chunks::<4>().0 {
                 if p[3] >= 128 {
-                    let b = &mut bins[key(p[0], p[1], p[2])];
+                    let b = &mut bins[hk.key(p[0], p[1], p[2])];
                     b.n += 1;
                     b.sum[0] += p[0] as u64;
                     b.sum[1] += p[1] as u64;
@@ -74,7 +76,7 @@ pub fn quantize(img: &Raster, params: &TraceParams) -> Quantized {
             for (i, c, _) in &used {
                 lut[*i] = nearest_rgb(&centers, *c) as u16;
             }
-            let labels = px.map(|p| if p[3] < 128 { TRANSPARENT } else { lut[key(p[0], p[1], p[2])] }).collect();
+            let labels = px.map(|p| if p[3] < 128 { TRANSPARENT } else { lut[hk.key(p[0], p[1], p[2])] }).collect();
             let palette = centers.iter().map(|c| [c[0].round() as u8, c[1].round() as u8, c[2].round() as u8]).collect();
             compact(labels, palette)
         }
@@ -124,8 +126,45 @@ impl Bin {
     }
 }
 
-fn key(r: u8, g: u8, b: u8) -> usize {
-    ((r as usize >> 3) << 10) | ((g as usize >> 3) << 5) | (b as usize >> 3)
+/// The colour histogram's bin index: 5 bits per channel over that channel's range in the image.
+/// A channel spanning at most 32 values keeps every value apart; a full-range one keeps the
+/// plain top 5 bits.
+struct HistKey {
+    lo: [u8; 3],
+    shift: [u8; 3],
+}
+
+impl HistKey {
+    /// Fit the bins to the opaque pixels (alpha >= 128) of `img`.
+    fn new(img: &Raster) -> Self {
+        let (mut lo, mut hi) = ([u8::MAX; 3], [0u8; 3]);
+        for p in img.rgba.as_chunks::<4>().0 {
+            if p[3] >= 128 {
+                for ch in 0..3 {
+                    lo[ch] = lo[ch].min(p[ch]);
+                    hi[ch] = hi[ch].max(p[ch]);
+                }
+            }
+        }
+        let mut shift = [0u8; 3];
+        for ch in 0..3 {
+            if lo[ch] > hi[ch] {
+                // No opaque pixel: nothing is looked up.
+                lo[ch] = 0;
+                continue;
+            }
+            let range = hi[ch] - lo[ch];
+            while shift[ch] < 3 && (range >> shift[ch]) > 31 {
+                shift[ch] += 1;
+            }
+        }
+        Self { lo, shift }
+    }
+
+    fn key(&self, r: u8, g: u8, b: u8) -> usize {
+        let c = |v: u8, ch: usize| (v.saturating_sub(self.lo[ch]) >> self.shift[ch]).min(31) as usize;
+        (c(r, 0) << 10) | (c(g, 1) << 5) | c(b, 2)
+    }
 }
 
 fn nearest_1d(levels: &[f64], v: f64) -> usize {
@@ -376,10 +415,26 @@ fn refine(used: &[Used], mut centers: Vec<[f64; 3]>) -> Vec<[f64; 3]> {
 
 /// Merge 4-connected same-label components smaller than `min_area` pixels into their most common
 /// neighbouring label. Transparent pixels are never relabelled.
+///
+/// A pass can merge a speck into a small region that it merges away later, leaving the speck behind
+/// as a new island of that region's old label (#819: more noise removal gave more paths). Passes
+/// repeat until one changes nothing: each merge joins two components, so they always end.
 pub fn denoise(labels: &mut [u16], w: usize, h: usize, min_area: usize) {
-    if min_area <= 1 || w == 0 || h == 0 {
+    if min_area <= 1 || w == 0 || h == 0 || labels.len() < w.saturating_mul(h) {
         return;
     }
+    // A backstop only: real images settle in a few passes.
+    const MAX_PASSES: usize = 64;
+    for _ in 0..MAX_PASSES {
+        if !denoise_pass(labels, w, h, min_area) {
+            break;
+        }
+    }
+}
+
+/// One [`denoise`] pass over every component; true when it relabelled any.
+fn denoise_pass(labels: &mut [u16], w: usize, h: usize, min_area: usize) -> bool {
+    let mut changed = false;
     let mut seen = vec![false; w * h];
     let mut stack: Vec<usize> = Vec::new();
     let mut comp: Vec<usize> = Vec::new();
@@ -433,6 +488,8 @@ pub fn denoise(labels: &mut [u16], w: usize, h: usize, min_area: usize) {
             for &i in &comp {
                 labels[i] = to;
             }
+            changed = true;
         }
     }
+    changed
 }

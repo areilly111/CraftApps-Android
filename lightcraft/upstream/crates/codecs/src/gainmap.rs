@@ -411,7 +411,7 @@ pub fn compute(
     if n == 0 || sdr.len() < n || hdr.len() < n {
         return Err(Error::Encode("gain map: SDR and HDR renditions must match the image size".into()));
     }
-    if !matches!(o.scale, 1 | 2 | 4) || !(o.gamma > 0.0 && o.gamma.is_finite()) || !(o.offset > 0.0 && o.offset.is_finite()) {
+    if !(matches!(o.scale, 1 | 2 | 4) && o.gamma > 0.0 && o.gamma.is_finite() && o.offset > 0.0 && o.offset.is_finite()) {
         return Err(Error::Encode("gain map: scale must be 1, 2 or 4, gamma and offset positive".into()));
     }
     let s = o.scale;

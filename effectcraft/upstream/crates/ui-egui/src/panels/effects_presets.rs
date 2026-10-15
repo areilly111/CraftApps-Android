@@ -1,7 +1,7 @@
 //! Effects & Presets: search (matches highlighted), the contents menu (colour-depth / GPU
 //! filters, animation presets on/off, categories or alphabetical, refresh), Favorites (star an
-//! effect), Recently Used, "* Animation Presets" (EffectCraft's own text animation presets and
-//! the user's `.ecpreset` files) and the effect categories. Double-click applies to the
+//! effect), Recently Used, "* Animation Presets" (EffectCraft's own text animation and transition
+//! presets and the user's `.ecpreset` files) and the effect categories. Double-click applies to the
 //! selected layers; dragging an effect onto a layer (timeline, viewer, Effect Controls) applies
 //! it there.
 
@@ -108,6 +108,8 @@ fn highlighted(p: &egui::Painter, pos: egui::Pos2, name: &str, query: &str, t: &
 enum Apply {
     Effect(String),
     TextPreset(String),
+    /// A built-in animation preset (Transitions…) by id.
+    Builtin(String),
     PresetFile(String),
 }
 
@@ -340,16 +342,33 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
 
-    // * Animation Presets: our text presets and the user's .ecpreset files.
+    // * Animation Presets: our own presets (Text, Transitions…) and the user's .ecpreset files.
     if view.presets {
         let text: Vec<(String, String)> =
             effectcraft_engine::text_presets().into_iter().filter(|(_, n)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
+        let builtin: Vec<(String, String, String)> =
+            effectcraft_engine::animation_presets().into_iter().filter(|(_, n, _)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
+        let mut categories: Vec<&str> = Vec::new();
+        for (_, _, c) in &builtin {
+            if !categories.contains(&c.as_str()) {
+                categories.push(c);
+            }
+        }
         let files: Vec<PresetFile> =
             user_presets(&ctx, force_scan).into_iter().filter(|f| query.is_empty() || f.name.to_lowercase().contains(&query)).collect();
-        if (!text.is_empty() || !files.is_empty()) && folder_row(app, ui, &lp, list, &mut y, "presets", "* Animation Presets", 0.0, searching, None) {
+        let any = !text.is_empty() || !builtin.is_empty() || !files.is_empty();
+        if any && folder_row(app, ui, &lp, list, &mut y, "presets", "* Animation Presets", 0.0, searching, None) {
             if !text.is_empty() && folder_row(app, ui, &lp, list, &mut y, "presets/Text", "Text", 14.0, searching, None) {
                 for (id, name) in text {
                     preset_row(app, ui, &lp, list, &mut y, &name, &format!("effects.preset.text.{id}"), &query, Apply::TextPreset(id.clone()), &mut apply);
+                }
+            }
+            for cat in &categories {
+                if !folder_row(app, ui, &lp, list, &mut y, &format!("presets/{cat}"), cat, 14.0, searching, None) {
+                    continue;
+                }
+                for (id, name, _) in builtin.iter().filter(|(_, _, c)| c == cat) {
+                    preset_row(app, ui, &lp, list, &mut y, name, &format!("effects.preset.builtin.{id}"), &query, Apply::Builtin(id.clone()), &mut apply);
                 }
             }
             if !files.is_empty() && folder_row(app, ui, &lp, list, &mut y, "presets/User", "User Presets", 14.0, searching, None) {
@@ -418,6 +437,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let (cmd, params) = match &apply {
         Apply::Effect(id) => ("effect.apply", json!({"effect": id})),
         Apply::TextPreset(id) => ("layer.applyTextPreset", json!({"preset": id})),
+        Apply::Builtin(id) => ("anim.applyBuiltinPreset", json!({"preset": id})),
         Apply::PresetFile(path) => ("anim.applyPreset", json!({"path": path})),
     };
     match app.session.execute(cmd, params) {

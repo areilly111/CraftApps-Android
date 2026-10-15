@@ -16,7 +16,7 @@ use super::unique_name;
 /// Visit `n` and every descendant (children and opacity-mask art) mutably.
 pub(super) fn each_mut(n: &mut Node, f: &mut impl FnMut(&mut Node)) {
     f(n);
-    if let Some(m) = &mut n.mask {
+    if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_mut()) {
         each_mut(Arc::make_mut(&mut m.art), f);
     }
     if let Some(ch) = n.children_mut() {

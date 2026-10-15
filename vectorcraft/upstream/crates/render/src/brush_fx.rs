@@ -13,25 +13,30 @@ use vectorcraft_doc::{AppearanceItem, Document, Node, StrokeLayer};
 use vectorcraft_geom::{BezPath, Rect};
 use vello_cpu::RenderContext;
 
+use crate::lru::{self, FrameCache};
 use crate::{Frame, Renderer};
 
-struct Entry {
+pub(crate) struct Entry {
     path: BezPath,
     stroke: StrokeLayer,
     brush: Arc<Brush>,
     pieces: Arc<Vec<Node>>,
-    stamp: u64,
 }
 
 /// Parsed brush library and generated brush art.
-#[derive(Default)]
 pub(crate) struct BrushCache {
     /// The document value the library was parsed from (`None` = defaults).
     src: Option<Option<vectorcraft_brush::serde_json::Value>>,
     /// (frame stamp, document address) the library was last validated for.
     checked: (u64, usize),
     lib: HashMap<String, Arc<Brush>>,
-    entries: HashMap<(u64, usize), Entry>,
+    pub(crate) entries: FrameCache<(u64, usize), Entry>,
+}
+
+impl Default for BrushCache {
+    fn default() -> Self {
+        Self { src: None, checked: (0, 0), lib: HashMap::new(), entries: FrameCache::new(lru::BRUSH_BUDGET, 512) }
+    }
 }
 
 impl BrushCache {
@@ -73,17 +78,12 @@ impl Renderer {
         let idx = n.appearance.items.iter().position(|i| matches!(i, AppearanceItem::Stroke(s) if std::ptr::eq(s, st))).unwrap_or(usize::MAX);
         let key = (n.id.0, idx);
         let stamp = self.stamp;
-        let pieces = match self.brushes.entries.get_mut(&key) {
-            Some(e) if Arc::ptr_eq(&e.brush, &brush) && e.stroke == *st && e.path == *bp => {
-                e.stamp = stamp;
-                e.pieces.clone()
-            }
+        let pieces = match self.brushes.entries.get(&key, stamp) {
+            Some(e) if Arc::ptr_eq(&e.brush, &brush) && e.stroke == *st && e.path == *bp => e.pieces.clone(),
             _ => {
                 let pieces = Arc::new(vectorcraft_brush::stroke_pieces(&brush, bp, st));
-                if self.brushes.entries.len() > 2048 {
-                    self.brushes.entries.retain(|_, e| stamp.saturating_sub(e.stamp) <= 3);
-                }
-                self.brushes.entries.insert(key, Entry { path: bp.clone(), stroke: st.clone(), brush, pieces: pieces.clone(), stamp });
+                let bytes = size_of::<Entry>() + lru::path_bytes(bp) + pieces.iter().map(lru::node_bytes).sum::<usize>();
+                self.brushes.entries.insert(key, Entry { path: bp.clone(), stroke: st.clone(), brush, pieces: pieces.clone() }, bytes, stamp);
                 pieces
             }
         };

@@ -162,9 +162,16 @@ pub fn import_bytes(app: &mut PhotocraftApp, name: &str, bytes: &[u8], replace: 
     let warnings: Vec<String> = r.get("warnings").and_then(|w| serde_json::from_value(w.clone()).ok()).unwrap_or_default();
     let shown = crate::file_open::display_name(name);
     app.ui.status_error = false;
+    let imported = crate::i18n::fmt(
+        &crate::i18n::trn(crate::i18n::current(), n, "Imported {n} swatch from {file}", "Imported {n} swatches from {file}"),
+        &[("file", &shown)],
+    );
     app.ui.status = match warnings.first() {
-        Some(w) => format!("Imported {n} swatches from {shown} ({} notes: {w})", warnings.len()),
-        None => format!("Imported {n} swatches from {shown}"),
+        Some(warning) => {
+            let template = "{message} (notes: {n}; {warning})";
+            crate::i18n::fmt(tl!(template), &[("message", &imported), ("n", &warnings.len().to_string()), ("warning", warning)])
+        }
+        None => imported,
     };
     app.ui.panels.color = true;
     Ok(r)
@@ -182,7 +189,10 @@ fn export_dialog(app: &mut PhotocraftApp, format: &str) -> Result<Value, String>
         let write = app.services.write.as_mut().ok_or("no writer configured")?;
         write(&path, &bytes)?;
         app.ui.status_error = false;
-        app.ui.status = format!("Exported {n} swatches to {}", crate::file_open::display_name(&path));
+        app.ui.status = crate::i18n::fmt(
+            &crate::i18n::trn(crate::i18n::current(), n, "Exported {n} swatch to {file}", "Exported {n} swatches to {file}"),
+            &[("file", &crate::file_open::display_name(&path))],
+        );
         Ok(json!({"path": path, "count": n}))
     })
 }
@@ -251,7 +261,8 @@ pub fn add_from_picker(app: &mut PhotocraftApp, f: &serde_json::Map<String, Valu
     if let Some(r) = run(app, "swatches.add", json!({"color": color})) {
         let name = r["name"].as_str().unwrap_or_default().to_string();
         app.ui.status_error = false;
-        app.ui.status = format!("Added swatch {name}");
+        let template = "Added swatch {name}";
+        app.ui.status = crate::i18n::fmt(tl!(template), &[("name", &name)]);
         app.ui.presets_ui.selected.insert(PANEL.into(), name);
     }
 }
@@ -275,6 +286,20 @@ mod tests {
         h.run_steps(1);
     }
 
+    /// Drag from `from` to `to` in steps, as when a user drags a group header.
+    fn drag(h: &mut Harness<'_, PhotocraftApp>, from: egui::Pos2, to: egui::Pos2) {
+        h.event(egui::Event::PointerMoved(from));
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+        for i in 1..=6 {
+            h.event(egui::Event::PointerMoved(from + (to - from) * (i as f32 / 6.0)));
+            h.run_steps(1);
+        }
+        h.event(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    }
+
     /// The first swatch: below the first group header (22 px), after the 8 px grid inset.
     fn first_cell(h: &Harness<'_, PhotocraftApp>) -> egui::Pos2 {
         h.ctx.input(|i| i.viewport_rect()).min + vec2(8.0 + 12.0 + 8.0, 22.0 + 2.0 + 12.0 + 8.0)
@@ -287,8 +312,17 @@ mod tests {
         app.run("file.new", json!({"width": 400, "height": 200})).unwrap();
         let id = app.run("type.create", json!({"text": "Hello world", "size": 40, "x": 20, "y": 100, "color": "#ffffff"})).unwrap()["layer"].as_u64().unwrap();
         app.ui.tool = Tool::Type;
-        app.ui.text_edit =
-            Some(crate::state::TextEdit { layer: id, caret: 0, anchor: 5, session: "s".into(), created: false, dragging: false, resize: None, preedit: None });
+        app.ui.text_edit = Some(crate::state::TextEdit {
+            layer: id,
+            caret: 0,
+            anchor: 5,
+            session: "s".into(),
+            created: false,
+            mask: false,
+            dragging: false,
+            resize: None,
+            preedit: None,
+        });
         // Recolour with a visible colour: put Red first.
         app.run("swatches.move", json!({"swatch": "Red", "to": "Grays", "position": 0})).unwrap();
         let mut h = Harness::builder().with_size(vec2(300.0, 300.0)).build_ui_state(|ui, app: &mut PhotocraftApp| panel(app, ui), app);
@@ -376,5 +410,27 @@ mod tests {
         let out = written.lock().unwrap();
         assert_eq!(out[0].0, "out/Swatches.ase");
         assert!(out[0].1.starts_with(b"ASEF"));
+    }
+
+    /// #3658: dragging a group header reorders the folders, and the new order sticks in the UI
+    /// state (UI state is serde, so it saves and reloads with the rest of the panel state).
+    #[test]
+    fn dragging_a_group_header_reorders_and_persists() {
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let mut h = Harness::builder().with_size(vec2(300.0, 4000.0)).build_ui_state(|ui, app: &mut PhotocraftApp| panel(app, ui), app);
+        h.run_steps(2);
+        let headers = crate::preset_panels::last_group_headers(&h.ctx, PANEL);
+        assert!(headers.len() >= 2, "the default library has folders: {headers:?}");
+        let names: Vec<String> = headers.iter().map(|(n, _)| n.clone()).collect();
+        let (first, first_r) = &headers[0];
+        let (last, last_r) = headers.last().unwrap();
+        // Drag the last folder's header above the first; the insertion lands before it.
+        drag(&mut h, last_r.center(), egui::pos2(first_r.center().x, first_r.top() + 1.0));
+        let order = h.state().ui.presets_ui.display_order(PANEL, &names);
+        assert_eq!(order.len(), names.len());
+        assert_eq!(names.get(order[0]).map(String::as_str), Some(last.as_str()), "the dragged folder moved to the front: {order:?}");
+        assert_eq!(names.get(order[1]).map(String::as_str), Some(first.as_str()));
+        // The reorder is remembered by name (not by the positions it happened to have).
+        assert_eq!(h.state().ui.presets_ui.group_order.get(PANEL).and_then(|o| o.first()), Some(last));
     }
 }

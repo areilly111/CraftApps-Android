@@ -53,8 +53,8 @@ fn valid(app: &PhotocraftApp, key: &str, v: &Value) -> bool {
     }
 }
 
-/// The dialog's fields: Photoshop's defaults, overridden by the last choices.
-pub fn fields(app: &PhotocraftApp) -> Map<String, Value> {
+/// Photoshop's Fill defaults (no last-used prefs). Used by open and Alt+Reset.
+pub fn default_fields(app: &PhotocraftApp) -> Map<String, Value> {
     let mut f = Map::new();
     f.insert(MARK.into(), json!(true));
     f.insert("__command".into(), json!(COMMAND));
@@ -68,6 +68,12 @@ pub fn fields(app: &PhotocraftApp) -> Map<String, Value> {
     f.insert("mode".into(), json!("normal"));
     f.insert("opacity".into(), json!(100.0));
     f.insert("preserveTransparency".into(), json!(false));
+    f
+}
+
+/// The dialog's fields: Photoshop's defaults, overridden by the last choices.
+pub fn fields(app: &PhotocraftApp) -> Map<String, Value> {
+    let mut f = default_fields(app);
     if let Some(Value::Object(saved)) = app.session.prefs().dialogs.get(COMMAND) {
         for k in KEYS {
             if let Some(v) = saved.get(k).filter(|v| valid(app, k, v)) {
@@ -76,6 +82,19 @@ pub fn fields(app: &PhotocraftApp) -> Map<String, Value> {
         }
     }
     f
+}
+
+/// Alt+Cancel (Reset): Photoshop Fill defaults, not last-used prefs. Dialog stays open.
+pub fn reset(app: &PhotocraftApp, fields: &mut Map<String, Value>) {
+    if !owns(fields) {
+        return;
+    }
+    let defaults = default_fields(app);
+    for k in KEYS {
+        if let Some(v) = defaults.get(k) {
+            fields.insert(k.into(), v.clone());
+        }
+    }
 }
 
 /// Open the Fill dialog; returns its id.

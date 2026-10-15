@@ -5,9 +5,10 @@
     wix build pdfcraft.wxs installer-ui.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d ModelsDir=... -d IconPath=... -o out.msi
 
   Per-machine install into Program Files, a Start Menu shortcut, a desktop shortcut (on by default,
-  optional), an App Paths entry, and PdfCraft registered as a PDF handler (offered under "Open with"
-  and in Default apps, never forced as the default). Files opened with PdfCraft arrive on its
-  command line.
+  optional), an App Paths entry, PdfCraft registered as a PDF handler (offered under "Open with"
+  and in Default apps, never forced as the default), and "Edit with PdfCraft" on PDF files'
+  right-click menu (on by default, optional). Files opened with PdfCraft arrive on its command
+  line.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
@@ -40,6 +41,9 @@
          INSTALLDESKTOPSHORTCUT=0 on the msiexec command line for unattended installs. Secure, so the
          choice made in the (unelevated) UI reaches the elevated install. -->
     <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <!-- "Edit with PdfCraft" on the right-click menu of PDF files in File Explorer (#682): on by
+         default, the same way, and INSTALLPDFCONTEXTMENU=0 for unattended installs without it. -->
+    <Property Id="INSTALLPDFCONTEXTMENU" Value="1" Secure="yes" />
     <UIRef Id="PdfcraftInstallerUI" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
@@ -134,6 +138,21 @@
         <Shortcut Id="DesktopShortcut" Name="PdfCraft" Description="PdfCraft PDF workbench"
             Target="[#PdfcraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="PdfcraftIcon.ico" IconIndex="0" />
         <RegistryValue Root="HKLM" Key="Software\PdfCraft\Shortcuts" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!-- PDF context menu (#682): "Edit with PdfCraft" opens the file in PdfCraft whichever app is
+           the default for .pdf, which it leaves alone (SystemFileAssociations, like the image
+           menu). Several PDFs selected (up to 15, Windows' limit for this kind of entry) start one
+           launch each, and the single-instance hand-off opens them as tabs of one window. On
+           Windows 11 the entry is under "Show more options": the first-level menu only takes
+           packaged apps' (IExplorerCommand) entries. Its own component with an HKLM key path, so
+           INSTALLPDFCONTEXTMENU=0 leaves it out and uninstall removes it. -->
+      <Component Id="PdfcraftPdfContextMenu" Guid="439F084F-657D-4AC2-A4CC-F099C518D71F"
+          Condition="INSTALLPDFCONTEXTMENU = 1">
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\PdfCraft.Edit" Value="Edit with PdfCraft" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\PdfCraft.Edit" Name="Icon" Value="&quot;[#PdfcraftExe]&quot;,0" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\PdfCraft.Edit" Name="MultiSelectModel" Value="Document" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.pdf\shell\PdfCraft.Edit\command" Value="&quot;[#PdfcraftExe]&quot; &quot;%1&quot;" Type="string" />
       </Component>
 
       <Component Id="PdfcraftCli">

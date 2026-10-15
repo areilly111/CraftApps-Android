@@ -183,6 +183,12 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let track_rect = Rect::from_min_max(pos2(row.left() + pad_l, row.top() + 22.0), pos2(row.right() - pad_r, row.top() + 40.0));
     let id = ui.id().with(spec.id);
     let resp = ui.interact(track_rect.expand2(vec2(8.0, 2.0)), id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
+    // A click selects the slider for arrow/wheel adjustments. Keep scroll-to-adjust
+    // opt-in so hovering an unfocused slider still scrolls the containing panel.
+    if enabled && (resp.clicked() || resp.drag_started()) {
+        resp.request_focus();
+        ui.data_mut(|d| d.insert_temp(focused_slider_key(), id));
+    }
     // screen readers: a slider named after its control, with its value
     let label_text = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     resp.widget_info(|| egui::WidgetInfo::slider(enabled, value, label_text.clone()));
@@ -195,18 +201,31 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     // say that an exact value can be typed here (issue #534: an exact crop angle was hard to find)
     let value_resp = if enabled { value_resp.on_hover_text(crate::i18n::tr("Click to type a value")) } else { value_resp };
     let typing_id = id.with("typing");
-    // the text being typed and how many frames the field has been up: it takes the keyboard on its
-    // first frames (not on the click's own, whose release would take the focus straight back)
-    let mut typing: Option<(String, u8)> = ui.data(|m| m.get_temp(typing_id));
-    if enabled && typing.is_none() && value_resp.clicked() {
-        typing = Some((shown_value(spec, value).trim_start_matches('+').to_string(), 0));
+    // Keep the short focus-acquisition guard, but let an explicit Return/Escape end the edit.
+    let mut typing: Option<(String, u8, bool)> = ui.data(|m| m.get_temp(typing_id));
+    let value_pressed = value_resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+    // Focus on the owned primary press before fast typing; retain the readout's click activation.
+    if enabled && typing.is_none() && (value_resp.clicked() || value_pressed) {
+        typing = Some((shown_value(spec, value).trim_start_matches('+').to_string(), 0, value_pressed));
+    }
+    let value_released = ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+    // The opening press must complete the readout's original click before the edit continues.
+    if value_released && typing.as_ref().is_some_and(|(_, _, pressed)| *pressed) && !value_resp.clicked() {
+        typing = None;
+        ui.data_mut(|m| m.remove::<(String, u8, bool)>(typing_id));
+        ui.memory_mut(|m| m.surrender_focus(crate::text_field::id(&format!("sliderField:{}", spec.id))));
     }
     let mut out = SliderOut::default();
     let span = (spec.max - spec.min).max(1e-9);
     let to_x = |v: f64| track_rect.left() + ((v - spec.min) / span).clamp(0.0, 1.0) as f32 * track_rect.width();
     let from_x = |x: f32| spec.min + ((x - track_rect.left()) / track_rect.width()).clamp(0.0, 1.0) as f64 * span;
     let mut v = value;
-    if let Some((mut text, frames)) = typing.take() {
+    if let Some((mut text, frames, pressed)) = typing.take() {
+        // Keep the owned opening release focused without restarting its draft or selection.
+        if pressed && value_released {
+            ui.memory_mut(|m| m.request_focus(crate::text_field::id(&format!("sliderField:{}", spec.id))));
+        }
+        let pressed = pressed && !value_released;
         // a child over the value, so the field never moves the rows around it
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         // the old value is selected when the field takes the focus, so typing replaces it
@@ -216,11 +235,12 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
             .width(value_rect.width())
             .margin(egui::Margin::ZERO)
             .select_on_focus(true)
+            .begin_edit(frames == 0)
             .show(&mut child);
-        if frames < 2 {
+        if frames < 2 && !matches!(field.ending, Some(crate::text_field::Ending::Return | crate::text_field::Ending::Escape)) {
             field.response.request_focus();
-            typing = Some((text.clone(), frames + 1));
-            ui.data_mut(|m| m.insert_temp(typing_id, (text, frames + 1)));
+            typing = Some((text.clone(), frames + 1, pressed));
+            ui.data_mut(|m| m.insert_temp(typing_id, (text, frames + 1, pressed)));
         } else if field.ending.is_some() || !field.editing || !enabled {
             // Esc (or the slider turning off) keeps the old value; Return or clicking away applies
             let cancelled = !enabled || field.cancelled();
@@ -230,10 +250,10 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
                 out.drag_stopped = true;
                 v = nv;
             }
-            ui.data_mut(|m| m.remove::<(String, u8)>(typing_id));
+            ui.data_mut(|m| m.remove::<(String, u8, bool)>(typing_id));
         } else {
-            typing = Some((text.clone(), frames));
-            ui.data_mut(|m| m.insert_temp(typing_id, (text, frames)));
+            typing = Some((text.clone(), frames, pressed));
+            ui.data_mut(|m| m.insert_temp(typing_id, (text, frames, pressed)));
         }
     } else if resp.double_clicked() || label_resp.double_clicked() {
         out.reset = true;
@@ -272,8 +292,8 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
         if resp.drag_stopped() {
             out.drag_stopped = true;
         }
-        // ↑ / ↓ while the pointer rests on the row nudge the value (⇧: five times as much)
-        if enabled && out.value.is_none() && typing.is_none() && ui.rect_contains_pointer(row) {
+        // Arrow keys work with either a hovered or a focused slider.
+        if enabled && out.value.is_none() && typing.is_none() && (ui.rect_contains_pointer(row) || resp.has_focus()) {
             let (up, down, shift) = ui.input_mut(|i| {
                 let shift = i.modifiers.shift;
                 let m = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
@@ -286,6 +306,34 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
                     out.drag_started = true;
                     out.drag_stopped = true;
                     v = nv;
+                }
+            }
+        }
+        // Wheel nudges require an explicitly selected slider, unlike regular panel scrolling.
+        // Consume only the vertical component so a trackpad's horizontal scroll still works.
+        let wheel_id = id.with("wheel-rem");
+        if !resp.has_focus() {
+            ui.data_mut(|m| m.remove::<f32>(wheel_id));
+        } else if enabled && typing.is_none() && out.value.is_none() && ui.rect_contains_pointer(row) {
+            let delta = ui.input_mut(|i| {
+                let dy = i.smooth_scroll_delta.y;
+                if dy != 0.0 {
+                    i.smooth_scroll_delta.y = 0.0;
+                }
+                dy
+            });
+            if delta != 0.0 {
+                let mut remainder = ui.data(|m| m.get_temp::<f32>(wheel_id)).unwrap_or(0.0);
+                let steps = wheel_nudges(&mut remainder, delta);
+                ui.data_mut(|m| m.insert_temp(wheel_id, remainder));
+                if steps != 0.0 {
+                    let nv = nudged(spec, value, steps);
+                    if (nv - value).abs() > 1e-12 {
+                        out.value = Some(nv);
+                        out.drag_started = true;
+                        out.drag_stopped = true;
+                        v = nv;
+                    }
                 }
             }
         }
@@ -318,6 +366,16 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
     out
+}
+
+/// Convert vertical wheel movement to bounded slider steps, keeping sub-notch
+/// trackpad movement between frames without amplifying a single large event.
+fn wheel_nudges(remainder: &mut f32, delta: f32) -> f64 {
+    const POINTS_PER_STEP: f32 = 40.0;
+    let total = (*remainder + delta).clamp(-400.0, 400.0);
+    let steps = (total / POINTS_PER_STEP).trunc();
+    *remainder = total - steps * POINTS_PER_STEP;
+    f64::from(steps)
 }
 
 /// `value` moved by `steps` keyboard nudges: one nudge is about 1/200 of the range, a whole
@@ -488,25 +546,34 @@ pub fn icon_button(ui: &mut Ui, id: &str, icon: Icon, size: egui::Vec2, active: 
 pub fn stars(ui: &mut Ui, id: &str, rating: u8, size: f32) -> Option<u8> {
     let t = Tokens::get(ui.ctx());
     let mut out = None;
-    let hover_n = {
-        let mut h = None;
-        for i in 0..5u8 {
-            let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
-            register(ui.ctx(), format!("star:{id}:{}", i + 1), r);
-            if resp.hovered() {
-                h = Some(i + 1);
-            }
-            if resp.clicked() {
-                out = Some(if rating == i + 1 { 0 } else { i + 1 });
-            }
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, "", t.font(1.0), t.star);
-            let filled = i < rating;
-            paint(ui.painter(), r.shrink(size * 0.12), if filled { Icon::StarFilled } else { Icon::Star }, if filled { t.star } else { t.icon });
+    let mut hover_n = None;
+    let mut rects = [Rect::NOTHING; 5];
+    for (i, slot) in (0..5u8).zip(rects.iter_mut()) {
+        let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+        register(ui.ctx(), format!("star:{id}:{}", i + 1), r);
+        if resp.hovered() {
+            hover_n = Some(i + 1);
         }
-        h
-    };
-    let _ = hover_n;
+        if resp.clicked() {
+            out = Some(if rating == i + 1 { 0 } else { i + 1 });
+        }
+        *slot = r;
+    }
+    // Hover previews the rating a click would set: stars 1..=hovered light up. The hovered star also gets the
+    // icon_button hover square, so hovering the current rating (where the preview looks the same) still shows feedback.
+    for (i, r) in (0..5u8).zip(rects) {
+        if hover_n == Some(i + 1) {
+            ui.painter().rect_filled(r, 4.0, t.hover.gamma_multiply(0.7));
+        }
+        let filled = star_lit(i, rating, hover_n);
+        paint(ui.painter(), r.shrink(size * 0.12), if filled { Icon::StarFilled } else { Icon::Star }, if filled { t.star } else { t.icon });
+    }
     out
+}
+
+/// Whether the star at zero-based index `i` is drawn filled: the hovered star's rating previews over the current one.
+fn star_lit(i: u8, rating: u8, hover: Option<u8>) -> bool {
+    i < hover.unwrap_or(rating)
 }
 
 /// A borderless dropdown button: `text` followed by a painted chevron (no font glyph needed).
@@ -527,6 +594,16 @@ pub fn dropdown(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, color: Co
 mod tests {
     use super::*;
 
+    /// Issue #647: hovering a star previews the rating a click would set.
+    #[test]
+    fn hovered_star_previews_its_rating() {
+        let lit = |rating, hover| (0..5u8).filter(|&i| star_lit(i, rating, hover)).count();
+        assert_eq!(lit(2, None), 2, "no hover shows the rating");
+        assert_eq!(lit(2, Some(4)), 4);
+        assert_eq!(lit(5, Some(1)), 1);
+        assert_eq!(lit(0, Some(3)), 3);
+    }
+
     #[test]
     fn nudges_are_a_sensible_step() {
         let spec = |id, min, max, step| ControlSpec {
@@ -544,6 +621,17 @@ mod tests {
         assert_eq!(nudged(&spec("light.contrast", -100.0, 100.0, 1.0), 10.0, -5.0), 5.0);
         assert_eq!(nudged(&spec("wb.temp", 2000.0, 50000.0, 1.0), 6500.0, 1.0), 6550.0);
         assert_eq!(nudged(&spec("light.contrast", -100.0, 100.0, 1.0), 99.0, 5.0), 100.0, "clamped");
+    }
+
+    #[test]
+    fn wheel_steps_accumulate_small_movements_and_preserve_direction() {
+        let mut remainder = 0.0;
+        assert_eq!(wheel_nudges(&mut remainder, 15.0), 0.0);
+        assert_eq!(wheel_nudges(&mut remainder, 25.0), 1.0);
+        assert_eq!(remainder, 0.0);
+        assert_eq!(wheel_nudges(&mut remainder, -100.0), -2.0);
+        assert_eq!(wheel_nudges(&mut remainder, -20.0), -1.0);
+        assert_eq!(remainder, 0.0);
     }
 
     /// Typed values (issue #322): signs, a decimal comma, units; on the control's steps, in range.
@@ -634,4 +722,19 @@ pub(crate) fn elide_head(text: &str, max: f32, width: impl Fn(&str) -> f32) -> S
         }
     }
     "…".to_string()
+}
+
+#[cfg(test)]
+#[path = "widgets/tests_numeric_entry.rs"]
+mod numeric_entry_tests;
+
+fn focused_slider_key() -> egui::Id {
+    egui::Id::new("lightcraft-focused-slider")
+}
+
+/// Whether the widget with keyboard focus is a develop slider a click selected. It owns only the
+/// arrow keys (and the wheel): every other shortcut still works, as in Lightroom after a drag.
+pub fn slider_has_focus(ctx: &egui::Context) -> bool {
+    let focused = ctx.memory(|m| m.focused());
+    focused.is_some() && focused == ctx.data(|d| d.get_temp::<egui::Id>(focused_slider_key()))
 }

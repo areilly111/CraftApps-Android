@@ -116,7 +116,9 @@ pub fn import(proj: &mut Project, psd: &Psd, path: &str, name: &str, retain: boo
 }
 
 fn new_comp(cx: &Ctx) -> Comp {
-    Comp::new(cx.psd.width, cx.psd.height, cx.rate, cx.duration)
+    // A PSB can be 300,000 px a side; a composition is at most 30,000 (#788).
+    let size = |v: u32| effectcraft_project::limits::size(v.into());
+    Comp::new(size(cx.psd.width), size(cx.psd.height), cx.rate, cx.duration)
 }
 
 fn build_comp(proj: &mut Project, cx: &mut Ctx, name: &str, nodes: &[Node], parent: Option<ItemId>) -> ItemId {

@@ -77,7 +77,7 @@ impl PdfCraftApp {
         match self.export_dir_override.clone() {
             Some(d) => self.run_action_into(action, files, d.into()),
             None => {
-                let dialog = crate::pickers::FileDialog::new().set_title(tl!("Choose a folder for the results").to_string());
+                let dialog = rfd::AsyncFileDialog::new().set_title(tl!("Choose a folder for the results").to_string());
                 self.ask_one(crate::pickers::Ask::Folder(dialog), None, move |app, dir| app.run_action_into(action, files, dir));
             }
         }
@@ -186,7 +186,7 @@ impl PdfCraftApp {
             match self.action_files_override.clone() {
                 Some(p) => run(self, p.into_iter().map(std::path::PathBuf::from).collect()),
                 None => {
-                    let dialog = crate::pickers::FileDialog::new().set_title(title).add_filter("PDF", &["pdf"]);
+                    let dialog = rfd::AsyncFileDialog::new().set_title(title).add_filter("PDF", &["pdf"]);
                     self.ask(crate::pickers::Ask::Files(dialog), None, run);
                 }
             }
@@ -307,10 +307,10 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     ui.add_space(8.0);
     egui::Grid::new("action-edit").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
         ui.label(tl!("Action name:"));
-        ui.add(egui::TextEdit::singleline(&mut a.name).desired_width(320.0).id_salt("action-name"));
+        ui.add(crate::widgets::line(&mut a.name).desired_width(320.0).id_salt("action-name"));
         ui.end_row();
         ui.label(tl!("Description:"));
-        ui.add(egui::TextEdit::singleline(&mut a.description).desired_width(320.0).id_salt("action-description"));
+        ui.add(crate::widgets::line(&mut a.description).desired_width(320.0).id_salt("action-description"));
         ui.end_row();
     });
     ui.add_space(6.0);
@@ -326,7 +326,7 @@ fn edit_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}. {}", i + 1, tl!(s.label())));
                     if let Some(arg) = s.arg_mut() {
-                        ui.add(egui::TextEdit::singleline(arg).desired_width(220.0));
+                        ui.add(crate::widgets::line(arg).desired_width(220.0));
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button(tl!("Remove")).clicked() {

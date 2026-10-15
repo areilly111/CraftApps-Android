@@ -387,10 +387,12 @@ pub(crate) fn drawable<'a>(lines: impl IntoIterator<Item = &'a str>) -> Result<(
 
 /// The refusal for page text with `c`, which nothing here can draw.
 pub(crate) fn undrawable(c: char) -> EditError {
-    EditError::Invalid(format!(
-        "the standard fonts can't draw \"{c}\" (U+{:04X}); only Western European characters can be added as text for now",
-        u32::from(c)
-    ))
+    EditError::Invalid(undrawable_message(c))
+}
+
+/// The wording of the refusal for text with `c`, which the standard fonts can't draw.
+pub fn undrawable_message(c: char) -> String {
+    format!("the standard fonts can't draw \"{c}\" (U+{:04X}); only Western European characters can be added as text for now", u32::from(c))
 }
 
 fn text_op(x: f64, y: f64, text: &str) -> Vec<u8> {
@@ -491,7 +493,12 @@ pub fn add_watermark(doc: &mut Document, pages: &[usize], wm: &Watermark, replac
     if wm.source.is_none() {
         drawable(text.lines())?;
     }
-    if !(wm.opacity.is_finite() && wm.rotation.is_finite() && wm.font_size.is_finite() && wm.font_size >= 0.0) {
+    if !(wm.opacity.is_finite()
+        && wm.rotation.is_finite()
+        && wm.font_size.is_finite()
+        && wm.font_size >= 0.0
+        && wm.offset.iter().all(|o| o.is_finite()))
+    {
         return Err(EditError::Invalid("invalid watermark settings".into()));
     }
     if replace {
@@ -606,34 +613,28 @@ pub fn remove_marks(doc: &mut Document, pages: &[usize], kind: MarkKind) -> Resu
 
 /// Which kinds of marks the document has (for enabling Update/Remove).
 pub fn marks_present(doc: &Document) -> Vec<MarkKind> {
-    let mut found = Vec::new();
-    for page in page_list(doc) {
-        let obj = doc.get(page.obj);
-        let Some(c) = obj.as_dict().and_then(|d| d.get(b"Contents").cloned()) else { continue };
-        let list = match &*doc.resolve(&c) {
-            Object::Array(a) => a.clone(),
-            _ => vec![c.clone()],
-        };
-        for o in list {
-            if let Some(t) = stream_tag(doc, &o)
-                && let Some(kind) = [MarkKind::HeaderFooter, MarkKind::Watermark, MarkKind::Background].into_iter().find(|m| m.tag() == t)
-                && !found.contains(&kind)
-            {
-                found.push(kind);
-            }
-        }
-    }
-    found
+    added::scan_markers(doc).marks
 }
+
+pub mod objects;
+pub use objects::{EditableObject, MAX_MOVE_OBJECTS, ObjectKind, ObjectTarget, editable_objects, move_objects};
 
 mod flatten;
 pub use flatten::{flatten, flatten_fill_sign};
 pub mod images;
 pub use images::{ImageChange, PageImage, change_image, page_images, reading_images, rect_to_rect, turn_about_centre};
+pub mod bidi;
+pub mod indic;
 pub mod text;
-pub use text::{BlockStyle, LineEdit, TextBlock, TextLine, reading_blocks, replace_block, replace_line, rewrite_block, text_blocks, text_lines};
+pub use text::{
+    BlockStyle, LineEdit, RangeStyle, TextBlock, TextLine, clear_block, reading_blocks, replace_block, replace_line, rewrite_block, text_blocks,
+    text_lines,
+};
 pub mod added;
-pub use added::{Added, AddedImage, AddedText, Align, Content, Family, add_content, delete_content, first_undrawable, list_added, update_content};
+pub use added::{
+    Added, AddedImage, AddedText, Align, Content, Family, MarkerScan, add_content, delete_content, first_undrawable, list_added, scan_markers,
+    update_content,
+};
 
 #[cfg(test)]
 mod tests;

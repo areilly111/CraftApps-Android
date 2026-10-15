@@ -69,27 +69,45 @@ fn fonts() -> Arc<usvg::fontdb::Database> {
 /// Parse options for an untrusted drawing. `<image href>` resolves only `data:` URLs: a file path
 /// or relative href is never read, so opening an SVG cannot pull local files (`/etc/...`,
 /// `~/.ssh/...`) into the document. Embedded SVG images get no `<image>` resolution at all
-/// (`usvg` already blanks it for sub-SVGs). The font database (and its one-off scan of the system
-/// fonts) is only loaded when the drawing may contain text.
-fn options(xml: &[u8]) -> usvg::Options<'static> {
-    let has_text = xml.windows(4).any(|w| w == b"text");
+/// (`usvg` already blanks it for sub-SVGs).
+fn options(fontdb: Arc<usvg::fontdb::Database>) -> usvg::Options<'static> {
     usvg::Options {
         resources_dir: None,
         image_href_resolver: usvg::ImageHrefResolver { resolve_data: usvg::ImageHrefResolver::default_data_resolver(), resolve_string: Box::new(|_, _| None) },
-        fontdb: if has_text { fonts() } else { Arc::new(usvg::fontdb::Database::new()) },
+        fontdb,
         ..usvg::Options::default()
     }
 }
 
+/// A parsed drawing.
+struct Parsed {
+    tree: usvg::Tree,
+    /// The drawing has text but no font at all was available to shape it. `usvg` then drops the
+    /// text while parsing, before any node reaches the conversion, so this is the only place
+    /// that knows why the text is missing.
+    fontless_text: bool,
+}
+
 /// Parses a drawing, `.svgz` included. The XML is inflated and checked here, before the parser
-/// sees it: deeper nesting than [`MAX_XML_DEPTH`] is an error, not a stack overflow.
-fn parse(bytes: &[u8]) -> Result<usvg::Tree, IoError> {
+/// sees it: deeper nesting than [`MAX_XML_DEPTH`] is an error, not a stack overflow. The font
+/// database (and its one-off scan of the system fonts) is only loaded when the drawing may
+/// contain text.
+fn parse(bytes: &[u8]) -> Result<Parsed, IoError> {
+    parse_with(bytes, fonts)
+}
+
+/// [`parse`] with the font database `fonts` supplies (the tests hand in an empty one).
+fn parse_with(bytes: &[u8], fonts: fn() -> Arc<usvg::fontdb::Database>) -> Result<Parsed, IoError> {
     let xml = inflate(bytes)?;
     if nesting_depth(&xml, MAX_XML_DEPTH) > MAX_XML_DEPTH {
         return Err(IoError::Svg(format!("elements are nested more than {MAX_XML_DEPTH} levels deep")));
     }
-    let opt = options(&xml);
-    usvg::Tree::from_data(&xml, &opt).map_err(|e| IoError::Svg(e.to_string()))
+    let has_text = xml.windows(4).any(|w| w == b"text");
+    let fontdb = if has_text { fonts() } else { Arc::new(usvg::fontdb::Database::new()) };
+    let fontless_text = has_text && fontdb.faces().next().is_none();
+    let opt = options(fontdb);
+    let tree = usvg::Tree::from_data(&xml, &opt).map_err(|e| IoError::Svg(e.to_string()))?;
+    Ok(Parsed { tree, fontless_text })
 }
 
 /// The plain XML of `bytes`: itself, or the inflated content of a gzip `.svgz`, refused past
@@ -184,13 +202,27 @@ fn canvas(tree: &usvg::Tree, warnings: &mut Vec<String>) -> Canvas {
 
 /// Opens an SVG as a document of shape layers (see the module docs for what is rasterised).
 pub fn import_svg(name: &str, bytes: &[u8]) -> Result<ImportResult, IoError> {
-    let tree = parse(bytes)?;
+    import_svg_with_group_depth(name, bytes, MAX_GROUP_DEPTH)
+}
+
+/// Opens an SVG while rasterising any subtrees deeper than `max_group_depth` into single pixel
+/// layers. The document's hard nesting limit remains [`MAX_GROUP_DEPTH`].
+pub fn import_svg_with_group_depth(name: &str, bytes: &[u8], max_group_depth: usize) -> Result<ImportResult, IoError> {
+    import_parsed(name, parse(bytes)?, max_group_depth)
+}
+
+fn import_parsed(name: &str, parsed: Parsed, max_group_depth: usize) -> Result<ImportResult, IoError> {
+    let Parsed { tree, fontless_text } = parsed;
     let mut warnings = Vec::new();
+    if fontless_text {
+        warnings.push("SVG: the text needs a font and none is installed, so it was dropped".to_string());
+    }
     let cv = canvas(&tree, &mut warnings);
     let mut doc = Document::new(name, cv.size, ColorMode::Rgb, SampleType::U8);
     let fmt = doc.pixel_format();
     let global = tiny_skia::Transform::from_scale(cv.scale, cv.scale);
-    let mut conv = Conv { fmt, canvas: doc.bounds(), global, warnings, noted: Vec::new(), counts: [0; 4] };
+    let max_group_depth = (max_group_depth != 0).then_some(max_group_depth.clamp(1, MAX_GROUP_DEPTH));
+    let mut conv = Conv { fmt, canvas: doc.bounds(), global, max_group_depth, warnings, noted: Vec::new(), counts: [0; 4] };
     if count_nodes(tree.root()) > MAX_NODES {
         conv.warnings.push(format!("SVG: more than {MAX_NODES} elements; opened as one pixel layer instead of shapes"));
         let (w, h) = (cv.size.width, cv.size.height);
@@ -210,7 +242,7 @@ pub fn import_svg(name: &str, bytes: &[u8]) -> Result<ImportResult, IoError> {
 /// The whole drawing rendered at `scale` (1 = its own size), as a straight-alpha RGBA buffer at
 /// the origin. Smart objects use it to stay sharp at any placement.
 pub fn rasterize(bytes: &[u8], scale: f32) -> Result<photocraft_compose::Buffer, IoError> {
-    let tree = parse(bytes)?;
+    let tree = parse(bytes)?.tree;
     let cv = canvas(&tree, &mut Vec::new());
     let k = cv.scale * scale.clamp(1.0 / 64.0, 64.0);
     let side = |v: f32| ((v * k).ceil() as u32).max(1);
@@ -273,6 +305,7 @@ struct Conv {
     canvas: Rect,
     /// Drawing units → canvas pixels.
     global: tiny_skia::Transform,
+    max_group_depth: Option<usize>,
     warnings: Vec<String>,
     /// Features already warned about (one warning each).
     noted: Vec<&'static str>,
@@ -317,7 +350,7 @@ impl Conv {
             usvg::Node::Group(g) => {
                 let dropped: [(bool, &'static str); 3] =
                     [(!g.filters().is_empty(), "filter"), (g.clip_path().is_some(), "clip-path"), (g.mask().is_some(), "mask")];
-                let too_deep = depth >= MAX_GROUP_DEPTH || rec >= MAX_RECURSION;
+                let too_deep = self.max_group_depth.is_some_and(|limit| depth >= limit) || depth >= MAX_GROUP_DEPTH || rec >= MAX_RECURSION;
                 if dropped.iter().any(|d| d.0) || too_deep {
                     for (yes, what) in dropped {
                         if yes {
@@ -635,8 +668,29 @@ mod tests {
     }
 
     #[test]
+    fn text_without_any_font_is_reported_not_silently_dropped() {
+        // No font at all (a bare CI image): usvg drops the <text> while parsing, so nothing
+        // reaches the conversion; the reader still has to say why the text is missing.
+        fn no_fonts() -> Arc<usvg::fontdb::Database> {
+            Arc::new(usvg::fontdb::Database::new())
+        }
+        let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"60\"><text x=\"5\" y=\"45\" font-size=\"48\">II</text></svg>";
+        let parsed = parse_with(svg, no_fonts).unwrap();
+        assert!(parsed.fontless_text);
+        let r = import_parsed("t", parsed, MAX_GROUP_DEPTH).unwrap();
+        assert!(r.document.layers.is_empty());
+        assert!(r.warnings.iter().any(|w| w.contains("font")), "{:?}", r.warnings);
+        // A drawing without text never loads or misses fonts.
+        let parsed =
+            parse_with(b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\"/></svg>", no_fonts).unwrap();
+        assert!(!parsed.fontless_text);
+        let r = import_parsed("t", parsed, MAX_GROUP_DEPTH).unwrap();
+        assert!(r.warnings.iter().all(|w| !w.contains("font")), "{:?}", r.warnings);
+    }
+
+    #[test]
     fn huge_drawings_scale_to_the_side_limit() {
-        let tree = parse(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100000 50000\"/>").unwrap();
+        let tree = parse(b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100000 50000\"/>").unwrap().tree;
         let mut w = Vec::new();
         let cv = canvas(&tree, &mut w);
         assert_eq!((cv.size.width, cv.size.height), (MAX_SIDE, MAX_SIDE / 2));

@@ -145,6 +145,8 @@ impl ObjectReader {
 
     pub(crate) fn try_get(&mut self, reference: ObjRef) -> Result<Arc<Object>, CosError> {
         let object = self.document.try_get(reference.num);
+        // A missed eviction here only costs a re-parse, so never fail the read on a poisoned
+        // lock. The editing-cache evictors propagate instead; they guard user edits.
         if let Ok(mut streams) = self.document.objstms.lock() {
             // Only insertion changes this private cache between reads. Most neighboring
             // objects reuse a decoded stream: do not sum the whole store for every object.
@@ -355,10 +357,7 @@ impl Document {
             return Ok(());
         };
         let params = crate::security::encrypt_dict(self, &dict);
-        let id0 = match self.trailer.get(b"ID") {
-            Some(Object::Array(a)) => a.first().and_then(|s| s.as_string()).map(|s| s.bytes.clone()).unwrap_or_default(),
-            _ => Vec::new(),
-        };
+        let id0 = self.first_id();
         let handler = pdfcraft_crypt::SecurityHandler::open(params, &id0, password).map_err(|e| match e {
             pdfcraft_crypt::CryptError::WrongPassword if password.is_none() => CosError::NeedsPassword,
             pdfcraft_crypt::CryptError::WrongPassword => CosError::WrongPassword,
@@ -369,6 +368,31 @@ impl Document {
         // Objects read while locating the catalog were read before decryption was possible.
         self.cache = Arc::default();
         self.objstms = Arc::default();
+        Ok(())
+    }
+
+    /// The first file identifier, part of the encryption key (empty when there is none).
+    fn first_id(&self) -> Vec<u8> {
+        match self.trailer.get(b"ID") {
+            Some(Object::Array(a)) => a.first().and_then(|s| s.as_string()).map(|s| s.bytes.clone()).unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Lift the restrictions of a document opened with its user password by entering the
+    /// owner (permissions) password (§7.6.4). Fails with `WrongPassword` for any other
+    /// password. Does nothing when the document is unencrypted or already opened as owner.
+    /// Both passwords unlock the same file key, so nothing read so far is decoded again.
+    pub fn unlock(&mut self, password: &str) -> Result<(), CosError> {
+        let Some(current) = self.security.as_deref() else { return Ok(()) };
+        if current.auth() == pdfcraft_crypt::Auth::Owner {
+            return Ok(());
+        }
+        let owner = current.authenticate_owner(&self.first_id(), password).map_err(|e| match e {
+            pdfcraft_crypt::CryptError::WrongPassword => CosError::WrongPassword,
+            other => CosError::Security(other.to_string()),
+        })?;
+        self.security = Some(Arc::new(owner));
         Ok(())
     }
 
@@ -607,8 +631,79 @@ impl Document {
             LoadGuard::enter(num).ok_or_else(|| CosError::Syntax { offset: 0, detail: format!("reference cycle while loading object {num}") })?;
         let obj = self.load(num, 0)?;
         let obj = Arc::new(obj);
+        // The editing cache is bounded like the scan reader's: re-parsing a file-backed view
+        // is cheap, and returned objects outlive eviction.
         self.cache.lock().map_err(|_| CosError::Poisoned)?.insert(num, obj.clone());
+        self.evict_editor_cache_if_over_budget(num, &obj)?;
         Ok(obj)
+    }
+
+    /// Bounds for the editing cache: roomier than the scan reader's (128 objects / 8 MB)
+    /// so interactive editing does not thrash, but still capped so touching a large
+    /// document cannot pin its whole object graph. Only owned (decrypted/copied) bytes
+    /// count; file-backed views re-parse for free.
+    ///
+    /// Worst case per document: input bytes + up to `EDITOR_CACHE_OBJECTS` ×
+    /// `EDITOR_LARGE_OBJECT` (1024 × 256 KB = 256 MB) of small objects between full
+    /// accounting passes + `EDITOR_OBJSTM_BYTES` (32 MB) + unsaved `overlay` edits.
+    /// The count cap always holds; byte accounting between passes is approximate.
+    /// Clones share these caches, so one clone's eviction drops another's hot set;
+    /// that only costs re-parsing, never correctness. Eviction keeps just the newcomer:
+    /// file-backed views re-parse cheaply and editor working sets stay far below 1024.
+    const EDITOR_CACHE_OBJECTS: usize = 1024;
+    const EDITOR_CACHE_BYTES: usize = 32 * 1024 * 1024;
+    /// Object streams decode to megabytes each, so fewer are kept than plain objects.
+    const EDITOR_OBJSTM_OBJECTS: usize = 256;
+    const EDITOR_OBJSTM_BYTES: usize = 32 * 1024 * 1024;
+    /// Newcomers above this force a full accounting pass even below the count cap:
+    /// `EDITOR_CACHE_BYTES / 128`, so 128 large newcomers always trigger a pass before the
+    /// byte budget can double.
+    const EDITOR_LARGE_OBJECT: usize = 256 * 1024;
+
+    fn evict_editor_cache_if_over_budget(&self, fresh_num: u32, fresh: &Object) -> Result<(), CosError> {
+        // Fast path: the full fold is O(cache) per insert, so skip it for a small newcomer
+        // below the count cap. `len` is copied out first; nothing here holds the lock.
+        let len = self.cache.lock().map_err(|_| CosError::Poisoned)?.len();
+        if len <= Self::EDITOR_CACHE_OBJECTS && owned_bytes(fresh, &self.data, 0) <= Self::EDITOR_LARGE_OBJECT {
+            return Ok(());
+        }
+        // Walk a snapshot off-lock; re-lock only to evict.
+        let live: Vec<(u32, Arc<Object>)> = self.cache.lock().map_err(|_| CosError::Poisoned)?.iter().map(|(n, o)| (*n, o.clone())).collect();
+        let data = &self.data;
+        let owned: usize = live.iter().fold(0usize, |n, (_, o)| n.saturating_add(owned_bytes(o, data, 0)));
+        if live.len() <= Self::EDITOR_CACHE_OBJECTS && owned <= Self::EDITOR_CACHE_BYTES {
+            return Ok(());
+        }
+        // Re-check under the final lock: another thread may have inserted or evicted since
+        // the snapshot. Keep its newcomers, and skip the eviction if back within budget.
+        let snapshot: std::collections::HashSet<u32> = live.into_iter().map(|(n, _)| n).collect();
+        let mut cache = self.cache.lock().map_err(|_| CosError::Poisoned)?;
+        if cache.len() <= Self::EDITOR_CACHE_OBJECTS {
+            let data = &self.data;
+            let owned: usize = cache.values().fold(0usize, |n, o| n.saturating_add(owned_bytes(o, data, 0)));
+            if owned <= Self::EDITOR_CACHE_BYTES {
+                return Ok(());
+            }
+        }
+        cache.retain(|n, _| *n == fresh_num || !snapshot.contains(n));
+        Ok(())
+    }
+
+    fn evict_editor_streams_if_over_budget(&self, current: u32) -> Result<(), CosError> {
+        // The caller inserts `current` first, so retaining it keeps a live entry.
+        let over = {
+            let streams = self.objstms.lock().map_err(|_| CosError::Poisoned)?;
+            let bytes = streams.values().fold(0usize, |bytes, stream| {
+                bytes
+                    .saturating_add(stream.data.capacity())
+                    .saturating_add(stream.index.capacity().saturating_mul(std::mem::size_of::<(u32, usize)>()))
+            });
+            bytes > Self::EDITOR_OBJSTM_BYTES || streams.len() > Self::EDITOR_OBJSTM_OBJECTS
+        };
+        if over {
+            self.objstms.lock().map_err(|_| CosError::Poisoned)?.retain(|n, _| *n == current);
+        }
+        Ok(())
     }
 
     /// Visit every current object without filling this document's editing cache.
@@ -720,7 +815,10 @@ impl Document {
             index.push((onum.max(0) as u32, first + off.max(0) as usize));
         }
         let stm = Arc::new(ObjStm { index, data: Arc::new(data) });
+        // Same bound as the object cache: decoded object streams can be megabytes each.
+        // Insert first so the retained `num` is actually in the map.
         self.objstms.lock().map_err(|_| CosError::Poisoned)?.insert(num, stm.clone());
+        self.evict_editor_streams_if_over_budget(num)?;
         Ok(stm)
     }
 
@@ -1359,6 +1457,74 @@ mod tests {
             assert_eq!(doc.objstms.lock().unwrap().len(), streams);
             assert!(Arc::ptr_eq(&doc.cache, &snapshot.cache), "do not detach or clear caller snapshots");
         }
+    }
+
+    #[test]
+    fn editor_cache_stays_bounded() {
+        let mut source = Document::new_empty();
+        let objects: Vec<_> = (0..(Document::EDITOR_CACHE_OBJECTS + 64))
+            .map(|i| {
+                let mut value = vec![b'x'; 1024];
+                value[..4].copy_from_slice(&(i as u32).to_le_bytes());
+                Object::Ref(source.add(Object::String(crate::PdfString::literal(value))))
+            })
+            .collect();
+        source.update_dict(source.root().unwrap(), |d| d.set(b"Extension".to_vec(), Object::Array(objects))).unwrap();
+        let bytes = Arc::new(crate::write_full(&source, &crate::SaveOptions::default()).unwrap());
+        let doc = Document::open(bytes).unwrap();
+        let root = doc.get(doc.root().unwrap());
+        let references = root.as_dict().unwrap().get(b"Extension").unwrap().as_array().unwrap().clone();
+        let mut held = None;
+        for (i, reference) in references.iter().enumerate() {
+            let Object::Ref(reference) = reference else { panic!("indirect object") };
+            let object = doc.get(*reference);
+            assert_eq!(&object.as_string().unwrap().bytes[..4], &(i as u32).to_le_bytes());
+            if i == 0 {
+                held = Some(object);
+            }
+            assert!(doc.cache.lock().unwrap().len() <= Document::EDITOR_CACHE_OBJECTS, "editing must not pin the whole object graph");
+            // Eviction keeps the newcomer.
+            assert!(doc.cache.lock().unwrap().contains_key(&reference.num), "eviction must keep the newcomer");
+        }
+        // Returned objects survive eviction, through both handles of the shared cache.
+        assert_eq!(&held.unwrap().as_string().unwrap().bytes[..4], &0u32.to_le_bytes());
+        let snapshot = doc.clone();
+        let first = references[0].as_ref().unwrap();
+        assert_eq!(&snapshot.get(first).as_string().unwrap().bytes[..4], &0u32.to_le_bytes());
+    }
+
+    #[test]
+    fn editor_cache_byte_bound_fires() {
+        // 40 × 1 MB strings: far below the count cap, above the 32 MB byte budget. Each
+        // newcomer exceeds EDITOR_LARGE_OBJECT, so every insert takes a full accounting pass.
+        let mut source = Document::new_empty();
+        let objects: Vec<_> = (0..40)
+            .map(|i| {
+                let mut value = vec![b'y'; 1024 * 1024];
+                value[..4].copy_from_slice(&(i as u32).to_le_bytes());
+                Object::Ref(source.add(Object::String(crate::PdfString::literal(value))))
+            })
+            .collect();
+        source.update_dict(source.root().unwrap(), |d| d.set(b"Extension".to_vec(), Object::Array(objects))).unwrap();
+        let bytes = Arc::new(crate::write_full(&source, &crate::SaveOptions::default()).unwrap());
+        let doc = Document::open(bytes).unwrap();
+        let root = doc.get(doc.root().unwrap());
+        let references = root.as_dict().unwrap().get(b"Extension").unwrap().as_array().unwrap().clone();
+        let mut held = None;
+        for (i, reference) in references.iter().enumerate() {
+            let Object::Ref(reference) = reference else { panic!("indirect object") };
+            let object = doc.get(*reference);
+            assert_eq!(&object.as_string().unwrap().bytes[..4], &(i as u32).to_le_bytes());
+            if i == 0 {
+                held = Some(object);
+            }
+            // Eviction keeps the newcomer.
+            assert!(doc.cache.lock().unwrap().contains_key(&reference.num), "eviction must keep the newcomer");
+        }
+        assert!(doc.cache.lock().unwrap().len() < references.len(), "the byte budget must evict even below the count cap");
+        let last = references[references.len() - 1].as_ref().unwrap();
+        assert!(doc.cache.lock().unwrap().contains_key(&last.num), "eviction must keep the newcomer");
+        assert_eq!(&held.unwrap().as_string().unwrap().bytes[..4], &0u32.to_le_bytes());
     }
 
     #[test]

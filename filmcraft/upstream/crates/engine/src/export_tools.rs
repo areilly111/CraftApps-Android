@@ -159,6 +159,26 @@ fn merge(base: &mut Value, patch: &Value) {
     }
 }
 
+/// The first key of `patch` (as a dotted path) that the resolved settings `known` don't have,
+/// matched as [`merge`] matches them (the camelCase spelling of a snake_case field counts).
+/// A null value is accepted anywhere: it sets nothing.
+fn unknown_key(known: &Value, patch: &Value, prefix: &str) -> Option<String> {
+    let (Value::Object(k), Value::Object(p)) = (known, patch) else { return None };
+    for (key, v) in p {
+        let path = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
+        match k.get(key).or_else(|| k.get(&camel_to_snake(key))) {
+            None if !v.is_null() => return Some(path),
+            Some(kv) => {
+                if let Some(found) = unknown_key(kv, v, &path) {
+                    return Some(found);
+                }
+            }
+            None => {}
+        }
+    }
+    None
+}
+
 /// A frame rate from a number of frames per second (29.97 → 30000/1001) or "num/den".
 pub fn parse_rate(v: &Value) -> Option<FrameRate> {
     if let Some(s) = v.as_str() {
@@ -191,6 +211,12 @@ pub fn settings_from_params(s: &Session, p: &Value, cmd: &str) -> Result<(Option
         let mut v = serde_json::to_value(&settings).map_err(|e| EngineError::Other(e.to_string()))?;
         merge(&mut v, patch);
         settings = serde_json::from_value(v).map_err(|e| bad(cmd, format!("settings: {e}")))?;
+        // serde ignores keys it doesn't know, so a misspelt or misplaced key (a flat parameter
+        // such as `loudnessLufs` put inside `settings`) would silently do nothing.
+        let known = serde_json::to_value(&settings).map_err(|e| EngineError::Other(e.to_string()))?;
+        if let Some(path) = unknown_key(&known, patch, "") {
+            return Err(bad(cmd, format!("settings: unknown key `{path}` (see export.presets.get for the settings' keys)")));
+        }
     }
     // flat overrides (the original file.exportMedia parameters and a few common ones)
     if let Some(f) = str_p(p, "format") {
@@ -260,6 +286,12 @@ pub fn settings_from_params(s: &Session, p: &Value, cmd: &str) -> Result<(Option
     if let Some(v) = str_p(p, "apvProfile") {
         settings.apv_profile = v.to_string();
     }
+    if let Some(v) = str_p(p, "audioCodec") {
+        settings.audio.codec = serde_json::from_value(json!(v)).map_err(|_| bad(cmd, "audioCodec: auto | aac | pcm | flac"))?;
+    }
+    if let Some(v) = u64_p(p, "flacLevel") {
+        settings.audio.flac_level = v.min(8) as u8;
+    }
     if let Some(v) = str_p(p, "mxfVideoCodec") {
         settings.mxf_video_codec = serde_json::from_value(json!(v)).map_err(|_| bad(cmd, "mxfVideoCodec: dnxhr | proRes | h264"))?;
     }
@@ -268,6 +300,9 @@ pub fn settings_from_params(s: &Session, p: &Value, cmd: &str) -> Result<(Option
     }
     if let Some(v) = bool_p(p, "alpha") {
         settings.alpha = v;
+    }
+    if let Some(v) = str_p(p, "exrCompression") {
+        settings.exr_compression = serde_json::from_value(json!(v)).map_err(|_| bad(cmd, "exrCompression: none | rle | zips | zip"))?;
     }
     match (crate::commands::checked_u32_p(p, "width", cmd)?, crate::commands::checked_u32_p(p, "height", cmd)?) {
         (Some(w), Some(h)) => settings.frame_size = Some((w, h)),
@@ -363,7 +398,8 @@ fn with_extension(path: &str, settings: &ExportSettings) -> String {
         Some(e)
             if e.eq_ignore_ascii_case(ext)
                 || (settings.format == Format::TiffSequence && e.eq_ignore_ascii_case("tiff"))
-                || (settings.format == Format::JpegSequence && e.eq_ignore_ascii_case("jpeg")) =>
+                || (settings.format == Format::JpegSequence && e.eq_ignore_ascii_case("jpeg"))
+                || (settings.format == Format::Aac && e.eq_ignore_ascii_case("aac")) =>
         {
             path.to_string()
         }
@@ -439,8 +475,9 @@ pub fn spawn_export(s: &mut Session, project: Arc<Project>, seq: ItemId, mut set
     let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0) + 1;
     let job = crate::Job { id, label, progress: Default::default(), result: Default::default() };
     // Export always renders full-resolution media, whatever the proxy toggle says.
-    let provider = s.media.full_res_provider(project.clone(), s.services.clone());
+    let provider = s.media.full_res_provider(project.clone(), s.services.clone()).recording();
     let (prog, res) = (job.progress.clone(), job.result.clone());
+    let offline = s.export_offline.entry(id).or_default().clone();
     if cfg!(target_arch = "wasm32") && !wait && filmcraft_export::stepped(format) {
         // No threads: the host advances the export between UI frames (`Session::pump_jobs`).
         let mut exporter = filmcraft_export::Exporter::new(project, seq, &settings, &prog).map_err(|e| EngineError::Other(e.to_string()))?;
@@ -451,6 +488,7 @@ pub fn spawn_export(s: &mut Session, project: Arc<Project>, seq: ItemId, mut set
     }
     let run = move || {
         let r = filmcraft_export::export(&project, seq, &settings, &provider, &prog).map_err(|e| e.to_string());
+        *offline.lock().unwrap_or_else(|x| x.into_inner()) = provider.offline_used();
         if let Err(e) = &r {
             *prog.error.lock().unwrap_or_else(|x| x.into_inner()) = Some(e.clone());
             prog.finished.store(true, Ordering::Relaxed);
@@ -513,6 +551,7 @@ pub fn export_media(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(EngineError::Other(format!("export failed: {e}")));
         }
         out["result"] = v["result"].clone();
+        out["offlineMedia"] = offline_media_json(s, id);
     }
     Ok(out)
 }
@@ -567,6 +606,22 @@ impl ExportQueue {
     }
 }
 
+/// A `jobs.list` entry: [`crate::Job::to_json`], plus `offlineMedia` for an export job, so callers
+/// that poll an export (the bridge, MCP long exports) can report it like `file.exportMedia` does.
+pub(crate) fn job_json(s: &Session, j: &crate::Job) -> Value {
+    let mut v = j.to_json();
+    if s.export_offline.contains_key(&j.id) {
+        v["offlineMedia"] = offline_media_json(s, j.id);
+    }
+    v
+}
+
+/// The offline items export job `job` drew the slate for, as JSON (`[]` while it runs or when none).
+fn offline_media_json(s: &Session, job: u64) -> Value {
+    let list = s.export_offline.get(&job).map(|o| o.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap_or_default();
+    serde_json::to_value(list).unwrap_or_else(|_| json!([]))
+}
+
 fn item_json(s: &Session, it: &QueueItem) -> Value {
     let job = it.job.and_then(|id| s.jobs.iter().find(|j| j.id == id));
     let (progress, status_text) = match job {
@@ -587,6 +642,7 @@ fn item_json(s: &Session, it: &QueueItem) -> Value {
         "statusText": status_text,
         "job": it.job,
         "error": it.error,
+        "offlineMedia": it.job.map_or_else(|| json!([]), |j| offline_media_json(s, j)),
     })
 }
 

@@ -1,8 +1,8 @@
 //! Fonts from the optional craft-fonts build input (<https://github.com/storytold/craft-fonts>).
 //!
 //! Built with `CRAFT_FONTS_DIR=<craft-fonts checkout>`, [`CRAFT_FONTS`] holds every font in its
-//! manifest (Japanese UI and document fonts, and Arabic fonts); built without it, it is empty and Japanese
-//! text falls back to the installed system fonts. Release builds always set it. See `build.rs`
+//! manifest (Japanese UI and document fonts, Arabic fonts and Noto Sans Thai); built without it,
+//! it is empty and that text falls back to the installed system fonts. Release builds always set it. See `build.rs`
 //! and craftrules `standards/fonts.md`.
 
 /// A font from the optional craft-fonts build input (empty unless built with `CRAFT_FONTS_DIR`).
@@ -39,6 +39,10 @@ impl CraftFont {
     pub fn is_arabic(&self) -> bool {
         self.scripts.contains(&"Arab")
     }
+    /// Is the font for Thai text?
+    pub fn is_thai(&self) -> bool {
+        self.scripts.contains(&"Thai")
+    }
     /// A serif (Mincho) family, for document text.
     pub fn is_mincho(&self) -> bool {
         self.family.contains("Mincho")
@@ -63,11 +67,13 @@ pub fn japanese_document_fonts() -> Vec<&'static CraftFont> {
 
 /// The craft-fonts faces the document font database loads: the Japanese ones in
 /// [`japanese_document_fonts`] order, then the Arabic ones in manifest order (Noto Sans Arabic
-/// first: the fallback for Arabic text; the other families are picked by name). Empty when built
-/// without craft-fonts.
+/// first: the fallback for Arabic text; the other families are picked by name), then the Thai ones
+/// (Noto Sans Thai: the fallback for Thai text where no Thai font is installed, and on the web).
+/// Empty when built without craft-fonts.
 pub fn document_fonts() -> Vec<&'static CraftFont> {
     let mut v = japanese_document_fonts();
     v.extend(CRAFT_FONTS.iter().filter(|f| f.is_arabic() && !f.is_japanese()));
+    v.extend(CRAFT_FONTS.iter().filter(|f| f.is_thai() && !f.is_japanese() && !f.is_arabic()));
     v
 }
 
@@ -104,8 +110,10 @@ mod tests {
             assert!(name.ends_with(".ttf") || name.ends_with(".otf"), "{}", w.url);
             assert!(w.integrity.starts_with("sha256-") && w.integrity.len() == "sha256-".len() + 44, "{}", w.integrity);
         }
+        // The fallbacks the first frame may need: Noto Sans Arabic and Noto Sans Thai, where the
+        // checkout has them.
         let startup: Vec<_> = WEB_FONTS.iter().filter(|w| w.startup).map(|w| w.family).collect();
-        let noto = CRAFT_FONTS.iter().any(|f| f.family == "Noto Sans Arabic");
-        assert_eq!(startup, if noto { vec!["Noto Sans Arabic"] } else { vec![] });
+        let expected: Vec<_> = ["Noto Sans Arabic", "Noto Sans Thai"].into_iter().filter(|n| CRAFT_FONTS.iter().any(|f| f.family == *n)).collect();
+        assert_eq!(startup, expected);
     }
 }

@@ -91,6 +91,8 @@ pub struct ProjectPanelUi {
     pub active_tab: Option<usize>,
     /// The bin selected in the panel (rename, open).
     pub selected_bin: Option<u64>,
+    /// The item a Shift-click selects a range from: the last one clicked without Shift.
+    pub anchor: Option<u64>,
     pub rename: Option<Rename>,
     pub dialog: Option<ProjectDialog>,
     pub hover: Option<Hover>,
@@ -579,13 +581,25 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
     let mut sz = v.icon_size;
     let resp = ui.put(sr, egui::Slider::new(&mut sz, 48.0..=400.0).show_value(false));
     app.auto.add(&format!("{pre}.iconSize"), sr, "Zoom");
+    // a drag ended by Escape goes back to the size it started from (#580)
+    let orig_id = egui::Id::new((pre, "icon-size-before-drag"));
+    if resp.drag_started() {
+        ui.data_mut(|d| d.insert_temp(orig_id, v.icon_size));
+    }
+    let escaped = resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if resp.drag_stopped()
+        && let Some(before) = ui.data_mut(|d| d.remove_temp(orig_id))
+        && escaped
+    {
+        sz = before;
+    }
     if sz != v.icon_size {
         match v.inst {
             Inst::Main => app.session.prefs.project_panel.view.icon_size = sz,
             Inst::Tab(k) => app.ui.project_panel.tabs[k].icon_size = sz,
         }
     }
-    if v.inst == Inst::Main && (resp.drag_stopped() || (resp.changed() && !resp.dragged())) {
+    if v.inst == Inst::Main && !escaped && (resp.drag_stopped() || (resp.changed() && !resp.dragged())) {
         actions.push(("project.view.set".into(), json!({"iconSize": sz})));
     }
     x = sr.max.x + 6.0;
@@ -625,7 +639,10 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
                     actions.push(("file.newBin".into(), json!({"parent": parent, "panel": pre})));
                 }
                 "project.delete" => match crate::panels::project_views::clear_params(&app.session.state.project_selection, app.ui.project_panel.selected_bin) {
-                    Some(p) => actions.push((id.into(), p)),
+                    Some(p) => {
+                        app.ui.project_panel.rename = None;
+                        actions.push((id.into(), p));
+                    }
                     None => app.ui.status = tl!("Select items to clear").into(),
                 },
                 _ => actions.push((id.into(), json!({}))),
@@ -732,6 +749,7 @@ pub fn panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
             actions.push(("projectPanel.rename".into(), json!({})));
         }
         if item(ui, "delete", tl!("Delete"), clear.is_some(), Some("Backspace")) {
+            app.ui.project_panel.rename = None;
             actions.push(("project.delete".into(), clear.unwrap_or_default()));
         }
         ui.separator();
@@ -979,6 +997,9 @@ pub fn new_bin(app: &mut FilmcraftApp, params: &Value) -> Result<Value, String> 
         app.ui.expanded_bins.push(p);
     }
     let panel = params.get("panel").and_then(Value::as_str).map_or(shown.prefix, str::to_string);
+    // Clicking a bin already clears the item selection so Clear targets the bin (#587). New Bin
+    // must do the same: leftover clips would otherwise steal the trash button and Delete.
+    let _ = app.session.execute("project.select", json!({"items": []}));
     app.ui.project_panel.selected_bin = Some(bin);
     app.ui.project_panel.rename = Some(Rename { item: None, bin: Some(bin), text, panel });
     Ok(r)

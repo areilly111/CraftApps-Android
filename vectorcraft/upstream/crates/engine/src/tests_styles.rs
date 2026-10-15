@@ -68,7 +68,7 @@ fn styles_carry_opacity_and_blend_through_a_save() {
     let doc = s.doc().unwrap().doc.clone();
     let back = vectorcraft_format::load(&vectorcraft_format::save(&doc, false)).unwrap();
     assert_eq!(back.graphic_styles, doc.graphic_styles);
-    assert_eq!(back.node(b).unwrap().graphic_style, Some(g.id));
+    assert_eq!(back.node(b).unwrap().extras().graphic_style, Some(g.id));
     // Styles and objects from files without links still load (and get an id when first linked).
     let old: GraphicStyle = serde_json::from_value(json!({"name": "Old", "appearance": {"items": []}})).unwrap();
     assert_eq!((old.id, old.opacity, old.blend, old.isolate), (0, 1.0, BlendMode::Normal, false));
@@ -106,7 +106,7 @@ fn a_style_from_a_group_or_type_is_not_empty() {
     run(&mut s, "graphicStyle.apply", json!({"name": "Black Outline", "ids": [g.0]}));
     assert_eq!(node(&s, g).appearance, style(&s, "Black Outline").appearance);
     assert_eq!(node(&s, a).appearance, before);
-    assert_eq!(node(&s, g).graphic_style, Some(style(&s, "Black Outline").id));
+    assert_eq!(node(&s, g).extras().graphic_style, Some(style(&s, "Black Outline").id));
     assert_eq!(linked(&mut s, "Black Outline"), vec![g.0]);
     assert_ne!(node(&s, c).appearance, style(&s, "Black Outline").appearance);
     run(&mut s, "graphicStyle.apply", json!({"name": "Black Outline", "ids": [g.0], "target": "contents"}));
@@ -130,7 +130,7 @@ fn alt_apply_adds_the_style_on_top() {
     assert_eq!(after.items[..before.items.len()], before.items[..]);
     assert_eq!(after.items.last(), rough.appearance.items.last());
     assert_eq!(after.effects.len(), before.effects.len() + 1);
-    assert_eq!(node(&s, b).graphic_style, None);
+    assert_eq!(node(&s, b).extras().graphic_style, None);
     // One undo step.
     run(&mut s, "edit.undo", json!({}));
     assert_eq!(node(&s, b).appearance, before);
@@ -184,7 +184,7 @@ fn redefine_leaves_unlinked_and_edited_objects_alone() {
     let mut s = session();
     let (a, b, c) = linked_three(&mut s);
     run(&mut s, "graphicStyle.breakLink", json!({"ids": [c.0]}));
-    assert_eq!(node(&s, c).graphic_style, None);
+    assert_eq!(node(&s, c).extras().graphic_style, None);
     let d = rect(&mut s, 300.0);
     run(&mut s, "graphicStyle.apply", json!({"name": "S"}));
     set_fill(&mut s, d, "#00ff00");
@@ -194,7 +194,7 @@ fn redefine_leaves_unlinked_and_edited_objects_alone() {
     assert_eq!(fill(&s, c), Paint::solid(Color::WHITE));
     // The edited object keeps its look and is unlinked.
     assert_eq!(fill(&s, d), Paint::solid(Color::from_hex("#00ff00").unwrap()));
-    assert_eq!(node(&s, d).graphic_style, None);
+    assert_eq!(node(&s, d).extras().graphic_style, None);
     assert!(s.execute("graphicStyle.redefine", &json!({"id": c.0})).is_err());
 }
 
@@ -208,7 +208,7 @@ fn deleting_a_style_unlinks_and_renaming_keeps_links() {
     assert_eq!(run(&mut s, "select.same.graphicStyle", json!({}))["count"], 3);
     let look = node(&s, c).appearance;
     run(&mut s, "graphicStyle.delete", json!({"name": "T"}));
-    assert_eq!((node(&s, b).graphic_style, node(&s, c).graphic_style), (None, None));
+    assert_eq!((node(&s, b).extras().graphic_style, node(&s, c).extras().graphic_style), (None, None));
     assert_eq!(node(&s, c).appearance, look);
     run(&mut s, "select.set", json!({"ids": [b.0]}));
     assert!(s.execute("select.same.graphicStyle", &json!({})).is_err());

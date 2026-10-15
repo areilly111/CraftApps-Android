@@ -7,7 +7,7 @@ static site in `photocraft-web-<version>/`:
 |---|---|
 | `index.html` | The page. It loads everything through relative URLs. |
 | `photocraft-web-<hash>.js` | wasm-bindgen glue (generated, ES module) |
-| `photocraft-web-<hash>_bg.wasm` | The app: about 19 MiB raw, 8 MiB with gzip, 5.6 MiB with Brotli (see [Sizes](#sizes)) |
+| `photocraft-web-<hash>_bg.wasm` | The app: about 23 MiB raw, 10.5 MiB with gzip (see [Sizes](#sizes)) |
 | `_headers`, `.htaccess` | Sample header rules for Netlify/Cloudflare Pages and Apache |
 | `fonts/` (optional) | Fonts loaded on demand, listed in `fonts/manifest.txt` (see [Fonts](#fonts)) |
 
@@ -74,19 +74,20 @@ To verify the browser deployment, open the page, open an image and save/export i
 
 ## Sizes
 
-Measured on the 0.2.x build (`packaging/web/package.sh`; gzip `-9`, Brotli quality 11):
+Measured on 2026-10-12 (0.8.0, `packaging/web/package.sh`; gzip `-9`):
 
-| File | Raw | gzip | Brotli |
-|---|---|---|---|
-| `photocraft-web-<hash>_bg.wasm` | 19,680,726 bytes (18.8 MiB) | 8,177,260 (7.8 MiB) | 5,868,731 (5.6 MiB) |
-| `photocraft-web-<hash>.js` | about 160 KB | about 23 KB | about 20 KB |
+| File | Raw | gzip |
+|---|---|---|
+| `photocraft-web-<hash>_bg.wasm` | 24,167,186 bytes (23.0 MiB) | 10,998,053 (10.5 MiB) |
+| `photocraft-web-<hash>.js` | about 170 KB | about 26 KB |
 
 Per-file upload limits: Cloudflare Pages and Workers static assets reject any file over
 **25 MiB** (26,214,400 bytes). The wasm fits, and `packaging/web/package.sh` fails the build if
 it ever grows past 24 MiB, so a release can't ship a file a common host refuses. (Releases up to
 0.2.0 shipped a 25.8 MiB wasm, which Cloudflare rejected; issue #198.) The size comes from the
-`wasm-release` Cargo profile (fat LTO, size-optimized code with the pixel crates kept at full
-speed) plus `wasm-opt -Oz`.
+`wasm-release` Cargo profile (fat LTO, size-optimized code with the pixel and file-decoding
+crates kept at speed) plus `wasm-opt -Oz`, and from storing the bundled fonts (PhotoCraft's and
+egui's) and the translation catalogs compressed, unpacked on first use.
 
 ## Any path works
 

@@ -132,6 +132,92 @@ fn paths_colours_and_strokes() {
     assert!(a[4].appearance.fill().is_none() && a[4].appearance.stroke().is_some());
 }
 
+/// `Xk` and `XK` are global process colours: a name, a tint and whether the colour is RGB, as
+/// `Xx` has them (#1025). They come in as global swatches that aren't inks, linked at their tint.
+#[test]
+fn global_process_colours_are_global_swatches_at_their_tint() {
+    let art_ = format!("0 0 0 1 (Black global) 0.4 0 Xk\n0 0 0 0 1 0.5 0 (Brand orange) 0 1 XK\n{}b\n", rect_path(0.0, 0.0, 10.0, 10.0));
+    let doc = read_ok(&layer(&art_)).doc;
+    let a = art(&doc);
+    let Paint::Solid { swatch, tint, color } = fill(&a[0]) else { panic!("{:?}", fill(&a[0])) };
+    assert_eq!(swatch.as_deref(), Some("Black global"));
+    assert!((tint - 0.6).abs() < 1e-6 && matches!(color, Color::Cmyk { k, .. } if (k - 0.6).abs() < 1e-6), "{tint} {color:?}");
+    let stroke = a[0].appearance.stroke().unwrap().paint.clone();
+    assert!(
+        matches!(&stroke, Paint::Solid { swatch: Some(s), tint, color } if s == "Brand orange" && *tint == 1.0 && *color == Color::rgb(1.0, 0.5, 0.0)),
+        "{stroke:?}"
+    );
+    for name in ["Black global", "Brand orange"] {
+        let sw = doc.swatch(name).unwrap();
+        assert!(sw.global && !sw.spot, "{sw:?}");
+    }
+    assert_eq!(doc.swatch("Black global").unwrap().paint.color(), Some(Color::cmyk(0.0, 0.0, 0.0, 1.0)), "the swatch is the full colour");
+}
+
+/// A pattern's definition (`%AI3_BeginPattern`): its name and tile (8 points square here, y up),
+/// then its art on `%_` lines (a group of the tile's unpainted box and a dot, a round-capped
+/// stroke of no length), `E`.
+const DOTS: &str = "%AI3_BeginPattern: (Dots)\n(Dots) 0 0 8 8\n%_0 A\n%_0 Xw\n%_0 Ae\n%_u\n%_0 O\n%_0 8 m\n%_8 8 L\n%_8 0 L\n%_0 0 L\n%_0 8 L\n%_n\n\
+                    %_0 R\n%_0 0 0 1 K\n%_1 J 0 j 2 w 4 M []0 d\n%_4 4 m\n%_4 4 L\n%_S\n%_U\n%_/ArtDictionary :\n%_;\n%_\n%_9 () XW\nE\n%AI3_EndPattern\n";
+
+/// Patterns are read into pattern swatches, and `p` fills with one (#1025): the art keeps its
+/// layers, the fill places the tiles by its matrix.
+#[test]
+fn patterns_are_pattern_swatches_and_fill_with_them() {
+    let sub = |name: &str, art: &str| format!("%AI5_BeginLayer\n1 1 1 1 0 0 1 0 79 128 255 0 50 0 Lb\n({name}) Ln\n{art}LB\n%AI5_EndLayer--\n");
+    let body = format!(
+        "{DOTS}%AI5_BeginLayer\n1 1 1 1 0 0 1 0 79 128 255 0 50 0 Lb\n(Ground) Ln\n{}{}LB\n%AI5_EndLayer--\n",
+        sub("Lawn", &format!("(Dots) 0 0 1 1 0 0 0 0 0 [1 0 0 1 0 0] p\n{}f\n", rect_path(10.0, 20.0, 70.0, 80.0))),
+        sub("Paving", &format!("(Dots) 10 20 2 2 0 0 0 0 0 [2 0 0 2 10 20] P\n{}S\n", rect_path(90.0, 20.0, 150.0, 80.0))),
+    );
+    let s = read_ok(&body);
+    let doc = &s.doc;
+    let ground = &doc.layers[0];
+    let subs: Vec<_> = ground.children().unwrap().iter().map(|l| l.name.clone().unwrap_or_default()).collect();
+    assert_eq!(subs, ["Lawn", "Paving"]);
+    let def = doc.pattern("Dots").unwrap();
+    assert_eq!(def.tile, Rect::new(0.0, -8.0, 8.0, 0.0), "the tile, y down");
+    assert_eq!(def.art.len(), 1, "the tile's group");
+    let tile_box = &def.art[0].children().unwrap()[0];
+    assert_eq!(tile_box.geometric_bounds(), Some(def.tile), "the tile's box is where the tile is");
+    assert_eq!(def.art[0].children().unwrap().len(), 2);
+    assert!(matches!(&doc.swatch("Dots").unwrap().paint, Paint::Pattern { pattern, .. } if pattern == "Dots"));
+    let lawn = &ground.children().unwrap()[0].children().unwrap()[0];
+    let Paint::Pattern { pattern, xf } = fill(lawn) else { panic!("{:?}", fill(lawn)) };
+    assert_eq!(pattern, "Dots");
+    // The tile's top left (0, 8) in art space is (0, 92) on the page (crop marks 100 high); a dot
+    // centre (4, 4) is at (4, 96).
+    assert_eq!(xf * Point::ZERO, Point::new(0.0, 92.0));
+    assert_eq!(xf * Point::new(4.0, 4.0), Point::new(4.0, 96.0));
+    // A stroke with it, scaled twice and moved by (10, 20): the tile's top left is at (10, 36) in
+    // art space.
+    let paving = &ground.children().unwrap()[1].children().unwrap()[0];
+    let Some(Paint::Pattern { xf, .. }) = paving.appearance.stroke().map(|st| st.paint.clone()) else { panic!() };
+    assert_eq!(xf * Point::ZERO, Point::new(10.0, 64.0));
+    assert!(s.warnings.is_empty(), "{:?}", s.warnings);
+}
+
+/// A pattern whose definition it can't read whole isn't kept: a fill with it is something the file
+/// has that isn't read, where it shows. Its definition costs nothing else.
+#[test]
+fn a_pattern_it_cant_read_is_an_error_only_where_it_fills() {
+    let unread = "%AI3_BeginPattern: (Old)\n(Old) 0 0 8 8 [\n(0 O 0 R 0 g) @\n(\n0 0 m 8 8 L S\n) &\n] E\n%AI3_EndPattern\n\
+                  %AI3_BeginPattern: (Odd)\n(Odd) 0 0 8 8\n%_U\nE\n%AI3_EndPattern\n%AI3_BeginPattern: (Flat)\n(Flat) 0 0 8 0\n%_0 0 m\n%_8 0 L\n%_S\nE\n%AI3_EndPattern\n";
+    let s = read_ok(&format!("{unread}{}", layer(&(rect_path(0.0, 0.0, 1.0, 1.0) + "f\n"))));
+    assert!(s.doc.patterns.is_empty() && s.doc.swatches.iter().all(|w| !matches!(w.paint, Paint::Pattern { .. })));
+    for name in ["Old", "Odd", "Flat"] {
+        let e = read(
+            stream(&format!("{unread}{}", layer(&format!("({name}) 0 0 1 1 0 0 0 0 0 [1 0 0 1 0 0] p\n{}f\n", rect_path(0.0, 0.0, 1.0, 1.0)))))
+                .as_bytes(),
+        )
+        .unwrap_err();
+        assert!(e.contains("pattern fills"), "{name}: {e}");
+    }
+    // Type in a pattern isn't read either.
+    let typed = "%AI3_BeginPattern: (Words)\n(Words) 0 0 8 8\n%_/AI11Text :\n%_0 /StoryIndex ,\n%_;\nE\n%AI3_EndPattern\n";
+    assert!(read_ok(&format!("{typed}{}", layer(""))).doc.patterns.is_empty());
+}
+
 #[test]
 fn compound_paths_and_clipping() {
     let art_ = format!(

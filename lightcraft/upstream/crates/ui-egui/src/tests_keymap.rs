@@ -176,3 +176,64 @@ fn shift_insert_pastes_plainly() {
     assert_eq!(h.app.ui.dialog, None, "no Paste Selected Settings");
     assert_eq!(h.app.session.undo.len(), undo + 1, "the settings were pasted");
 }
+/// The opening release can carry both physical shortcut keys and the replacement text.
+#[test]
+fn opening_numeric_release_keeps_keys_in_the_editor() {
+    use egui::{Event, Key, Modifiers, PointerButton};
+
+    for terminal in [Key::Enter, Key::Escape] {
+        let mut h = demo();
+        h.app.run("photo.rate", json!({"rating": 0})).unwrap();
+        h.app.run("develop.set", json!({"values": {"light.exposure": 0.7}})).unwrap();
+        h.app.run("app.setShortcut", json!({"id": "photo.increaseRating", "shortcut": "Enter"})).unwrap();
+        let r = h.request("ui.set", json!({"view": "detail", "right": "edit", "openSections": ["light"], "histogram": false}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(h.settle(SETTLE));
+        assert!(h.app.fonts_ready);
+        assert!(h.app.recording_shortcut.is_none() && h.app.ui.name_edit.is_none());
+        assert!(h.app.native_shortcuts.is_empty() && h.app.synthetic.is_empty() && h.events.is_empty());
+        assert!(!h.view.ctx.egui_wants_keyboard_input());
+        assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "photo.increaseRating"), Some("Enter"));
+        let active = h.app.session.active().unwrap();
+        let selection = h.app.session.selection.ids.clone();
+        let (view, right, tool) = (h.app.ui.view, h.app.ui.right, h.app.ui.tool.clone());
+        assert!(h.app.ui.dialog.is_none());
+        assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, 0);
+        assert!((h.app.session.develop_of(active).unwrap().light.exposure - 0.7).abs() < 1e-9);
+        let (undo, redo) = (h.app.session.undo.len(), h.app.session.redo.len());
+        let pos = h.app.widgets.iter().rev().find(|(id, _)| id == "sliderValue:light.exposure").unwrap().1.center();
+        h.events.push(Event::PointerMoved(pos));
+        h.step();
+        h.events.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.step();
+        assert!(h.view.ctx.egui_wants_keyboard_input(), "the press focuses the editor before app shortcuts run");
+        h.events.extend([
+            Event::PointerButton { pos, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
+            Event::Key { key: Key::Num2, physical_key: Some(Key::Num2), pressed: true, repeat: false, modifiers: Modifiers::NONE },
+            Event::Text("2".into()),
+            Event::Key { key: terminal, physical_key: Some(terminal), pressed: true, repeat: false, modifiers: Modifiers::NONE },
+        ]);
+        h.step();
+        // Observe the consuming frame directly, then exactly one empty frame: no request drains.
+        for next_frame in [false, true] {
+            if next_frame {
+                assert!(h.events.is_empty() && h.app.synthetic.is_empty());
+                h.step();
+            }
+            let expected = if terminal == Key::Enter { 2.0 } else { 0.7 };
+            assert!((h.app.session.develop_of(active).unwrap().light.exposure - expected).abs() < 1e-9, "{terminal:?}, next={next_frame}");
+            assert_eq!(h.app.session.undo.len(), undo + usize::from(terminal == Key::Enter), "{terminal:?}, next={next_frame}");
+            assert_eq!(h.app.session.redo.len(), redo);
+            assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, 0, "neither Num2 nor the saved Enter shortcut leaked");
+            assert_eq!(h.app.session.active(), Some(active));
+            assert_eq!(h.app.session.selection.ids, selection);
+            assert_eq!((h.app.ui.view, h.app.ui.right, &h.app.ui.tool), (view, right, &tool));
+            assert!(h.app.ui.dialog.is_none());
+            assert!(!h.view.ctx.egui_wants_keyboard_input());
+            if next_frame {
+                assert!(h.app.widgets.iter().all(|(id, _)| id != "sliderField:light.exposure"), "the editor is gone");
+                assert!(h.app.widgets.iter().any(|(id, _)| id == "sliderValue:light.exposure"));
+            }
+        }
+    }
+}

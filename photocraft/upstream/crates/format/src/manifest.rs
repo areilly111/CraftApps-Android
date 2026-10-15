@@ -59,6 +59,9 @@ pub struct DocM {
     /// The temporary Quick Mask channel (saved while Quick Mask mode is on).
     #[serde(default)]
     pub quick_mask: Option<ChannelM>,
+    /// Quick Mask was entered with no selection.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub quick_mask_unselected: bool,
     /// Patterns stored with the document.
     #[serde(default)]
     pub patterns: Vec<PatternM>,
@@ -81,6 +84,9 @@ pub struct DocM {
     /// Window › Timeline.
     #[serde(default)]
     pub timeline: Option<photocraft_doc::Timeline>,
+    /// The JPEG quality / WebP encoding File › Save reuses.
+    #[serde(default, skip_serializing_if = "photocraft_doc::FileEncoding::is_empty")]
+    pub file_encoding: photocraft_doc::FileEncoding,
     /// Image › Analysis: measurement scale, count groups, ruler.
     #[serde(default)]
     pub measurement: photocraft_doc::Measurement,
@@ -164,6 +170,10 @@ pub struct SurfaceM {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VideoDataM {
     pub frames: Vec<SurfaceM>,
+    /// Optional for backward compatibility with native documents created before original
+    /// frame snapshots were stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_frames: Option<Vec<SurfaceM>>,
     pub source: photocraft_doc::VideoSource,
     pub fps: f32,
     #[serde(default)]
@@ -283,6 +293,9 @@ pub enum ContentM {
         live: Option<LiveShape>,
     },
     Smart {
+        /// Shared source identity; older bundles did not record it.
+        #[serde(default)]
+        contents_id: Option<u64>,
         source: SmartSourceM,
         transform: Affine,
         smart_filters: Vec<SmartFilter>,

@@ -9,7 +9,7 @@ use std::sync::mpsc::{Sender, channel};
 
 use egui_kittest::Harness;
 use filmcraft_engine::Session;
-use filmcraft_project::ClipId;
+use filmcraft_project::{ClipId, Interpolation, Param};
 use filmcraft_time::Tick;
 use filmcraft_ui_egui::FilmcraftApp;
 use filmcraft_ui_egui::control::ControlRequest;
@@ -90,6 +90,31 @@ impl Driver {
         self.ok("ui.click", json!({"id": id}));
         self.frames(3);
     }
+    fn gesture(&mut self, from: egui::Pos2, to: egui::Pos2, modifiers: egui::Modifiers, shot: Option<&str>) {
+        self.press_drag(from, to, modifiers);
+        if let Some(name) = shot {
+            self.shot(name);
+        }
+        self.release(to, modifiers);
+    }
+    fn press_drag(&mut self, from: egui::Pos2, to: egui::Pos2, modifiers: egui::Modifiers) {
+        self.harness.input_mut().events.push(egui::Event::ModifiersChanged(modifiers));
+        self.harness.input_mut().events.push(egui::Event::PointerMoved(from));
+        self.frames(1);
+        self.harness.input_mut().events.push(egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers });
+        self.frames(1);
+        for i in 1..=8 {
+            self.harness.input_mut().events.push(egui::Event::ModifiersChanged(modifiers));
+            self.harness.input_mut().events.push(egui::Event::PointerMoved(from.lerp(to, i as f32 / 8.0)));
+            self.frames(1);
+        }
+    }
+    fn release(&mut self, to: egui::Pos2, modifiers: egui::Modifiers) {
+        self.harness.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers });
+        self.frames(2);
+        self.harness.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        self.frames(2);
+    }
     fn playhead(&mut self) -> i64 {
         self.exec("sequence.inspect", json!({}))["playhead"].as_i64().unwrap()
     }
@@ -104,6 +129,17 @@ impl Driver {
         let it = s.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1;
         let p = it.effect("motion").unwrap().param("scale").unwrap();
         (p.keyframes.iter().map(|k| k.time.0).collect(), p.f64_at(it.source_time_at(s.playhead())))
+    }
+    fn parameter(&self, clip: &Clip, effect: &str, param: &str) -> Param {
+        self.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1.effect(effect).unwrap().param(param).unwrap().clone()
+    }
+    fn undo_len(&mut self) -> usize {
+        self.exec("history.list", json!({}))["undo"].as_array().unwrap().len()
+    }
+    fn right_click(&mut self, id: &str) {
+        self.rect(id);
+        self.ok("ui.click", json!({"id": id, "button": "right"}));
+        self.frames(3);
     }
     fn shot(&mut self, name: &str) {
         let Some(dir) = self.shots.clone() else { return };
@@ -312,4 +348,337 @@ fn effect_controls_divider_and_scrolling_anywhere() {
     d.frames(4);
     let after = d.find("effectControls.motion.scale.stopwatch");
     assert!(after.is_none_or(|r| r[1] < before[1] - 20.0), "the rows scrolled up: {before:?} → {after:?}");
+}
+
+/// #967: empty lane space clears both the selected refs and the highlight, without an edit.
+#[test]
+fn empty_keyframe_lane_click_clears_selection() {
+    let (mut d, clip) = Driver::demo();
+    d.seek(1.0);
+    d.exec("effects.addKeyframe", json!({"clip":clip.id,"effect":"motion","param":"scale"}));
+    let time = d.scale(&clip).0[0];
+    let id = format!("effectControls.motion.scale.keyframe.{time}");
+    let r = d.rect(&id);
+    let lane = d.rect("effectControls.lane");
+    d.click(&id);
+    assert_eq!(d.harness.state().ui.keyframe_selection.len(), 1);
+    let undo = d.harness.state().session.history.undo.len();
+    d.ok("ui.click", json!({"x":lane[0] + lane[2] * 0.9,"y":r[1] + r[3]/2.0}));
+    d.frames(3);
+    assert!(d.harness.state().ui.keyframe_selection.is_empty(), "empty lane clicks must clear the highlight");
+    assert_eq!(d.harness.state().session.history.undo.len(), undo);
+    d.shot("keyframes-selection-cleared");
+}
+
+/// #967: one rectangle selects times across property rows and leaves outside keys alone.
+#[test]
+fn marquee_selects_keyframes_across_property_rows() {
+    let (mut d, clip) = Driver::demo();
+    let mut keys = Vec::new();
+    for (param, seconds) in [("scale", 1.0), ("scale", 2.0), ("rotation", 1.5), ("position", 3.0)] {
+        let timeline = d.seek(seconds);
+        d.exec("effects.addKeyframe", json!({"clip":clip.id,"effect":"motion","param":param}));
+        let it = d.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1;
+        keys.push((param, it.source_time_at(Tick(timeline)).0));
+    }
+    let rects: Vec<_> = keys.iter().take(3).map(|(param, time)| d.rect(&format!("effectControls.motion.{param}.keyframe.{time}"))).collect();
+    let from = egui::pos2(
+        rects.iter().map(|r| r[0]).fold(f64::INFINITY, f64::min) as f32 - 14.0,
+        rects.iter().map(|r| r[1]).fold(f64::INFINITY, f64::min) as f32 - 12.0,
+    );
+    let to = egui::pos2(
+        rects.iter().map(|r| r[0] + r[2]).fold(f64::NEG_INFINITY, f64::max) as f32 + 14.0,
+        rects.iter().map(|r| r[1] + r[3]).fold(f64::NEG_INFINITY, f64::max) as f32 + 12.0,
+    );
+    let undo = d.harness.state().session.history.undo.len();
+    d.gesture(from, to, egui::Modifiers::default(), Some("keyframes-marquee-drag"));
+    let selected = &d.harness.state().ui.keyframe_selection;
+    assert_eq!(selected.len(), 3, "marquee must select Scale and Rotation together");
+    for (param, time) in keys.iter().take(3) {
+        assert!(selected.iter().any(|k| k.clip == clip.id && k.param == *param && k.time.0 == *time));
+    }
+    assert_eq!(d.harness.state().session.history.undo.len(), undo, "selection is not a project edit");
+    d.shot("keyframes-marquee-selected");
+}
+
+fn lane_keys(d: &mut Driver, clip: &Clip, specs: &[(&str, f64)]) -> Vec<filmcraft_ui_egui::state::KeyframeRef> {
+    specs
+        .iter()
+        .map(|(param, seconds)| {
+            let time = d.seek(*seconds);
+            d.exec("effects.addKeyframe", json!({"clip":clip.id,"effect":"motion","param":param}));
+            let session = &d.harness.state().session;
+            let it = session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1;
+            filmcraft_ui_egui::state::KeyframeRef {
+                clip: clip.id,
+                effect: it.effects.iter().position(|e| e.effect == "motion").unwrap(),
+                param: (*param).into(),
+                mask: None,
+                time: it.source_time_at(Tick(time)),
+            }
+        })
+        .collect()
+}
+
+fn key_id(d: &Driver, key: &filmcraft_ui_egui::state::KeyframeRef) -> String {
+    let it = d.harness.state().session.active_sequence().unwrap().find_item(ClipId(key.clip)).unwrap().1;
+    let mask = key.mask.map_or_else(String::new, |m| format!("mask{m}."));
+    format!("effectControls.{}.{mask}{}.keyframe.{}", it.effects[key.effect].effect, key.param, key.time.0)
+}
+
+fn center(rect: [f64; 4]) -> egui::Pos2 {
+    egui::pos2((rect[0] + rect[2] / 2.0) as f32, (rect[1] + rect[3] / 2.0) as f32)
+}
+
+fn select_keys(d: &mut Driver, keys: &[filmcraft_ui_egui::state::KeyframeRef]) {
+    for (i, key) in keys.iter().enumerate() {
+        let id = key_id(d, key);
+        d.rect(&id);
+        d.ok("ui.click", json!({"id":id,"modifiers":{"shift":i>0}}));
+        d.frames(3);
+    }
+    assert_eq!(d.harness.state().ui.keyframe_selection, keys);
+}
+
+#[test]
+fn selected_keyframes_move_together_and_undo_as_one_edit() {
+    let (mut d, clip) = Driver::demo();
+    let keys = lane_keys(&mut d, &clip, &[("scale", 1.0), ("scale", 2.0), ("rotation", 1.5)]);
+    select_keys(&mut d, &keys);
+    let lane = d.rect("effectControls.lane");
+    let from = center(d.rect(&key_id(&d, &keys[0])));
+    let undo = d.harness.state().session.history.undo.len();
+    let before = serde_json::to_value(&d.harness.state().session.project).unwrap();
+    d.gesture(from, from + egui::vec2(lane[2] as f32 * 0.15, 0.0), egui::Modifiers::NONE, Some("keyframes-group-preview"));
+    let selected = &d.harness.state().ui.keyframe_selection;
+    assert_eq!(selected.len(), 3);
+    let delta = selected[0].time - keys[0].time;
+    assert!(delta > Tick::ZERO);
+    for (old, new) in keys.iter().zip(selected) {
+        assert_eq!(new.time, old.time + delta);
+        assert_eq!(new.param, old.param);
+    }
+    assert_eq!(d.harness.state().session.history.undo.len(), undo + 1);
+    let after = serde_json::to_value(&d.harness.state().session.project).unwrap();
+    d.exec("edit.undo", json!({}));
+    assert_eq!(serde_json::to_value(&d.harness.state().session.project).unwrap(), before);
+    d.exec("edit.redo", json!({}));
+    assert_eq!(serde_json::to_value(&d.harness.state().session.project).unwrap(), after);
+}
+
+#[test]
+fn shift_snaps_the_group_to_other_rows_at_different_lane_widths() {
+    for (width, theme) in [(280.0, "dark"), (480.0, "light")] {
+        let (mut d, clip) = Driver::demo();
+        d.harness.state_mut().ui.effect_controls_split = width;
+        d.ok("ui.set", json!({"theme":theme}));
+        let at = |f: f64| Tick(clip.start).seconds() + Tick(clip.duration).seconds() * f;
+        let keys = lane_keys(&mut d, &clip, &[("scale", at(0.2)), ("scale", at(0.4)), ("rotation", at(0.65))]);
+        select_keys(&mut d, &keys[..2]);
+        d.seek(0.0);
+        let from = center(d.rect(&key_id(&d, &keys[0])));
+        let last = center(d.rect(&key_id(&d, &keys[1])));
+        let target = center(d.rect(&key_id(&d, &keys[2])));
+        let to = from + egui::vec2(target.x - last.x - 3.0, 0.0);
+        let shift = egui::Modifiers { shift: true, ..egui::Modifiers::NONE };
+        d.press_drag(from, to, shift);
+        let guide = d.rect("effectControls.snapTarget");
+        assert!(((guide[0] + guide[2] / 2.0) as f32 - target.x).abs() < 1.0);
+        d.shot(&format!("keyframes-snap-row-{theme}"));
+        d.release(to, shift);
+        let selected = &d.harness.state().ui.keyframe_selection;
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[1].time, keys[2].time, "the rightmost selected key snaps to Rotation's time");
+        assert_eq!(selected[1].time - selected[0].time, keys[1].time - keys[0].time);
+    }
+}
+
+#[test]
+fn shift_snaps_to_playhead_with_a_screen_space_threshold() {
+    for (width, theme) in [(280.0, "dark"), (480.0, "light")] {
+        let (mut d, clip) = Driver::demo();
+        d.harness.state_mut().ui.effect_controls_split = width;
+        d.ok("ui.set", json!({"theme":theme}));
+        let at = |f: f64| Tick(clip.start).seconds() + Tick(clip.duration).seconds() * f;
+        let keys = lane_keys(&mut d, &clip, &[("scale", at(0.2)), ("scale", at(0.4))]);
+        select_keys(&mut d, &keys);
+        let target_time = Tick(d.seek(at(0.6)));
+        let target_media = d.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1.source_time_at(target_time);
+        let from = center(d.rect(&key_id(&d, &keys[0])));
+        let target = center(d.rect("effectControls.playhead"));
+        let shift = egui::Modifiers { shift: true, ..egui::Modifiers::NONE };
+        let to = egui::pos2(target.x + 3.0, from.y);
+        d.press_drag(from, to, shift);
+        assert!((center(d.rect("effectControls.snapTarget")).x - target.x).abs() < 1.0);
+        d.shot(&format!("keyframes-snap-playhead-{theme}"));
+        d.release(to, shift);
+        assert_eq!(d.harness.state().ui.keyframe_selection[0].time, target_media);
+        d.exec("edit.undo", json!({}));
+        select_keys(&mut d, &keys);
+        let outside = egui::pos2(target.x + 16.0, from.y);
+        d.press_drag(from, outside, shift);
+        assert!(d.find("effectControls.snapTarget").is_none(), "a target more than 8 screen points away must not snap");
+        d.release(outside, shift);
+        assert_ne!(d.harness.state().ui.keyframe_selection[0].time, target_media);
+    }
+}
+
+#[test]
+fn escape_cancels_a_group_preview_without_editing_the_project() {
+    let (mut d, clip) = Driver::demo();
+    let keys = lane_keys(&mut d, &clip, &[("scale", 1.0), ("scale", 1.5)]);
+    select_keys(&mut d, &keys);
+    let from = center(d.rect(&key_id(&d, &keys[0])));
+    let lane = d.rect("effectControls.lane");
+    let to = from + egui::vec2(lane[2] as f32 * 0.2, 0.0);
+    let project = d.harness.state().session.project.clone();
+    let undo = d.harness.state().session.history.undo.len();
+    d.press_drag(from, to, egui::Modifiers::NONE);
+    assert!(std::sync::Arc::ptr_eq(&project, &d.harness.state().session.project), "drag previews are not project edits");
+    d.ok("ui.key", json!({"key":"Escape"}));
+    d.release(to, egui::Modifiers::NONE);
+    assert!(std::sync::Arc::ptr_eq(&project, &d.harness.state().session.project));
+    assert_eq!(d.harness.state().session.history.undo.len(), undo);
+    assert_eq!(d.harness.state().ui.keyframe_selection, keys);
+    d.gesture(from, to, egui::Modifiers::NONE, None);
+    assert_eq!(d.harness.state().session.history.undo.len(), undo + 1, "a new gesture works after cancellation");
+}
+
+#[test]
+fn effect_and_mask_keyframes_move_together_without_crossing_parameters() {
+    let (mut d, clip) = Driver::demo();
+    d.click("effectControls.effect.motion");
+    d.exec("masks.add", json!({"clip":clip.id,"effect":"opacity","shape":"ellipse"}));
+    let mut keys = Vec::new();
+    for (mask, seconds) in [(None, 1.0), (Some(0), 1.5)] {
+        let time = Tick(d.seek(seconds));
+        let mut p = json!({"clip":clip.id,"effect":"opacity","param":"opacity"});
+        if let Some(m) = mask {
+            p["mask"] = json!(m);
+        }
+        d.exec("effects.addKeyframe", p);
+        let it = d.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1;
+        keys.push(filmcraft_ui_egui::state::KeyframeRef {
+            clip: clip.id,
+            effect: it.effects.iter().position(|e| e.effect == "opacity").unwrap(),
+            param: "opacity".into(),
+            mask,
+            time: it.source_time_at(time),
+        });
+    }
+    select_keys(&mut d, &keys);
+    let from = center(d.rect(&key_id(&d, &keys[0])));
+    let lane = d.rect("effectControls.lane");
+    d.gesture(from, from + egui::vec2(lane[2] as f32 * 0.1, 0.0), egui::Modifiers::NONE, Some("keyframes-mask-group"));
+    let selected = &d.harness.state().ui.keyframe_selection;
+    assert_eq!(selected.len(), 2);
+    let delta = selected[0].time - keys[0].time;
+    assert!(delta > Tick::ZERO);
+    assert_eq!(selected[1].time - keys[1].time, delta);
+    let it = d.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1;
+    assert!(it.effects[keys[0].effect].masks[0].feather.keyframes.is_empty());
+}
+
+/// #962: graph points need the same interpolation menu as lane diamonds, including either
+/// coordinate of Transform Position. Opening a menu never changes the value or creates an undo.
+#[test]
+fn graph_keyframes_offer_interpolation_and_clear_in_one_undo_step() {
+    for (effect, param, values, component) in [
+        ("motion", "scale", [json!(40.0), json!(80.0)], ""),
+        ("motion", "position", [json!([400.0, 300.0]), json!([800.0, 500.0])], ".x"),
+        ("transform", "position", [json!([400.0, 300.0]), json!([800.0, 500.0])], ".x"),
+        ("transform", "position", [json!([400.0, 300.0]), json!([800.0, 500.0])], ".y"),
+    ] {
+        let (mut d, clip) = Driver::demo();
+        if effect == "transform" {
+            d.exec("effects.apply", json!({"clips": [clip.id], "effect": effect}));
+            for intrinsic in ["motion", "opacity", "time_remap"] {
+                d.click(&format!("effectControls.effect.{intrinsic}.twirl"));
+            }
+        }
+        for (seconds, value) in [0.5, 2.5].into_iter().zip(values) {
+            d.seek(seconds);
+            d.exec("effects.addKeyframe", json!({"clip": clip.id, "effect": effect, "param": param}));
+            d.exec("effects.setParam", json!({"clip": clip.id, "effect": effect, "param": param, "value": value}));
+        }
+        d.click(&format!("effectControls.{effect}.{param}.graphs"));
+        let before = d.parameter(&clip, effect, param);
+        let undo = d.undo_len();
+        let target = format!("effectControls.{param}.graph.keyframe.{}{component}", before.keyframes[0].time.0);
+        for (key, interpolation) in [
+            ("bezier", Interpolation::Bezier),
+            ("autoBezier", Interpolation::AutoBezier),
+            ("continuousBezier", Interpolation::ContinuousBezier),
+            ("hold", Interpolation::Hold),
+            ("easeIn", Interpolation::EaseIn),
+            ("easeOut", Interpolation::EaseOut),
+            ("linear", Interpolation::Linear),
+        ] {
+            d.right_click(&target);
+            assert_eq!(d.parameter(&clip, effect, param), before, "opening the graph menu cannot edit {effect}.{param}{component}");
+            assert_eq!(d.undo_len(), undo);
+            if key == "easeIn" && effect == "transform" {
+                d.shot(&format!("graph-menu-{effect}-{param}{component}"));
+            }
+            d.click(&format!("effectControls.keyframeMenu.{key}"));
+            let changed = d.parameter(&clip, effect, param);
+            assert_eq!(changed.keyframes[0].interp, interpolation);
+            assert_eq!(changed.keyframes[0].time, before.keyframes[0].time);
+            assert_eq!(changed.keyframes[0].value, before.keyframes[0].value);
+            assert_eq!(changed.keyframes[1], before.keyframes[1]);
+            assert_eq!(d.undo_len(), undo + 1);
+            assert!(d.find("effectControls.keyframeMenu.clear").is_none(), "choosing interpolation closes the menu");
+            d.exec("edit.undo", json!({}));
+            assert_eq!(d.parameter(&clip, effect, param), before);
+            d.exec("edit.redo", json!({}));
+            assert_eq!(d.parameter(&clip, effect, param), changed);
+            d.exec("edit.undo", json!({}));
+        }
+        d.right_click(&target);
+        d.click("effectControls.keyframeMenu.clear");
+        let remaining = d.parameter(&clip, effect, param);
+        assert_eq!(remaining.keyframes, before.keyframes[1..]);
+        assert_eq!(d.undo_len(), undo + 1);
+        d.exec("edit.undo", json!({}));
+        assert_eq!(d.parameter(&clip, effect, param), before);
+    }
+}
+
+#[test]
+fn mask_keyframe_menus_preserve_the_effect_and_other_masks() {
+    let (mut d, clip) = Driver::demo();
+    d.ok("ui.set", json!({"workspace": "Effects"}));
+    for intrinsic in ["motion", "time_remap"] {
+        d.click(&format!("effectControls.effect.{intrinsic}.twirl"));
+    }
+    for mask in 0..2 {
+        d.exec("masks.add", json!({"clip": clip.id, "effect": "opacity", "shape": "ellipse"}));
+        for (seconds, value) in [(0.5, 20.0), (2.5, 60.0)] {
+            d.seek(seconds);
+            d.exec("effects.addKeyframe", json!({"clip": clip.id, "effect": "opacity", "mask": mask, "param": "feather"}));
+            d.exec("effects.setParam", json!({"clip": clip.id, "effect": "opacity", "mask": mask, "param": "feather", "value": value}));
+        }
+    }
+    let effect = |d: &Driver| d.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip.id)).unwrap().1.effect("opacity").unwrap().clone();
+    let before = effect(&d);
+    let time = before.masks[0].param("feather").unwrap().keyframes[0].time.0;
+    let undo = d.undo_len();
+    for (target, key, interpolation) in [
+        (format!("effectControls.opacity.mask0.feather.keyframe.{time}"), "easeOut", Interpolation::EaseOut),
+        (format!("effectControls.feather.graph.keyframe.{time}"), "easeIn", Interpolation::EaseIn),
+    ] {
+        if key == "easeIn" {
+            d.click("effectControls.opacity.mask0.feather.graphs");
+        }
+        d.right_click(&target);
+        assert_eq!(effect(&d), before, "opening the menu cannot change any mask");
+        assert_eq!(d.undo_len(), undo);
+        d.click(&format!("effectControls.keyframeMenu.{key}"));
+        let mut expected = before.clone();
+        expected.masks[0].param_mut("feather").unwrap().keyframes[0].interp = interpolation;
+        assert_eq!(effect(&d), expected, "only the first mask's first feather keyframe changes");
+        assert_eq!(d.undo_len(), undo + 1);
+        d.exec("edit.undo", json!({}));
+        assert_eq!(effect(&d), before);
+    }
 }

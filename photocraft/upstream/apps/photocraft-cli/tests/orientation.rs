@@ -125,14 +125,19 @@ fn orientation_6_jpeg_converts_upright_and_rotates_back() {
     let (a, b) = (d.join("a.pcraft"), d.join("b.pcraft"));
     ok(bin().arg("convert").arg(&jpg).arg(&a));
     ok(bin().arg("convert").arg(&a).arg(&b));
-    // Everything but the file's own path must match.
+    // Everything but the file's own path and saved document name must match.
     let info = |p: &Path| {
         let mut v = serde_json::from_str::<Value>(&ok(bin().arg("info").arg(p))).unwrap();
         v.as_object_mut().unwrap().remove("file");
+        v.as_object_mut().unwrap().remove("path");
         v
     };
-    let (ia, ib) = (info(&a), info(&b));
+    let (mut ia, mut ib) = (info(&a), info(&b));
     assert_eq!((ia["width"].as_u64(), ia["height"].as_u64()), (Some(16), Some(32)));
+    assert_eq!(ia["name"], "a.pcraft");
+    assert_eq!(ib["name"], "b.pcraft");
+    ia.as_object_mut().unwrap().remove("name");
+    ib.as_object_mut().unwrap().remove("name");
     assert_eq!(ia, ib);
     let (pa, pb) = (d.join("a.png"), d.join("b.png"));
     ok(bin().arg("convert").arg(&a).arg(&pa));

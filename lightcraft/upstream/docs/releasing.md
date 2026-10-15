@@ -22,7 +22,7 @@ release that has already been published, so bump the version before producing an
 
 ## Builds and artifacts
 
-Release jobs build macOS universal, Windows x86/x64/ARM64, Linux x86_64/aarch64, FreeBSD x86_64,
+Release jobs build macOS universal, Windows x86/x64/ARM64, Linux x86_64/aarch64/riscv64, FreeBSD x86_64,
 and the WASM web app. The platform scripts in [`packaging/`](../packaging/) write their outputs to
 `dist/release/` (the full list of files is the README's Downloads section):
 
@@ -32,6 +32,9 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   architecture (`packaging/linux/package.sh`). Each AppImage embeds
   `gh-releases-zsync|storytold|lightcraft|latest|lightcraft-*-linux-<arch>.AppImage.zsync`, so
   AppImageUpdate fetches only the changed blocks from the latest published (non-pre-) release.
+- Linux riscv64: `.tar.gz` only, cross-compiled on Ubuntu 24.04 against its riscv64 ports
+  libraries (so glibc 2.39 or newer), with the CLI smoke-tested under QEMU (`CROSS_*` variables
+  of `packaging/linux/package.sh`).
 - Flatpak: a single-file `.flatpak` bundle for each architecture, repackaged from that
   architecture's Linux tarball (`packaging/linux/flatpak-bundle.sh` with
   `packaging/linux/flatpak/ai.storyteller.lightcraft.bundle.yml`; no Rust build). The from-source

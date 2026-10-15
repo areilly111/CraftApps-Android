@@ -1,6 +1,6 @@
-//! Illustrator EPS and `.ai` files open from the editing data they carry: layers, groups, names,
-//! hidden objects, artboards, colours and images as they were; what the reader doesn't read yet
-//! opens as before, with a warning saying why.
+//! Illustrator EPS, `.ai` and PDF files open from the editing data they carry: layers, groups,
+//! names, hidden objects, artboards, colours and images as they were; what the reader doesn't read
+//! yet opens as before, with a warning saying why.
 
 use std::io::Write as _;
 use std::sync::Arc;
@@ -8,6 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use vectorcraft_doc::{Node, NodeKind};
 use vectorcraft_testkit::ai;
+use vectorcraft_testkit::pdf::{PdfPage, first_extra, pdf_with};
 
 use super::*;
 
@@ -79,6 +80,50 @@ fn an_illustrator_ai_file_opens_from_its_editing_data() {
     // Pages picked: the PDF's.
     open(&mut s, "art.ai", &file, json!({"pages": "1"})).unwrap();
     assert_ne!(names(&s.doc().unwrap().doc.layers), ["Art", "Hidden"]);
+}
+
+/// A PDF saved with the editing data opens from it, as a `.ai` does (#868).
+#[test]
+fn a_pdf_saved_with_the_editing_data_opens_from_it() {
+    let mut s = Session::new();
+    let file = ai::pdf(&compressed(&ai::sample_data()), ai::page_pdf());
+    let r = open(&mut s, "art.pdf", &file, json!({})).unwrap();
+    assert_eq!((&r["format"], &r["warnings"]), (&json!("pdf"), &json!([])), "{r}");
+    check_sample(&s);
+    // Without it: the PDF part.
+    let r = open(&mut s, "art.pdf", &file, json!({"editingData": false})).unwrap();
+    let layers = &s.doc().unwrap().doc.layers;
+    assert_eq!(layers.len(), 1, "{r}");
+    assert_ne!(names(layers), ["Art"]);
+}
+
+/// Art crossing the page's edge opens whole from a PDF's editing data, without the note that the
+/// PDF's art was clipped to the page; without the editing data it is clipped, with the note.
+#[test]
+fn a_pdfs_art_past_the_page_opens_whole_from_its_editing_data() {
+    let data = ai::editing_data(200.0, 100.0, &ai::layer("Art", &format!("0 g\n{}f\n", ai::rect(150.0, 20.0, 250.0, 80.0))));
+    let file = ai::pdf(data.as_bytes(), "0 g 150 20 100 60 re f");
+    let mut s = Session::new();
+    let r = open(&mut s, "past.pdf", &file, json!({})).unwrap();
+    assert_eq!(r["warnings"], json!([]), "{r}");
+    let doc = &s.doc().unwrap().doc;
+    assert_eq!(names(&doc.layers), ["Art"]);
+    assert!(doc.art_bounds().is_some_and(|b| b.x1 > 200.5), "{:?}", doc.art_bounds());
+    let r = open(&mut s, "past.pdf", &file, json!({"editingData": false})).unwrap();
+    assert_eq!(r["warnings"], json!([vectorcraft_pdf::PAST_PAGE_NOTE]), "{r}");
+    assert!(s.doc().unwrap().doc.art_bounds().is_some_and(|b| b.x1 < 200.5));
+}
+
+/// Editing data that can't be read leaves the file as its PDF part reads, with that part's notes:
+/// a `.ai`'s art outside its artboards is missing, and a PDF's art past the page is clipped.
+#[test]
+fn editing_data_that_cant_be_read_keeps_the_pdf_parts_notes() {
+    let damaged = b"%AI12_CompressedData not zlib";
+    let mut s = Session::new();
+    let r = open(&mut s, "damaged.ai", &ai::ai(damaged, ai::page_pdf()), json!({})).unwrap();
+    assert_eq!(r["warnings"], json!([vectorcraft_pdf::OFF_ARTBOARD_NOTE]), "{r}");
+    let r = open(&mut s, "damaged.pdf", &ai::pdf(damaged, "0 g 150 20 100 60 re f"), json!({})).unwrap();
+    assert_eq!(r["warnings"], json!([vectorcraft_pdf::PAST_PAGE_NOTE]), "{r}");
 }
 
 #[test]
@@ -156,4 +201,44 @@ fn type_asked_for_as_outlines_opens_a_file_whose_type_shows_from_its_pdf_part() 
     let r = open(&mut s, "type.ai", &file, json!({"textAs": "outlines"})).unwrap();
     assert!(r["warnings"].to_string().contains("outlines"), "{r}");
     assert_ne!(names(&s.doc().unwrap().doc.layers), ["Art"], "{r}");
+}
+
+/// A `.ai` of a 200 × 100 pt artboard with a 10 mm bleed: its PDF part's page is the artboard
+/// (its trim box) grown by the bleed, and a red square reaches 20 pt into the bleed, on the page
+/// as in the editing data.
+fn bled_ai(bleed: f64) -> Vec<u8> {
+    let art = format!("0 1 1 0 1 0 0 Xa\n{}f\n", ai::rect(-20.0, -20.0, 60.0, 50.0));
+    let data = ai::editing_data(200.0, 100.0, &ai::layer("Art", &art));
+    let (w, h) = (200.0 + 2.0 * bleed, 100.0 + 2.0 * bleed);
+    let page = PdfPage {
+        bleed: Some([0.0, 0.0, w, h]),
+        trim: Some([bleed, bleed, 200.0 + bleed, 100.0 + bleed]),
+        entries: format!("/PieceInfo << /Illustrator << /Private << /AIPrivateData1 {} 0 R /NumBlock 1 >> >> >>", first_extra(1)),
+        ..PdfPage::new(w, h, &format!("1 0 0 rg {0} {0} 80 70 re f", bleed - 20.0))
+    };
+    pdf_with(&[page], &[&format!("<< /Length {} >>\nstream\n{data}\nendstream", data.len())], None)
+}
+
+#[test]
+fn an_ai_file_with_a_bleed_opens_on_its_artboard_with_the_bleed_round_it() {
+    let bleed = 10.0 * 72.0 / 25.4;
+    let file = bled_ai(bleed);
+    let mut s = Session::new();
+    // From the editing data, and from the PDF part alone.
+    for params in [json!({}), json!({"editingData": false})] {
+        let r = open(&mut s, "bled.ai", &file, params.clone()).unwrap();
+        let doc = &s.doc().unwrap().doc;
+        assert_eq!(doc.artboards.len(), 1, "{params}: {r}");
+        let ab = doc.artboards[0].rect;
+        assert!((ab.width() - 200.0).abs() < 0.01 && (ab.height() - 100.0).abs() < 0.01, "{params}: {ab:?} {r}");
+        assert!(doc.setup.bleed.iter().all(|b| (b - bleed).abs() < 0.01), "{params}: {:?}", doc.setup.bleed);
+        // The square reaches into the bleed, whole.
+        let art = doc.art_bounds().unwrap();
+        let want = [ab.x0 - 20.0, ab.y0 + 50.0, ab.x0 + 60.0, ab.y0 + 120.0];
+        assert!([art.x0, art.y0, art.x1, art.y1].iter().zip(want).all(|(a, b)| (a - b).abs() < 0.01), "{params}: {art:?}");
+        assert!(doc.setup.bleed_rect(ab).inflate(0.01, 0.01).contains_rect(art), "{params}: {art:?}");
+    }
+    assert_eq!(names(&s.doc().unwrap().doc.layers), ["Page 1"], "editingData: false reads the PDF part");
+    open(&mut s, "bled.ai", &file, json!({})).unwrap();
+    assert_eq!(names(&s.doc().unwrap().doc.layers), ["Art"], "the editing data's layers are read");
 }

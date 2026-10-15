@@ -382,3 +382,62 @@ fn export_button_and_quick_export_popup() {
     d.click("quickExport.close");
     assert!(!d.app().ui.export.quick_open);
 }
+
+#[test]
+fn quick_export_file_name_can_be_typed_and_the_folder_link_opens_the_save_dialog() {
+    use std::sync::{Arc, Mutex};
+    let mut d = Driver::new("quick-location");
+    d.exec("markers.markIn", json!({"seconds": 0.0}));
+    d.exec("markers.markOut", json!({"seconds": 0.2}));
+    d.click("header.quickExport");
+    d.ok("ui.set", json!({"export": {"quickPreset": "Waveform Audio 48 kHz 16-bit"}}));
+    d.frames(2);
+    let start = PathBuf::from(&d.app().ui.export.quick_path);
+    assert_eq!(start.extension().unwrap(), "wav", "{start:?}");
+    // emptying the file name to retype it keeps what is typed instead of refilling the old name
+    d.click("quickExport.path");
+    d.ok("ui.key", json!({"key": "Cmd+A"}));
+    d.ok("ui.key", json!({"key": "Backspace"}));
+    d.frames(2);
+    d.ok("ui.type", json!({"text": "renamed"}));
+    d.frames(2);
+    let typed = PathBuf::from(&d.app().ui.export.quick_path);
+    assert_eq!(typed, start.parent().unwrap().join("renamed.wav"));
+    // the folder link asks the save dialog, seeded with the whole path; cancelling changes nothing
+    let asked: Arc<Mutex<Vec<(Vec<String>, String)>>> = Arc::default();
+    let answer: Arc<Mutex<Option<String>>> = Arc::default();
+    let (log, reply) = (asked.clone(), answer.clone());
+    d.app().hooks.pick_save_as = Some(Box::new(move |_, exts, suggested| {
+        log.lock().unwrap().push((exts.iter().map(|e| e.to_string()).collect(), suggested.to_string()));
+        reply.lock().unwrap().clone()
+    }));
+    d.click("quickExport.location");
+    assert_eq!(asked.lock().unwrap().clone(), [(vec!["wav".to_string()], typed.to_string_lossy().to_string())]);
+    assert_eq!(PathBuf::from(&d.app().ui.export.quick_path), typed);
+    assert!(d.app().ui.export.quick_open, "the popup stays open");
+    // a chosen path is applied and shown; another format's extension follows the preset
+    *answer.lock().unwrap() = Some(d.path("picked.mp4"));
+    d.click("quickExport.location");
+    let picked = d.path("picked.wav");
+    assert_eq!(d.app().ui.export.quick_path, picked);
+    let shown = d.ok("ui.elements", json!({"prefix": "quickExport.location"}))[0]["label"].as_str().unwrap().to_string();
+    assert_eq!(shown, d.dir.to_string_lossy());
+    d.snapshot("export-quick-location");
+    d.click("quickExport.go");
+    d.wait_until("quick export", |d| d.app().session.jobs.iter().all(|j| j.progress.finished.load(std::sync::atomic::Ordering::Relaxed)));
+    assert!(Path::new(&d.path("picked.wav")).exists(), "{}", d.app().ui.status);
+}
+
+#[test]
+fn export_mode_file_name_can_be_emptied_and_retyped() {
+    let mut d = Driver::new("file-name");
+    d.ok("ui.set", json!({"mode": "export"}));
+    d.frames(3);
+    d.click("export.fileName");
+    d.ok("ui.key", json!({"key": "Cmd+A"}));
+    d.ok("ui.key", json!({"key": "Backspace"}));
+    d.frames(2);
+    d.ok("ui.type", json!({"text": "Final"}));
+    d.frames(2);
+    assert_eq!(d.app().ui.export.file_name, "Final");
+}

@@ -9,6 +9,7 @@ description = "VectorCraft egui frontend (menus, panels, tools and canvas); swap
 workspace = true
 
 [dependencies]
+craft-ui = { workspace = true }
 vectorcraft-geom = { workspace = true }
 vectorcraft-color = { workspace = true }
 vectorcraft-doc = { workspace = true }
@@ -33,6 +34,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 vectorcraft-testkit = { workspace = true }
 wat = { workspace = true }
 

@@ -722,9 +722,6 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog, max_he
             ("display", "Display Performance"),
             ("black", "Appearance of Black"),
             ("files", "File Handling"),
-            // Android only: the port's shared-storage layout (see `android_storage_section`).
-            #[cfg(target_os = "android")]
-            ("storage", "Storage"),
         ]
     } else {
         &[
@@ -739,9 +736,6 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog, max_he
             ("storyEditor", "Story Editor Display"),
             ("display", "Display Performance"),
             ("files", "File Handling"),
-            // Android only: the port's shared-storage layout (see `android_storage_section`).
-            #[cfg(target_os = "android")]
-            ("storage", "Storage"),
         ]
     };
     let cur = d.s("section");
@@ -1088,10 +1082,6 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog, max_he
                         text_field(ui, d, "keyboardIncrement", 80.0);
                     });
                 }
-                // Android only: the port's shared-storage layout (not engine prefs; the
-                // hooks reach the native shell — see `Services::android_hooks`).
-                #[cfg(target_os = "android")]
-                "storage" => android_storage_section(app, ui),
                 _ => {
                     crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "When Scaling")).font(semibold(12.0)));
                     check(ui, d, "scaleStrokes", crate::i18n::tr(&app.ui.language, "Include Stroke Weight"));
@@ -1106,46 +1096,6 @@ fn preferences(app: &crate::DesignApp, ui: &mut egui::Ui, d: &mut Dialog, max_he
             });
         });
     });
-}
-
-/// Android only: `Preferences › Storage` — the port's shared-storage layout.
-/// Drawn by the port (not engine prefs): where documents live by default, and
-/// the SD-card option. The hooks reach the native shell (see `Services::android_hooks`).
-#[cfg(target_os = "android")]
-fn android_storage_section(app: &crate::DesignApp, ui: &mut egui::Ui) {
-    crate::rtl::label(
-        ui,
-        egui::RichText::new(crate::i18n::tr(
-            &app.ui.language,
-            "Where new documents are kept. DesignCraft and the other craft apps share this folder, so a file saved here is visible to all of them.",
-        )),
-    );
-    ui.add_space(8.0);
-    let Some(hooks) = app.services.android_hooks.as_ref() else {
-        crate::rtl::label(ui, egui::RichText::new(crate::i18n::tr(&app.ui.language, "Storage settings are unavailable.")));
-        return;
-    };
-    crate::rtl::label(
-        ui,
-        egui::RichText::new(format!("{}: {}", crate::i18n::tr(&app.ui.language, "Current"), (hooks.storage.location_label)())),
-    );
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Tablet storage"))).clicked() {
-            (hooks.storage.use_tablet_storage)();
-        }
-        if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "SD card…"))).clicked() {
-            (hooks.storage.pick_sd_card)();
-        }
-    });
-    ui.add_space(8.0);
-    crate::rtl::label(
-        ui,
-        egui::RichText::new(crate::i18n::tr(
-            &app.ui.language,
-            "“SD card…” opens the system folder picker. The chosen folder is remembered, and documents are read and written through it directly.",
-        )),
-    );
 }
 
 /// An `[r, g, b]` field edited with a colour button.

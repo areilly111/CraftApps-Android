@@ -197,6 +197,9 @@ pub struct TimelineView {
     /// Follow playhead during playback (page scroll).
     pub follow: bool,
     pub fit_pending: bool,
+    /// The playhead the view last saw: a jump while stopped (Home, End, edit points) scrolls to it.
+    #[serde(skip)]
+    pub seen_playhead: Option<(filmcraft_project::ItemId, f64)>,
     /// The zoom a fit gave an empty sequence (which fits its 1 s minimum): the first clip to arrive
     /// fits again, unless the zoom was changed in between.
     #[serde(skip)]
@@ -232,6 +235,7 @@ impl Default for TimelineView {
             show_waveforms: true,
             follow: true,
             fit_pending: true,
+            seen_playhead: None,
             fit_empty: None,
             track_lanes: Default::default(),
         }
@@ -308,6 +312,9 @@ pub struct MonitorView {
     pub zoom: Option<f32>,
     /// Pan offset of a magnified picture from the centre (points).
     pub pan: [f32; 2],
+    /// The part of the clip or sequence the time ruler under the picture shows, as fractions of its
+    /// length (start, end), set with the zoom bar under the ruler; None = all of it.
+    pub time_zoom: Option<[f64; 2]>,
     pub safe_margins: bool,
     pub show_transport: bool,
     /// Transport buttons hidden through the monitor's Button Editor. Stored per monitor.
@@ -333,6 +340,7 @@ impl Default for MonitorView {
             high_quality: false,
             zoom: None,
             pan: [0.0, 0.0],
+            time_zoom: None,
             safe_margins: false,
             show_transport: true,
             // The optional Loop button is available from the editor without altering default layouts.
@@ -426,6 +434,8 @@ pub struct UiState {
     pub mode: Mode,
     pub workspace: String,
     pub dock: DockNode,
+    #[serde(default)]
+    pub floating: Vec<crate::dock::Floating>,
     /// Focused panel (blue outline, receives shortcuts).
     pub focused: PanelKind,
     pub timeline: TimelineView,
@@ -945,6 +955,7 @@ impl Default for UiState {
             tool: Tool::Selection,
             mode: Mode::Edit,
             workspace: "Editing".into(),
+            floating: vec![],
             dock: crate::dock::workspace("Editing"),
             focused: PanelKind::Timeline,
             timeline: TimelineView::default(),

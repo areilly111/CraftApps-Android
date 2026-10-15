@@ -1,3 +1,6 @@
+mod common;
+
+use common::tiffgen::*;
 use photocraft_codecs::{Image, decode, exif_orientation, upright_exif};
 
 fn classic_white_is_zero() -> Vec<u8> {
@@ -94,4 +97,56 @@ fn big_tiff_orientation_6_and_8_are_applied_to_decoded_pixels() {
         assert_eq!(image.dimensions(), (3, 2), "orientation {orientation}");
         assert_eq!(image.data(), &upright, "orientation {orientation}");
     }
+}
+
+fn with_compression(mut dir: Dir, code: u64) -> Dir {
+    for entry in &mut dir.entries {
+        if entry.0 == 259 {
+            entry.2 = vec![V::N(code)];
+        }
+    }
+    dir
+}
+
+#[test]
+fn jpeg_compressed_tiff_decodes() {
+    // A flat mid-grey 16x16 image as a baseline JPEG stored in one strip (Compression = 7).
+    let mut jpeg = Vec::new();
+    let gray = vec![100u8; 16 * 16];
+    jpeg_encoder::Encoder::new(&mut jpeg, 95).encode(&gray, 16, 16, jpeg_encoder::ColorType::Luma).expect("encode the JPEG strip");
+    let mut dir = with_compression(strips(16, 16, 8, 1, 1, 16, &[0; 256]), 7);
+    dir.chunks = vec![jpeg];
+    let bytes = build(true, false, &[dir], &[0]).bytes;
+
+    let image = decode(&bytes).expect("a JPEG-compressed TIFF should decode");
+    assert_eq!(image.dimensions(), (16, 16));
+    assert!(image.data().iter().all(|&v| v.abs_diff(100) <= 4), "{:?}", image.data().get(..4));
+}
+
+#[test]
+fn ccitt_group4_tiff_decodes() {
+    // 8x3 bilevel: a white row, then two black rows. Bits: V0 | H(white 0, black 8) | V0 V0 | EOFB.
+    let bits = "1".to_string() + "001" + "00110101" + "000101" + "11" + "000000000001" + "000000000001";
+    let mut data = Vec::new();
+    for chunk in bits.as_bytes().chunks(8) {
+        let mut byte = 0u8;
+        for (i, c) in chunk.iter().enumerate() {
+            if *c == b'1' {
+                byte |= 0x80 >> i;
+            }
+        }
+        data.push(byte);
+    }
+    let mut dir = with_compression(strips(8, 3, 1, 1, 0, 3, &[0; 3]), 4);
+    dir.chunks = vec![data];
+    let bytes = build(true, false, &[dir], &[0]).bytes;
+
+    let image = decode(&bytes).expect("a CCITT G4 TIFF should decode");
+    assert_eq!(image.dimensions(), (8, 3));
+    let d = image.data();
+    assert_eq!(d.len(), 24, "{d:?}");
+    assert!(d[..8].iter().all(|&v| v == d[0]), "{d:?}");
+    assert!(d[8..].iter().all(|&v| v == d[8]), "{d:?}");
+    assert_ne!(d[0], d[8], "{d:?}");
+    assert_eq!(d[0], 255, "white row of a WhiteIsZero image");
 }

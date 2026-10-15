@@ -113,7 +113,7 @@ fn fold_history(app: &mut PhotocraftApp, from: usize) {
 /// Rewrites a Move-tool pointer event for the held modifiers: ⇧ locks it to an axis, and the
 /// first real movement of an ⌥-drag duplicates the layers being moved. Other tools pass through.
 pub fn filter_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) -> ToolEvent {
-    if app.ui.tool != Tool::Move || app.ui.transform.is_some() {
+    if app.active_tool() != Tool::Move || app.ui.transform.is_some() {
         app.move_mods = MoveDrag::default();
         return ev;
     }
@@ -168,17 +168,22 @@ pub fn abandon(app: &mut PhotocraftApp) {
 }
 
 /// Arrow keys with the Move tool (or while Free Transform is active): nudge 1 px, ⇧ 10 px;
-/// ⌥ duplicates the layers first. Returns true when a key was used.
+/// ⌥ duplicates the layers first. ⌘-arrows (Ctrl off the Mac) do the same from most other tools,
+/// where ⌘ is the temporary Move tool (`hold_keys::cmd_nudges`, #2474). Returns true when a key
+/// was used.
 pub fn arrow_keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
-    if app.ui.tool != Tool::Move && app.ui.transform.is_none() {
-        return selection_arrow_keys(app, ctx);
-    }
     use egui::{Key, Modifiers};
+    let cmd = ctx.input(|i| i.modifiers.command) && crate::hold_keys::cmd_nudges(app);
+    if app.ui.tool != Tool::Move && app.ui.transform.is_none() && !cmd {
+        return selection_arrow_keys(app, ctx) || brush_arrow_keys(app, ctx);
+    }
+    // `consume_key` never ignores an extra ⌘, so it is part of every pattern while it moves.
+    let base = if cmd { Modifiers::COMMAND } else { Modifiers::NONE };
     let keys = [(Key::ArrowLeft, -1.0, 0.0), (Key::ArrowRight, 1.0, 0.0), (Key::ArrowUp, 0.0, -1.0), (Key::ArrowDown, 0.0, 1.0)];
     for (key, ux, uy) in keys {
         // Most specific first: `consume_key` ignores extra ⇧ / ⌥ (`matches_logically`).
         for mods in [Modifiers::SHIFT | Modifiers::ALT, Modifiers::SHIFT, Modifiers::ALT, Modifiers::NONE] {
-            if ctx.input_mut(|i| i.consume_key(mods, key)) {
+            if ctx.input_mut(|i| i.consume_key(base | mods, key)) {
                 let k = if mods.shift { 10.0 } else { 1.0 };
                 nudge(app, ux * k, uy * k, mods.alt);
                 return true;
@@ -188,8 +193,32 @@ pub fn arrow_keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
     false
 }
 
+/// ← / → with a painting tool: turn the brush tip 1° (⇧ 15°), as Photoshop does; → turns it
+/// clockwise. Returns true when a key was used.
+fn brush_arrow_keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
+    use egui::{Key, Modifiers};
+    // Only plain or ⇧ arrows (`consume_key` ignores an extra ⌥, which kerns type), and never
+    // while type is being edited.
+    let m = ctx.input(|i| i.modifiers);
+    if !app.ui.tool.is_brushlike() || app.ui.text_edit.is_some() || m.alt || m.command || m.ctrl {
+        return false;
+    }
+    for (key, sign) in [(Key::ArrowLeft, 1.0), (Key::ArrowRight, -1.0)] {
+        // ⇧ first: `consume_key` ignores an extra ⇧.
+        for (mods, step) in [(Modifiers::SHIFT, 15.0), (Modifiers::NONE, 1.0)] {
+            if ctx.input_mut(|i| i.consume_key(mods, key)) {
+                if let Err(e) = app.run("tools.rotateBrush", json!({"degrees": sign * step})) {
+                    app.ui.status = e;
+                }
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Moves the selected layers (or the Free Transform box, or the selected pixels) by `(dx, dy)`
-/// pixels.
+/// pixels, as the Move tool (also when ⌘ makes it the temporary Move tool).
 pub fn nudge(app: &mut PhotocraftApp, dx: f64, dy: f64, duplicate_first: bool) {
     if let Some(t) = app.ui.transform.as_mut() {
         if t.warp.is_none() {
@@ -201,7 +230,7 @@ pub fn nudge(app: &mut PhotocraftApp, dx: f64, dy: f64, duplicate_first: bool) {
     if app.drag.is_some() {
         return;
     }
-    if crate::move_ui::moves_selected_pixels(app) {
+    if crate::move_ui::moves_selected_pixels_with(app, Tool::Move) {
         crate::move_ui::float_selected(app, duplicate_first, dx, dy);
         return;
     }
@@ -399,6 +428,27 @@ mod tests {
         arrow_keys(app, &ctx)
     }
 
+    /// Photoshop's ← / → with a painting tool turn the brush tip 1°, ⇧ 15°; → is clockwise. Other
+    /// tools keep their arrows (the Hand has none, the marquee nudges the selection).
+    #[test]
+    fn arrows_turn_the_brush_tip_for_painting_tools_only() {
+        let mut app = app_with_layer();
+        for tool in [Tool::Brush, Tool::Eraser, Tool::CloneStamp] {
+            app.ui.tool = tool;
+            app.run("tools.setBrush", json!({"brush": {"angle": 0}})).unwrap();
+            assert!(press(&mut app, egui::Key::ArrowLeft, egui::Modifiers::NONE), "{tool:?}");
+            assert_eq!(app.session.tools.brush.angle, 1.0, "{tool:?}: ← anticlockwise");
+            assert!(press(&mut app, egui::Key::ArrowRight, egui::Modifiers::SHIFT));
+            assert_eq!(app.session.tools.brush.angle, -14.0, "{tool:?}: ⇧→ 15° clockwise");
+        }
+        app.run("tools.setBrush", json!({"brush": {"angle": 0}})).unwrap();
+        // ⌥-arrows are not the brush's (they kern type, and ⌘ moves).
+        assert!(!press(&mut app, egui::Key::ArrowLeft, egui::Modifiers::ALT));
+        app.ui.tool = Tool::Hand;
+        assert!(!press(&mut app, egui::Key::ArrowLeft, egui::Modifiers::NONE));
+        assert_eq!(app.session.tools.brush.angle, 0.0);
+    }
+
     /// Real key events: ⇧ nudges 10 px and ⌥ duplicates first (egui ignores extra ⇧ / ⌥ when
     /// matching, so the plain arrow must not be tried first).
     #[test]
@@ -414,6 +464,80 @@ mod tests {
         let st = app.session.active().unwrap();
         assert_eq!(st.doc.layers.len(), n0 + 1, "⌥ duplicated first");
         assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(9, 18, 25, 34), "the original stays");
+    }
+
+    /// ⌘ as a Mac sends it, and Ctrl as Windows and Linux send it (`command` is Ctrl there).
+    const MAC_CMD: egui::Modifiers = egui::Modifiers { alt: false, ctrl: false, shift: false, mac_cmd: true, command: true };
+    const CTRL: egui::Modifiers = egui::Modifiers { alt: false, ctrl: true, shift: false, mac_cmd: false, command: true };
+
+    /// #2474: ⌘ is the temporary Move tool, so ⌘-arrows nudge the layer from the Brush (⌘⇧ 10 px,
+    /// ⌘⌥ duplicates first); the plain arrows still do nothing there.
+    #[test]
+    fn cmd_arrows_nudge_the_layer_from_the_brush() {
+        let mut app = app_with_layer();
+        app.ui.tool = Tool::Brush;
+        let id = app.session.active().unwrap().active_layer.unwrap();
+        let n0 = app.session.active().unwrap().doc.layers.len();
+        // A plain arrow turns the Brush's tip (below), never the layer.
+        assert!(press(&mut app, egui::Key::ArrowRight, egui::Modifiers::NONE));
+        assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(8, 8, 24, 24));
+        assert_eq!(app.session.tools.brush.angle, -1.0);
+        app.run("tools.setBrush", json!({"brush": {"angle": 0}})).unwrap();
+        for cmd in [CTRL, MAC_CMD] {
+            assert!(press(&mut app, egui::Key::ArrowRight, cmd));
+        }
+        assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(10, 8, 26, 24), "1 px per press");
+        assert!(press(&mut app, egui::Key::ArrowDown, CTRL | egui::Modifiers::SHIFT));
+        assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(10, 18, 26, 34), "⌘⇧: 10 px");
+        assert!(press(&mut app, egui::Key::ArrowLeft, CTRL | egui::Modifiers::ALT));
+        let st = app.session.active().unwrap();
+        assert_eq!(st.doc.layers.len(), n0 + 1, "⌘⌥ duplicated first");
+        assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(10, 18, 26, 34), "the original stays");
+        assert_eq!(bounds(&app, st.active_layer.unwrap()), photocraft_geom::Rect::new(9, 18, 25, 34), "the copy moved");
+        assert_eq!(app.ui.tool, Tool::Brush);
+        // The Move tool itself takes ⌘-arrows as plain ones.
+        app.ui.tool = Tool::Move;
+        assert!(press(&mut app, egui::Key::ArrowUp, CTRL));
+        let copy = app.session.active().unwrap().active_layer.unwrap();
+        assert_eq!(bounds(&app, copy), photocraft_geom::Rect::new(9, 17, 25, 33));
+    }
+
+    /// #2474: tools where ⌘ means something else in Photoshop (Pen and path tools, Hand, Zoom,
+    /// Crop, Type) keep ⌘-arrows away from the layer, as does an active Free Transform.
+    #[test]
+    fn cmd_arrows_leave_the_layer_alone_where_cmd_is_not_the_move_tool() {
+        let mut app = app_with_layer();
+        let id = app.session.active().unwrap().active_layer.unwrap();
+        for tool in [Tool::Pen, Tool::PathSelection, Tool::DirectSelection, Tool::Rectangle, Tool::Hand, Tool::Zoom, Tool::Crop, Tool::Type] {
+            app.ui.tool = tool;
+            assert!(!press(&mut app, egui::Key::ArrowRight, CTRL), "{tool:?}");
+            assert!(!press(&mut app, egui::Key::ArrowRight, MAC_CMD | egui::Modifiers::SHIFT), "{tool:?}");
+        }
+        assert_eq!(bounds(&app, id), photocraft_geom::Rect::new(8, 8, 24, 24));
+        app.ui.tool = Tool::Brush;
+        crate::transform_tool::begin(&mut app, &egui::Context::default()).unwrap();
+        let q0 = app.ui.transform.as_ref().unwrap().quad;
+        assert!(!press(&mut app, egui::Key::ArrowRight, CTRL));
+        assert_eq!(app.ui.transform.as_ref().unwrap().quad, q0);
+    }
+
+    /// #2474: with a selection tool ⌘-arrows move the selected pixels (the temporary Move tool), the
+    /// plain arrows the outline.
+    #[test]
+    fn cmd_arrows_move_the_selected_pixels_with_a_selection_tool() {
+        let mut app = app_with_layer();
+        app.ui.tool = Tool::RectMarquee;
+        app.session.execute("select.rect", json!({"x": 8, "y": 8, "width": 8, "height": 8})).unwrap();
+        assert!(press(&mut app, egui::Key::ArrowRight, CTRL));
+        let offset = |app: &PhotocraftApp| photocraft_engine::float_cmds::floating(app.session.active().unwrap()).map(|f| f.offset);
+        assert_eq!(offset(&app), Some((1, 0)), "the selected pixels float, 1 px to the right");
+        assert!(press(&mut app, egui::Key::ArrowDown, CTRL | egui::Modifiers::SHIFT));
+        assert_eq!(offset(&app), Some((1, 10)), "⌘⇧: 10 px");
+        assert_eq!(app.ui.tool, Tool::RectMarquee);
+        // Not while a polygon is being drawn.
+        app.ui.tool = Tool::PolygonLasso;
+        app.ui.polygon = vec![[1.0, 1.0]];
+        assert!(!press(&mut app, egui::Key::ArrowRight, CTRL));
     }
 
     /// #1428: with a selection tool the arrows nudge the selection outline (⇧ 10 px), one step

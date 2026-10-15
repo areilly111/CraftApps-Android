@@ -55,6 +55,20 @@ fn reference(sheet: Option<&E>, set_names: &[String], normal: usize) -> Option<u
     (i != normal && i < set_names.len()).then_some(i)
 }
 
+/// Adds to `sheet[key]` (a dictionary) every entry of `resolved` it lacks; existing entries win.
+fn fill_missing(sheet: &mut E, key: &str, resolved: E) {
+    let E::Dict(all) = resolved else { return };
+    if sheet.get(key).is_none() {
+        sheet.set(key, E::dict());
+    }
+    let Some(E::Dict(have)) = sheet.get_mut(key) else { return };
+    for (k, v) in all {
+        if !have.iter().any(|(h, _)| *h == k) {
+            have.push((k, v));
+        }
+    }
+}
+
 /// Reads the style sheets of a `TySh` block. None when it has no engine data.
 pub fn read_style_sheets(tysh: &[u8], dpi: f32) -> Option<PsdStyleSheets> {
     let t = parse_tysh(tysh)?;
@@ -170,6 +184,7 @@ pub fn write_style_sheets(tysh: &[u8], layer: &TextLayer, styles: &TextStyles, d
         rd.set("TheNormalParagraphSheet", E::Int(0));
         rd.set("FontSet", E::Array(fonts.iter().map(|f| crate::psd::font_entry(f)).collect()));
     }
+    let char_fonts = e.path(&["ResourceDict", "FontSet"]).or_else(|| e.path(&["DocumentResources", "FontSet"])).map(|f| names(Some(f))).unwrap_or_default();
     let char_ix = |id: Option<u32>| id.and_then(|id| styles.character.iter().position(|d| d.id == id)).map(|i| i as i64 + 1);
     let para_ix = |id: Option<u32>| id.and_then(|id| styles.paragraph.iter().position(|d| d.id == id)).map(|i| i as i64 + 1);
     let runs = layer.char_runs();
@@ -193,8 +208,15 @@ pub fn write_style_sheets(tysh: &[u8], layer: &TextLayer, styles: &TextStyles, d
             if let Some(sheet) = r.get_mut("StyleSheet") {
                 remove_key(sheet, "Parent");
                 remove_key(sheet, "Name");
-                if let Some(ix) = char_ix(run_at(start).and_then(|r| r.style.style_sheet)) {
+                let run = run_at(start);
+                if let Some(ix) = char_ix(run.and_then(|r| r.style.style_sheet)) {
                     sheet.set("Parent", E::Int(ix));
+                }
+                // The run's reference may be dropped or renumbered: write what it inherited
+                // too, so it keeps its look whatever sheet it now points to (#3795).
+                if let Some(run) = run {
+                    let fi = char_fonts.iter().position(|f| *f == postscript_for(&run.style)).unwrap_or(0);
+                    fill_missing(sheet, "StyleSheetData", style_sheet_data(&run.style, fi, k));
                 }
             }
         }
@@ -207,6 +229,9 @@ pub fn write_style_sheets(tysh: &[u8], layer: &TextLayer, styles: &TextStyles, d
                 remove_key(sheet, "Name");
                 if let Some(ix) = para_ix(paras.get(i).and_then(|p| p.style.style_sheet)) {
                     sheet.set("Parent", E::Int(ix));
+                }
+                if let Some(p) = paras.get(i) {
+                    fill_missing(sheet, "Properties", paragraph_properties(&p.style, k));
                 }
             }
         }

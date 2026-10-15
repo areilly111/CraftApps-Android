@@ -215,16 +215,15 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
     let lt = layer.map(|l| l.layer_time(t)).unwrap_or(t);
     let base = p.clone();
     let (title, fields): (String, Vec<Field>) = match id {
-        // Photoshop files: Import Kind (Footage / Composition / – Retain Layer Sizes).
-        "file.import" if !has(p, &["importAs"]) && is_layered(p) => (
-            "Import Photoshop File".into(),
-            vec![Field::choice(
-                "importAs",
-                "Import Kind",
-                &[("Footage", json!("footage")), ("Composition", json!("composition")), ("Composition - Retain Layer Sizes", json!("compositionLayerSizes"))],
-                1,
-            )],
-        ),
+        // Photoshop files: Import Kind (Footage / Composition / – Retain Layer Sizes). Dropped
+        // files start at Settings ▸ Import ▸ Default Drag Import As.
+        "file.import" if !has(p, &["importAs"]) && is_layered(p) => {
+            let kinds =
+                [("Footage", json!("footage")), ("Composition", json!("composition")), ("Composition - Retain Layer Sizes", json!("compositionLayerSizes"))];
+            let drag = p.get("drag").and_then(Value::as_bool).unwrap_or(false);
+            let sel = if drag { kinds.iter().position(|(_, v)| v.as_str() == Some(s.prefs.drag_import_as())).unwrap_or(0) } else { 1 };
+            ("Import Photoshop File".into(), vec![Field::choice("importAs", "Import Kind", &kinds, sel)])
+        }
         // PDF / Illustrator files: Import Kind and the page.
         "file.import" if !has(p, &["importAs", "page"]) && is_pdf(p) => (
             "Import PDF / Illustrator File".into(),
@@ -766,17 +765,32 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let h = 120.0 + rows;
     let mut regs: Vec<(String, egui::Rect, String)> = vec![];
     let mut browse: Option<usize> = None;
-    // Wide enough for a label column and a 240 px popup without a horizontal scroll bar.
-    super::dialogs::modal(ctx, &f.title.clone(), vec2(480.0, h), t, |ui| {
+    let mut focused = false;
+    // Project Settings needs room for its labels and the selected GPU adapter name. At the
+    // generic form width its grid overflows, pushing the buttons off the visible area (#978).
+    let width = if f.title == "Project Settings" { 800.0 } else { 480.0 };
+    super::dialogs::modal(ctx, &f.title.clone(), vec2(width, h), t, |ui| {
         egui::Grid::new("form-grid").num_columns(2).spacing([14.0, 10.0]).show(ui, |ui| {
             for (i, fl) in f.fields.iter_mut().enumerate() {
                 ui.label(tr(&fl.label));
                 let r = match &mut fl.kind {
                     FieldKind::Number { value, speed } => {
                         let dec = if *speed < 0.01 { 5 } else { 3 };
-                        ui.add(crate::widgets::drag_value(egui::DragValue::new(value).speed(*speed).max_decimals(dec))).rect
+                        let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(value).speed(*speed).max_decimals(dec)));
+                        // The first field takes the keyboard when the form opens. (A number edits
+                        // as text once focused; the selection is clamped to what it shows.)
+                        if !std::mem::replace(&mut focused, true) {
+                            crate::widgets::focus_on_open(ui.ctx(), &r, &" ".repeat(64));
+                        }
+                        r.rect
                     }
-                    FieldKind::Text(s) => ui.add(egui::TextEdit::singleline(s).desired_width(220.0)).rect,
+                    FieldKind::Text(s) => {
+                        let r = ui.add(egui::TextEdit::singleline(s).desired_width(220.0));
+                        if !std::mem::replace(&mut focused, true) {
+                            crate::widgets::focus_on_open(ui.ctx(), &r, s);
+                        }
+                        r.rect
+                    }
                     FieldKind::Path { value, .. } => {
                         ui.horizontal(|ui| {
                             let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0)).rect;
@@ -892,7 +906,8 @@ pub(crate) fn close_info(app: &mut EffectcraftApp) {
 pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let (title, body) = app.dialog_state.info.clone();
     let mut close = false;
-    super::dialogs::modal(ctx, &title, vec2(440.0, 160.0), t, |ui| {
+    // The text wraps within this small dialog; avoid a horizontal scrollbar changing its height.
+    super::dialogs::modal_vertical(ctx, &title, vec2(440.0, 160.0), t, |ui| {
         ui.label(tr(&body));
         ui.add_space(16.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -946,6 +961,37 @@ mod tests {
             ],
         };
         assert_eq!(f.params(), json!({"prop": "position", "value": [10.0, 20.0], "mode": "b"}));
+    }
+
+    /// A numeric form (Layer ▸ Transform ▸ Position…) opens with its first number being edited
+    /// and selected: typing replaces it, and one Enter confirms.
+    #[test]
+    fn a_numeric_form_opens_with_its_first_number_selected() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        app.dialog_state.form = Form {
+            title: "Position".into(),
+            command: "layer.setTransform".into(),
+            base: json!({"prop": "position"}),
+            fields: vec![Field::num("value[0]", "X", 960.0), Field::num("value[1]", "Y", 540.0)],
+        };
+        app.dialog = Some(Dialog::Form);
+        let frame = |app: &mut EffectcraftApp, events: Vec<egui::Event>| {
+            let raw = egui::RawInput { events, ..Default::default() };
+            ctx.run_ui(raw, |ui| {
+                app.auto.begin_frame();
+                crate::panels::dialogs::show(app, ui.ctx());
+            })
+            .textures_delta
+            .clear();
+        };
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![egui::Event::Text("42".into())]);
+        assert_eq!(app.dialog_state.form.params()["value"], json!([42.0, 540.0]));
+        frame(&mut app, vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        assert!(app.dialog.is_none(), "one Enter confirms");
     }
 
     /// File ▸ Export ▸ Adobe Premiere Pro Project… opens a form that says it writes Final Cut Pro

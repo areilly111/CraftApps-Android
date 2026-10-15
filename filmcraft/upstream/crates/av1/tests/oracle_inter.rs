@@ -101,3 +101,19 @@ fn inter_1080p() {
         check_bit_exact(&ff, &s);
     }
 }
+
+/// 4:2:2 and 4:4:4 (libaom; SVT-AV1 only makes 4:2:0): the post-filters run in row bands whose
+/// chroma rows depend on the vertical subsampling, so these check the band edges there too.
+#[test]
+fn inter_chroma_444_422() {
+    let Some(ff) = ffmpeg_libaom() else { return };
+    let p = ["-cpu-used", "8", "-crf", "40", "-enable-restoration", "1"];
+    let src = "testsrc2=s=416x400:r=25,noise=alls=8:allf=t";
+    for s in [
+        Spec::new("inter_aom_444", src, 6, "yuv444p", &p).encoder("libaom-av1"),
+        Spec::new("inter_aom_422", src, 6, "yuv422p", &p).encoder("libaom-av1"),
+        Spec::new("inter_aom_444_10bit", src, 6, "yuv444p10le", &p).encoder("libaom-av1"),
+    ] {
+        check_bit_exact(&ff, &s);
+    }
+}

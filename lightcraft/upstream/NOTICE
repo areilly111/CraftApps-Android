@@ -22,6 +22,12 @@ Foundation project licensed under the Apache License 2.0, and from the CIE 1931 
 functions it ships (CIE, CC-BY-4.0). The matrices were fitted by the LightCraft contributors
 (2026) with tools/spectral_camera_table.py. See assets/ATTRIBUTION.md.
 
+crates/inpaint (lightcraft-inpaint) ports the inpainting (PatchMatch completion) and Poisson membrane
+fill code of PhotoCraft (https://github.com/storytold/photocraft, crates/algo/src/inpaint.rs and
+poisson.rs), Copyright the PhotoCraft contributors, licensed under the MIT License or the Apache
+License 2.0, at your option. The port was modified by the LightCraft contributors (2026); each
+ported file says so.
+
 crates/segment (lightcraft-segment) ports the SAM 3 model code of Hugging Face Transformers
 (https://github.com/huggingface/transformers, src/transformers/models/sam3 and sam3_tracker),
 Copyright The HuggingFace Team and Meta Platforms, Inc., licensed under the Apache License 2.0.
@@ -48,3 +54,10 @@ also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/mai
 (the Japanese fonts BIZ UDPGothic, BIZ UDMincho and Shippori Mincho; the web build embeds only BIZ
 UDPGothic Regular), under the SIL Open Font License 1.1. Release packages include each font's
 licence as OFL-<family>.txt.
+
+Place names for reverse geocoding (Photo > Fill Location from GPS) are not part of LightCraft and
+are never distributed with it. On the user's request (Photo > Download Place Names) the app
+downloads cities15000.zip, admin1CodesASCII.txt and countryInfo.txt from GeoNames
+(https://download.geonames.org/export/dump/) into the settings folder. GeoNames data is licensed
+under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/);
+attribution: "GeoNames, geonames.org". The lookup code (crates/geocode) is our own.

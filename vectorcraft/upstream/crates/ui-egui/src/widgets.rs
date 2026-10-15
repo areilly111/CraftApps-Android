@@ -309,13 +309,33 @@ fn select_all(ui: &Ui, id: egui::Id, text: &str) {
     st.store(ui.ctx(), id);
 }
 
-/// Numeric fields take the whole text, unit included, when they gain focus or are double-clicked
-/// (egui would select one word): typing a number or an expression replaces it.
+/// Numeric fields select the whole text on keyboard focus, a completed focus click or a
+/// double-click. A pointer press keeps its caret so dragging selects from the pressed position.
 fn select_all_on_focus(ui: &Ui, resp: &Response, text: &str) {
-    if !(resp.gained_focus() || resp.double_clicked()) {
+    let pending = resp.id.with("select-all-on-focus-click");
+    let (pressed, released) =
+        ui.input(|i| (i.pointer.button_pressed(egui::PointerButton::Primary), i.pointer.button_released(egui::PointerButton::Primary)));
+    if resp.gained_focus() {
+        ui.data_mut(|d| {
+            if pressed {
+                d.insert_temp(pending, true);
+            } else {
+                d.remove_temp::<bool>(pending);
+            }
+        });
+    }
+    let clicked_focus = released && ui.data_mut(|d| d.remove_temp::<bool>(pending)).unwrap_or(false) && resp.clicked_by(egui::PointerButton::Primary);
+    if resp.lost_focus() {
+        ui.data_mut(|d| d.remove_temp::<bool>(pending));
+    }
+    if !(resp.gained_focus() && !pressed || resp.double_clicked() || clicked_focus) {
         return;
     }
-    if egui::TextEdit::load_state(ui.ctx(), resp.id).is_some() {
+    if let Some(st) = egui::TextEdit::load_state(ui.ctx(), resp.id) {
+        // Preserve a text selection if the focus click already produced one.
+        if clicked_focus && !resp.double_clicked() && st.cursor.char_range().is_some_and(|r| !r.as_sorted_char_range().is_empty()) {
+            return;
+        }
         select_all(ui, resp.id, text);
         ui.ctx().request_repaint();
     }
@@ -982,12 +1002,11 @@ pub fn link_label(ui: &mut Ui, text: &str) -> Response {
     resp
 }
 
-/// The row of a checkbox or radio button: allocates a 13 pt box plus `label`, draws the label and
-/// returns the box, the response and the box's border colour.
-fn choice_row(ui: &mut Ui, label: &str, enabled: bool) -> (Rect, Response, Color32) {
+/// The row of a checkbox or radio button: allocates a 13 pt box plus `text` (already translated),
+/// draws the text and returns the box, the response and the box's border colour.
+fn choice_row(ui: &mut Ui, text: &str, enabled: bool) -> (Rect, Response, Color32) {
     let t = Tokens::get(ui.ctx());
-    let galley =
-        ui.painter().layout_no_wrap(tl!(label).to_string(), egui::FontId::proportional(12.5), if enabled { t.text } else { t.text_disabled });
+    let galley = ui.painter().layout_no_wrap(text.to_string(), egui::FontId::proportional(12.5), if enabled { t.text } else { t.text_disabled });
     let (rect, resp) =
         ui.allocate_exact_size(vec2(18.0 + galley.size().x, 20.0f32.max(galley.size().y)), if enabled { Sense::click() } else { Sense::hover() });
     let bx = Rect::from_min_size(pos2(rect.left(), rect.center().y - 6.5), Vec2::splat(13.0));
@@ -1009,21 +1028,27 @@ pub fn check(ui: &mut Ui, label: &str, value: bool, enabled: bool) -> bool {
 
 /// [`check`] with tooltip `tip` on the box and its label. Returns true when toggled.
 pub fn check_tip(ui: &mut Ui, label: &str, value: bool, enabled: bool, tip: &str) -> bool {
-    let (clicked, resp) = check_row(ui, label, Some(value), enabled);
+    let (clicked, resp) = check_row(ui, tl!(label), Some(value), enabled);
     resp.on_hover_text(tip);
     clicked
 }
 
 /// Three-state [`check`]: `None` shows a dash (a neutral or mixed state). Returns true when clicked.
 pub fn check3(ui: &mut Ui, label: &str, value: Option<bool>, enabled: bool) -> bool {
-    check_row(ui, label, value, enabled).0
+    check_row(ui, tl!(label), value, enabled).0
 }
 
-/// [`check3`], also returning the row's response (what a tooltip goes on: a widget around it never
-/// counts as hovered under the box).
-fn check_row(ui: &mut Ui, label: &str, value: Option<bool>, enabled: bool) -> (bool, Response) {
+/// [`check`] for a name of the document's (an artboard's, an asset's), shown as it is, never
+/// translated. Returns true when toggled.
+pub fn check_name(ui: &mut Ui, name: &str, value: bool) -> bool {
+    check_row(ui, name, Some(value), true).0
+}
+
+/// [`check3`] with its `text` already translated, also returning the row's response (what a
+/// tooltip goes on: a widget around it never counts as hovered under the box).
+fn check_row(ui: &mut Ui, text: &str, value: Option<bool>, enabled: bool) -> (bool, Response) {
     let t = Tokens::get(ui.ctx());
-    let (bx, resp, border) = choice_row(ui, label, enabled);
+    let (bx, resp, border) = choice_row(ui, text, enabled);
     let checked = value == Some(true);
     ui.painter().rect_filled(bx, CornerRadius::same(2), if checked && enabled { t.accent_strong } else { t.input });
     ui.painter().rect_stroke(bx, CornerRadius::same(2), Stroke::new(1.0, border), StrokeKind::Inside);
@@ -1045,7 +1070,7 @@ fn check_row(ui: &mut Ui, label: &str, value: Option<bool>, enabled: bool) -> (b
 /// Radio button in the style of [`check`], with a disabled state. Returns true when clicked.
 pub fn radio(ui: &mut Ui, label: &str, selected: bool, enabled: bool) -> bool {
     let t = Tokens::get(ui.ctx());
-    let (bx, resp, border) = choice_row(ui, label, enabled);
+    let (bx, resp, border) = choice_row(ui, tl!(label), enabled);
     let c = bx.center();
     ui.painter().circle(c, 6.0, if selected && enabled { t.accent_strong } else { t.input }, Stroke::new(1.0, border));
     if selected {

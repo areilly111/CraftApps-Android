@@ -730,8 +730,10 @@ impl LibraryKind for GraphicStyleLibraries {
     }
     fn menu_tail(app: &mut VectorcraftApp, ui: &mut Ui) {
         ui.separator();
+        // As a command, so its file dialog, shown off the UI thread, loads the library when it
+        // answers.
         if menu_item(ui, tl!("Other Library…"), true, false)
-            && let Err(e) = other_library(app, None)
+            && let Err(e) = app.run("window.graphicStyleLibrary.other", json!({}))
         {
             app.status(e);
         }
@@ -933,7 +935,7 @@ mod tests {
         frame_with(&ctx, release(pos2(60.0, 116.0)), |ui| show(&mut app, ui));
         let d = app.session.active().unwrap().doc.clone();
         assert_eq!(d.graphic_styles.len(), n0.len() + 2);
-        assert_eq!(d.node(rect).unwrap().graphic_style, d.graphic_styles.last().map(|g| g.id));
+        assert_eq!(d.node(rect).unwrap().extras().graphic_style, d.graphic_styles.last().map(|g| g.id));
     }
 
     #[test]

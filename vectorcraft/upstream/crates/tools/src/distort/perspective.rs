@@ -287,9 +287,9 @@ impl PerspectiveGrid {
                 continue;
             }
             if let Some(n) = k.parse::<u64>().ok().and_then(|id| doc.node_mut(NodeId(id)))
-                && n.perspective.is_none()
+                && n.extras().perspective.is_none()
             {
-                n.perspective = Some(Box::new(PerspectiveAttachment::new(pl.id(), 0.0)));
+                n.extras_mut().perspective = Some(Box::new(PerspectiveAttachment::new(pl.id(), 0.0)));
             }
         }
         if let Some(v) = doc.unknown.get_mut(DOC_KEY).and_then(Value::as_object_mut) {
@@ -676,7 +676,7 @@ pub enum Axis {
 
 /// The plane and depth object `n` is attached to (its own record).
 pub fn attachment(n: &Node) -> Option<(Plane, f64)> {
-    let a = n.perspective.as_deref()?;
+    let a = n.extras().perspective.as_deref()?;
     Plane::parse(&a.plane).filter(|p| *p != Plane::None).map(|p| (p, a.depth))
 }
 
@@ -697,7 +697,8 @@ pub fn attached_roots(doc: &Document) -> Vec<(NodeId, Plane, f64)> {
 
 /// Attach `n` to `plane` at `depth` (type and symbols keep their projection).
 pub fn set_attachment(n: &mut Node, plane: Plane, depth: f64) {
-    let rec = n.perspective.get_or_insert_with(Default::default);
+    let mut extras = n.extras_mut();
+    let rec = extras.perspective.get_or_insert_with(Default::default);
     rec.plane = plane.id().into();
     rec.depth = if depth.is_finite() { depth } else { 0.0 };
 }
@@ -705,9 +706,10 @@ pub fn set_attachment(n: &mut Node, plane: Plane, depth: f64) {
 /// Release `n` from the grid (Release with Perspective): it keeps its look, type and symbols their
 /// projection.
 pub fn release(n: &mut Node) {
-    match n.perspective.as_deref_mut() {
+    let mut extras = n.extras_mut();
+    match extras.perspective.as_deref_mut() {
         Some(rec) if rec.projection.is_some() => *rec = PerspectiveAttachment { projection: rec.projection, ..Default::default() },
-        _ => n.perspective = None,
+        _ => extras.perspective = None,
     }
 }
 
@@ -1460,7 +1462,7 @@ mod tests {
         old.attached.insert(id2.0.to_string(), Plane::Left);
         d2.unknown.insert(DOC_KEY.into(), serde_json::to_value(&old).unwrap());
         grid(2).store(&mut d2);
-        assert!(d2.node(id2).unwrap().perspective.is_none());
+        assert!(d2.node(id2).unwrap().extras().perspective.is_none());
     }
 
     #[test]

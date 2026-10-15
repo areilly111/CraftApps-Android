@@ -1,6 +1,35 @@
-# Photocraft Architecture
+# PhotoCraft architecture
 
-Status: draft v1 (2026-09-30). This plan does not assume a final UI toolkit. The candidates are discussed in [`rust-framework-options.md`](rust-framework-options.md).
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (current-state summary added; the design plan below is kept, with its deviations listed) · **Target:** Adobe Photoshop 2026
+
+## Current state (2026-10-10)
+
+What exists on `main` today. The numbered sections below are the original design plan of
+2026-09-30; where the code differs, this summary wins.
+
+- **Workspace:** 25 library crates under `crates/`, 3 apps (`photocraft` desktop, `photocraft-cli`,
+  `photocraft-web`), `xtask`, an example plug-in and 5 fuzz crates; ~393,000 lines of Rust in
+  ~1,020 files; ~5,460 `#[test]` functions (ui-egui 1,677, engine 1,237, algo 408, io 377,
+  codecs 325, psd 263). Crate map and layers: [`AGENTS.md`](../AGENTS.md) §2 and
+  `xtask/src/layers.rs` (enforced by `cargo xtask layers`).
+- **UI toolkit:** decided: egui/eframe on wgpu (no webview, no JavaScript). The same Rust builds
+  to WebAssembly for the browser (trunk + wasm-bindgen).
+- **Engine:** ~700 commands registered in `crates/engine` (`CommandSpec` in `commands.rs`); the
+  UI, CLI, JSON control channel and MCP server all dispatch by command id. 628 Photoshop menu items
+  map to them (`crates/ui-egui/src/menu_catalog.rs`).
+- **Rendering:** CPU compositor (`compose`, the oracle) and wgpu compositor (`gpu`, ≤ 1/255 of the
+  CPU); colour through our own ICC engine (`cms`), display transform folded into a GPU 3D LUT.
+- **Files:** own PSD/PSB crate (`psd`), flat codecs (`codecs`), camera raw (`raw`), HEIF (`heif`),
+  Affinity (`affinity`), document mapping (`io`), native `.pcraft` (`format`, atomic saves).
+  Coverage: [`file-format-parity.md`](file-format-parity.md).
+- **Not built (yet) from the plan:** the `ml` crate (no ML runtime; see gap G15), plug-in ABI v2.
+- **Deviations from the plan below:** `photocraft-tablet` is the one crate allowed `unsafe`
+  (AppKit pen events); `affinity`, `heif` and `raw` crates were added; the phased roadmap in §15
+  is superseded by [`roadmap.md`](roadmap.md).
+
+---
+
+# Design plan (2026-09-30)
 
 This plan sets out:
 - the Cargo workspace,
@@ -320,7 +349,7 @@ Both backends consume the same plan. This is the only place that encodes Photosh
 
 - Blending happens in document space by default, which is Photoshop-compatible. A per-document "linear light blending" option is also available.
 - **Display transform** (`engine/src/display_color.rs`): the canvas is always colour-managed, document profile → monitor profile (relative colorimetric + BPC), cached per (document profile, mode, monitor). On the GPU canvas the transform, plus Proof Colors / Gamut Warning / 32-bit preview, is baked into a 33³ 3D LUT the canvas shader's final pass applies; the CPU canvas runs an 8-bit `photocraft-cms` transform on the composite. When the document profile matches the monitor (sRGB on sRGB) there is no LUT and no transform. Linear composites (EXR/HDR, tagged linear sRGB on import) are stored sRGB-encoded in the 8-bit canvas texture. CMYK documents are read through their embedded CMYK profile (`photocraft_color::convert::with_cmyk_space`, entered by the compositors and composite exports).
-- **Monitor profile:** Edit › Color Settings › Monitor Profile: `auto`, a built-in RGB profile or an `.icc` path. In `auto` each window uses the profile of the display it is on (#569): the desktop app reads every display's id, name, frame and ICC profile (macOS: AppKit `NSScreen` through `osascript`, no FFI) at launch and again when the app comes back to the front, when any window is on an unknown or resized display (at most every 30 s; a trigger inside that window is deferred) and when Edit › Color Settings opens (`ui-egui/src/monitor_status.rs`; the helper is stopped after 10 s). There is deliberately no periodic re-read (#569 decision: a read costs about 0.2 s of CPU), so a profile reassigned while PhotoCraft stays in front with no window moving is picked up at the next return to the front or Color Settings, and each window picks the display it overlaps most (`display_color::display_at`, AppKit's `NSWindow.screen` rule). Elsewhere `auto` is sRGB. The GPU canvas keeps one texture per document and a display LUT per (document, display); CPU canvas textures are per (document, display). `ColorState::monitor_status_for` says what is applied per display: `auto`, `manual`, or `fallback` to sRGB with the reason (missing, unreadable, non-RGB or unusable as a destination), and whether the reading is an earlier one kept after a failed re-read; `edit.colorSettings` (`monitorStatus`, `displays`), Help › System Info and the Color Settings dialog show it, and a fallback in `auto` posts a notice. Letting macOS colour-match the canvas instead is #581 (an architecture decision).
+- **Monitor profile:** Edit › Color Settings › Monitor Profile: `auto`, a built-in RGB profile or an `.icc` path. In `auto` each window uses the profile of the display it is on (#569): the desktop app reads every display's id, name, frame and ICC profile at launch and again when the app comes back to the front, when any window is on an unknown or resized display (at most every 30 s; a trigger inside that window is deferred) and when Edit › Color Settings opens (`ui-egui/src/monitor_status.rs`). macOS reads AppKit `NSScreen` through `osascript` (no FFI); X11 reads RandR outputs and the default colord profile matched by exact `XRANDR_name`; native Wayland and Xwayland windows from a Wayland session stay on sRGB because eframe/winit cannot safely set the app surface's Wayland image description. The macOS helper is stopped after 10 s. There is deliberately no periodic re-read (#569 decision: a read costs about 0.2 s of CPU), so a profile reassigned while PhotoCraft stays in front with no window moving is picked up at the next return to the front or Color Settings. X11 selects the root window's RandR output by winit's current-monitor name and other windows by their overlapping RandR frame; macOS follows `NSWindow.screen`. Elsewhere `auto` is sRGB. The GPU canvas keeps one texture per document and a display LUT per (document, display); CPU canvas textures are per (document, display). `ColorState::monitor_status_for` says what is applied per display: `auto`, `manual`, or `fallback` to sRGB with the reason (missing, unreadable, non-RGB or unusable as a destination), and whether the reading is an earlier one kept after a failed re-read; `edit.colorSettings` (`monitorStatus`, `displays`), Help › System Info and the Color Settings dialog show it, and a fallback in `auto` posts a notice. Letting macOS colour-match the canvas instead is #581 (an architecture decision).
 - **HDR/EDR output** (an `rgba16float` surface with an extended-range colorspace) is a later-phase feature. The interfaces already carry `f32` pixels.
 
 ### 7.4 Oracle
@@ -437,7 +466,9 @@ psd/src/
 
 - **`automation`:** an MCP server built on `rmcp`. Its tool names use underscores (the dotted
   names such as `doc.open` belong to the JSON control protocol, `docs/control-protocol.md`). It exposes:
-  - `session_list`, `doc_open`, `doc_new`, `doc_save`, `doc_export`, `doc_inspect` (layer tree as JSON), `doc_render_preview` (PNG), `doc_select`, `doc_close`.
+  - `session_list`, `doc_open`, `doc_new`, `doc_place` (place from the read root as a Smart Object),
+    `doc_export_layers`, `doc_export_data_sets` (write beneath the write root), `doc_import_data_sets` (a CSV from the read root),
+    `doc_save`, `doc_export`, `doc_inspect` (layer tree as JSON), `doc_render_preview` (PNG), `doc_select`, `doc_close`.
   - `command_list`, `command_run` and `command_batch`, generated from the registry; `jobs_list` and `jobs_cancel` for background jobs.
   - Bridge only (a running app): `ui_inspect`, `ui_screenshot`, `ui_pointer`, `ui_menu_invoke`, `ui_set`, `control_call`. The full list is in `docs/development.md` › MCP.
   - Stdio for agent CLIs, and optionally loopback TCP with a token so it can attach to a running GUI.
@@ -529,7 +560,7 @@ Versions get pinned when we scaffold, using the numbers in `rust-framework-optio
 
 ## 15. Phased roadmap
 
-Each phase ends with a demoable build and green CI on all targets. Phases 8–10 (colour/print pro, photographer/designer pro, frontier) and the per-feature phase assignments are in [`photoshop-parity.md`](photoshop-parity.md).
+Each phase ends with a demoable build and green CI on all targets. Phases 8–10 (colour/print pro, photographer/designer pro, frontier) and the per-feature phase assignments are in [`target-app-parity.md`](target-app-parity.md).
 
 | Phase | Scope | Done when |
 |---|---|---|
@@ -552,3 +583,10 @@ Each phase ends with a demoable build and green CI on all targets. Phases 8–10
 4. **PSD crate.** Build our own, or adopt or fork `ag-psd`/`psd`. Decide after the week-1 spike.
 5. **Default working depth and blending.** 8-bit + gamma-space blending matches Photoshop. 16-bit/float + linear is the modern default. The proposal is to follow Photoshop by default and make the other a per-document option.
 6. **Scope of Photoshop plugin compatibility.** Decided: no native `.8BF` hosting; a sandboxed WebAssembly plug-in API instead (see [`plugins.md`](plugins.md)).
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-10 | minor | Current-state summary and deviations from the plan; status line; broken link to `photoshop-parity.md` repointed to `target-app-parity.md` |
+| 2026-09-30 | major | Design plan v1 |

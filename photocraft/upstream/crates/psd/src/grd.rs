@@ -58,6 +58,9 @@ pub struct GrdGradient {
     pub opacity: Vec<(f32, f32, f32)>,
 }
 
+/// The raw number behind a key. It is deliberately *not* filtered: every caller passes the result
+/// through `finite`, so filtering here as well would give two guards with two different answers to
+/// the same input, and mutation testing showed the second one was unreachable.
 fn num(d: &Descriptor, k: &str) -> Option<f64> {
     match d.get(k)? {
         Value::Double(v) => Some(*v),
@@ -66,11 +69,36 @@ fn num(d: &Descriptor, k: &str) -> Option<f64> {
         Value::LargeInteger(v) => Some(*v as f64),
         _ => None,
     }
-    .filter(|v| v.is_finite())
+}
+/// The single guard every number passes through on its way to an `f32`. Only a NaN is truly
+/// without a value, so only a NaN returns `None`; the caller then falls back to the default its
+/// own field documents (opacity opaque, a midpoint centred, a channel zero).
+///
+/// Everything else — including `±inf` and a value finite as `f64` but larger than `f32::MAX`
+/// (`1e300`, which would otherwise overflow the cast to an infinity) — is *saturated* to the
+/// representable range before the cast. That keeps the mapping monotonic: a bigger input never
+/// yields a smaller output, so "too large" lands at the top of the range rather than snapping to a
+/// field default and inverting the result.
+fn finite(v: f64) -> Option<f32> {
+    if v.is_nan() {
+        return None;
+    }
+    Some(v.clamp(f64::from(f32::MIN), f64::from(f32::MAX)) as f32)
 }
 fn f(d: &Descriptor, k: &str) -> f32 {
-    num(d, k).unwrap_or(0.0) as f32
+    finite(num(d, k).unwrap_or(0.0)).unwrap_or(0.0)
 }
+fn clamp01(v: f32) -> f32 {
+    v.clamp(0.0, 1.0)
+}
+/// A hue in degrees. An in-range value (0..=360, including exactly 360) is kept verbatim; only an
+/// out-of-range value wraps with `rem_euclid`, so 370 -> 10 and -10 -> 350. Wrapping every value
+/// would alter a legal 360 to 0 (and f32 round-off on a tiny negative can itself land on 360),
+/// changing the colour at the boundary. The input is already finite, so the result stays finite.
+fn hue(h: f32) -> f32 {
+    if (0.0..=360.0).contains(&h) { h } else { h.rem_euclid(360.0) }
+}
+
 fn obj<'a>(d: &'a Descriptor, k: &str) -> Option<&'a Descriptor> {
     match d.get(k)? {
         Value::Descriptor(o) | Value::GlobalObject(o) => Some(o),
@@ -90,11 +118,19 @@ fn enum_is(d: &Descriptor, k: &str, v: &str) -> bool {
 fn color(c: &Descriptor) -> Option<GrdColor> {
     let id = c.class_id.as_bytes();
     Some(match id {
-        b"RGBC" => GrdColor::Rgb([f(c, "Rd  ") / 255.0, f(c, "Grn ") / 255.0, f(c, "Bl  ") / 255.0]),
-        b"HSBC" => GrdColor::Hsb([f(c, "H   "), f(c, "Strt") / 100.0, f(c, "Brgh") / 100.0]),
-        b"CMYC" => GrdColor::Cmyk([f(c, "Cyn ") / 100.0, f(c, "Mgnt") / 100.0, f(c, "Ylw ") / 100.0, f(c, "Blck") / 100.0]),
-        b"LbCl" => GrdColor::Lab([f(c, "Lmnc"), f(c, "A   "), f(c, "B   ")]),
-        b"Grsc" => GrdColor::Gray(f(c, "Gry ") / 100.0),
+        // Every component documented as 0..=1 is clamped here, like every other range in this
+        // module: a hostile file can store any integer at all, and dividing by 100 or 255 does not
+        // bring it back into range on its own.
+        b"RGBC" => GrdColor::Rgb([f(c, "Rd  ") / 255.0, f(c, "Grn ") / 255.0, f(c, "Bl  ") / 255.0].map(clamp01)),
+        // Hue is a circular degree value in 0..=360; see `hue`. An in-range value (including
+        // exactly 360) is kept, only an out-of-range one wraps, so a hostile hue cannot become a
+        // different, wrong colour at the boundary.
+        b"HSBC" => GrdColor::Hsb([hue(f(c, "H   ")), (f(c, "Strt") / 100.0).clamp(0.0, 1.0), (f(c, "Brgh") / 100.0).clamp(0.0, 1.0)]),
+        b"CMYC" => GrdColor::Cmyk([f(c, "Cyn ") / 100.0, f(c, "Mgnt") / 100.0, f(c, "Ylw ") / 100.0, f(c, "Blck") / 100.0].map(clamp01)),
+        // L* is 0..=100; a*/b* are signed and bounded to the CIELAB gamut (-128..=127) so a hostile
+        // value cannot hand a downstream colour converter an out-of-gamut number to overflow on.
+        b"LbCl" => GrdColor::Lab([f(c, "Lmnc").clamp(0.0, 100.0), f(c, "A   ").clamp(-128.0, 127.0), f(c, "B   ").clamp(-128.0, 127.0)]),
+        b"Grsc" => GrdColor::Gray(clamp01(f(c, "Gry ") / 100.0)),
         _ => return None,
     })
 }
@@ -103,7 +139,7 @@ fn location(d: &Descriptor) -> f32 {
     (f(d, "Lctn") / 4096.0).clamp(0.0, 1.0)
 }
 fn midpoint(d: &Descriptor) -> f32 {
-    (num(d, "Mdpn").unwrap_or(50.0) as f32 / 100.0).clamp(0.0, 1.0)
+    finite(num(d, "Mdpn").unwrap_or(50.0) / 100.0).unwrap_or(0.5).clamp(0.0, 1.0)
 }
 
 fn gradient(g: &Descriptor) -> GrdGradient {
@@ -127,7 +163,7 @@ fn gradient(g: &Descriptor) -> GrdGradient {
     }
     for v in list(g, "Trns").iter().take(MAX_STOPS) {
         let Value::Descriptor(s) = v else { continue };
-        out.opacity.push((location(s), (num(s, "Opct").unwrap_or(100.0) as f32 / 100.0).clamp(0.0, 1.0), midpoint(s)));
+        out.opacity.push((location(s), finite(num(s, "Opct").unwrap_or(100.0) / 100.0).unwrap_or(1.0).clamp(0.0, 1.0), midpoint(s)));
     }
     out
 }

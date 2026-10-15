@@ -22,6 +22,16 @@ pub const TOP_MENUS: [&str; 10] = ["File", "Edit", "Image", "Layer", "Type", "Se
 /// UI-level commands (handled by the shell rather than the engine): id, label, menu, shortcut.
 pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.symmetryTransform", "Transform Symmetry", &[], None),
+    // Right-click the options bar's tool icon (#2825); `tool.resetAll` asks first.
+    ("tool.reset", "Reset Tool", &[], None),
+    ("tool.resetAll", "Reset All Tools", &[], None),
+    ("window.panel.group", "Change Panel Group", &[], None),
+    ("window.panel.layout", "Change Panel Layout", &[], None),
+    ("window.panel.move", "Move Panel", &[], None),
+    ("window.panel.float", "Float Panel", &[], None),
+    ("window.panel.dock", "Dock Panel", &[], None),
+    ("window.panel.activate", "Activate Panel", &[], None),
+    ("window.panel.close", "Close Panel", &[], None),
     ("file.open", "Open…", &["File"], Some("Cmd+O")),
     ("file.save", "Save", &["File"], Some("Cmd+S")),
     ("file.saveAs", "Save As…", &["File"], Some("Cmd+Shift+S")),
@@ -63,27 +73,36 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.togglePanels", "Show/Hide All Panels", &[], Some("Tab")),
     ("window.toggle.dock", "Show/Hide Panels", &[], Some("Shift+Tab")),
     ("window.toggle.options", "Options", &["Window"], None),
+    // Photoshop's Ctrl+Tab and Ctrl+Shift+Tab, on macOS too (⌘Tab belongs to the system, #2340).
+    ("window.nextDocument", "Next Document", &[], Some("Ctrl+Tab")),
+    ("window.previousDocument", "Previous Document", &[], Some("Ctrl+Shift+Tab")),
     ("window.theme.toggle", "Next Appearance Mode", &["Window"], None),
     ("window.theme.pro", "Pro Theme", &["Window", "Theme"], None),
     ("window.theme.proMedium", "Pro Medium Gray Theme", &["Window", "Theme"], None),
+    ("window.theme.proLightGray", "Pro Light Gray Theme", &["Window", "Theme"], None),
+    ("window.theme.proLight", "Pro Light Theme", &["Window", "Theme"], None),
     ("window.theme.studio", "Studio Theme", &["Window", "Theme"], None),
     ("window.theme.studioLight", "Studio Light Theme", &["Window", "Theme"], None),
     ("window.theme.classic", "Classic Theme", &["Window", "Theme"], None),
     ("window.theme.solarizedDark", "Solarized Dark Theme", &["Window", "Theme"], None),
     ("window.theme.adwaita", "Adwaita Light Theme", &["Window", "Theme"], None),
     ("window.theme.adwaitaDark", "Adwaita Dark Theme", &["Window", "Theme"], None),
+    ("window.theme.breezeLight", "Breeze Light Theme", &["Window", "Theme"], None),
+    ("window.theme.breezeDark", "Breeze Dark Theme", &["Window", "Theme"], None),
+    ("window.theme.system", "Sync with system", &["Window", "Theme"], None),
     ("edit.search", "Search…", &["Edit"], Some("Cmd+F")),
     ("help.discord", "Join the ArtCraft Discord…", &["Help"], None),
     ("help.website", "PhotoCraft Website", &["Help"], None),
     ("help.artcraftWebsite", "ArtCraft Website", &["Help"], None),
     ("help.github", "PhotoCraft on GitHub", &["Help"], None),
     ("help.reportIssue", "Report an Issue…", &["Help"], None),
-    // Android only: the port's in-app updater (no floating button; see updater.rs).
-    #[cfg(target_os = "android")]
-    ("help.checkUpdates", "Check for Updates…", &["Help"], None),
     ("help.systemInfo", "System Info…", &["Help"], None),
     ("help.about", "About PhotoCraft", &["Help"], None),
 ];
+
+/// Window › <document>: the open documents, listed at the end of the Window menu as in Photoshop.
+/// The id ends in the document's index, which is its tab's position.
+pub(crate) const DOCUMENT_ITEM: &str = "window.document.";
 
 /// Photoshop's Window › <panel> ids for the panels the shell already has, as `window.toggle.*`.
 pub(crate) fn panel_alias(id: &str) -> Option<&'static str> {
@@ -145,6 +164,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     if id == "ui.symmetryTransform" {
         return crate::symmetry_ui::begin(app).map(|_| Value::Null);
     }
+    if let Some(r) = crate::tool_reset::invoke(app, id, &params) {
+        return r;
+    }
     // A pending Pen anchor is gesture state; Edit › Undo must match the keyboard.
     if id == "edit.undo" && crate::vector_ui::pen_undo_last_point(app) {
         return Ok(Value::Null);
@@ -153,6 +175,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     if id == "image.crop" && crate::crop_ui::pending(app) {
         crate::canvas::commit_crop(app);
         return Ok(json!({"committed": true}));
+    }
+    if let Some(result) = crate::panel_docking::command(app, id, &params) {
+        return result;
     }
     // Help › Discord, website, GitHub, Report an Issue.
     if let Some(url) = crate::links::url_for(id) {
@@ -254,6 +279,7 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             }
             Ok(Value::Null)
         }
+        "layer.duplicate" if params.as_object().is_none_or(|o| o.is_empty()) => crate::duplicate_layer_ui::open(app),
         "file.new" if params.as_object().is_none_or(|o| o.is_empty()) => {
             let fields = app.new_document_fields();
             let d = app.ui.open_dialog(DialogKind::NewDocument, fields);
@@ -266,14 +292,19 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
                 app.open_dialog_file()
             }
         }
+        "file.import.videoFramesToLayers" if params.get("path").and_then(Value::as_str).is_none() => {
+            app.ask_folder(|app, path| app.run("file.import.videoFramesToLayers", json!({"path": path})).map_err(|e| e.to_string()))
+        }
         "file.save" => {
             // Writes back only to a layered file; a flat one goes through Save As.
-            let path = params
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .or_else(|| app.session.active().and_then(|d| d.path.clone()).filter(|p| photocraft_engine::file_cmds::saves_in_place(p)));
-            app.save_as(path)
+            let tga_bits = crate::targa_options_ui::bits_param(&params, id)?;
+            match params.get("path").and_then(Value::as_str) {
+                Some(path) => app.save_as_with(Some(path.to_string()), tga_bits),
+                None => match app.session.active().and_then(|d| d.path.clone()).filter(|p| photocraft_engine::file_cmds::saves_in_place(p)) {
+                    Some(path) => app.save_in_place(path),
+                    None => app.save_as_with(None, tga_bits),
+                },
+            }
         }
         "file.exit" => {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -281,6 +312,11 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         }
         "file.clearRecent" => {
             app.clear_recent();
+            Ok(Value::Null)
+        }
+        "file.removeRecent" => {
+            let path = params.get("path").and_then(Value::as_str).ok_or("file.removeRecent needs a \"path\"")?;
+            app.remove_recent(path);
             Ok(Value::Null)
         }
         id if id.starts_with("file.openRecent.") => {
@@ -294,30 +330,43 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             #[cfg(target_arch = "wasm32")]
             {
                 let _ = app;
-                Err("Open Recent is unavailable on the web".to_string())
+                let message = "Open Recent is unavailable on the web";
+                Err(tl!(message).to_string())
             }
         }
-        "file.saveAs" => app.save_as(params.get("path").and_then(Value::as_str).map(str::to_string)),
+        "file.saveAs" => {
+            let tga_bits = crate::targa_options_ui::bits_param(&params, id)?;
+            app.save_as_with(params.get("path").and_then(Value::as_str).map(str::to_string), tga_bits)
+        }
         "view.zoomIn" | "view.zoomOut" | "view.fitOnScreen" | "view.actualPixels" => app.run(id, params),
         "window.newWindowForDocument" => {
             let doc = app.session.active_index().ok_or("no document")?;
             let wid = app.ui.alloc_id();
             let view = app.ui.views[doc].clone();
-            app.ui.windows.push(crate::state::DocWindow { id: wid, document: doc, view, open: true });
+            app.ui.windows.push(crate::state::DocWindow { id: wid, document: doc, view, open: true, position: None });
             Ok(json!({"window": wid}))
         }
         "window.theme.toggle" => {
             crate::prefs_ui::cycle_appearance(app, ctx);
             Ok(Value::Null)
         }
+        "window.theme.system" => {
+            app.run("prefs.set", json!({"path": "interface.appearanceMode", "value": "auto"}))?;
+            crate::prefs_ui::sync_appearance(app, ctx);
+            Ok(Value::Null)
+        }
         "window.theme.pro"
         | "window.theme.proMedium"
+        | "window.theme.proLightGray"
+        | "window.theme.proLight"
         | "window.theme.studio"
         | "window.theme.studioLight"
         | "window.theme.classic"
         | "window.theme.solarizedDark"
         | "window.theme.adwaita"
-        | "window.theme.adwaitaDark" => {
+        | "window.theme.adwaitaDark"
+        | "window.theme.breezeLight"
+        | "window.theme.breezeDark" => {
             let k = crate::theme::ThemeKind::from_name(&id["window.theme.".len()..]).unwrap_or_default();
             app.set_theme(ctx, k);
             Ok(Value::Null)
@@ -335,14 +384,6 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             Ok(Value::Null)
         }
         "help.about" => Ok(json!({"dialog": app.ui.open_dialog(DialogKind::About, Default::default())})),
-        // Android only: registered in UI_COMMANDS on Android only (above).
-        #[cfg(target_os = "android")]
-        "help.checkUpdates" => {
-            if let Some(hooks) = &app.services.android_hooks {
-                (hooks.check_updates)();
-            }
-            Ok(Value::Null)
-        }
         "help.systemInfo" => {
             let mut fields = serde_json::Map::new();
             fields.insert("systemInfo".into(), json!(true));
@@ -355,13 +396,41 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         l if matches!(l, "layer.exportAs" | "layer.quickExportAsPng") && params.as_object().is_none_or(|o| o.is_empty()) => {
             let layer = app.session.active().and_then(|d| d.active_layer).ok_or("no active layer")?;
             if l == "layer.exportAs" {
+                // Several layers (artboards, say) selected: one file each (#3629).
+                let layers = app.session.active().map(|d| d.selected_layers()).unwrap_or_default();
+                if layers.len() > 1 {
+                    return Ok(json!({"dialog": crate::export_dialog::open_layers(app, &layers)?}));
+                }
                 Ok(json!({"dialog": crate::export_dialog::open_layer(app, layer)?}))
             } else {
-                crate::export_dialog::quick_export_layer_png(app, layer)
+                crate::export_dialog::quick_export_selected_layers_png(app)
             }
         }
         "layer.layerStyle.blendingOptions" if params.as_object().is_none_or(|o| o.is_empty()) => {
             crate::layer_style::open(app, Some(crate::layer_style::BLENDING)).map(|d| json!({"dialog": d})).ok_or_else(|| "no active layer".to_string())
+        }
+        // ⇧⌘> / ⇧⌘<: the selected characters while typing, else the whole type layer.
+        "type.increaseSize" | "type.decreaseSize" | "type.increaseSizeMore" | "type.decreaseSizeMore" if params.as_object().is_none_or(|o| o.is_empty()) => {
+            let p = crate::type_tool::with_target(app, json!({})).ok_or("the active layer is not a type layer")?;
+            app.run(id, p)
+        }
+        // Formatting menus follow an inline text selection when editing. Outside an edit,
+        // snapshot the selected type layers; explicit automation targets retain their scope.
+        t if (t.starts_with("type.antiAlias.")
+            || t.starts_with("type.orientation.")
+            || t.starts_with("type.openType.")
+            || matches!(t, "type.warpText" | "type.loadDefaultTypeStyles"))
+            && params.get("layer").is_none()
+            && params.get("layers").is_none()
+            && params.get("range").is_none() =>
+        {
+            let Some(mut p) = crate::type_tool::formatting_params(app) else { return app.run(id, params) };
+            if let Some(props) = params.as_object() {
+                for (key, value) in props {
+                    p[key] = value.clone();
+                }
+            }
+            app.run(id, p)
         }
         "type.editText" => {
             crate::type_tool::edit_active(app)?;
@@ -370,9 +439,13 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             }
             Ok(Value::Null)
         }
-        // Solid Color uses the Color Picker; other adjustment / fill controls use Properties.
+        // Solid Color fills and solid-colour shapes use the Color Picker, Pattern fills the Pattern
+        // Fill dialog; other adjustment / fill / shape controls use Properties.
         "layer.layerContentOptions" => {
-            if let Some(dialog) = crate::solid_fill_ui::open(app) {
+            if let Some(dialog) = crate::solid_fill_ui::open(app).or_else(|| crate::shape_fill_ui::open(app)) {
+                return Ok(json!({"dialog": dialog}));
+            }
+            if let Some(dialog) = crate::pattern_fill_ui::open(app) {
                 return Ok(json!({"dialog": dialog}));
             }
             let r = app.run(id, params)?;
@@ -391,6 +464,11 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         // Photoshop's "Select and Mask…" is the engine's select.refineEdge.
         // Select › Color Range… from the menu: the dialog (with params: the engine directly).
         "select.colorRange" if params.as_object().is_none_or(|o| o.is_empty()) => Ok(json!({"dialog": crate::color_range_ui::open(app)})),
+        // Layer › New Fill Layer › Pattern… from the menu: the Pattern Fill dialog (with params:
+        // the engine directly).
+        photocraft_engine::pattern_fill_cmds::CREATE if params.as_object().is_none_or(|o| o.is_empty()) => {
+            Ok(json!({"dialog": crate::pattern_fill_ui::open_new(app)?}))
+        }
         // Edit › Fill… from the menu or its shortcuts: the Fill dialog (with params: the engine).
         crate::fill_ui::COMMAND if params.as_object().is_none_or(|o| o.is_empty()) => {
             if let Some(Err(why)) = photocraft_engine::commands::find(id).map(|c| (c.enabled)(&app.session)) {
@@ -403,6 +481,23 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         "select.transformSelection" if params.as_object().is_none_or(|o| o.is_empty()) => {
             crate::transform_tool::begin_selection(app, ctx).map(|_| json!({"transform": app.ui.transform}))
         }
+        // While editing type, the clipboard rows and Select > All work on the text (#1355, #2893).
+        "edit.cut" if app.ui.text_edit.is_some() => {
+            crate::type_tool::cut_selection(app, ctx);
+            Ok(Value::Null)
+        }
+        "edit.copy" if app.ui.text_edit.is_some() => {
+            crate::type_tool::copy_selection(app, ctx);
+            Ok(Value::Null)
+        }
+        "edit.paste" if app.ui.text_edit.is_some() => {
+            crate::type_tool::request_paste(ctx);
+            Ok(Value::Null)
+        }
+        "select.all" if app.ui.text_edit.is_some() => {
+            crate::type_tool::select_all(app);
+            Ok(Value::Null)
+        }
         "edit.paste" if params.as_object().is_none_or(|o| o.is_empty()) => {
             // Photoshop: paste in place when the copied area is visible, else centred in the view;
             // images from other apps are always centred.
@@ -413,7 +508,7 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
                 && app.session.active_index().zip(app.session.clipboard.as_ref()).is_some_and(|(i, clip)| {
                     let v = &app.ui.views[i];
                     let pz = app.point_zoom();
-                    let (hw, hh) = (app.last_canvas_rect.width() / 2.0 / pz, app.last_canvas_rect.height() / 2.0 / pz);
+                    let (hw, hh) = (app.last_canvas_rect.width() / 2.0 / pz / app.ui.view.display_aspect(), app.last_canvas_rect.height() / 2.0 / pz);
                     let r =
                         photocraft_geom::Rect::new((v.center[0] - hw) as i32, (v.center[1] - hh) as i32, (v.center[0] + hw) as i32, (v.center[1] + hh) as i32);
                     !clip.bounds.intersect(&r).is_empty()
@@ -434,7 +529,11 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
                 _ => &mut e.lock_guides,
             };
             *slot = !*slot;
-            Ok(json!(*slot))
+            let on = *slot;
+            if id == "view.rulers" {
+                crate::prefs_ui::remember_rulers(app, on);
+            }
+            Ok(json!(on))
         }
         "edit.freeTransform"
         | "edit.transform.scale"
@@ -444,6 +543,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         | "edit.transform.perspective" => {
             // While a box is up, Scale / Rotate / Skew / Distort / Perspective (and Free Transform)
             // switch its mode; otherwise they start one in that mode.
+            if app.ui.transform.as_ref().is_some_and(|t| t.content_aware.is_some()) {
+                return Err(crate::transform_tool::CAS_ONLY_SCALES.into());
+            }
             if app.ui.transform.is_none() {
                 crate::transform_tool::begin(app, ctx)?;
             }
@@ -470,9 +572,12 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         "edit.transform.warpGrid" if app.ui.transform.as_ref().is_some_and(|t| t.warp.is_some()) && params.get("warp").is_none() => {
             crate::transform_tool::edit_session_warp(app, id, &params).map(|_| json!({"transform": app.ui.transform}))
         }
+        // Layer › New › Layer… (⇧⌘N) asks first, as in Photoshop; with params it runs as is.
+        crate::new_layer_ui::COMMAND if params.as_object().is_none_or(|o| o.is_empty()) => Ok(json!({"dialog": crate::new_layer_ui::open(app)?})),
         sz if crate::sizing::is_sizing(sz) && params.as_object().is_none_or(|o| o.is_empty()) => {
             Ok(json!({"dialog": crate::sizing::open(app, sz).ok_or("no document")?}))
         }
+        "view.newGuide" if params.as_object().is_none_or(|o| o.is_empty()) => Ok(json!({"dialog": crate::new_guide_ui::open(app)})),
         fl if crate::filter_dialog::has_dialog(fl) && params.as_object().is_none_or(|o| o.is_empty()) => {
             Ok(json!({"dialog": crate::filter_dialog::open(app, fl)}))
         }
@@ -493,6 +598,22 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
                 _ => (p.toolbar, p.options_bar, p.dock) = (true, true, true),
             }
             Ok(Value::Null)
+        }
+        "window.nextDocument" | "window.previousDocument" => {
+            // Tabs are in document order, so the next tab is the next document, wrapping around.
+            let n = app.session.documents().len();
+            let at = app.session.active_index().ok_or("no document open")?;
+            let to = if id == "window.nextDocument" { (at + 1) % n } else { (at + n - 1) % n };
+            app.session.set_active(to);
+            app.jobs.focus = None;
+            Ok(json!({"document": to}))
+        }
+        id if let Some(index) = id.strip_prefix(DOCUMENT_ITEM) => {
+            let n = app.session.documents().len();
+            let to = index.parse::<usize>().ok().filter(|i| *i < n).ok_or("no such document")?;
+            app.session.set_active(to);
+            app.jobs.focus = None;
+            Ok(json!({"document": to}))
         }
         t if t.starts_with("window.toggle.") => {
             // A shown but collapsed dock group is expanded rather than hidden (#129).
@@ -568,11 +689,15 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
     if let Some(e) = crate::transform_tool::is_enabled(app, id) {
         return e;
     }
+    if let Some(e) = crate::crop_ui::is_enabled(app, id) {
+        return e;
+    }
     match id {
-        "file.open" | "file.exit" | "file.clearRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
-        #[cfg(target_os = "android")]
-        "help.checkUpdates" => true,
+        "window.panel.activate" | "window.panel.layout" => true,
+        "window.panel.group" | "window.panel.move" | "window.panel.float" | "window.panel.dock" | "window.panel.close" => !app.session.prefs().workspace_locked,
+        "file.open" | "file.exit" | "file.clearRecent" | "file.removeRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
         i if i.starts_with("file.openRecent.") => true,
+        i if i.starts_with(DOCUMENT_ITEM) => true,
         i if crate::links::url_for(i).is_some() => true,
         i if i.starts_with("window.theme.") => true,
         "file.save" | "file.saveAs" | "file.export.exportAs" | "file.export.quickExportAsPng" => {
@@ -580,11 +705,15 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         }
         i if i.starts_with("window.toggle.") => true,
         "window.togglePanels" => true,
+        // With one document open the key stays quiet, as in Photoshop, rather than reporting why.
+        "window.nextDocument" | "window.previousDocument" => app.session.active().is_some(),
         i if panel_alias(i).is_some() || workspace_name(i).is_some() => true,
         i if proof_preset(i).is_some() => app.session.active().is_some(),
         // "Custom…" is the full Proof Setup dialog.
         "view.proofSetup.custom" => app.session.active().is_some(),
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => true,
+        "edit.cut" | "edit.copy" if app.ui.text_edit.is_some() => crate::type_tool::selected_range(app).is_some(),
+        "edit.paste" | "select.all" if app.ui.text_edit.is_some() => true,
         // An image copied in another app can only be seen by reading the OS clipboard, which happens
         // on an explicit paste: with a clipboard service these stay enabled. Paste and New from
         // Clipboard need no document (with none open, Paste makes one); Paste in Place does.
@@ -622,9 +751,13 @@ const MODE_CHECKS: [&str; 11] = ["rgb", "grayscale", "cmyk", "lab", "multichanne
 
 /// Is a UI-level panel toggle currently on (for checkmarks)?
 fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
+    if let Some(checked) = crate::panel_docking::checked(app, id) {
+        return Some(checked);
+    }
     use photocraft_doc::{ColorMode, SampleType};
     if let Some(name) = id.strip_prefix("window.theme.").filter(|n| *n != "toggle") {
-        return Some(crate::theme::ThemeKind::from_name(name) == Some(app.ui.theme));
+        let auto = app.session.prefs().interface.appearance_mode == photocraft_engine::prefs::AppearanceMode::Auto;
+        return Some(if name == "system" { auto } else { !auto && crate::theme::ThemeKind::from_name(name) == Some(app.ui.theme) });
     }
     if let Some(c) = crate::view_cmds::checked(app, id) {
         return Some(c);
@@ -702,9 +835,26 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     })
 }
 
+/// "Reveal in Finder" named after the file manager the engine opens on this platform (UI-217-19):
+/// Explorer on Windows, a plain folder elsewhere (xdg-open, the web). English action key; each
+/// display translates it.
+pub(crate) fn reveal_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Reveal in Finder"
+    } else if cfg!(windows) {
+        "Show in Explorer"
+    } else {
+        "Show in Folder"
+    }
+}
+
 /// Translate the fixed command label and substitute the currently configured export format.
 /// Reuse the existing translated PNG sentence, so dynamic formats work in every UI language.
 fn translated_menu_label(lang: crate::i18n::Lang, item: &MenuItem) -> String {
+    // A document's name is shown as it is.
+    if item.id.starts_with(DOCUMENT_ITEM) {
+        return item.label.clone();
+    }
     if item.id == "file.export.quickExportAsPng"
         && let Some(fmt) = item.label.strip_prefix("Quick Export as ")
     {
@@ -811,6 +961,19 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
         }
     }
     crate::plugin_ui::insert_menu_items(app, &mut items);
+    if let Some(mask) = app.session.active().and_then(|s| s.active_layer.and_then(|id| s.doc.layer(id))).and_then(|l| l.mask.as_ref())
+        && let Some(item) = items.iter_mut().find(|i| i.id == "layer.layerMask.enabled")
+    {
+        item.label = crate::layer_menu_ui::mask_toggle_label(mask.enabled).into();
+    }
+    // Layer › Merge Layers reads Merge Group with just a group selected, as in Photoshop (#3832).
+    if let Some(st) = app.session.active()
+        && st.selected_layers().len() <= 1
+        && st.active_layer.and_then(|id| st.doc.layer(id)).is_some_and(|l| matches!(l.content, photocraft_doc::LayerContent::Group(_)))
+        && let Some(item) = items.iter_mut().find(|i| i.id == "layer.mergeLayers")
+    {
+        item.label = "Merge Group".into();
+    }
     // The File quick-export command uses the format selected in Export Preferences.
     // On the web it intentionally downloads PNG until the quick-export service supports
     // the other formats; the Layer quick-export command also always produces PNG.
@@ -827,6 +990,10 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
             }
         };
         item.label = format!("Quick Export as {format}");
+    }
+    // Smart Objects › Reveal in Finder names this platform's file manager (UI-217-19).
+    if let Some(item) = items.iter_mut().find(|i| i.id == "layer.smartObjects.revealInFinder") {
+        item.label = reveal_label().into();
     }
     // File › Open Recent: a dynamic submenu of recently opened files (inserted after "Open As…").
     if let Some(after) = items.iter().position(|i| i.id == "file.openAs") {
@@ -864,6 +1031,25 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
             MenuItem { id: "---".into(), label: "---".into(), path: vec!["Help".into()], shortcut: None, enabled: false, checked: None, color: None },
         );
     }
+    // Window: the open documents in tab order, after a separator, the active one checked.
+    if let Some(last) = items.iter().rposition(|i| i.path.first().map(String::as_str) == Some("Window")) {
+        let window = || vec!["Window".to_string()];
+        let active = app.session.active_index();
+        let docs = app.session.documents().iter().enumerate().map(|(i, st)| MenuItem {
+            id: format!("{DOCUMENT_ITEM}{i}"),
+            label: st.doc.name.clone(),
+            path: window(),
+            shortcut: None,
+            enabled: true,
+            checked: Some(active == Some(i)),
+            color: None,
+        });
+        let separator = MenuItem { id: "---".into(), label: "---".into(), path: window(), shortcut: None, enabled: false, checked: None, color: None };
+        let rows: Vec<MenuItem> = std::iter::once(separator).chain(docs).collect();
+        if rows.len() > 1 {
+            items.splice(last + 1..last + 1, rows);
+        }
+    }
     // Edit › Keyboard Shortcuts overrides, Edit › Menus hidden items and colours.
     let prefs = app.session.prefs();
     if !prefs.shortcuts.is_empty() {
@@ -898,13 +1084,34 @@ fn menu_tint(name: &str) -> Option<egui::Color32> {
     })
 }
 
-/// Draws the menu bar; returns the right edge of the last menu title (the bar itself fills the row).
+/// The open menus' items, kept between frames: building them asks every command whether it can
+/// run, which on a document with thousands of layers costs far more than a frame.
+pub(crate) struct ItemCache {
+    /// [`crate::native_menu::state_hash`] of the state the items were built from.
+    state: u64,
+    items: Vec<MenuItem>,
+}
+
+impl ItemCache {
+    /// The items, while they still describe `state`. A frame with a click or key press rebuilds
+    /// them, which covers state the hash doesn't list.
+    fn reuse(self, state: u64, input: bool) -> Option<Vec<MenuItem>> {
+        (!input && self.state == state).then_some(self.items)
+    }
+}
+
+/// Draws the menu bar; returns the inner edge of the menu titles, facing the rest of the title bar
+/// (the right edge of the last title, or its left edge in a right-to-left UI, where File is at the
+/// right). The bar itself fills the row.
 pub fn menu_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
     // Built only while a menu is open: every item's enabled/checked state scales with the
-    // document (layer lookups), which cost milliseconds per frame on large layouts (#125).
-    let items: std::cell::OnceCell<Vec<MenuItem>> = std::cell::OnceCell::new();
+    // document (layer lookups), which cost milliseconds per frame on large layouts (#125). While
+    // one stays open, the items are reused until what they depend on changes.
+    let kept = std::cell::Cell::new(app.menu_cache.take());
+    let built: std::cell::OnceCell<ItemCache> = std::cell::OnceCell::new();
     let app_ref: &PhotocraftApp = app;
-    let mut right = ui.cursor().left();
+    let rtl = crate::direction::is_rtl();
+    let mut edge = if rtl { ui.cursor().right() } else { ui.cursor().left() };
     let lang = crate::i18n::current();
     let mut clicked: Option<String> = None;
     let t = crate::theme::Tokens::get(ui.ctx());
@@ -917,6 +1124,9 @@ pub fn menu_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
         v.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, t.text_dim);
         v.widgets.hovered.bg_stroke = egui::Stroke::NONE;
         egui::MenuBar::new().ui(ui, |ui| {
+            // egui lays the bar out left to right; a right-to-left UI starts it at the right.
+            let mut mirrored = rtl.then(|| ui.new_child(egui::UiBuilder::new().layout(crate::direction::row())));
+            let ui = mirrored.as_mut().unwrap_or(ui);
             ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
             nav.bar_bottom = Some(ui.max_rect().bottom());
             let mut buttons = Vec::with_capacity(TOP_MENUS.len());
@@ -942,12 +1152,20 @@ pub fn menu_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
                     config.close_behavior
                 };
                 egui::Popup::menu(&title)
+                    .align(crate::direction::below())
                     .open_memory(open)
                     .close_behavior(close)
                     .style(config.style.clone())
                     .info(egui::UiStackInfo::new(egui::UiKind::Menu).with_tag_value(egui::containers::menu::MenuConfig::MENU_CONFIG_TAG, config))
                     .show(|ui| {
-                        let items = items.get_or_init(|| menu_items(app_ref));
+                        let items = &built
+                            .get_or_init(|| {
+                                let state = crate::native_menu::state_hash(app_ref, None);
+                                let input = crate::native_menu::had_input(ui.ctx());
+                                let items = kept.take().and_then(|c| c.reuse(state, input)).unwrap_or_else(|| menu_items(app_ref));
+                                ItemCache { state, items }
+                            })
+                            .items;
                         let mine: Vec<&MenuItem> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some(top)).collect();
                         ui.set_min_width(220.0);
                         if mine.is_empty() {
@@ -965,13 +1183,19 @@ pub fn menu_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
                     });
                 buttons.push(title);
             }
-            right = buttons.iter().map(|b| b.rect.right()).fold(right, f32::max);
+            edge = if rtl { buttons.iter().map(|b| b.rect.left()).fold(edge, f32::min) } else { buttons.iter().map(|b| b.rect.right()).fold(edge, f32::max) };
             switch_on_hover(ui.ctx(), &buttons);
-            let tops: Vec<egui::Id> = buttons.iter().map(egui::Popup::default_response_id).collect();
+            // ← and → step to the menu on that side, so in screen order.
+            let mut tops: Vec<egui::Id> = buttons.iter().map(egui::Popup::default_response_id).collect();
+            if rtl {
+                tops.reverse();
+            }
             nav.keys(ui.ctx(), &tops, &mut clicked);
         });
     });
     nav.store(ui.ctx());
+    // No menu open this frame: nothing is kept.
+    app.menu_cache = built.into_inner();
     // The press-drag gesture ends with the button (its release was handled by the rows above).
     if ui.input(|i| i.pointer.primary_released() || !i.pointer.primary_down()) {
         ui.ctx().data_mut(|d| d.remove::<bool>(press_gesture_id()));
@@ -984,7 +1208,7 @@ pub fn menu_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
             app.ui.status_error = true;
         }
     }
-    right
+    edge
 }
 
 fn press_gesture_id() -> egui::Id {
@@ -1147,7 +1371,6 @@ fn render_level(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, clicked: &
 const MENU_SEPARATOR: f32 = 9.0;
 
 fn render_level_rows(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, clicked: &mut Option<String>, nav: &mut crate::menu_nav::Nav) {
-    let t = crate::theme::Tokens::get(ui.ctx());
     let lang = crate::i18n::current();
     // Items never wrap: the menu widens to its longest label plus shortcut (translations can be
     // longer than the English).
@@ -1155,15 +1378,8 @@ fn render_level_rows(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, click
     // Rows touch, as in native menus: the dialog spacing between them made long menus a fifth
     // taller than they need to be (#402).
     ui.spacing_mut().item_spacing.y = 0.0;
-    if t.pro {
-        // Spectrum/macOS menus: blue highlight row with white text.
-        let v = &mut ui.style_mut().visuals;
-        v.widgets.hovered.weak_bg_fill = t.accent;
-        v.widgets.hovered.bg_fill = t.accent;
-        v.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        v.widgets.hovered.corner_radius = egui::CornerRadius::same(3);
-        ui.spacing_mut().button_padding = egui::vec2(10.0, 4.0);
-    }
+    // Secondary menus use the exact same Spectrum hover contrast and spacing.
+    crate::widgets::style_spectrum_popup_menu(ui);
     // Walk in Photoshop order: leaves and separators at this depth; a submenu appears at the position
     // of its first child.
     let mut shown_subs: Vec<&str> = Vec::new();
@@ -1249,6 +1465,11 @@ pub fn apply_workspace(app: &mut PhotocraftApp) {
     }
     // Presets use the default group order, heights and tabs (Reset brings everything back).
     app.ui.dock = Default::default();
+    app.ui.docking_reveal = None;
+    app.ui.docking_generation = app.ui.docking_generation.wrapping_add(1);
+    app.ui.docking = None;
+    app.ui.docking_hidden.clear();
+    app.ui.docking_collapsed.clear();
     app.ui.dock_tabs = Default::default();
     let p = &mut app.ui.panels;
     let (nav, color, layers, history, props) = match app.ui.workspace.as_str() {
@@ -1278,6 +1499,37 @@ pub fn apply_workspace(app: &mut PhotocraftApp) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sync_with_system_menu_keeps_saved_slots_and_its_checkmark_across_palettes() {
+        use photocraft_engine::prefs::{AppearanceMode, DarkTheme, LightTheme};
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        let ctx = egui::Context::default();
+        app.services.system_theme = Some(Box::new(|_| Some(egui::Theme::Light)));
+        app.run("prefs.set", json!({"values": {"interface.darkTheme": "studio", "interface.lightTheme": "classic"}})).unwrap();
+        invoke(&mut app, &ctx, "window.theme.system", json!({})).unwrap();
+        assert_eq!(app.session.prefs().interface.appearance_mode, AppearanceMode::Auto);
+        assert_eq!(app.session.prefs().interface.dark_theme, DarkTheme::Studio);
+        assert_eq!(app.session.prefs().interface.light_theme, LightTheme::Classic);
+        assert_eq!(app.ui.theme, crate::theme::ThemeKind::Classic);
+        for appearance in [egui::Theme::Dark, egui::Theme::Light] {
+            app.services.system_theme = Some(Box::new(move |_| Some(appearance)));
+            crate::prefs_ui::tick(&mut app, &ctx);
+            let items = menu_items(&app);
+            let item = items.iter().find(|i| i.id == "window.theme.system").unwrap();
+            assert_eq!(item.label, "Sync with system");
+            assert_eq!(item.path, ["Window", "Theme"]);
+            assert!(item.enabled);
+            assert_eq!(item.checked, Some(true));
+            for kind in crate::theme::ThemeKind::ALL {
+                assert_eq!(checked(&app, &format!("window.theme.{}", kind.id())), Some(false));
+            }
+        }
+        invoke(&mut app, &ctx, "window.theme.studio", json!({})).unwrap();
+        assert_eq!(app.session.prefs().interface.appearance_mode, AppearanceMode::Dark);
+        assert_eq!(checked(&app, "window.theme.system"), Some(false));
+        assert_eq!(checked(&app, "window.theme.studio"), Some(true));
+    }
 
     #[test]
     fn submenu_header_is_disabled_when_every_item_is() {
@@ -1434,6 +1686,42 @@ mod tests {
         harness.run_steps(4);
         assert!(harness.query_by_label_contains("Open…").is_none(), "File menu should close");
         assert!(harness.query_by_label_contains("Duplicate…").is_some(), "Image menu should open on hover");
+    }
+
+    /// An open menu reuses its items between frames (building them costs far more than a frame on
+    /// a document with thousands of layers), rebuilds them when the state changes under it, and
+    /// keeps nothing once it closes.
+    #[test]
+    fn an_open_menu_reuses_its_items_until_the_state_changes() {
+        use egui_kittest::{Harness, kittest::Queryable};
+
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let mut harness = Harness::builder().with_size(egui::vec2(1200.0, 700.0)).build_ui_state(
+            |ui, app| {
+                menu_bar(app, ui);
+            },
+            app,
+        );
+        PhotocraftApp::setup_context(&harness.ctx, crate::theme::ThemeKind::ALL[0]);
+        harness.run_steps(3);
+        assert!(harness.state().menu_cache.is_none(), "no menu open, nothing built");
+        harness.get_by_label("File").click();
+        harness.run_steps(3);
+        // The same allocation frame after frame: the items were not rebuilt.
+        let built = |app: &PhotocraftApp| app.menu_cache.as_ref().map(|c| c.items.as_ptr());
+        let close = |app: &PhotocraftApp| app.menu_cache.as_ref().and_then(|c| c.items.iter().find(|i| i.id == "file.close")).map(|i| i.enabled);
+        let first = built(harness.state());
+        assert!(first.is_some());
+        assert_eq!(close(harness.state()), Some(false));
+        harness.run_steps(3);
+        assert_eq!(built(harness.state()), first);
+        // A document opened under the open menu (a job ending, an agent): the items follow.
+        harness.state_mut().run("file.new", json!({"width": 8, "height": 8})).unwrap();
+        harness.run_steps(1);
+        assert_eq!(close(harness.state()), Some(true));
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(3);
+        assert!(harness.state().menu_cache.is_none(), "closed, nothing kept");
     }
 
     #[test]
@@ -1651,7 +1939,9 @@ mod tests {
         assert!(invoke(&mut app, &ctx, "view.proofSetup.custom", Value::Null).unwrap()["dialog"].is_u64());
         let spec = photocraft_engine::commands::find("edit.convertToProfile").unwrap();
         let params = crate::filter_dialog::parse_spec(spec.params);
-        assert!(matches!(&params[0].kind, crate::filter_dialog::Kind::Choice(c) if c[0] == "srgb" && !c.iter().any(|v| v.contains('/'))));
+        assert!(
+            matches!(&params[0].kind, crate::filter_dialog::Kind::Choice { options, .. } if options[0] == "srgb" && !options.iter().any(|v| v.contains('/')))
+        );
     }
 }
 
@@ -1694,6 +1984,17 @@ mod open_recent_tests {
         assert!(!menu_items(&app).iter().any(|i| i.id.starts_with("file.openRecent.")));
         // A bad recent index errors gracefully (no panic).
         assert!(invoke(&mut app, &ctx, "file.openRecent.5", json!({})).is_err());
+
+        // Remove one entry (the Home screen's ×, #2691): the others keep their order.
+        for p in ["/tmp/c.tif", "/tmp/b.psd", "/tmp/a.png"] {
+            app.push_recent(p);
+        }
+        invoke(&mut app, &ctx, "file.removeRecent", json!({"path": "/tmp/b.psd"})).unwrap();
+        assert_eq!(app.ui.recent_files, vec!["/tmp/a.png".to_string(), "/tmp/c.tif".to_string()]);
+        assert_eq!(app.session.prefs().file_handling.recent_files, app.ui.recent_files, "removed in the preferences too");
+        invoke(&mut app, &ctx, "file.removeRecent", json!({"path": "/tmp/not-listed.png"})).unwrap();
+        assert_eq!(app.ui.recent_files.len(), 2, "a path that isn't listed changes nothing");
+        assert!(invoke(&mut app, &ctx, "file.removeRecent", json!({})).is_err(), "needs a path");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1702,7 +2003,9 @@ mod open_recent_tests {
         use photocraft_color::{ColorMode, SampleType};
         use photocraft_geom::Size;
         let services = crate::Services {
-            import: Some(Box::new(|_n: &str, _b: &[u8]| Ok((photocraft_doc::Document::new("t", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), Vec::new())))),
+            import: Some(Box::new(|_n: &str, _b: &[u8], _depth: usize| {
+                Ok((photocraft_doc::Document::new("t", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), Vec::new()))
+            })),
             ..Default::default()
         };
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
@@ -1739,5 +2042,132 @@ mod quick_export_label_tests {
             let layer = items.iter().find(|i| i.id == "layer.quickExportAsPng").unwrap();
             assert_eq!(layer.label, "Quick Export as PNG", "layer export always creates PNG");
         }
+    }
+}
+
+#[cfg(test)]
+mod reveal_label_tests {
+    use super::*;
+
+    #[test]
+    fn reveal_label_names_the_platform_file_manager() {
+        let expected = if cfg!(target_os = "macos") {
+            "Reveal in Finder"
+        } else if cfg!(windows) {
+            "Show in Explorer"
+        } else {
+            "Show in Folder"
+        };
+        assert_eq!(reveal_label(), expected);
+    }
+
+    #[test]
+    fn smart_objects_reveal_item_names_the_platform_file_manager() {
+        let app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let id = "layer.smartObjects.revealInFinder";
+        let items = menu_items(&app);
+        let reveal: Vec<_> = items.iter().filter(|i| i.id == id).collect();
+        assert_eq!(reveal.len(), 1);
+        assert_eq!(reveal[0].path, ["Layer", "Smart Objects"]);
+        assert_eq!(reveal[0].label, reveal_label());
+        if !cfg!(target_os = "macos") {
+            assert!(!reveal[0].label.contains("Finder"), "{}", reveal[0].label);
+        }
+        let shortcuts = crate::prefs_ui::shortcut_items(&app);
+        assert!(shortcuts.iter().any(|(i, label, _, _)| i == id && label == reveal_label()), "the shortcut list shows the menu label");
+        let de = crate::i18n::Lang::from_code("de").unwrap();
+        let expected = match reveal_label() {
+            "Reveal in Finder" => "Im Finder anzeigen",
+            "Show in Explorer" => "Im Explorer anzeigen",
+            _ => "Im Ordner anzeigen",
+        };
+        assert_eq!(translated_menu_label(de, reveal[0]), expected);
+        // The menu catalogue (and docs/parity-checklist.md) keeps Photoshop's macOS name.
+        assert!(crate::menu_catalog::CATALOG.iter().any(|(_, label, _, i)| *i == id && *label == "Reveal in Finder"));
+    }
+}
+
+#[cfg(test)]
+mod window_documents_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn app(docs: usize) -> PhotocraftApp {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        for _ in 0..docs {
+            app.run("file.new", json!({"width": 64, "height": 48})).unwrap();
+        }
+        app.sync_views();
+        app
+    }
+
+    /// The rows after Window's last own item: a separator and the documents.
+    fn listed(app: &PhotocraftApp) -> Vec<(String, String, Option<bool>)> {
+        let items = menu_items(app);
+        let window: Vec<&MenuItem> = items.iter().filter(|i| i.path == ["Window"]).collect();
+        let at = window.iter().position(|i| i.id.starts_with(DOCUMENT_ITEM)).unwrap_or(window.len());
+        if at > 0 && at < window.len() {
+            assert_eq!(window[at - 1].label, "---", "a separator comes before the documents");
+        }
+        window[at..].iter().map(|i| (i.id.clone(), i.label.clone(), i.checked)).collect()
+    }
+
+    /// #2991: Window ends with the open documents in tab order, the active one checked, as in
+    /// Photoshop; choosing one brings it to the front.
+    #[test]
+    fn the_window_menu_lists_the_open_documents_and_switches_between_them() {
+        assert!(listed(&app(0)).is_empty(), "no documents, no list (and no separator)");
+
+        let mut app = app(3);
+        let ctx = egui::Context::default();
+        let names: Vec<String> = app.session.documents().iter().map(|d| d.doc.name.clone()).collect();
+        let row = |i: usize, active: bool| (format!("window.document.{i}"), names[i].clone(), Some(active));
+        assert_eq!(listed(&app), [row(0, false), row(1, false), row(2, true)]);
+        // It stays last in Window, after the panels.
+        let items = menu_items(&app);
+        let last = items.iter().rposition(|i| i.path.first().map(String::as_str) == Some("Window")).unwrap();
+        assert_eq!(items[last].id, "window.document.2");
+
+        assert_eq!(invoke(&mut app, &ctx, "window.document.0", json!({})).unwrap(), json!({"document": 0}));
+        assert_eq!(app.session.active_index(), Some(0));
+        assert_eq!(listed(&app), [row(0, true), row(1, false), row(2, false)]);
+
+        // A stale or malformed id (a document closed since the menu was built) is an error.
+        for id in ["window.document.3", "window.document.", "window.document.x", "window.document.-1"] {
+            assert!(is_enabled(&app, id), "{id}: rows are always enabled");
+            assert!(invoke(&mut app, &ctx, id, json!({})).is_err(), "{id}");
+        }
+        assert_eq!(app.session.active_index(), Some(0));
+    }
+
+    /// The rows show the document's name as it is, never a translation of it, and follow a
+    /// rename (Save As).
+    #[test]
+    fn document_names_are_shown_as_they_are_and_follow_a_rename() {
+        let mut app = app(1);
+        let before = crate::native_menu::state_hash(&app, None);
+        if let Some(d) = app.session.active_mut() {
+            d.saved_to("/tmp/Layers".into());
+        }
+        assert_ne!(crate::native_menu::state_hash(&app, None), before, "a rename updates the native menu");
+        let de = crate::i18n::Lang::from_code("de").unwrap();
+        let items = menu_items(&app);
+        let row = items.iter().find(|i| i.id == "window.document.0").unwrap();
+        assert_eq!(translated_menu_label(de, row), "Layers");
+        let bar = crate::native_menu::photocraft_layout(&items, de, "de").bar;
+        assert_eq!(bar.find("window.document.0").map(|i| i.label.as_str()), Some("Layers"));
+        let panel = items.iter().find(|i| i.path == ["Window"] && i.label == "Layers").unwrap();
+        assert_eq!(bar.find(&panel.id).map(|i| i.label.as_str()), Some("Ebenen"), "Window › Layers is still translated");
+    }
+
+    /// The rows go through the control channel's `ui.menu.invoke`, like a click.
+    #[test]
+    fn control_can_choose_a_document_from_the_window_menu() {
+        let mut app = app(2);
+        let ctx = egui::Context::default();
+        let (req, _rx) = crate::control::ControlRequest::new("ui.menu.invoke", json!({"id": "window.document.0"}));
+        let crate::control::Outcome::Done(r) = crate::control::handle(&mut app, &ctx, &req) else { panic!("expected an immediate reply") };
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(app.session.active_index(), Some(0));
     }
 }

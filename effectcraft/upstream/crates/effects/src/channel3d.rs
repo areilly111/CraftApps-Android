@@ -323,11 +323,40 @@ fn wild(pat: &str, name: &str) -> bool {
     }
 }
 
-/// Parse a selection: comma-separated names (optionally quoted) or `<hex>` hashes / wildcards.
+/// Split a selection at its commas. A name in double or single quotes stays whole, commas
+/// included (Blender allows `Green, Glossy`), and a backslash takes the next character
+/// literally (`Green\, Glossy`, `\"`). Unquoted text is trimmed; the quotes are dropped.
+fn selection_names(sel: &str) -> Vec<String> {
+    let mut out = vec![];
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = sel.chars();
+    while let Some(c) = chars.next() {
+        match (c, quote) {
+            ('\\', _) => {
+                if let Some(next) = chars.next() {
+                    cur.push(next);
+                }
+            }
+            (c, Some(q)) if c == q => quote = None,
+            ('"' | '\'', None) if cur.trim().is_empty() => {
+                cur.clear();
+                quote = Some(c);
+            }
+            (',', None) => out.push(std::mem::take(&mut cur).trim().to_string()),
+            (c, _) => cur.push(c),
+        }
+    }
+    out.push(cur.trim().to_string());
+    out
+}
+
+/// Parse a selection: comma-separated names (optionally quoted, see [`selection_names`]) or
+/// `<hex>` hashes / wildcards.
 pub fn selection_hashes(sel: &str, manifest: Option<&[(String, u32)]>) -> Vec<u32> {
     let mut out = vec![];
-    for tok in sel.split(',') {
-        let t = tok.trim().trim_matches('"').trim_matches('\'');
+    for t in selection_names(sel) {
+        let t = t.as_str();
         if t.is_empty() {
             continue;
         }
@@ -675,6 +704,25 @@ mod tests {
         assert!(wild("*ight", "right") && wild("r*t", "right") && !wild("x*", "right"));
         let hex = format!("<{:08x}>", crypto_hash("left"));
         assert_eq!(selection_hashes(&hex, None), vec![crypto_hash("left")]);
+    }
+
+    /// #473: a name with a comma in it (Blender allows `Green, Glossy`) is selected when it is
+    /// quoted or its comma escaped, instead of being cut into two names that match nothing.
+    #[test]
+    fn cryptomatte_selection_keeps_quoted_names_with_commas_whole() {
+        let manifest = vec![("Green, Glossy".to_string(), 7), ("Green".to_string(), 1), ("Glossy".to_string(), 2), ("ring".to_string(), 3)];
+        let m = Some(manifest.as_slice());
+        assert_eq!(selection_hashes(r#""Green, Glossy""#, m), vec![7]);
+        assert_eq!(selection_hashes("'Green, Glossy', ring", m), vec![7, 3]);
+        assert_eq!(selection_hashes(r"Green\, Glossy", m), vec![7]);
+        assert_eq!(selection_hashes(r#"ring , "Green, Glossy""#, m), vec![3, 7]);
+        // Without a manifest the whole name is hashed.
+        assert_eq!(selection_hashes(r#""Green, Glossy""#, None), vec![crypto_hash("Green, Glossy")]);
+        // Plain lists, apostrophes inside names and an unclosed quote still parse.
+        assert_eq!(selection_hashes("Green, Glossy", m), vec![1, 2]);
+        assert_eq!(selection_names("Bob's mat, ring"), vec!["Bob's mat", "ring"]);
+        assert_eq!(selection_names(r#""Green, Glossy"#), vec!["Green, Glossy"]);
+        assert_eq!(selection_names(r#"say \"hi\""#), vec![r#"say "hi""#]);
     }
 
     #[test]

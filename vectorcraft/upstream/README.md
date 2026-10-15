@@ -170,12 +170,13 @@ next one. To pick one when starting the app, set `WGPU_POWER_PREF=high` (or `low
 its name, such as `WGPU_ADAPTER_NAME=nvidia` (see [`docs/development.md`](docs/development.md#desktop-graphics-processor)).
 
 On native Wayland, winit 0.30 does not deliver dropped files. To open an SVG, use File › Open;
-to place artwork in the current document, copy and paste the file in a file manager; or run
-under XWayland (`WAYLAND_DISPLAY= vectorcraft`) for file drag-and-drop
+to place artwork in the current document, copy and paste the file in a file manager. For file
+drag-and-drop, set **Preferences › Performance › Linux Display Server** to **X11 (XWayland)** and restart, or start
+the app with `WAYLAND_DISPLAY= vectorcraft`: the window then opens through XWayland, where drops work
 (see [`docs/development.md`](docs/development.md#linux-wayland-and-x11)).
 
 On Linux under KDE Plasma 6.3 or later with Wayland, a drawing tablet's pen moves the cursor but VectorCraft doesn't
-respond to it yet (#491). Start the app under XWayland instead: `WAYLAND_DISPLAY= vectorcraft` (see
+respond to it yet (#491). Open the window through XWayland instead, with the same preference or `WAYLAND_DISPLAY= vectorcraft` (see
 [`docs/development.md`](docs/development.md#linux-wayland-and-x11)).
 
 ### Use it from Claude Code and other agents
@@ -216,7 +217,7 @@ doesn't write Affinity files. Current `.af` validation includes 33 pinned files,
 and every-board SVG/PDF/PSD export, with fixes for Affinity 3 artboards, source-backed JPEGs and text runs.
 [Scope and limits](crates/affinity/README.md); [source audit and remaining gaps](docs/affinity-validation.md).
 The interface
-speaks English, German, Japanese, Traditional and Simplified Chinese, Spanish, French, Italian, Russian and Ukrainian (and Czech and Brazilian Portuguese in the menus);
+speaks English, German, Japanese, Korean, Traditional and Simplified Chinese, Spanish, French, Hungarian, Italian, Russian and Ukrainian (and Czech and Brazilian Portuguese in the menus);
 [localization-parity.md](docs/localization-parity.md) has the details.
 The scores are self-assessed from our code against Illustrator's public documentation;
 [target-app-parity.md](docs/target-app-parity.md#how-this-was-measured-2026-10-10) explains how far to trust them.
@@ -225,7 +226,7 @@ The scores are self-assessed from our code against Illustrator's public document
 - reliable exchange of Illustrator's own `.ai` files (layer structure in real files; Illustrator's editing data isn't written);
 - an interaction-fidelity pass covering every tool's modifiers and small behaviours;
 - 3D and Materials beyond the initial live Revolve (Extrude & Bevel, Inflate, Rotate, materials);
-- about half of the Photoshop-style raster effects (29 of 57 still missing) and the Effect Gallery;
+- about half of the Photoshop-style raster effects (28 of 57 still missing; Film Grain is available under Artistic) and the Effect Gallery;
 - CJK composition for vertical type (vertical type itself has initial support, with a Japanese interface);
 - scripting, and the rest of Variables (image and graph kinds, dataset import);
 - generative AI features.

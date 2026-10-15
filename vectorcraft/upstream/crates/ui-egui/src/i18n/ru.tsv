@@ -1118,6 +1118,23 @@
 	Graph	Диаграмма
 	Graph Data	Данные диаграммы
 	Graph Type	Тип диаграммы
+	Graph Design	Дизайн диаграммы
+	Graph Marker	Маркер диаграммы
+	New Design	Новый дизайн
+	Delete Design	Удалить дизайн
+	Paste Design	Вставить дизайн
+	Select Unused	Выбрать неиспользуемые
+	Import Data…	Импорт данных…
+	Transpose	Транспонировать
+	Switch x/y	Поменять x/y
+	Number of Decimals:	Число десятичных знаков:
+	Column Width:	Ширина столбца:
+	No Legend	Без легенды
+	Standard Legend	Стандартная легенда
+	Legends in Wedges	Легенды в секторах
+	Ratio	Пропорционально
+	Even	Одинаково
+	Stacked	Стопкой
 	Graphic Style	Графический стиль
 	Graphic Style Libraries	Библиотеки графических стилей
 	Graphic Style Libraries Menu	Меню «Библиотеки графических стилей»
@@ -1339,6 +1356,7 @@
 	Last Effect…	Последний эффект…
 	Last Page	Последняя страница
 	Latin	Латиница
+	Thai	Тайская
 	Latin Extended	Расширенная латиница
 	Latin-1 Supplement	Дополнение Latin-1
 	Layer	Слой
@@ -1561,6 +1579,7 @@
 	Move Rows	Переместить строки
 	Move Slices	Переместить фрагменты
 	Move Spine Point	Переместить точку остова
+	Reshape Spine Segment	Изменить форму сегмента остова
 	Move Swatch	Переместить образец
 	Move Up	Переместить вверх
 	Move…	Переместить…
@@ -2047,6 +2066,11 @@
 	Proof Colors	Цветопроба
 	Proof Setup	Настройка цветопробы
 	Properties	Свойства
+	Proportional Metrics	Пропорциональные метрики
+	Digits	Цифры
+	Arabic	Арабские
+	Hindi	Хинди
+	Farsi	Фарси
 	Proportional Oldstyle	Пропорциональные старого стиля
 	Pucker & Bloat…	Сморщивание и раздувание…
 	Pucker Tool	Инструмент «Сморщивание»
@@ -2137,6 +2161,9 @@
 	Rectangle: Sunshine	Прямоугольник: Солнце
 	Rectangle…	Прямоугольник…
 	Rectangular Grid	Прямоугольная сетка
+# Rectangular Grid click dialog.
+	Horizontal Dividers:	Горизонтальные разделители:
+	Vertical Dividers:	Вертикальные разделители:
 	Rectangular Grid Tool	Инструмент «Прямоугольная сетка»
 	Red	Красный
 	Redefine Character Style	Переопределить стиль символа
@@ -2146,6 +2173,9 @@
 	Redefine Symbol	Переопределить символ
 	Redefine {kind} Style	Переопределить стиль {kind}
 	Redo	Повторить
+	List Folder	Показать содержимое папки
+	Begin Undo Group	Начать группу отмены
+	End Undo Group	Завершить группу отмены
 	Redo {name}	Повторить {name}
 	Redo {}	Повторить {}
 	Reduce Colors	Сократить число цветов
@@ -2198,6 +2228,13 @@
 	Relinked {n} image(s); not in that folder: {}	Восстановлена связь с изображениями: {n}; нет в этой папке: {}
 	Relinked {} image(s)	Восстановлена связь с изображениями: {}
 	Relink…	Восстановить связь…
+	Find Linked Files	Найти связанные файлы
+	Find Linked Files in Folder…	Найти связанные файлы в папке…
+	Choose the file to relink each linked file to. Files with the size and contents saved with the link come first.	Выберите для каждого связанного файла файл, с которым нужно восстановить связь. Сначала идут файлы с размером и содержимым, сохранёнными вместе со связью.
+	Same file	Тот же файл
+	Same size	Тот же размер
+	Don't Relink	Не восстанавливать связь
+	Copy into the document's folder	Копировать в папку документа
 	Reload Plug-ins	Перезагрузить модули
 	Remove	Убрать
 	Remove Anchor Points	Убрать опорные точки
@@ -2466,6 +2503,7 @@
 	Select an image to see its Link Info.	Выберите изображение, чтобы увидеть сведения о связи.
 	Select an image to trace	Выберите изображение для трассировки
 	Select Anchors	Выделить опорные точки
+	Select Segments	Выделить сегменты
 	Select Appearance Item	Выделить элемент оформления
 	Select Art	Выделить рисунок
 	Select art and choose Object › Pattern › Make.	Выделите рисунок и выберите «Объект › Узор › Создать».
@@ -2511,7 +2549,6 @@
 	Set base color to the current color	Сделать текущий цвет базовым
 	Set Bounds	Задать границы
 	Set Current Layer	Сделать слой текущим
-	Set Key Object	Задать ключевой объект
 	Set Keyboard Shortcut	Задать сочетание клавиш
 	Set Mesh Point Color	Задать цвет точки сетки
 	Set Preference	Задать настройку
@@ -2629,6 +2666,7 @@
 	Size Tile to Art	Подогнать плитку по рисунку
 	Size/Leading	Размер/интерлиньяж
 	Size:	Размер:
+	Ridges per segment:	Гребней на сегмент:
 	Size: {size}  Tracking: {tracking}	Размер: {size}  Трекинг: {tracking}
 	Skew	Скос
 	Skin Tone Ramps	Шкалы тонов кожи
@@ -2898,6 +2936,9 @@
 	Tool Options…	Параметры инструмента…
 	Toolbar: Advanced / Basic	Панель инструментов: расширенная / основная
 	Toolbar: Single/Double Column	Панель инструментов: один/два столбца
+	Toolbar: Add Tool	Панель инструментов: добавить инструмент
+	Toolbar: Remove Tool	Панель инструментов: убрать инструмент
+	Toolbar: Reset	Панель инструментов: сбросить
 	Toolbars	Панели инструментов
 	Tools	Инструменты
 	Top	Вверху
@@ -3100,6 +3141,7 @@
 	Vertical %	По вертикали, %
 	Vertical Align Bottom	Выровнять по нижнему краю по вертикали
 	Vertical Align Center	Выровнять по центру по вертикали
+	Horizontal & Vertical Align Center	Выровнять по центру по горизонтали и вертикали
 	Vertical Align Top	Выровнять по верхнему краю по вертикали
 	Vertical Area Type Tool	Инструмент «Вертикальный текст в области»
 	Vertical Distribute Bottom	Распределить по нижнему краю по вертикали
@@ -3313,6 +3355,7 @@ axis	Horizontal	Горизонтально
 axis	Vertical	Вертикально
 axis	Both	Оба
 	Drag to move	Перетащите для перемещения
+	Drag to move out of the set	Перетащите, чтобы вынести из набора
 	Drag to float as a toolbar	Перетащите, чтобы сделать плавающей панелью инструментов
 	Put back in the toolbar	Вернуть на панель инструментов
 	Float Panel	Сделать панель плавающей
@@ -3416,6 +3459,7 @@ axis	Both	Оба
 @msg	`color` must be a colour	`color` должно быть цветом
 @msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` должно быть командой, пункт меню которой открывает диалоговое окно (см. ui.menuDialog)
 @msg	`freeform.points` must be an array	`freeform.points` должно быть массивом
+@msg	`freeform.lines` must be an array	`freeform.lines` должно быть массивом
 @msg	`gradient` must be an object	`gradient` должно быть объектом
 @msg	`library` is a library id or name (see {list})	`library` — это идентификатор или имя библиотеки (см. {list})
 @msg	`mode` applies to freeform gradients	`mode` применяется к произвольным градиентам
@@ -3478,6 +3522,7 @@ axis	Both	Оба
 @msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art или type
 @msg	artboard {0} does not exist	монтажная область {0} не существует
 @msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	при этом масштабе рисунок имеет размер {w} × {h} пт, что больше холста: выберите меньший масштаб или впишите его в монтажную область
+@msg	axis must be "vertical", "horizontal" or an angle in degrees, not `{v}`	axis должно быть "vertical", "horizontal" или углом в градусах, а не `{v}`
 @msg	background {other}: transparent, white, black or a colour such as "#ff8800"	фон {other}: transparent, white, black или цвет, например "#ff8800"
 @msg	bad color {v}	недопустимый цвет {v}
 @msg	bad colour `{hex}` (#rrggbb)	недопустимый цвет `{hex}` (#rrggbb)
@@ -3517,8 +3562,10 @@ axis	Both	Оба
 @msg	empty path	пустой контур
 @msg	file version {0} is newer than this VectorCraft supports ({VERSION})	версия файла {0} новее, чем поддерживает этот VectorCraft ({VERSION})
 @msg	freeform point {i} needs `at` [x, y] and a valid `color`	произвольной точке {i} нужны `at` [x, y] и допустимый `color`
+@msg	freeform line {i} must be an array of point indices	произвольная линия {i} должна быть массивом индексов точек
 @msg	give both `start` and `end` [x, y] (or neither)	укажите и `start`, и `end` [x, y] (или ни одного)
-@msg	give corners of the path: anchors between two straight sides	укажите углы контура: опорные точки между двумя прямыми сторонами
+@msg	give corners of the path: anchors where its sides meet at an angle	укажите углы контура: опорные точки, в которых его стороны сходятся под углом
+@msg	give horizontal or vertical	укажите horizontal или vertical
 @msg	give the path `id` and the width point `index`	укажите `id` контура и `index` точки ширины
 @msg	guides are locked	направляющие заблокированы
 @msg	image '{key}' has no pixels and was left out	изображение '{key}' не имеет пикселей и было пропущено
@@ -3659,6 +3706,7 @@ axis	Both	Оба
 @msg	nothing to wrap	нечего обтекать
 @msg	object {0} cannot have children	объект {0} не может иметь потомков
 @msg	object {id} is not a path	объект {id} не является контуром
+@msg	object {id} is not a selected top-level object	объект {id} не является выделенным объектом верхнего уровня
 @msg	page size {w} × {h}	размер страницы {w} × {h}
 @msg	page {0} does not exist (the PDF has {1})	страница {0} не существует (в PDF {1})
 @msg	paste unavailable	вставка недоступна
@@ -3755,6 +3803,7 @@ axis	Both	Оба
 @msg	the image's pixels don't match its size	пиксели изображения не соответствуют его размеру
 @msg	the layer has no objects to clip by	в слое нет объектов для обрезки
 @msg	the layer or group is locked	слой или группа заблокированы
+@msg	the guide is on a hidden or locked layer	направляющая находится на скрытом или заблокированном слое
 @msg	the target layer is locked or hidden	целевой слой заблокирован или скрыт
 @msg	the layer to flatten into is hidden	слой для объединения скрыт
 @msg	the object already has an opacity mask	у объекта уже есть непрозрачная маска
@@ -3780,7 +3829,7 @@ axis	Both	Оба
 @msg	the {tool} tool has no options	инструмент {tool} не имеет параметров
 @msg	there are no objects to release	нет объектов для освобождения
 @msg	there are no printer settings to open here	здесь нет настроек принтера для открытия
-@msg	this PostScript file can't be read ({_1}): save it as PDF or SVG in the app that made it	этот файл PostScript невозможно прочитать ({_1}): сохраните его как PDF или SVG в приложении, которое его создало
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	этот файл PostScript невозможно прочитать ({why}): сохраните его как PDF или SVG в приложении, которое его создало
 @msg	this file's PostScript couldn't be read ({why}): {what}	PostScript этого файла невозможно прочитать ({why}): {what}
 @msg	this format holds one artboard: export several as PDF or with document.exportForScreens	этот формат содержит одну монтажную область: экспортируйте несколько как PDF или с помощью document.exportForScreens
 @msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	это чертёж DWG, который невозможно прочитать: сохраните его из приложения CAD как ASCII DXF и откройте его
@@ -3869,6 +3918,9 @@ axis	Both	Оба
 @msg	tool (a tool id) is required	требуется tool (идентификатор инструмента)
 @msg	{tool} isn't in a toolbar group of several tools	{tool} не входит в группу панели инструментов из нескольких инструментов
 @msg	onto must name a panel floating in another group	onto должен называть панель, плавающую в другой группе
+@msg	below and above must name a panel floating in another group	below и above должны называть панель, плавающую в другой группе
+@msg	give only one of onto, below and above	укажите только один из onto, below и above
+@msg	column must be true or a number from 1	column должен быть true или числом от 1
 @msg	x and y must both be numbers	x и y должны быть числами
 @msg	"{0}" is not a colour: write it as #rrggbb	«{0}» не является цветом: запишите его как #rrggbb
 @msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	это не логотип из плоских цветов ({_1}% его сплошных областей совпадает с несколькими плоскими цветами), поэтому режим «Плоский логотип» превратил бы градиенты в пятна: используйте режим «Цвет»
@@ -3907,6 +3959,9 @@ axis	Both	Оба
 @msg	larger than 256 MB	больше 256 МБ
 @msg	the files come to more than 1 GB: add fewer at a time	файлы занимают больше 1 ГБ: добавляйте меньше за раз
 @msg	every numbered name for it is taken in the Fonts folder	все нумерованные имена для него уже заняты в папке Fonts
+@msg	every numbered name for {name} is taken in the document's folder	все нумерованные имена для {name} уже заняты в папке документа
+@msg	No linked files to look for	Нет связанных файлов для поиска
+@msg	Relinked {n} image(s); {name} couldn't be relinked: {reason}	Восстановлена связь с изображениями: {n}; не удалось восстановить связь с {name}: {reason}
 
 # The macOS menu bar (native_menu): the app and Window menus' system items, Settings pages.
 	Services	Службы
@@ -3920,6 +3975,8 @@ axis	Both	Оба
 	Images: link to the file instead of only embedding it.	Изображения: связывать с файлом вместо простого внедрения.
 	VectorCraft documents: one locked object, updated when the file changes.	Документы VectorCraft: один заблокированный объект, обновляемый при изменении файла.
 	A file dialog is open: choose there first	Открыто окно выбора файла: сначала сделайте выбор в нём
+	The document was closed while its file dialog was open	Документ был закрыт, пока было открыто его окно выбора файла
+	The dialog was closed before its file dialog answered	Диалоговое окно было закрыто до того, как ответило его окно выбора файла
 	Shaper	Shaper
 	Expand Shaper Group	Разобрать группу Shaper
 	Release Shaper Group	Освободить группу Shaper
@@ -3931,6 +3988,7 @@ axis	Both	Оба
 	Exit	Выйти
 @msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` — это ссылка на шаг {r}, которую разрешают только `run` и `command_batch`
 @msg	`ids` must be an array of object ids, not {v}	`ids` должен быть массивом идентификаторов объектов, а не {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` должен быть массивом индексов опорных точек, а не {v}
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: в результате шага {i} нет такого значения (чтобы написать сам $, введите $$)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: перед этим шагом нет шага {i} (шаги считаются с 0; чтобы написать сам $, введите $$)
 @msg	object ids are non-negative integers, not {v}	идентификаторы объектов — неотрицательные целые числа, а не {v}
@@ -4036,6 +4094,31 @@ axis	Both	Оба
 	Define a variable first	Сначала определите переменную
 	Text	Текст
 	Visibility	Видимость
+# Shared panel docking
+	Activate Panel	Активировать панель
+	Change Panel Layout	Изменить расположение панелей
+	Close Panel	Закрыть панель
+	Move Panel	Переместить панель
+	Group with	Сгруппировать с
+	Resize panels	Изменить размер панелей
+	Resize panel window	Изменить размер окна панели
+@msg	Invalid panel layout; restored the default dock	Недопустимое расположение панелей; восстановлено расположение по умолчанию
+@msg	action is required	Необходимо указать action
+@msg	anchor must name a registered panel	anchor должен указывать зарегистрированную панель
+@msg	before must name a panel	before должен указывать панель
+@msg	docking action contains an unknown panel or an excessive split path	Действие прикрепления содержит неизвестную панель или слишком длинный путь разделений
+@msg	group must be true or false	group должен иметь значение true или false
+@msg	move requires a destination panel	Для перемещения требуется целевая панель
+@msg	move requires an existing destination panel	Для перемещения требуется существующая целевая панель
+@msg	onto must name a floating panel	onto должен указывать плавающую панель
+@msg	panel group is empty	Группа панелей пуста
+@msg	panel must name a registered panel	panel должен указывать зарегистрированную панель
+@msg	saved panel layout is invalid; reset the workspace first	Сохранённое расположение панелей недопустимо; сначала сбросьте рабочую среду
+@msg	zone must be a string	zone должен быть строкой
+@msg	zone must be tab, center, left, right, top or bottom	zone должен иметь значение tab, center, left, right, top или bottom
+@msg	{key} must be a finite coordinate	{key} должен быть конечной координатой
+@msg	x and y must be provided together	x и y необходимо указывать вместе
+@msg	invalid restored panel group	Восстановленная группа панелей недопустима
 
 # Revolve profile guidance.
 
@@ -4091,3 +4174,21 @@ lighting	Light	Свет
 	Stroke Pressure	Нажим мазка
 	Right Diagonal	Диагональ вправо
 	Left Diagonal	Диагональ влево
+	Vertical Guide	Вертикальная направляющая
+	Horizontal Guide	Горизонтальная направляющая
+	Move Guide to Layer	Переместить направляющую на слой
+@msg	invalid native panel set	Недопустимый собственный набор панелей
+@msg	missing panel layout	Отсутствует расположение панелей
+@msg	unsupported native docking operation	Неподдерживаемая собственная операция прикрепления
+	Linux Display Server	Дисплейный сервер Linux
+	X11 (XWayland)	X11 (XWayland)
+	Ruler Origin	Начало координат линеек
+	Reset Ruler Origin	Сбросить начало координат линеек
+	Artistic	Художественные
+	Film Grain…	Зернистость плёнки…
+	Highlight Area	Область светов
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	сжатый файл распаковывается в объём больше, чем читает VectorCraft ({_1} МБ документа, {_2} МБ на изображение)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	документ слишком велик для сохранения со сжатием ({0}): сохраните его с выключенным параметром «Использовать сжатие»
+@msg	the file stopped being read (please report this bug)	чтение файла прервалось (пожалуйста, сообщите об этой ошибке)
+	Concentric Dividers:	Концентрические разделители:
+	Radial Dividers:	Радиальные разделители:

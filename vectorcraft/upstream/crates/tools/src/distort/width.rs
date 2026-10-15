@@ -612,7 +612,7 @@ mod tests {
             std::sync::Arc::new(Node::path(id, path, Appearance::basic(vectorcraft_color::Paint::None, vectorcraft_color::Paint::None, 0.0)))
         };
         let mut comp = Node::new(c, NodeKind::Compound { children: vec![line(a, 200.0), line(b, 300.0)], rule: Default::default() });
-        comp.appearance = Appearance::default_art();
+        comp.appearance = Appearance::default_art().into();
         let st = comp.appearance.stroke_mut().unwrap();
         st.width = 10.0;
         st.profile = Some(WidthProfile { points: vec![(0.0, 1.0, 1.0), (0.5, 1.0, 1.0), (1.0, 1.0, 1.0)] });

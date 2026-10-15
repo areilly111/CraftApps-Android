@@ -16,7 +16,9 @@
 //! overrides everything, and `--safe-gpu` forces the CPU path for one launch.
 //!
 //! "CPU" composites on the CPU and draws the window with a software adapter where the platform
-//! has one (WARP on Windows, llvmpipe over GL elsewhere).
+//! has one (WARP on Windows, llvmpipe over GL elsewhere). On Linux a GL adapter that can't present
+//! (NVIDIA's EGL, which also hides llvmpipe) falls back to a Vulkan adapter for the window only
+//! (#1337); before, CPU mode then couldn't start at all.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -189,7 +191,9 @@ pub fn backends(plan: &Plan, os: Os) -> Option<wgpu::Backends> {
         GpuBackend::Cpu => match os {
             Os::Windows => wgpu::Backends::DX12,
             Os::Mac => wgpu::Backends::METAL,
-            Os::Other => wgpu::Backends::GL,
+            // Vulkan only for the window when no GL adapter can present (`rank`): with NVIDIA's
+            // EGL the GL adapter can't, and CPU mode failed every start (#1337).
+            Os::Other => wgpu::Backends::GL | wgpu::Backends::VULKAN,
         },
     })
 }
@@ -222,8 +226,10 @@ pub struct Candidate {
 
 /// Rank of an adapter (lower is better): high-performance device types first (egui's power
 /// preference) or software adapters first for `cpu`; then backends, with DX12 before Vulkan for
-/// Intel on Windows.
-fn rank(a: &Candidate, backend: GpuBackend, os: Os) -> (u8, u8) {
+/// Intel on Windows. For `cpu`, any GL adapter comes before Vulkan, which is only the fallback
+/// for presenting the window (see [`backends`]).
+fn rank(a: &Candidate, backend: GpuBackend, os: Os) -> (u8, u8, u8) {
+    let fallback = u8::from(backend == GpuBackend::Cpu && a.backend == wgpu::Backend::Vulkan);
     let ty = match a.device_type {
         wgpu::DeviceType::DiscreteGpu => 0,
         wgpu::DeviceType::IntegratedGpu => 1,
@@ -243,7 +249,7 @@ fn rank(a: &Candidate, backend: GpuBackend, os: Os) -> (u8, u8) {
         wgpu::Backend::Gl => 3,
         wgpu::Backend::BrowserWebGpu | wgpu::Backend::Noop => 4,
     };
-    (ty, be)
+    (fallback, ty, be)
 }
 
 /// The adapter to use among `adapters` (`None` when there is none).
@@ -261,6 +267,14 @@ pub fn intel_dx12_applied(adapters: &[Candidate], chosen: usize, os: Os) -> bool
         && adapters.iter().any(|a| a.vendor == INTEL && a.backend == wgpu::Backend::Vulkan)
 }
 
+/// wgpu compiles indirect-call validation shaders inside `request_device`; Metal's compiler
+/// crashes on them on old Intel Macs (Iris Pro, GPUFamily 1 on Monterey), so no mode could start
+/// (#3107). Only Intel Macs skip them: PhotoCraft issues no indirect draws or dispatches, but every
+/// other GPU keeps wgpu's default. `WGPU_VALIDATION_INDIRECT_CALL=1` still wins.
+fn skips_indirect_validation(os: Os, intel: bool) -> bool {
+    os == Os::Mac && intel
+}
+
 /// Configure eframe's wgpu setup for `plan`: instance backends, the DX12 shader compiler, adapter
 /// selection (Intel on Windows, software adapters for `cpu`) and the marker update once the
 /// adapter is chosen. `note` receives a remark for System Info (e.g. the Intel default).
@@ -268,6 +282,9 @@ pub fn configure(setup: &mut egui_wgpu::WgpuSetup, plan: &Plan, os: Os, sentinel
     if let egui_wgpu::WgpuSetup::CreateNew(create) = setup {
         if let Some(b) = backends(plan, os) {
             create.instance_descriptor.backends = b;
+        }
+        if skips_indirect_validation(os, cfg!(target_arch = "x86_64")) {
+            create.instance_descriptor.flags = create.instance_descriptor.flags.difference(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL).with_env();
         }
         if os == Os::Windows {
             let exe = std::env::current_exe().ok();
@@ -529,7 +546,7 @@ mod tests {
         let p = plan(Vulkan, Some(&crashed("vulkan", "vulkan")), None, true, Os::Other);
         assert_eq!((p.backend, p.remember), (Cpu, false));
         assert_eq!(backends(&p, Os::Windows), Some(wgpu::Backends::DX12));
-        assert_eq!(backends(&p, Os::Other), Some(wgpu::Backends::GL));
+        assert_eq!(backends(&p, Os::Other), Some(wgpu::Backends::GL | wgpu::Backends::VULKAN));
         assert_eq!(backends(&p, Os::Mac), Some(wgpu::Backends::METAL));
     }
 
@@ -567,6 +584,28 @@ mod tests {
         assert_eq!(pick(&a, Cpu, Os::Windows), Some(1));
         // No software adapter: still something.
         assert_eq!(pick(&a[..1], Cpu, Os::Windows), Some(0));
+    }
+
+    /// #1337: on Linux with NVIDIA, the only GL adapter (NVIDIA's EGL) can't present, so CPU mode
+    /// found no adapter and never started. GL still wins whenever it can present.
+    #[test]
+    fn cpu_on_linux_falls_back_to_vulkan_only_when_gl_cannot_present() {
+        use wgpu::{Backend as B, DeviceType as T};
+        const NVIDIA: u32 = 0x10de;
+        let llvmpipe = cand(0x10005, T::Cpu, B::Gl);
+        let nvidia_gl = cand(NVIDIA, T::DiscreteGpu, B::Gl);
+        let nvidia_vk = cand(NVIDIA, T::DiscreteGpu, B::Vulkan);
+        let lavapipe = cand(0x10005, T::Cpu, B::Vulkan);
+        // GL presents: same choice as GL-only, software first, then hardware GL over any Vulkan.
+        assert_eq!(pick(&[nvidia_vk, lavapipe, llvmpipe], Cpu, Os::Other), Some(2));
+        assert_eq!(pick(&[nvidia_vk, lavapipe, nvidia_gl], Cpu, Os::Other), Some(2));
+        // GL can't present: Vulkan for the window, software first.
+        let mut gl = nvidia_gl;
+        gl.surface_ok = false;
+        assert_eq!(pick(&[gl, nvidia_vk, lavapipe], Cpu, Os::Other), Some(2));
+        assert_eq!(pick(&[gl, nvidia_vk], Cpu, Os::Other), Some(1));
+        // Other backends rank as before.
+        assert_eq!(pick(&[nvidia_gl, nvidia_vk], Auto, Os::Other), Some(1));
     }
 
     #[test]
@@ -767,6 +806,30 @@ mod tests {
                 C::StaticDxc | C::Auto => false,
             };
             assert!(safe, "{:?}", create.instance_descriptor.backend_options.dx12.shader_compiler);
+        }
+    }
+
+    #[test]
+    fn intel_macs_skip_the_indirect_validation_shaders() {
+        // Metal's compiler crashed on them on Intel Iris Pro, losing the device in every mode (#3107).
+        assert!(skips_indirect_validation(Os::Mac, true));
+        // Apple silicon, Windows and Linux keep wgpu's validation.
+        for (os, intel) in [(Os::Mac, false), (Os::Windows, true), (Os::Other, true), (Os::Other, false)] {
+            assert!(!skips_indirect_validation(os, intel), "{os:?} intel={intel}");
+        }
+        for (os, safe_gpu) in [(Os::Windows, false), (Os::Other, true), (Os::Other, false)] {
+            let mut setup = egui_wgpu::WgpuSetup::without_display_handle();
+            let egui_wgpu::WgpuSetup::CreateNew(before) = &setup else { panic!("a new instance") };
+            let before = before.instance_descriptor.flags;
+            configure(&mut setup, &plan(Auto, None, None, safe_gpu, os), os, Arc::new(Mutex::new(None)), Arc::default());
+            let egui_wgpu::WgpuSetup::CreateNew(create) = &setup else { panic!("a new instance") };
+            assert_eq!(create.instance_descriptor.flags, before, "{os:?}: flags untouched");
+        }
+        if cfg!(target_arch = "x86_64") && std::env::var_os("WGPU_VALIDATION_INDIRECT_CALL").is_none() {
+            let mut setup = egui_wgpu::WgpuSetup::without_display_handle();
+            configure(&mut setup, &plan(Auto, None, None, false, Os::Mac), Os::Mac, Arc::new(Mutex::new(None)), Arc::default());
+            let egui_wgpu::WgpuSetup::CreateNew(create) = &setup else { panic!("a new instance") };
+            assert!(!create.instance_descriptor.flags.contains(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL));
         }
     }
 }

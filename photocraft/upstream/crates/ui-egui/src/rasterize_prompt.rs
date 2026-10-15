@@ -133,7 +133,7 @@ pub fn body(ui: &mut egui::Ui, f: &Map<String, Value>) {
         ui.spacing_mut().item_spacing.x = 12.0;
         let (r, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
         crate::icons::paint(ui, r, "triangle-alert", 30.0, t.warning);
-        ui.add(egui::Label::new(egui::RichText::new(text).color(t.text).size(13.0)).wrap());
+        ui.add(egui::Label::new(egui::RichText::new(tl!(text)).color(t.text).size(13.0)).wrap());
     });
 }
 

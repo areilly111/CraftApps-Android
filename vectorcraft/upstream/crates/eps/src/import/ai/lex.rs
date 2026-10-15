@@ -81,6 +81,16 @@ impl<'a> Lexer<'a> {
         rest.get(..n).unwrap_or_default()
     }
 
+    /// Where the next token is looked for.
+    pub fn offset(&self) -> usize {
+        self.pos
+    }
+
+    /// The data from `from` to `to` (empty where that isn't in it).
+    pub fn slice(&self, from: usize, to: usize) -> &'a [u8] {
+        self.src.get(from..to).unwrap_or_default()
+    }
+
     /// Skip past the next `needle` (the end of data that isn't tokens) → what was skipped.
     pub fn skip_past(&mut self, needle: &[u8]) -> &'a [u8] {
         let rest = self.rest();
@@ -103,20 +113,24 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if b == b'%' {
-                if self.at_line_start() {
-                    if self.rest().starts_with(b"%_") {
-                        self.pos += 2;
-                        self.hidden = true;
-                        continue;
-                    }
-                    let line = self.line();
-                    if let Some(t) = self.special(line) {
-                        return Some(t);
-                    }
+                let start = self.at_line_start();
+                if start && self.rest().starts_with(b"%_") {
+                    self.pos += 2;
+                    self.hidden = true;
+                    continue;
+                }
+                // Right after `%_` a section still starts (a hidden image's data, #1264).
+                let prefixed = self.hidden && self.pos >= 2 && self.src.get(self.pos - 2..self.pos) == Some(b"%_");
+                let line = self.line();
+                if (start || prefixed)
+                    && let Some(t) = self.special(line)
+                {
+                    return Some(Token { hidden: prefixed, ..t });
+                }
+                if start {
                     return Some(Token { tok: Tok::Comment(line.get(1..).unwrap_or_default()), hidden: false });
                 }
                 // A comment later in a line.
-                self.line();
                 continue;
             }
             let hidden = self.hidden;
@@ -248,7 +262,7 @@ impl<'a> Lexer<'a> {
 }
 
 /// A finite number token (`12`, `-3.5`, `.5`, `1e-3`), or `None`.
-fn number(w: &[u8]) -> Option<f64> {
+pub(super) fn number(w: &[u8]) -> Option<f64> {
     let first = *w.first()?;
     if !(first.is_ascii_digit() || matches!(first, b'+' | b'-' | b'.')) {
         return None;
@@ -300,6 +314,10 @@ mod tests {
         let toks = all(src);
         assert!(toks.contains(&t(Tok::Data(b"(%)A"), false)), "{toks:?}");
         assert_eq!(toks.last(), Some(&t(Tok::Word(b"XH"), false)));
+        // #1264: on `%_` lines too, where the samples would otherwise be read as tokens.
+        let toks = all(b"%_[1 0 0 1 0 0] XI\r%_%%BeginData: 7\rXI\n(U)A%%EndData\r%_XH\ru\r");
+        assert!(toks.contains(&t(Tok::Data(b"(U)A"), true)), "{toks:?}");
+        assert_eq!(toks.last(), Some(&t(Tok::Word(b"u"), false)), "{toks:?}");
         // A section of hex lines is comments.
         let toks = all(b"%%BeginData: 9 Hex Bytes\r\n%00FF\r\n%%EndData\r\n1\r\n");
         assert_eq!(toks.last(), Some(&t(Tok::Num(1.0), false)));

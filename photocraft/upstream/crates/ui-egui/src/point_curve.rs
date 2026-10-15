@@ -194,6 +194,30 @@ pub fn interact(ui: &mut Ui, resp: &Response, graph: Rect, pts: &mut Vec<[f32; 2
     e
 }
 
+/// Curves' pencil: draws a straight stroke from `from` to `to` ([input, output] levels, 0..255)
+/// into a pencil-drawn map (one output level per input level), so a fast drag leaves no gaps.
+pub fn pencil_line(map: &mut [f32], from: [f32; 2], to: [f32; 2]) -> bool {
+    if !from.iter().chain(to.iter()).all(|x| x.is_finite()) || map.is_empty() {
+        return false;
+    }
+    let last = (map.len() - 1) as f32;
+    let level = |x: f32| x.clamp(0.0, 255.0) / 255.0 * last;
+    let (a, b) = if from[0] <= to[0] { (from, to) } else { (to, from) };
+    let (i0, i1) = (level(a[0]).round() as usize, level(b[0]).round() as usize);
+    let mut changed = false;
+    for i in i0..=i1 {
+        let t = if i1 > i0 { (i - i0) as f32 / (i1 - i0) as f32 } else { 1.0 };
+        let o = (a[1] + (b[1] - a[1]) * t).clamp(0.0, 255.0);
+        if let Some(slot) = map.get_mut(i)
+            && *slot != o
+        {
+            *slot = o;
+            changed = true;
+        }
+    }
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +259,17 @@ mod tests {
         move_to(&mut p, 3, [10.0, 5.0]);
         assert_eq!(p[3], [201.0, 5.0]);
         assert!(!move_to(&mut p, 9, [0.0, 0.0]));
+    }
+
+    #[test]
+    fn pencil_strokes_fill_every_level_they_cross() {
+        let mut map: Vec<f32> = (0..256).map(|k| k as f32).collect();
+        assert!(pencil_line(&mut map, [200.0, 10.0], [100.0, 210.0]));
+        assert_eq!((map[100], map[150], map[200]), (210.0, 110.0, 10.0));
+        assert_eq!((map[99], map[201]), (99.0, 201.0));
+        assert!(!pencil_line(&mut map, [f32::NAN, 0.0], [5.0, 5.0]));
+        assert!(pencil_line(&mut map, [-50.0, 900.0], [-40.0, 900.0]));
+        assert_eq!(map[0], 255.0);
     }
 
     #[test]

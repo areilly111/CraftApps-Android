@@ -52,6 +52,45 @@ fn each_crop_box_sizes_the_artboard_and_places_the_art_in_it() {
     assert_eq!(ImportOptions::default().crop, CropTo::Crop);
 }
 
+/// 10 mm in points.
+const BLEED: f64 = 10.0 * 72.0 / 25.4;
+
+/// A 300 × 200 sheet with a 200 × 100 trim box, the bleed box 10 mm round it, and a red rectangle
+/// reaching 20 pt past the trim box's left and bottom edges into the bleed.
+fn bled_page() -> PdfPage {
+    PdfPage {
+        bleed: Some([50.0 - BLEED, 50.0 - BLEED, 250.0 + BLEED, 150.0 + BLEED]),
+        trim: Some([50.0, 50.0, 250.0, 150.0]),
+        ..PdfPage::new(300.0, 200.0, "1 0 0 rg 30 30 100 60 re f")
+    }
+}
+
+/// The same within the precision of a box read from a file (32-bit floats).
+fn near(a: [f64; 4], b: [f64; 4]) -> bool {
+    a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-3)
+}
+
+#[test]
+fn trim_box_artboards_take_the_bleed_box_round_them_as_the_document_bleed() {
+    let bytes = pdf(&[bled_page()], None);
+    let trim = ImportOptions { crop: CropTo::Trim, ..Default::default() };
+    let d = open(&bytes, trim.clone());
+    let ab = d.artboards[0].rect;
+    assert!(close(ab, Rect::new(0.0, 0.0, 200.0, 100.0)), "{ab:?}");
+    assert!(near(d.setup.bleed, [BLEED; 4]), "{:?}", d.setup.bleed);
+    // The rectangle comes in whole, reaching into the bleed (y down: the bottom bleed is below).
+    assert!(close(art(&d), Rect::new(-20.0, 60.0, 80.0, 120.0)), "{:?}", art(&d));
+    assert!(d.setup.bleed_rect(ab).contains_rect(art(&d)));
+    // Each side as the page shows it: PDF space is y up, and a rotated page turns its bleed.
+    let uneven = PdfPage { bleed: Some([49.0, 48.0, 253.0, 154.0]), ..bled_page() };
+    let turned = PdfPage { rotate: 90, ..uneven.clone() };
+    assert!(near(open(&pdf(&[uneven], None), trim.clone()).setup.bleed, [4.0, 2.0, 1.0, 3.0]));
+    assert!(near(open(&pdf(&[turned], None), trim).setup.bleed, [1.0, 3.0, 2.0, 4.0]));
+    // On the crop box (the sheet here) there is no bleed round the artboard.
+    let d = open(&bytes, ImportOptions::default());
+    assert_eq!((d.artboards[0].rect.width(), d.setup.bleed), (300.0, [0.0; 4]));
+}
+
 #[test]
 fn missing_boxes_fall_back_to_the_crop_box_and_boxes_are_clipped_to_the_media_box() {
     let page = PdfPage { crop: Some([10.0, 10.0, 290.0, 390.0]), art: Some([-50.0, 0.0, 100.0, 100.0]), ..PdfPage::new(300.0, 400.0, "") };

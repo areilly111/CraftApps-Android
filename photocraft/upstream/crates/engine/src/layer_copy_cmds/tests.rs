@@ -155,3 +155,78 @@ fn bad_params_and_states_fail_without_changing_anything() {
     s.close(1);
     assert!(!s.is_enabled(cmd));
 }
+
+#[test]
+fn copying_linked_layers_does_not_join_an_unrelated_destination_group() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 16, "height": 16})).unwrap();
+    let src_a = LayerId(s.execute("layer.new.layer", json!({"name": "Source A"})).unwrap()["layer"].as_u64().unwrap());
+    let src_b = LayerId(s.execute("layer.new.layer", json!({"name": "Source B"})).unwrap()["layer"].as_u64().unwrap());
+    s.edit("link source", |d, _| {
+        d.layer_mut(src_a).unwrap().link_group = Some(1);
+        d.layer_mut(src_b).unwrap().link_group = Some(1);
+        Ok(())
+    })
+    .unwrap();
+
+    s.execute("file.new", json!({"width": 16, "height": 16})).unwrap();
+    let dst_a = LayerId(s.execute("layer.new.layer", json!({"name": "Destination A"})).unwrap()["layer"].as_u64().unwrap());
+    let dst_b = LayerId(s.execute("layer.new.layer", json!({"name": "Destination B"})).unwrap()["layer"].as_u64().unwrap());
+    s.edit("link destination", |d, _| {
+        d.layer_mut(dst_a).unwrap().link_group = Some(1);
+        d.layer_mut(dst_b).unwrap().link_group = Some(1);
+        Ok(())
+    })
+    .unwrap();
+    s.set_active(0);
+    let result = s.execute("layer.copyToDocument", json!({"document": 1, "layers": [src_a.0, src_b.0]})).unwrap();
+    let ids: Vec<LayerId> = result["layers"].as_array().unwrap().iter().map(|id| LayerId(id.as_u64().unwrap())).collect();
+    assert_eq!(ids.len(), 2);
+    let d = doc(&s, 1);
+    assert_eq!(d.layer(dst_a).unwrap().link_group, Some(1));
+    assert_eq!(d.layer(dst_b).unwrap().link_group, Some(1));
+    let first_group = d.layer(ids[0]).unwrap().link_group;
+    assert_eq!(first_group, d.layer(ids[1]).unwrap().link_group, "the copied pair stays linked");
+    assert!(first_group.is_some());
+    assert_ne!(first_group, Some(1), "copied links must not merge with existing ones");
+
+    assert!(s.undo());
+    assert!(doc(&s, 1).layer(ids[0]).is_none());
+    assert!(s.redo());
+    assert_eq!(doc(&s, 1).layer(ids[0]).unwrap().link_group, first_group);
+}
+
+#[test]
+fn copied_link_groups_are_distinct_from_each_other_and_destination() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 16, "height": 16})).unwrap();
+    let a = LayerId(s.execute("layer.new.layer", json!({})).unwrap()["layer"].as_u64().unwrap());
+    let b = LayerId(s.execute("layer.new.layer", json!({})).unwrap()["layer"].as_u64().unwrap());
+    s.edit("link independent source groups", |d, _| {
+        d.layer_mut(a).unwrap().link_group = Some(1);
+        d.layer_mut(b).unwrap().link_group = Some(2);
+        Ok(())
+    })
+    .unwrap();
+    s.execute("file.new", json!({"width": 16, "height": 16})).unwrap();
+    s.set_active(0);
+    let copied = s.execute("layer.copyToDocument", json!({"document": 1, "layers": [a.0, b.0]})).unwrap();
+    let ids: Vec<LayerId> = copied["layers"].as_array().unwrap().iter().map(|id| LayerId(id.as_u64().unwrap())).collect();
+    let first = doc(&s, 1).layer(ids[0]).unwrap().link_group;
+    let second = doc(&s, 1).layer(ids[1]).unwrap().link_group;
+    assert!(first.is_some() && second.is_some());
+    assert_ne!(first, second);
+}
+
+#[test]
+fn a_named_duplicate_takes_the_name_in_one_step() {
+    let (mut s, paint) = two_docs(40, 30, 8);
+    let before = s.active().unwrap().history.past_len();
+    let same = LayerId(s.execute("layer.duplicate", json!({"name": "Ink"})).unwrap()["layer"].as_u64().unwrap());
+    assert_eq!(doc(&s, 0).layer(same).unwrap().name, "Ink");
+    assert_eq!(s.active().unwrap().history.past_len(), before + 1);
+    s.undo();
+    s.execute("layer.select", json!({"layer": paint.0})).unwrap();
+    let r = s.execute("layer.copyToDocument", json!({"document": 1, "name": "Ink"})).unwrap();
+    assert_eq!(doc(&s, 1).layer(copied(&r)).unwrap().name, "Ink");
+}

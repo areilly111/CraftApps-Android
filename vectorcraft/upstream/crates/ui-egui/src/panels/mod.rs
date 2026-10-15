@@ -200,6 +200,7 @@ pub fn panel_menu(app: &mut VectorcraftApp, ui: &mut Ui, id: &str, rect: Rect) {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(rect, ui.id().with(("panel-menu", id)), Sense::click());
     icons::paint(ui, "menu", rect.shrink(1.0), if resp.hovered() { t.text_strong } else { t.text_dim });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!("Panel menu")));
     let resp = resp.on_hover_text(tl!("Panel menu"));
     egui::Popup::menu(&resp).show(|ui| {
         crate::widgets::menu_scroll(ui, |ui| {

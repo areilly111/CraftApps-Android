@@ -109,15 +109,19 @@ pub(crate) fn type_props(st: &CharStyle, len: &dyn Fn(f64) -> String) -> Props {
         // Manual kerning replaces the font's pair kerning.
         p.push(("font-kerning", "none".into()));
     }
-    if !st.features.is_empty() {
-        let v: Vec<String> = st
-            .features
-            .iter()
-            .map(|t| match t.strip_prefix('-') {
-                Some(off) => format!("\"{off}\" 0"),
-                None => format!("\"{t}\" 1"),
-            })
-            .collect();
+    let mut v: Vec<String> = st
+        .features
+        .iter()
+        .map(|t| match t.strip_prefix('-') {
+            Some(off) => format!("\"{off}\" 0"),
+            None => format!("\"{t}\" 1"),
+        })
+        .collect();
+    // Proportional Metrics: `palt` (SVG writes vertical type as outlines).
+    if st.proportional_metrics {
+        v.push("\"palt\" 1".into());
+    }
+    if !v.is_empty() {
         p.push(("font-feature-settings", v.join(", ")));
     }
     match (st.underline, st.strikethrough) {
@@ -308,7 +312,8 @@ impl Rules<'_> {
         if !n.visible {
             return;
         }
-        let plain_group = n.name.is_none() && transparency(n).is_empty() && !n.appearance.effects.iter().any(|e| e.visible) && n.mask.is_none();
+        let plain_group =
+            n.name.is_none() && transparency(n).is_empty() && !n.appearance.effects.iter().any(|e| e.visible) && n.extras().mask.is_none();
         match &n.kind {
             NodeKind::Layer { template: true, .. } | NodeKind::Path { guide: true, .. } => {}
             NodeKind::Layer { children, clip: false, .. } => children.iter().for_each(|c| self.object(c)),
@@ -390,7 +395,7 @@ impl Rules<'_> {
         let mut radius = None;
         let text = match &n.kind {
             NodeKind::Path { path, live, .. } => {
-                match corners(path, live.as_ref()) {
+                match corners(path, live.as_deref()) {
                     Some(Corners::Square) => {}
                     Some(Corners::Round(r)) => radius = Some(r.iter().map(|r| self.len(*r)).collect::<Vec<_>>().join(" ")),
                     Some(Corners::Ellipse) => radius = Some("50%".into()),
@@ -416,7 +421,7 @@ impl Rules<'_> {
         }
         art.props.extend(radius.map(|r| ("border-radius", r)));
         self.effects(n, text, &mut art);
-        if n.mask.as_ref().is_some_and(|m| !m.disabled) {
+        if n.extras().mask.as_ref().is_some_and(|m| !m.disabled) {
             art.unsupported("an opacity mask");
         }
         art

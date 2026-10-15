@@ -81,16 +81,20 @@ impl ProcessVersion {
 pub enum Process {
     /// The rendering of LightCraft before process versions existed (2026-10).
     V1,
+    /// Highlights and Shadows keep the local contrast of the tones they move: their edge-aware base
+    /// is taken of a fine median of log luminance (issue #632).
+    V2,
 }
 
 impl Process {
     /// Every process, oldest first.
-    pub const ALL: [Process; 1] = [Process::V1];
-    pub const LATEST: Process = Process::V1;
+    pub const ALL: [Process; 2] = [Process::V1, Process::V2];
+    pub const LATEST: Process = Process::V2;
 
     pub const fn version(self) -> ProcessVersion {
         match self {
             Process::V1 => ProcessVersion(1),
+            Process::V2 => ProcessVersion(2),
         }
     }
 }
@@ -242,7 +246,13 @@ impl WbMode {
             WbMode::Custom => "Custom",
         }
     }
-    /// Preset temperature/tint for raw files (K, tint).
+    /// Preset temperature/tint for raw files with a Kelvin scale (K, tint): the CIE daylight series D55 / D65 /
+    /// D75 (5503, 6504, 7504 K; CIE 15:2004) for Daylight / Cloudy / Shade, CIE Illuminant A (2856 K) for
+    /// Tungsten, a typical cool-white fluorescent (CIE F2, 4230 K, is the lamp; 3800 K with a magenta correction
+    /// is what a camera's preset neutralises) and a flash at daylight; the tints are the small magenta
+    /// corrections daylight-series whites need above the Planckian locus, as Lightroom's presets of the same
+    /// names show them in its panel (observed values, no Adobe data). On the relative scale (rendered files, raws
+    /// without matrices) `develop.wb` scales them around 6500 K = as shot.
     pub fn preset(self) -> Option<(f64, f64)> {
         match self {
             WbMode::Daylight => Some((5500.0, 10.0)),
@@ -256,9 +266,35 @@ impl WbMode {
     }
 }
 
-/// White balance. For raw files `temp` is the scene illuminant in Kelvin; for rendered files
-/// (JPEG etc.) the image is assumed D65-balanced and `temp`/`tint` are the same model with an
-/// "as shot" of 6500 K / 0 (the UI shows a relative −100..100 scale for those, like Lightroom).
+/// Which scale a [`WhiteBalance`]'s `temp` / `tint` were written on.
+///
+/// Raws whose camera has colour matrices (in the file, or measured for the model) edit white balance in Kelvin;
+/// before that, raws without matrices in the file were all edited relative to their as-shot look, where 6500 K / 0
+/// means *as shot*. Settings written then carry no scale and keep that meaning (`Legacy`): the pipeline turns them
+/// into the same colour change on the Kelvin scale (`lightcraft_pipeline::local::legacy_to_kelvin`), so no photo's
+/// look changes. Settings written on the Kelvin scale say so (`Kelvin`). The scale is irrelevant on files the
+/// Kelvin scale does not reach (rendered photos, raws without matrices): their values keep the relative meaning.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WbScale {
+    /// Written before the scale existed, or by a preset / partial JSON without one: relative (6500 K / 0 = as shot)
+    /// on a raw developed from a fitted look, Kelvin on a raw whose file carries matrices. Not written.
+    #[default]
+    Legacy,
+    /// Absolute Kelvin and tint, as Lightroom writes them for raws.
+    Kelvin,
+}
+
+impl WbScale {
+    fn is_legacy(&self) -> bool {
+        *self == WbScale::Legacy
+    }
+}
+
+/// White balance. For raw files with colour matrices `temp` is the scene illuminant in Kelvin (`scale` says the
+/// values were written on that scale); for rendered files (JPEG etc.) and raws without matrices the image is
+/// assumed D65-balanced and `temp`/`tint` are the same model with an "as shot" of 6500 K / 0 (the UI shows a
+/// relative −100..100 scale for those, like Lightroom).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WhiteBalance {
@@ -266,11 +302,17 @@ pub struct WhiteBalance {
     pub temp: f64,
     /// Correction direction: negative adds green, positive adds magenta.
     pub tint: f64,
+    /// The scale `temp` / `tint` were written on; left out of the JSON when [`WbScale::Legacy`], so settings
+    /// from before it existed read and write unchanged.
+    #[serde(skip_serializing_if = "WbScale::is_legacy")]
+    pub scale: WbScale,
 }
 
 impl Default for WhiteBalance {
     fn default() -> Self {
-        Self { mode: WbMode::AsShot, temp: 6500.0, tint: 0.0 }
+        // (`Legacy`, like an absent field: a default photo's settings JSON stays what it was; the engine marks the
+        // scale when white balance is written on a raw that has one, `lightcraft_pipeline::local::normalize_wb`)
+        Self { mode: WbMode::AsShot, temp: 6500.0, tint: 0.0, scale: WbScale::Legacy }
     }
 }
 
@@ -656,6 +698,33 @@ impl Default for Optics {
 pub struct EmbeddedLens {
     pub warp: Option<EmbeddedWarp>,
     pub vignette: Option<EmbeddedVignette>,
+    /// A DNG 1.6 `WarpRectilinear2` chain (up to [`WARP_STAGES`] stages, in `OpcodeList3` order; each stage warps
+    /// the result of the one before it). When any is set, `warp` is `None`: the chain holds every warp opcode.
+    pub stages: [Option<EmbeddedWarpStage>; WARP_STAGES],
+}
+
+/// Most warp stages an [`EmbeddedLens`] chain keeps.
+pub const WARP_STAGES: usize = 3;
+
+/// One DNG `WarpRectilinear2` (or a `WarpRectilinear` in a chain with one): per plane (R, G, B)
+/// `[kr0 .. kr14, kt0, kt1, min_valid_radius, max_valid_radius]`. For an output point at offset
+/// `d = (p − center) / radius` with `r = |d|` and `f = Σ krₚ·clamp(r, min, max)ᵖ`, the source point is
+/// `center + radius · (d·f + tangential(d))`, or `d / f` for the radial part when `reciprocal`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct EmbeddedWarpStage {
+    pub planes: [[f64; 19]; 3],
+    /// Optical centre, normalized to the oriented image (0..1).
+    pub center: Point,
+    /// Normalisation radius as a fraction of the oriented image's long edge.
+    pub radius: f64,
+    pub reciprocal: bool,
+}
+
+impl EmbeddedLens {
+    /// Whether a `WarpRectilinear2` chain is set.
+    pub fn has_stages(&self) -> bool {
+        self.stages.iter().any(Option::is_some)
+    }
 }
 
 /// DNG `WarpRectilinear`: per plane (R, G, B) `[kr0, kr1, kr2, kr3, kt0, kt1]`. For an output (corrected) point at
@@ -963,6 +1032,8 @@ pub enum SpotMode {
     Remove,
     Heal,
     Clone,
+    /// Content-aware: the spot is rebuilt from patches of its surroundings (no single source).
+    Fill,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -46,12 +46,13 @@ export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
 
 # --- version: single source of truth is VERSION_NAME in the Rust crate ---
 # Unified versioning: all apps share one version (e.g. 0.1.0).
-# versionCode = major*10000 + minor*100 + patch  (0.1.0 -> 100, monotonic).
+# versionCode = 100000 + major*10000 + minor*100 + patch  (0.1.0 -> 100100, monotonic).
+# The 100000 base ensures we're above all legacy per-app versionCodes (max was 80001).
 VERSION_NAME="$(grep -oP 'pub const VERSION_NAME: &str = "\K[^"]+' "$UPSTREAM/apps/$CRATE/src/lib.rs")"
 VERSION_CODE="$(python3 -c "
 v='$VERSION_NAME'
 major, minor, patch = (int(x) for x in v.split('.'))
-print(major * 10000 + minor * 100 + patch)")"
+print(100000 + major * 10000 + minor * 100 + patch)")"
 APK_NAME="${APP_NAME}-${VERSION_NAME}-universal.apk"
 echo "== $APP_NAME Android $VERSION_NAME (versionCode $VERSION_CODE) =="
 

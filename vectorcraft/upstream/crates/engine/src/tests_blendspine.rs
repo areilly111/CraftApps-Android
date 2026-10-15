@@ -26,7 +26,7 @@ fn node(s: &Session, id: NodeId) -> Node {
 
 fn spec(s: &Session, id: NodeId) -> BlendSpec {
     match node(s, id).kind {
-        NodeKind::Blend { spec, .. } => spec,
+        NodeKind::Blend { spec, .. } => *spec,
         _ => panic!("not a blend"),
     }
 }
@@ -186,4 +186,21 @@ fn key_anchors_round_trip() {
     assert_eq!(&back.layers, &d.layers);
     let old: BlendSpec = serde_json::from_value(json!({"spine": {"subpaths": []}})).unwrap();
     assert!(old.key_anchors.is_empty());
+}
+
+/// #1111: a straight spine's segment bends into a curve, its middle moving where it's dragged, and
+/// the steps follow it; junk segments and deltas are refused.
+#[test]
+fn a_straight_spine_segment_bends_into_a_curve() {
+    let mut s = session();
+    let (_, _, g) = blend(&mut s);
+    s.execute("object.blend.spine.reshapeSegment", &json!({"segment": 0, "t": 0.5, "dx": 0, "dy": 40})).unwrap();
+    let spine = spec(&s, g).spine.unwrap();
+    let seg = spine.subpaths[0].segment(0);
+    use vectorcraft_geom::kurbo::ParamCurve;
+    assert!(seg.eval(0.5).distance(Point::new(55.0, 45.0)) < 1e-9, "{seg:?}");
+    assert!(center(&steps(&s, g)[1]).y > 20.0, "the step follows the curve");
+    for bad in [json!({"segment": 1, "dy": 10}), json!({"segment": 0, "dx": f64::MAX, "dy": f64::MAX}), json!({"segment": -1})] {
+        assert!(s.execute("object.blend.spine.reshapeSegment", &bad).is_err(), "{bad}");
+    }
 }

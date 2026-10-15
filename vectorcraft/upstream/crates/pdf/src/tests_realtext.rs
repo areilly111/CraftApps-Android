@@ -110,6 +110,58 @@ fn real_text_lands_within_half_a_point_of_the_outlines() {
     }
 }
 
+/// A run shifted two billion points off its baseline is left out, as real text or outlines, and
+/// the rest of the type is written. On a page 50 points high, the page's y flip puts the shifted
+/// run's baseline at -2,147,483,648, which the PDF writer panics on in builds with overflow checks.
+#[test]
+fn a_run_shifted_two_billion_points_is_left_out() {
+    let mut t = TextObject::point(Point::new(5.0, 40.0), "", style(12.0));
+    t.runs = vec![
+        TextRun { text: "in".into(), style: style(12.0), inline: None },
+        TextRun { text: "out".into(), style: CharStyle { baseline_shift: -2_147_483_649.0, ..style(12.0) }, inline: None },
+    ];
+    let mut d = doc(vec![t]);
+    d.artboards[0].rect = Rect::new(0.0, 0.0, 50.0, 50.0);
+    assert_eq!(texts(&import_as(&pdf(&d, false).bytes, TextAs::Text)), ["in"]);
+    let b = ink(&import_as(&pdf(&d, true).bytes, TextAs::Outlines));
+    assert!(b.y0 > 0.0 && b.y1 < 50.0, "{b:?}");
+}
+
+/// An overprinting run is written, or left out, as the same run is without overprint: the form
+/// marked to overprint the run holds the type's transform. For type moved 2,147,483,689 points down
+/// with its run shifted back onto a page 50 points high, a form placed through that transform would
+/// sit at y = -2,147,483,648, which the PDF writer panics on in builds with overflow checks. For
+/// type scaled 3 times, a form without that transform would hold a run shifted 500,000,000 points
+/// up, and the export would write the run 1,500,000,000 points up.
+#[test]
+fn overprinting_runs_are_written_or_left_out_as_other_runs_are() {
+    let moved = |overprint_fill| {
+        let back = CharStyle { baseline_shift: 2_147_483_649.0, overprint_fill, ..style(12.0) };
+        TextObject::point(Point::new(5.0, 2_147_483_689.0), "moved", back)
+    };
+    let scaled = |overprint_fill| {
+        let mut t = TextObject::point(Point::new(5.0, 40.0), "", style(12.0));
+        t.xf *= Affine::scale(3.0);
+        let up = CharStyle { baseline_shift: 500_000_000.0, overprint_fill, ..style(12.0) };
+        t.runs = vec![TextRun { text: "in".into(), style: style(12.0), inline: None }, TextRun { text: "out".into(), style: up, inline: None }];
+        t
+    };
+    let written = |mut t: TextObject| {
+        // The export culls type by the laid-out bounds that the engine keeps in `cached_bounds`.
+        t.cached_bounds = Some(vectorcraft_text::layout(FontDb::global(), &t).bounds);
+        let mut d = doc(vec![t]);
+        d.artboards[0].rect = Rect::new(0.0, 0.0, 50.0, 50.0);
+        pdf(&d, false).bytes
+    };
+    let text_of = |bytes: &[u8]| texts(&import_as(bytes, TextAs::Text));
+    let (on, off) = (written(moved(true)), written(moved(false)));
+    assert!(String::from_utf8_lossy(&on).contains("/VCop gs"), "an overprinting form");
+    assert_eq!(text_of(&on), ["moved"]);
+    assert_eq!(text_of(&off), ["moved"]);
+    assert_eq!(text_of(&written(scaled(true))), ["in"]);
+    assert_eq!(text_of(&written(scaled(false))), ["in"]);
+}
+
 /// A named instance of a variable font is real text in that instance: its embedded subset draws
 /// the instance's glyphs where the outlines would be, not the default instance's (#296).
 #[test]
@@ -328,4 +380,47 @@ fn type_in_another_installed_version_reopens_in_that_version() {
         });
         assert_eq!(found, [("Hamburgefonstiv".to_string(), version.map(String::from))], "{version:?}");
     }
+}
+
+/// The glyph origins of the type objects of `d`, in document space, in order.
+fn origins(d: &Document) -> Vec<Point> {
+    let mut out = vec![];
+    d.walk(|n| {
+        if let NodeKind::Text(t) = &n.kind {
+            out.extend(vectorcraft_text::layout(FontDb::global(), t).glyphs.iter().map(|g| t.xf * g.origin));
+        }
+    });
+    out
+}
+
+/// Type spaced glyph by glyph (character tightening, optical kerning) comes back with each glyph
+/// in its place, not evened out by one tracking value; evenly spaced type keeps one run.
+#[test]
+fn glyphs_spaced_each_their_own_way_keep_their_place() {
+    let runs = [("T", 0.0), ("i", -120.0), ("g", 160.0), ("h", -60.0), ("tl", 0.0), ("y", 0.0)];
+    let mut t = TextObject::point(Point::new(20.0, 100.0), "", style(40.0));
+    t.runs = runs.iter().map(|(s, tr)| TextRun { text: s.to_string(), style: CharStyle { tracking: *tr, ..style(40.0) }, inline: None }).collect();
+    let d = doc(vec![t]);
+    let want = origins(&d);
+    let back = import_as(&pdf(&d, false).bytes, TextAs::default());
+    let got = origins(&back);
+    assert_eq!(got.len(), want.len(), "{:?}", texts(&back));
+    for (g, w) in got.iter().zip(&want) {
+        assert!((g.x - w.x).abs() < 0.1 && (g.y - w.y).abs() < 0.1, "{got:?}\nvs {want:?}");
+    }
+    let mut runs_back = 0;
+    back.walk(|n| {
+        if let NodeKind::Text(t) = &n.kind {
+            runs_back += t.runs.len();
+        }
+    });
+    assert!(runs_back > 1, "one tracking can't place them");
+    // Evenly tracked: one run.
+    let even = doc(vec![TextObject::point(Point::new(20.0, 100.0), "Tightly", CharStyle { tracking: -50.0, ..style(40.0) })]);
+    let back = import_as(&pdf(&even, false).bytes, TextAs::default());
+    back.walk(|n| {
+        if let NodeKind::Text(t) = &n.kind {
+            assert_eq!(t.runs.len(), 1, "{:?}", t.runs.iter().map(|r| r.style.tracking).collect::<Vec<_>>());
+        }
+    });
 }

@@ -79,6 +79,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G4. Crashes at start-up, and no test CI on pull requests
 
+- **Have:** a graphics start-up fallback (#820): after two starts in a row that died within 15 s
+  of launch without painting (a driver crash in wgpu instance / device creation; hangs, later
+  crashes and concurrent instances don't count), the next launch moves on to DirectX 12 only
+  (Windows), then a software adapter (WARP, lavapipe, llvmpipe) with CPU compositing, and keeps
+  the mode that works; a start-up error wgpu reports moves on in the same process. A fallback mode
+  shows a notice with Use Default Graphics; `--graphics default|dx12|software` picks a mode by
+  hand. An explicit `WGPU_BACKEND` stays in charge.
 - **Missing:** a launch that never fails, and CI that runs the gates.
 - **Evidence:** open issues: macOS 12 Monterey aborts on a missing VideoToolbox symbol (#468,
   #661, #655), Intel UHD graphics (`igvk64.dll`, #512), Windows 11 does not run or fails after setup
@@ -87,9 +94,9 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   `cargo test` or `cargo xtask ci` on a pull request**, so 243 PRs merged since 10-05 were gated by
   contributors' local runs (main needed "green again after the batch merges" on 10-10).
 - **Impact:** a user who cannot start the app gets zero value; regressions land unnoticed.
-- **Done when:** weak-linked or runtime-loaded OS symbols on old macOS, a software / safe-mode
-  start when the GPU adapter fails, a PR workflow running `cargo xtask ci` on macOS, Windows and
-  Linux, and a crash-report triage pass. **40–80 h.**
+- **Done when:** weak-linked or runtime-loaded OS symbols on old macOS, ~~a software / safe-mode
+  start when the GPU adapter fails~~ (done, #820), a PR workflow running `cargo xtask ci`
+  on macOS, Windows and Linux, and a crash-report triage pass. **40–80 h.**
 
 ## G5. Hardware acceleration is partial
 
@@ -110,6 +117,12 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G6. No real-world media corpus or workflow acceptance tests
 
+- **Done:** first scripted MCP workflows (#835, `apps/filmcraft-cli/tests/workflows.rs`): the
+  `filmcraft-cli mcp` binary imports ffmpeg-made phone-like VFR H.264 + AAC MP4 and long-GOP
+  H.264 Matroska with two audio tracks (AAC, AC-3), edits (extract, audio gain, title; ripple
+  trims, colour matte, cross dissolve), exports H.264 MP4, and saves a project that a new process
+  exports as ProRes; ffprobe / ffmpeg check streams, frame count, duration, frame placement, A/V
+  sync, title pixels, dissolve mix and audio levels. Skipped without ffmpeg.
 - **Missing:** a pinned corpus of phone, camera and screen recordings (variable frame rate,
   damaged files, long GOP, odd containers, multi-track audio), each with an import → edit → export
   round trip checked against an ffprobe / ffmpeg oracle; scripted MCP sessions that do real jobs
@@ -127,8 +140,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   `plan/premiere/menus.json`; presence and placement reported separately (same path, elsewhere,
   missing), app / Help / recent / account / macOS items out of scope, a markdown checklist, and
   `--min` to fail below a presence threshold. Without a reference it prints our inventory only.
-- **Missing:** the other areas (commands, effects, transitions, panels, preferences, formats),
-  fidelity tiers (exact, approximate, stub), a CI job, and a committed `docs/parity-checklist.md`.
+  `--area effects` and `--area transitions` (#831) measure the Effects panel the same way: the
+  effects and transitions the engine's effect definitions list (`examples/effect_catalog.rs` in
+  `filmcraft-project`) against a reference of folder paths or bare names (default the local
+  `plan/premiere/effects.json` / `transitions.json`), placement by folder, Presets and the other
+  area out of scope.
+- **Missing:** the other areas (commands, panels, preferences, formats), fidelity tiers (exact,
+  approximate, stub), a CI job, and a committed `docs/parity-checklist.md`.
 - **Evidence:** the 92% menu figure in this pass came from an ad hoc label-matching script; it has
   not yet been re-measured with the tool.
 - **Estimate:** 8–17 h left (the menu snapshot is local-only, so CI needs a committed, Adobe-free
@@ -141,12 +159,16 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   rearrangement (#493); clicking empty space to deselect (#683); filmstrip thumbnails (#614);
   marquee selection in the Project panel (#578); Freeform bins and middle-mouse pan (#579);
   Program monitor Button Editor (+) (#431); keyframe curves for Position (#448); transition
-  editing controls (#577); track renaming (#654); window controls on macOS (#637); UI scale on
+  editing controls (#577: Effect Controls has the transition's own timeline, drag to slide or resize;
+  the A/B previews with Start / End sliders remain); track renaming (#654); window controls on macOS (#637); UI scale on
   X11 (#457).
 - **Estimate:** 120–200 h. Doc: [ui-parity.md](ui-parity.md).
 
 ## G9. Windows and Linux at run time
 
+- **Have:** files given at launch (terminal, Open With, file associations) open whatever the case
+  of `.fcproj` and are made absolute, and arguments that are not Unicode no longer stop the start;
+  `filmcraft-cli import` stores no Windows `\\?\` paths (#850).
 - **Missing:** routine runtime testing off macOS. Linux playback stutter (#617), Wayland title
   bar (#433), case-sensitive extensions (#593), "Report an issue" link (#642), Windows bins cannot
   be left (#587), Sequence Settings won't open on Windows (#586, #351), old hardware (#491).
@@ -155,17 +177,28 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G10. Container and codec gaps on import
 
 - **Have:** E-AC-3 (Dolby Digital Plus) in MP4, MOV, Matroska and MPEG-TS (#647): independent
-  substream, 1–6 blocks per syncframe, spectral extension.
-- **Missing:** E-AC-3 adaptive hybrid transform, enhanced coupling and the extra channels of 7.1
-  dependent substreams (played as the 5.1 core), AVI (#598; listed as an extension but no
+  substream, 1–6 blocks per syncframe, spectral extension. MP1 / MP2 (MPEG audio Layer I / II):
+  own decoder (#809) in raw files, MP4 and MOV (#800), MPEG-TS / PS and Matroska, including the
+  bit rate / mode combinations ISO/IEC 11172-3 disallows but ffmpeg writes (its mono default is
+  384 kbit/s). OpenEXR stills and image
+  sequences (#828): scan-line, uncompressed / RLE / ZIPS / ZIP, half / float / uint, RGB(A) or
+  luminance, decoded to linear float frames and bit-exact against ffmpeg.
+- **Missing:** free-format MPEG audio, MP1 in Matroska (`A_MPEG/L1`), E-AC-3 adaptive hybrid
+  transform, enhanced coupling and the extra channels of 7.1 dependent substreams (played as the
+  5.1 core), AVI (#598; listed as an extension but no
   demuxer), WMV / ASF, DV / DVCPRO / DV100, MPEG-4 Part 2, FLAC in MP4 (#603), camera RAW (R3D
   incl. R3D NE, ARRIRAW, Sony RAW / X-OCN, Canon RAW, BRAW, ProRes RAW; #345, #383), JPEG 2000 /
-  JPEG XS MXF, Cinema DNG; stills: PSD, EXR, DPX, Targa, HEIF / HEIC, Radiance HDR, AI / EPS;
-  transparent video (#402); Sony start timecode in `rtmd` (#460); stereo 3D flag (#500); MKV
-  multi-audio (#601).
+  JPEG XS MXF, the rest of CinemaDNG (lossy / JPEG XL DNG, MXF-wrapped, opcode lists, Raw
+  settings; DNG frames and folders import since #1065); stills: PSD, EXR beyond scan-line RLE / ZIP (PIZ, PXR24, B44, DWA,
+  tiled, multi-part, deep), HEIF / HEIC, Radiance HDR,
+  AI / EPS, and the rarer DPX layout, run-length encoding (Targa and DPX stills and sequences import
+  since #821, packed 10/12-bit and Y'CbCr DPX since #841, deeper than 8 bits kept at 8); transparent
+  video (#402); Sony start timecode in `rtmd` (#460); stereo 3D flag (#500); MKV multi-audio (#601).
 - **Estimate:** 120–200 h (camera RAW alone 60–100 h, and some SDKs have licences we cannot use:
   clean-room from public specs only where specs exist). Docs: [codec-parity.md](codec-parity.md),
   [file-format-parity.md](file-format-parity.md).
+- **Have:** Matroska AAC / MP3 / AC-3 / E-AC-3 sample-aligned with the signal the encoder was
+  given (the exact `CodecDelay` is trimmed, not the 1 ms-rounded one; #790).
 
 ## G11. No plugin hosting
 
@@ -186,20 +219,27 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G13. Delivery formats
 
 - **Missing:** AV1 export (software or hardware), MPEG-2 / DVD / Blu-ray, DCP, JPEG 2000 MXF,
-  AS-10 / AS-11, XDCAM HD MXF, P2, OpenEXR sequences, MP3 and AAC-only audio,
-  ProRes 4444 / XQ in the export UI (#342; the encoder has the profiles), interlaced encoding,
-  smart render, HEVC software encoder (HEVC exists only where a hardware encoder does).
-- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779).
+  AS-10 / AS-11, XDCAM HD MXF, P2, PIZ / PXR24 / B44 / DWA OpenEXR compression, MP3 audio,
+  interlaced encoding, smart render, HEVC software encoder (HEVC exists only where a hardware
+  encoder does).
+- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779); OpenEXR
+  sequences (half float, linear; uncompressed, RLE, ZIPS or ZIP; #806, #874); AAC Audio
+  (audio-only `.m4a`, or ADTS `.aac`; #814); ProRes 4444 / 4444 XQ in the export UI (#342).
 - **Estimate:** 60–110 h. Doc: [file-format-parity.md](file-format-parity.md).
 
 ## G14. Localization: 8 of the 12 key languages missing
 
-- **Have:** Spanish, Japanese and Simplified Chinese catalogs cover ~99.6–99.9% of the ~3,500
-  cataloged strings; Portuguese (Brazil) and Ukrainian ~10% (menus).
-- **Missing:** Hindi, Arabic (no RTL interface layout; Arabic titles reported broken, #395),
-  French (#498), Indonesian, German (#490), Korean (#508; needs Hangul fonts in craft-fonts),
-  Vietnamese, Portuguese beyond menus; Premiere also ships Italian and Russian. Engine errors,
+- **Have:** Spanish, Japanese, Simplified Chinese, French (#498) and Portuguese (Brazil) (#859)
+  catalogs cover ~99.6–100% of the ~3,500 cataloged strings; Ukrainian ~10% (menus).
+- **Missing:** Hindi, Arabic (no RTL interface layout or catalog; the interface has Arabic and Hebrew
+  fallback fonts and shows captions in reading order, but other names and fields keep egui's
+  left-to-right run order; Arabic titles reported broken, #395),
+  German beyond menus (#490), Korean (#508; needs Hangul fonts in craft-fonts),
+  Vietnamese; Premiere also ships Italian and Russian. Engine errors,
   CLI and MCP stay English. No language has a recorded native-speaker review.
+- **Done:** Indonesian (#867): `id.tsv` has every entry of the Spanish catalog (~100%), in Edit ▸
+  Language, Settings ▸ General and the native macOS menu; System Language picks it for `id-*` (and
+  legacy `in-*`) locales. Native-speaker review welcome.
 - **Estimate:** 150–230 h. Doc: [localization-parity.md](localization-parity.md).
 
 ## G15. Interchange never validated in Avid / Pro Tools; slow XML import
@@ -212,26 +252,41 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G16. Performance reports on 0.5.0
 
 - **Missing:** steady UI under load. Constant lag after 0.4 → 0.5 (#525), ~100% CPU (#523). AV1
-  software decode is ~4 fps at 1080p single-threaded; 8K is not real time.
+  software decode of a single-tile stream is bound by its serial tile decode (65–80 % of a
+  frame; no row-level frame threading, references are waited for as whole frames); 8K is not
+  real time.
 - **Done:** Render (Effects) In to Out renders only the frames between In and Out, as partial
   previews named by segment hash and relative frames, instead of every segment In/Out touches
-  (#424); Render Audio still renders whole audio segments.
+  (#424); Render Audio still renders whole audio segments. AV1 software decode runs deblocking,
+  CDEF and loop restoration in parallel 64-row bands, bit-exact (#847; 1080p GOP 1.16–1.30×,
+  low delay 1.28×, 2160p 1.14× at 16 threads). VP9 software decode loop-filters a frame as a
+  wavefront over superblock rows on the decoder's pool instead of on one thread, bit-identical,
+  1.2–1.5× faster with 16 threads (#980).
 - **Estimate:** 30–60 h. Doc: [performance.md](performance.md).
 
 ## G17. Audio device and playback reliability
 
 - **Evidence:** Asus Xonar DX output broken (#605), no audio (#602), audio cuts out with
   overlapping clips (#336), buggy audio (#410), Linux stutter (#617). No ASIO; cpal only.
+- **Have:** a stream the device drops while playing (an ALSA xrun cpal reports as `POLLERR`, an
+  unplugged device) is restarted with the same rate, channels, clock and mixer position, so sound
+  resumes instead of playback going silent (at most 3 restarts in 10 s); a panicking mixer plays
+  silence (#840).
 - **Estimate:** 20–40 h.
 
 ## G18. Effects depth: approximations and missing behaviour
 
-- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut approximate, Lumetri
-  HDR-aware maths, multicam paging beyond 16 angles, redesigned 26.0 mask tools (rounded corners,
-  constrained lines).
+- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut has no face tracking
+  (and occlusion edges are soft), Lumetri HDR-aware maths, multicam paging beyond 16 angles,
+  redesigned 26.0 mask tools (Shift-constrained vertex and whole-mask drags; a stored, re-editable
+  corner radius: rounding bakes fillets into the path, so a rounded corner cannot be re-rounded later).
 - **Have:** Optical Flow time interpolation synthesises motion-compensated in-between frames (dense
-  coarse-to-fine Lucas–Kanade, CPU; #780); Transform shutter angle motion blur (#415); Ultra Key
-  Setting applied as a parameter preset (#458).
+  coarse-to-fine Lucas–Kanade, CPU; #780); Morph Cut morphs the subject along that optical flow
+  instead of cross-dissolving (CPU; #805); Transform shutter angle motion blur (#415); Ultra Key
+  Setting applied as a parameter preset (#458); rectangle and polygon masks round their corners
+  with circular fillets (`masks.add` `cornerRadius`, `masks.roundCorners`, every path keyframe;
+  #813), from an on-monitor corner-roundness handle with a live preview (one undo step per drag;
+  #844); Shift snaps pen mask segments and dragged-out Bézier handles to 45° steps (#853).
 - **Estimate:** 60–110 h.
 
 ## G19. Speech to text off in release builds

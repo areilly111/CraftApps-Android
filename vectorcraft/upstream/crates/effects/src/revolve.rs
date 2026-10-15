@@ -200,7 +200,7 @@ fn art(n: &Node, expand: bool) -> Option<Node> {
     }
     let mut art = n.clone();
     art.kind = NodeKind::Group { children, clip: false };
-    art.appearance = Appearance { effects: remaining, ..Default::default() };
+    art.appearance = Appearance { effects: remaining, ..Default::default() }.into();
     Some(art)
 }
 

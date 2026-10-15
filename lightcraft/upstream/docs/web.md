@@ -18,7 +18,7 @@ it's missing or a different version.
 Build, then serve:
 
 ```sh
-cargo xtask web            # → <target>/web/{index.html, worker.js, lightcraft_web.js, lightcraft_web_bg.wasm}
+cargo xtask web            # → <target>/web-site/{index.html, worker.js, lightcraft_web.js, lightcraft_web_bg.wasm}
 cargo xtask web --serve    # build, then serve on http://127.0.0.1:8080/ (or `--serve 9000`)
 cargo xtask web --dev      # unoptimized build with debug info (faster to compile, slow to run)
 ```
@@ -168,6 +168,8 @@ are the same in every version, so serve them with `Cache-Control: no-cache` (not
 - **Preset files** (import/export `.json`) aren't wired to browser pickers yet.
 - **Control channel / MCP.** These are desktop-only, because they need a TCP socket.
 - **AVIF export** is untested in the browser; it's the one encoder that may not be wasm-safe.
+- **JPEG XL export** is native only: the encoder (`jixel`) starts threads of its own, which wasm32 has not got; the
+  web build reports "not available in this build". JPEG XL import works.
 
 ## Measuring
 

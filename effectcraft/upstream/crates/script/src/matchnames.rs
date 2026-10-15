@@ -61,7 +61,23 @@ const TEXT: &[(&str, &str)] = &[
     ("animators", "ADBE Text Animators"),
 ];
 
+// Match names of the six properties below Text ▸ Path Options, as named by
+// After Effects' scripting API (rather than EffectCraft's internal ids).
+const TEXT_PATH_OPTIONS: &[(&str, &str)] = &[
+    ("path", "ADBE Text Path"),
+    ("reversePath", "ADBE Text Reverse Path"),
+    ("perpendicular", "ADBE Text Perpendicular To Path"),
+    ("forceAlignment", "ADBE Text Force Align Path"),
+    ("firstMargin", "ADBE Text First Margin"),
+    ("lastMargin", "ADBE Text Last Margin"),
+];
+
 const TEXT_ANIMATOR: &[(&str, &str)] = &[("selectors", "ADBE Text Selectors"), ("properties", "ADBE Text Animator Properties")];
+
+const TEXT_SELECTORS: &[(&str, &str)] =
+    &[("rangeSelector", "ADBE Text Selector"), ("wigglySelector", "ADBE Text Wiggly Selector"), ("expressionSelector", "ADBE Text Expressible Selector")];
+
+const TEXT_RANGE_SELECTOR: &[(&str, &str)] = &[("start", "ADBE Text Percent Start"), ("end", "ADBE Text Percent End"), ("offset", "ADBE Text Percent Offset")];
 
 const CAMERA: &[(&str, &str)] = &[
     ("zoom", "ADBE Camera Zoom"),
@@ -411,7 +427,10 @@ pub fn node(chain: &[&Node]) -> String {
             }
         }
         "text" if chain.len() == 2 => find(TEXT, id).map(str::to_string).unwrap_or_else(own),
+        "text" if pid == "pathOptions" => find(TEXT_PATH_OPTIONS, id).map(str::to_string).unwrap_or_else(own),
         "text" if pid == "animators" => "ADBE Text Animator".into(),
+        "text" if pid == "selectors" => find(TEXT_SELECTORS, id).map(str::to_string).unwrap_or_else(own),
+        "text" if pid == "rangeSelector" => find(TEXT_RANGE_SELECTOR, id).map(str::to_string).unwrap_or_else(own),
         "text" if grand.map(|g| g.match_id()) == Some("animators") => find(TEXT_ANIMATOR, id).map(str::to_string).unwrap_or_else(own),
         "cameraOptions" => find(CAMERA, id).map(str::to_string).unwrap_or_else(own),
         "lightOptions" => find(LIGHT, id).map(str::to_string).unwrap_or_else(own),
@@ -457,5 +476,16 @@ mod tests {
         assert_eq!(shape_kind("Trim Paths"), Some("trim"));
         assert_eq!(shape_kind("ADBE Vector Graphic - Fill"), Some("fill"));
         assert_eq!(shape_kind("nope"), None);
+    }
+
+    #[test]
+    fn text_range_selector_names() {
+        let n = |m: &str| Node::from(effectcraft_project::PropGroup::new(1, m, m));
+        let (text, animators, animator, selectors, range, start, end, offset) =
+            (n("text"), n("animators"), n("animator"), n("selectors"), n("rangeSelector"), n("start"), n("end"), n("offset"));
+        assert_eq!(node(&[&text, &animators, &animator, &selectors, &range]), "ADBE Text Selector");
+        assert_eq!(node(&[&text, &animators, &animator, &selectors, &range, &start]), "ADBE Text Percent Start");
+        assert_eq!(node(&[&text, &animators, &animator, &selectors, &range, &end]), "ADBE Text Percent End");
+        assert_eq!(node(&[&text, &animators, &animator, &selectors, &range, &offset]), "ADBE Text Percent Offset");
     }
 }

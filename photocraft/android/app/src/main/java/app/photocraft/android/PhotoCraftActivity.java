@@ -2,6 +2,7 @@ package app.photocraft.android;
 
 import android.app.NativeActivity;
 import android.content.Intent;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 /**
@@ -64,6 +65,70 @@ public class PhotoCraftActivity extends NativeActivity {
     }
 
     private native void nativeOnPenEvent(int action, int toolType, int buttonState, int actionButton);
+
+    // ---- Bluetooth keyboard modifier tracking ---------------------------------
+    // winit's Android backend doesn't reliably report Ctrl/Shift/Alt meta state
+    // from Bluetooth keyboards. We track modifier keys here and forward the
+    // combined state to Rust, which synthesizes the correct egui modifiers.
+
+    /** Currently pressed modifier keys (bitmask: 1=Ctrl, 2=Shift, 4=Alt). */
+    private int modifierState = 0;
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        int keyCode = event.getKeyCode();
+        int action = event.getAction();
+        boolean down = action == KeyEvent.ACTION_DOWN;
+
+        // Track modifier keys
+        int mask = 0;
+        if (keyCode == KeyEvent.KEYCODE_CTRL_LEFT || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT) {
+            mask = 1;
+        } else if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT) {
+            mask = 2;
+        } else if (keyCode == KeyEvent.KEYCODE_ALT_LEFT || keyCode == KeyEvent.KEYCODE_ALT_RIGHT) {
+            mask = 4;
+        }
+
+        if (mask != 0) {
+            if (down) {
+                modifierState |= mask;
+            } else {
+                modifierState &= ~mask;
+            }
+            // Let the modifier event through normally
+            return super.dispatchKeyEvent(event);
+        } else {
+            // For non-modifier keys: if our tracked state has modifiers that the
+            // event's meta state is missing (Bluetooth keyboard bug), synthesize
+            // a corrected event with the proper meta state.
+            int eventMeta = event.getMetaState();
+            int neededMeta = 0;
+            if ((modifierState & 1) != 0) neededMeta |= KeyEvent.META_CTRL_ON | KeyEvent.META_CTRL_LEFT_ON;
+            if ((modifierState & 2) != 0) neededMeta |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
+            if ((modifierState & 4) != 0) neededMeta |= KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
+
+            if ((eventMeta & neededMeta) != neededMeta) {
+                // Synthesize a corrected event
+                KeyEvent corrected = new KeyEvent(
+                    event.getDownTime(),
+                    event.getEventTime(),
+                    action,
+                    keyCode,
+                    event.getRepeatCount(),
+                    eventMeta | neededMeta,
+                    event.getDeviceId(),
+                    event.getScanCode(),
+                    event.getFlags() | KeyEvent.FLAG_SOFT_KEYBOARD,
+                    event.getSource()
+                );
+                return super.dispatchKeyEvent(corrected);
+            }
+            return super.dispatchKeyEvent(event);
+        }
+    }
+
+    private native void nativeOnModifierState(int modifiers);
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {

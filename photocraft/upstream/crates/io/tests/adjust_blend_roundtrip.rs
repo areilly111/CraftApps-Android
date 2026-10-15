@@ -61,6 +61,7 @@ fn adjustments() -> Vec<(Adjustment, bool)> {
                 per_channel: [pts(&[(0, 10), (255, 255)]), pts(&[(0, 0), (255, 245)]), pts(&[(0, 0), (64, 32), (255, 255)])],
                 space: ToneSpace::Rgb,
                 black: Vec::new(),
+                pencil: false,
             },
             true,
         ),

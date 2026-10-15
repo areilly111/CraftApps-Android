@@ -35,6 +35,35 @@ fn maxflow_clrs_network() {
     assert_eq!(g.residual_out_of_source_side(), 0.0);
 }
 
+#[test]
+fn maxflow_can_be_cancelled_and_otherwise_cuts_the_same() {
+    // A 120 × 100 grid with terminal links both ways (push/relabel) and a small one (BK).
+    for (w, h) in [(120usize, 100usize), (20, 15)] {
+        let mut g = Graph::with_capacity(w * h, w * h * 2);
+        let mut z = 7u64;
+        let mut next = || {
+            z = z.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (z >> 40) as f32 / (1u64 << 24) as f32
+        };
+        for i in 0..w * h {
+            g.add_tweights(i, next() * 2.0, next() * 2.0);
+            if i % w + 1 < w {
+                g.add_edge(i, i + 1, next(), next());
+            }
+            if i + w < w * h {
+                g.add_edge(i, i + w, next(), next());
+            }
+        }
+        let (mut plain, mut asked) = (g.clone(), g.clone());
+        let flow = plain.maxflow();
+        assert_eq!(asked.maxflow_with(&|| false), Some(flow));
+        assert!((0..w * h).all(|i| plain.in_source(i) == asked.in_source(i)));
+        if w * h > 4096 {
+            assert_eq!(g.maxflow_with(&|| true), None);
+        }
+    }
+}
+
 /// Reference max flow (Edmonds–Karp on a dense matrix; node 0 = s, n−1 = t).
 fn edmonds_karp(cap: &mut [Vec<f64>]) -> f64 {
     let n = cap.len();

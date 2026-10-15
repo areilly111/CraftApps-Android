@@ -24,7 +24,11 @@ pub mod view;
 
 pub use boxes::{BoxSpec, PageBox, page_boxes, set_page_box};
 pub use dedupe::dedupe_resources;
-pub use import::{Run, SplitBy, combine, combine_grouped, combine_selected, extract_pages, import_pages, page_as_form, split, split_ranges};
+pub use import::{
+    CombineOutcome, Combiner, FieldConflicts, ImportOutcome, Run, SplitBy, combine, combine_field_conflicts, combine_grouped, combine_grouped_with,
+    combine_selected, combine_selected_with, combine_with, extract_pages, field_name_conflicts, import_pages, import_pages_with, page_as_form, split,
+    split_ranges,
+};
 pub use labels::{LabelRange, LabelStyle, PageLabels, number_pages, page_label_ranges, page_labels, set_page_label_ranges};
 pub use outline::{
     Bookmark, BookmarkPage, OutlineEntry, OutlineError, add_bookmark, add_bookmark_tree, bookmark_page, bookmarks, delete_bookmark, move_bookmark,
@@ -274,7 +278,8 @@ fn drop_named_destinations(doc: &mut Document, gone: &[ObjRef]) -> Result<Vec<Ve
             }
         }
         Some(Object::Dict(mut d)) => {
-            if prune_legacy(doc, &mut d, gone, &mut dead) {
+            let changed = prune_legacy(doc, &mut d, gone, &mut dead);
+            if changed {
                 doc.update_dict(root, |c| c.set(b"Dests".to_vec(), Object::Dict(d)))?;
             }
         }

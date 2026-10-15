@@ -47,7 +47,7 @@ use crate::file_browser::{FileBrowser, PickKind};
 use crate::shell::{AndroidShell, PendingPick, StorageGate};
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it (`0.7.0-port1` → 70001).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.2.0";
 
 /// Per-app glue for the shared GPU cascade ([`gpu::GpuCanvasHost`]).
 /// EffectCraft's viewer composites on the GPU through its own `init_gpu`
@@ -281,7 +281,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
     // already 128 MB on Android via target-gated DEFAULT_BUDGET.
     const MOBILE_CACHE_MB: usize = 256;
     inner.frames.set_budget(MOBILE_CACHE_MB << 20);
-    inner.frames.set_gpu_budget(MOBILE_CACHE_MB << 20);
+    inner.frames.set_budget(MOBILE_CACHE_MB << 20);
     if let Some(r) = recovery {
         inner.offer_recovery(r);
     }
@@ -297,7 +297,7 @@ fn run(app: AndroidApp) -> Result<(), String> {
         "app.effectcraft.android.apkprovider",
     )));
 
-    wire_hooks(&mut inner, browser.clone(), pending.clone(), storage.clone(), &docs_root, granted, updater.clone());
+    wire_hooks(&mut inner, browser.clone(), pending.clone(), storage.clone(), &docs_root, granted);
 
     // GPU backend cascade (Vulkan → GLES → CPU canvas). EffectCraft's viewer
     // composites on the GPU through its own `init_gpu`; the cascade orders
@@ -366,7 +366,6 @@ fn wire_hooks(
     storage: Arc<StorageManager>,
     docs_root: &Path,
     granted: bool,
-    updater: Arc<Mutex<Updater>>,
 ) {
     let open_b = browser.clone();
     let open_p = pending.clone();
@@ -443,9 +442,6 @@ fn wire_hooks(
     let tablet_storage = storage.clone();
     let sd_storage = storage.clone();
     app.hooks.android_hooks = Some(AndroidHooks {
-        check_updates: Box::new(move || {
-            updater.lock().unwrap_or_else(|poison| poison.into_inner()).open();
-        }),
         storage: AndroidStorageHooks {
             location_label: Box::new(move || {
                 if granted {
@@ -463,7 +459,7 @@ fn wire_hooks(
                     let _ = jni_bridge::open_all_files_settings();
                 }
             }),
-            pick_sd_card: Box::new(move || {
+            pick_folder: Box::new(move || {
                 // The folder picker needs no permission: the chosen tree is
                 // read and written through SAF directly.
                 saf::set_pending_tree(sd_storage.clone());
@@ -473,5 +469,6 @@ fn wire_hooks(
                 }
             }),
         },
+        pen: None,
     });
 }

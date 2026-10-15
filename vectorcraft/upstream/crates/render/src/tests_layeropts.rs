@@ -20,14 +20,14 @@ fn doc(layer: impl FnOnce(&mut NodeKind)) -> Document {
     d.insert(Some(l), 0, sq).unwrap();
     let mut im = Node::new(
         NodeId(0),
-        NodeKind::Image(ImageObject {
+        NodeKind::Image(Box::new(ImageObject {
             key: "red".into(),
             width: 30,
             height: 30,
             xf: Affine::translate((50.0, 10.0)),
             link: None,
             placement: Default::default(),
-        }),
+        })),
     );
     im.id = d.alloc_id();
     d.insert(Some(l), 9, im).unwrap();

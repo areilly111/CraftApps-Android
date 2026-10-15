@@ -129,7 +129,7 @@ fn surfaces_exact_depth_models_alpha_selection_and_tile_boundaries() {
                             };
                             let spans = Spans::new(radius, shape_inside(shape));
                             let mut expected = conv_spans(&src, area, &ctx, &spans);
-                            crate::mix_selection(&mut expected, area, &selection, &src);
+                            crate::mix_selection(&mut expected, area, &selection, &src, alpha);
                             let mut reference = surface.clone();
                             reference.write_region(area, &expected);
                             for tile in [17, 256] {

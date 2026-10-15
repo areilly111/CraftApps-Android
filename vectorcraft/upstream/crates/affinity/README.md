@@ -14,7 +14,7 @@ Affinity files.
 | Artboards (legacy `ABEn` or Affinity 3 `phrp`/`aprp`), with name, paint and any transform | artboards plus a clip group with the actual vector outline, background and stroke |
 | Layers (`Scop`), groups (`Grup`), pass-through or isolated | layers and sublayers, groups |
 | Curves (`PCrv`): cubic subpaths, closed flags, live corners (`CnrD`) | paths (multi-subpath curves fill even-odd) |
-| Rectangles with corner radii (relative or absolute), ellipses, polygons (smooth too), stars, square stars, pies, triangles, trapezoids | paths |
+| Rectangles with corner radii (relative or absolute, locked or per corner) and round or straight corners, ellipses, polygons (smooth too), stars, square stars, pies, triangles, trapezoids | paths |
 | Compound shapes (`Comp`, add and subtract) | one even-odd path |
 | A shape or curve with children clips them | clip group whose clipping path keeps its fill (behind) and stroke (over) |
 | Vector masks (`AdCh` curves and shapes) | clip group |
@@ -33,7 +33,7 @@ Everything else is reported in the import warnings, one line per kind with a cou
 dropped silently: layer effects, adjustment layers and live filters, brush and pressure strokes,
 transparency gradients, fill opacity, bitmap fills, master pages, conical gradients (as radial),
 special shapes (cloud, heart, cog, callouts, arrows…, imported as their bounding ellipse), corner
-types other than round, stars with rounded points, several fills or strokes on one object (the
+types other than round or straight, stars with rounded points, several fills or strokes on one object (the
 active one is used), outlined or scaled text, text fields such as page numbers, frames with
 columns or a curved outline, paragraph indents/spacing, mixed paragraph alignments, unsupported font selectors, grey/Lab/32-bit pixels, CMYK pixels (converted to RGB without the
 document's profile) and Affinity-only blend modes (Add, Linear Light… as Normal).

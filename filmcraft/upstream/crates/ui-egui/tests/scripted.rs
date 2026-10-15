@@ -250,6 +250,21 @@ fn effects_panel_lists_the_premiere_transition_folders() {
 }
 
 #[test]
+fn cmd_d_applies_the_default_transition_to_the_selected_clip() {
+    // #1124: the playhead is mid-clip, away from every cut
+    let mut d = Driver::demo();
+    let clip = track_clips(&d.sequence(), 0)[2].clone();
+    let id = clip["clip"].clone();
+    let mid = (clip["start"].as_i64().unwrap() + clip["end"].as_i64().unwrap()) / 2;
+    d.exec("playhead.set", json!({"time": mid}));
+    d.exec("timeline.select", json!({"clips": [id]}));
+    d.ok("ui.key", json!({"key": "Cmd+D"}));
+    d.frames(2);
+    let seq = d.sequence();
+    assert!(seq["video"][0]["transitions"].as_array().unwrap().iter().any(|t| t["to"] == id && t["effect"] == "cross_dissolve"), "{seq}");
+}
+
+#[test]
 fn playback_toggle_and_stop() {
     let mut d = Driver::demo();
     assert_eq!(d.inspect()["playback"]["playing"], json!(false));

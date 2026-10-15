@@ -87,6 +87,15 @@ pub(crate) fn segment_at(paths: &[PathInfo], map: &ViewerMap, pos: Pos2, tol: f3
     best.map(|b| b.1)
 }
 
+/// The open path whose last vertex lies within `tol` points of `pos`: the Pen resumes it there.
+pub(crate) fn open_end_at(paths: &[PathInfo], map: &ViewerMap, pos: Pos2, tol: f32) -> Option<(LayerId, u64)> {
+    paths.iter().find_map(|p| {
+        let v = p.sp.vertices.last().filter(|_| !p.sp.closed)?;
+        let q = p.m.apply(gv2(v[0], v[1]));
+        (map.to_screen([q.x, q.y]).distance(pos) < tol).then_some((p.layer, p.uid))
+    })
+}
+
 /// A mask or shape path of a layer by group uid, evaluated at the context time.
 pub(crate) fn path_of(ectx: &EvalCtx, layer: LayerId, uid: u64) -> Option<PathInfo> {
     let l = ectx.comp.layer(layer)?;
@@ -248,6 +257,32 @@ pub(crate) struct KeyHit {
     pub p2c: Mat3,
 }
 
+/// A frame on a motion path (one of its dots): where the Pen and Add Vertex tools add a
+/// keyframe.
+#[derive(Clone, Copy)]
+pub(crate) struct PathFrame {
+    pub layer: LayerId,
+    pub prop: u64,
+    /// Layer time of the frame.
+    pub time: Tick,
+    pub pos: Pos2,
+}
+
+/// The keyframe dot on a motion path under `pos`.
+pub(crate) fn motion_key_at(hits: &[KeyHit], pos: Pos2) -> Option<KeyHit> {
+    hits.iter().rev().find(|h| h.tangent.is_none() && h.pos.distance(pos) < 6.0).copied()
+}
+
+/// The motion-path frame nearest `pos` (within a few points) where a keyframe can be added: not
+/// on a keyframe dot already there.
+pub(crate) fn motion_frame_at(frames: &[PathFrame], hits: &[KeyHit], pos: Pos2) -> Option<PathFrame> {
+    if motion_key_at(hits, pos).is_some() {
+        return None;
+    }
+    let near = frames.iter().filter(|f| f.pos.distance(pos) < 5.0).min_by(|a, b| a.pos.distance(pos).total_cmp(&b.pos.distance(pos)))?;
+    (!hits.iter().any(|h| h.tangent.is_none() && h.layer == near.layer && h.prop == near.prop && h.time == near.time)).then_some(*near)
+}
+
 /// Parent space → comp matrix of a 2D layer at the context time.
 pub(crate) fn parent_to_comp(ectx: &EvalCtx, l: &Layer) -> Mat3 {
     match l.parent.and_then(|p| ectx.comp.layer(p)) {
@@ -261,7 +296,17 @@ pub(crate) fn parent_to_comp(ectx: &EvalCtx, l: &Layer) -> Mat3 {
 
 /// Draw the position motion path of a selected 2D layer: frame dots along the path, keyframe
 /// squares (filled when selected) and spatial Bezier tangent handles. Works through parents.
-pub(crate) fn motion_path(app: &mut EffectcraftApp, painter: &egui::Painter, map: &ViewerMap, ectx: &EvalCtx, l: &Layer, col: Color32, hits: &mut Vec<KeyHit>) {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn motion_path(
+    app: &mut EffectcraftApp,
+    painter: &egui::Painter,
+    map: &ViewerMap,
+    ectx: &EvalCtx,
+    l: &Layer,
+    col: Color32,
+    hits: &mut Vec<KeyHit>,
+    frames: &mut Vec<PathFrame>,
+) {
     let Some(pos) = l.transform().and_then(|tr| tr.get("position")) else { return };
     if pos.keys.len() < 2 || l.is_3d() {
         return;
@@ -278,7 +323,9 @@ pub(crate) fn motion_path(app: &mut EffectcraftApp, painter: &egui::Painter, map
     let mut pts = vec![];
     let mut lt = lt0;
     while lt <= lt1 && pts.len() < 20_000 {
-        pts.push(to_scr(pos.value_at(lt).as_vec3()));
+        let q = to_scr(pos.value_at(lt).as_vec3());
+        frames.push(PathFrame { layer: l.id, prop: pos.uid, time: lt, pos: q });
+        pts.push(q);
         lt += fd;
     }
     pts.push(to_scr(pos.value_at(lt1).as_vec3()));
@@ -600,5 +647,28 @@ pub(crate) fn update(
             None
         }
         Drag::Roi { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(vertices: Vec<[f64; 2]>, closed: bool) -> PathInfo {
+        let n = vertices.len();
+        let sp = ShapePath { vertices, in_tangents: vec![[0.0; 2]; n], out_tangents: vec![[0.0; 2]; n], closed, feather: Vec::new() };
+        PathInfo { layer: LayerId(3), uid: 7, m: Mat3::IDENTITY, sp, is_mask: true, feather: Vec::new() }
+    }
+
+    /// #912: clicking the last vertex of an open path with the Pen resumes that path.
+    #[test]
+    fn pen_resumes_an_open_path_at_its_last_vertex() {
+        let map = ViewerMap { origin: Pos2::ZERO, zoom: 1.0, comp: [100.0, 100.0], area: Rect::EVERYTHING };
+        let open = info(vec![[10.0, 10.0], [50.0, 10.0], [50.0, 50.0]], false);
+        assert_eq!(open_end_at(std::slice::from_ref(&open), &map, egui::pos2(52.0, 49.0), 8.0), Some((LayerId(3), 7)));
+        assert_eq!(open_end_at(std::slice::from_ref(&open), &map, egui::pos2(10.0, 10.0), 8.0), None, "first vertex");
+        assert_eq!(open_end_at(std::slice::from_ref(&open), &map, egui::pos2(80.0, 80.0), 8.0), None, "far away");
+        let closed = info(vec![[10.0, 10.0], [50.0, 10.0], [50.0, 50.0]], true);
+        assert_eq!(open_end_at(&[closed], &map, egui::pos2(50.0, 50.0), 8.0), None, "closed path");
     }
 }

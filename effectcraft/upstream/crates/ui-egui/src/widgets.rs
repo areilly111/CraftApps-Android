@@ -121,7 +121,7 @@ pub fn hot_number_at(
         let mult = ui.input(|i| {
             if i.modifiers.shift {
                 10.0
-            } else if i.modifiers.command {
+            } else if i.modifiers.command && !proportional_scrub(i.modifiers) {
                 0.1
             } else {
                 1.0
@@ -136,6 +136,13 @@ pub fn hot_number_at(
         ui.data_mut(|d| d.insert_temp(editing_id, format!("{value:.decimals$}")));
     }
     (rect, out, resp.drag_stopped())
+}
+
+/// Ctrl+Alt (Cmd+Opt on macOS) held while scrubbing hot text: After Effects' Proportional
+/// Scrubbing, which spreads the change over the selected layers by selection order. Ctrl alone
+/// still scrubs finely and Shift by tens.
+pub fn proportional_scrub(m: egui::Modifiers) -> bool {
+    m.command && m.alt
 }
 
 /// [`hot_number_at`] for a whole number (an angle's revolutions): a drag steps it once every
@@ -165,11 +172,41 @@ pub fn drag_value(value: egui::DragValue<'_>) -> impl egui::Widget {
 }
 
 /// Keep the keyboard on an inline editor that is open until it loses the focus. The frame it
-/// opens (it has no focus yet) its whole `text` is selected, so typing replaces the value.
-/// (Only then is the focus requested: a request resets what keys the field keeps for itself,
-/// such as Tab with [`egui::TextEdit::lock_focus`].)
+/// opens its whole `text` is selected, so typing replaces the value; after that the caret is the
+/// user's (arrow keys move it), even if the field is without the focus for a frame (#488).
+/// (The focus is only requested while the field doesn't have it: a request resets what keys the
+/// field keeps for itself, such as Tab with [`egui::TextEdit::lock_focus`].)
 pub fn keep_focus(ctx: &egui::Context, field: &Response, text: &str) {
+    // The editor is open in consecutive passes; a gap means it was closed and opened again.
+    let shown = field.id.with("keep-focus-pass");
+    let pass = ctx.cumulative_pass_nr();
+    let previous = ctx.data_mut(|d| {
+        let previous = d.get_temp::<u64>(shown);
+        d.insert_temp(shown, pass);
+        previous
+    });
+    let opening = previous.is_none_or(|p| p.saturating_add(1) < pass);
     if !ctx.memory(|m| m.has_focus(field.id)) {
+        if opening {
+            select_all(ctx, field.id, text);
+        }
+        field.request_focus();
+    }
+}
+
+/// Put the keyboard on a dialog's first text field the frame the dialog opens, with its whole
+/// `text` selected, so typing replaces the value without a click. Unlike [`keep_focus`] the
+/// focus is the user's afterwards.
+pub fn focus_on_open(ctx: &egui::Context, field: &Response, text: &str) {
+    // The dialog is open in consecutive passes; a gap means it was closed and opened again.
+    let shown = field.id.with("focus-on-open-pass");
+    let pass = ctx.cumulative_pass_nr();
+    let previous = ctx.data_mut(|d| {
+        let previous = d.get_temp::<u64>(shown);
+        d.insert_temp(shown, pass);
+        previous
+    });
+    if previous.is_none_or(|p| p.saturating_add(1) < pass) {
         select_all(ctx, field.id, text);
         field.request_focus();
     }
@@ -240,7 +277,15 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, icon: Icon, active: bool, t: &Tokens
         t.icon
     };
     icons::paint(ui.painter(), rect.shrink(rect.width() * 0.22), icon, col);
+    focus_outline(ui, &resp, t);
     resp
+}
+
+/// Keep keyboard focus visible on custom-painted controls, including their active state.
+pub fn focus_outline(ui: &Ui, response: &Response, t: &Tokens) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(response.rect.shrink(1.0), 4.0, Stroke::new(2.0, t.text), StrokeKind::Inside);
+    }
 }
 
 /// One line of `text` at `pos` (placed by `align`), cut short with "…" past `max_w` points so it
@@ -287,6 +332,11 @@ fn field(ui: &mut Ui, rect: Rect, text: &mut String, hint: &str, t: &Tokens, sea
 
 /// Dropdown-looking control ("Full ▾").
 pub fn dropdown(ui: &mut Ui, rect: Rect, text: &str, t: &Tokens, id: egui::Id) -> Response {
+    dropdown_tip(ui, rect, text, None, t, id)
+}
+
+/// [`dropdown`] with a tooltip `tip` (shown always; it replaces the elided text's tooltip).
+pub fn dropdown_tip(ui: &mut Ui, rect: Rect, text: &str, tip: Option<&str>, t: &Tokens, id: egui::Id) -> Response {
     let resp = ui.interact(rect, id, Sense::click());
     ui.painter().rect_filled(rect, 3.0, if resp.hovered() { t.hover } else { t.field_bg });
     ui.painter().rect_stroke(rect, 3.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
@@ -308,6 +358,9 @@ pub fn dropdown(ui: &mut Ui, rect: Rect, text: &str, t: &Tokens, id: egui::Id) -
     };
     ui.painter().text(pos2(rect.min.x + 7.0, rect.center().y), Align2::LEFT_CENTER, shown, Tokens::ui(11.5), t.text);
     icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.max.x - 9.0, rect.center().y), vec2(8.0, 8.0)), Icon::ChevronDown, t.text_dim);
+    if let Some(tip) = tip {
+        return resp.on_hover_text(tip.to_string());
+    }
     if text.chars().count() > 0 && !fits(text) {
         return resp.on_hover_text(text.to_string());
     }
@@ -559,6 +612,27 @@ pub fn menu_scroll<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, add).inner
 }
 
+/// egui's menu style with no gap between the rows: the gap the app's item spacing left between
+/// two entries highlighted neither and swallowed a click there. The rows grow by that gap, so a
+/// menu keeps its size.
+pub fn menu_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.spacing.interact_size.y += style.spacing.item_spacing.y;
+    style.spacing.item_spacing.y = 0.0;
+}
+
+/// `resp`'s context menu in the app's [`menu_style`] (its submenus inherit it).
+pub fn context_menu(resp: &Response, add_contents: impl FnOnce(&mut Ui)) -> Option<egui::InnerResponse<()>> {
+    egui::Popup::context_menu(resp).style(menu_style).show(add_contents)
+}
+
+/// A button opening a menu in the app's [`menu_style`], for one outside the menu bar.
+pub fn menu_button<'a, R>(ui: &mut Ui, atoms: impl egui::IntoAtoms<'a>, add_contents: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
+    let config = egui::containers::menu::MenuConfig::new().style(menu_style);
+    let (response, inner) = egui::containers::menu::MenuButton::new(atoms).config(config).ui(ui, add_contents);
+    egui::InnerResponse::new(inner.map(|i| i.inner), response)
+}
+
 /// Whether a [`popup_menu`] is open (build its options only then: they can be long).
 pub fn popup_is_open(ui: &Ui, id: egui::Id) -> bool {
     ui.data(|d| d.get_temp(id.with("open")).unwrap_or(false))
@@ -591,6 +665,47 @@ pub(crate) fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #488: an inline editor selects its whole text only as it opens. Should it be without the
+    /// keyboard for a frame later (an input method, another handler), it takes the keyboard back
+    /// with the caret where the user put it instead of selecting everything again, which made
+    /// the arrows seem dead and Backspace erase the whole name.
+    #[test]
+    fn inline_editors_select_all_only_as_they_open() {
+        let ctx = egui::Context::default();
+        let mut text = String::from("Comp 1");
+        let mut id = egui::Id::NULL;
+        let frame = |ctx: &egui::Context, text: &mut String, id: &mut egui::Id| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let r = ui.add(egui::TextEdit::singleline(text));
+                keep_focus(ui.ctx(), &r, text);
+                *id = r.id;
+            });
+            out.textures_delta.clear();
+        };
+        let range = |ctx: &egui::Context, id: egui::Id| egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range());
+        let ix = |n: usize| egui::text::CCursor::new(n).index;
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        let all = range(&ctx, id).unwrap();
+        assert_eq!((all.primary.index.min(all.secondary.index), all.primary.index.max(all.secondary.index)), (ix(0), ix(6)), "opened with all selected");
+        // The caret after "Co", then a frame without the keyboard.
+        let mut state = egui::TextEdit::load_state(&ctx, id).unwrap();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(2))));
+        state.store(&ctx, id);
+        ctx.memory_mut(|m| m.surrender_focus(id));
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        assert!(ctx.memory(|m| m.has_focus(id)), "the editor keeps the keyboard");
+        let r = range(&ctx, id).unwrap();
+        assert_eq!((r.primary.index, r.secondary.index), (ix(2), ix(2)), "the caret stays where it was");
+        // Closed for a frame and opened again: all selected again.
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        let r = range(&ctx, id).unwrap();
+        assert_eq!((r.primary.index.min(r.secondary.index), r.primary.index.max(r.secondary.index)), (ix(0), ix(6)));
+    }
 
     /// #581: a field's text edit fills it, so its text and hint sit on the field's middle line
     /// (it was a row at the top of the field, its text high).

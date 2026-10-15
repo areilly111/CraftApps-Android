@@ -1,5 +1,6 @@
 //! The right dock: Properties | Layers | Libraries tabs, plus the collapsed icon-panel column
-//! whose panels pop out to the left. The double arrow at the top of the dock collapses the tabbed
+//! whose panels pop out to the left, and left of it the floating sets docked as columns
+//! ([`floating::docked_columns`]). The double arrow at the top of the dock collapses the tabbed
 //! group to icons at the top of the icon column (`window.collapseDock`); the arrow above the column
 //! then expands it again.
 
@@ -23,6 +24,12 @@ fn column_left_id() -> egui::Id {
     egui::Id::new("dock-icon-column-left")
 }
 
+/// Where the dock's left edge was drawn last: the icon column's, or the leftmost dock column's
+/// (egui temp memory, one frame old). Popped-out panels open left of it.
+pub(crate) fn dock_left_id() -> egui::Id {
+    egui::Id::new("dock-left")
+}
+
 /// Collapse the tabbed group to icons or expand it again (`window.collapseDock`). Expanding while
 /// one of its panels is popped out shows that panel's tab instead.
 pub fn set_collapsed(app: &mut VectorcraftApp, collapsed: bool) {
@@ -36,7 +43,7 @@ pub fn set_collapsed(app: &mut VectorcraftApp, collapsed: bool) {
 
 /// The strip along the top of a dock column with its double arrow: » collapses the dock to icons,
 /// « expands it. The whole strip is the click target (as on the toolbar). True when clicked.
-fn collapse_header(ui: &mut Ui, collapsed: bool) -> bool {
+pub(crate) fn collapse_header(ui: &mut Ui, collapsed: bool) -> bool {
     let t = Tokens::get(ui.ctx());
     let (hdr, resp) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER), Sense::click());
     ui.painter().rect_filled(hdr, 0.0, t.tab_strip);
@@ -59,20 +66,22 @@ fn toggle(app: &mut VectorcraftApp, collapsed: bool) {
 
 /// One icon of the column: a click pops its panel out (or puts it away); dragged out of the
 /// column (`column`), the panel floats.
-fn panel_icon(app: &mut VectorcraftApp, ui: &mut Ui, id: &'static str, label: &str, icon: &str, column: Rect) {
+fn panel_icon(app: &mut VectorcraftApp, ui: &mut Ui, id: &'static str, label: &str, icon: &str, _column: Rect) {
     let open = app.ui.open_panel.as_deref() == Some(id);
     // Its own id: the icons below it move up when it floats, and mustn't take over its drag.
     let (_, rect) = ui.allocate_space(vec2(30.0, 30.0));
     let resp = widgets::paint_icon_button(ui, ui.interact(rect, ui.id().with(("panel-icon", id)), Sense::click_and_drag()), icon, label, open);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), open, tl!(label)));
     if resp.clicked() {
         app.ui.open_panel = if open { None } else { Some(id.to_string()) };
     }
-    if resp.dragged() && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !column.contains(p)) {
-        floating::tear(app, ui.ctx(), &[id], id, floating::strip_grab(ui.ctx(), resp.rect.left()));
-    }
+    crate::panel_docking::legacy_tab(app, ui, id, &resp);
 }
 
 pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
+    if crate::panel_docking::show(app, ui) {
+        return;
+    }
     let t = Tokens::get(ui.ctx());
     let shown = floating::shown_tab(&app.ui);
     // Main tabbed group, unless it is collapsed to icons or all its panels float.
@@ -148,7 +157,10 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
         });
     let column = column.response.rect;
     let dock = group.map_or(column, |g| g.union(column));
+    // Floating sets docked as columns, left of the icon column.
+    let left = floating::docked_columns(app, ui).iter().map(|r| r.left()).fold(column.left(), f32::min);
     ui.ctx().data_mut(|d| {
+        d.insert_temp(dock_left_id(), left);
         d.insert_temp(column_left_id(), column.left());
         d.insert_temp(floating::dock_rect_id(), dock);
         d.insert_temp(floating::icons_rect_id(), column);
@@ -163,36 +175,36 @@ fn tab_strip(app: &mut VectorcraftApp, ui: &mut Ui, active: DockTab) -> bool {
     let (strip, _) = ui.allocate_exact_size(vec2(ui.available_width(), 33.0), Sense::hover());
     ui.painter().rect_filled(strip, 0.0, t.tab_strip);
     ui.painter().line_segment([strip.left_bottom(), strip.right_bottom()], Stroke::new(1.0, t.border));
-    let out = ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !strip.contains(p));
+    let outside = ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !strip.contains(p));
     // What a drag out of the strip floats: the panels, the one shown, where its tab began.
     let mut tear: Option<(Vec<&'static str>, &'static str, f32)> = None;
-    let mut x = strip.left();
-    for tab in DockTab::ALL {
-        let (id, label, _) = tab.info();
-        if floating::group_of(&app.ui, id).is_some() {
-            continue;
-        }
-        let galley =
-            ui.painter().layout_no_wrap(tl!(label).to_string(), theme::semibold(12.5), if tab == active { t.text_strong } else { t.text_dim });
-        let r = Rect::from_min_size(egui::pos2(x, strip.top()), vec2(galley.size().x + 24.0, strip.height() - 1.0));
-        let resp = ui.interact(r, ui.id().with(("docktab", label)), Sense::click_and_drag());
-        if tab == active {
-            ui.painter().rect_filled(r, 0.0, t.panel);
-        }
-        ui.painter().galley(egui::pos2(r.left() + 12.0, r.center().y - galley.size().y / 2.0), galley, t.text);
-        ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, t.border));
+    let tabs: Vec<_> = floating::docked_tabs(&app.ui).collect();
+    let names: Vec<_> = tabs
+        .iter()
+        .map(|tab| {
+            let (id, label, _) = tab.info();
+            (id, label)
+        })
+        .collect();
+    let selected = tabs.iter().position(|&tab| tab == active).unwrap_or(0);
+    let menu = Rect::from_center_size(strip.right_center() - vec2(14.0, 0.0), vec2(16.0, 16.0));
+    let area = Rect::from_min_max(strip.min, egui::pos2((menu.left() - 4.0).max(strip.left()), strip.bottom() - 1.0));
+    let out = panel_tabs(ui, "docktab", area, &names, selected, theme::semibold(12.5), true);
+    for (i, resp) in out.responses {
+        let Some(&tab) = tabs.get(i) else { continue };
+        let id = tab.info().0;
         if resp.clicked() {
             app.ui.dock_tab = tab;
-        } else if resp.dragged() && out {
-            tear = Some((vec![id], id, r.left()));
         }
-        x = r.right();
+        crate::panel_docking::legacy_tab(app, ui, id, &resp);
     }
-    let menu = Rect::from_center_size(strip.right_center() - vec2(14.0, 0.0), vec2(16.0, 16.0));
-    let rest = Rect::from_min_max(egui::pos2(x, strip.top()), egui::pos2(menu.left() - 4.0, strip.bottom()));
+    if let Some(tab) = out.picked.and_then(|i| tabs.get(i)).copied() {
+        app.ui.dock_tab = tab;
+    }
+    let rest = Rect::from_min_max(egui::pos2(out.right, strip.top()), egui::pos2(menu.left() - 4.0, strip.bottom()));
     if rest.width() > 0.0 {
         let resp = ui.interact(rest, ui.id().with("dock-group-bar"), Sense::drag());
-        if resp.dragged() && out {
+        if resp.dragged() && outside {
             tear = Some((floating::docked_tabs(&app.ui).map(|t| t.info().0).collect(), active.info().0, strip.left()));
         }
         resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tl!("Drag to float the panel group"));
@@ -203,6 +215,92 @@ fn tab_strip(app: &mut VectorcraftApp, ui: &mut Ui, active: DockTab) -> bool {
     }
     // Torn off, or floated from its menu.
     floating::group_of(&app.ui, active.info().0).is_some()
+}
+
+/// App styling and overflow menus around the shared tab fitting/interaction components. Docking
+/// and floating groups consume the responses themselves, preserving their different drag rules.
+pub(crate) struct PanelTabs {
+    pub responses: Vec<(usize, egui::Response)>,
+    pub picked: Option<usize>,
+    pub right: f32,
+}
+
+pub(crate) fn panel_tabs(
+    ui: &mut Ui,
+    id: &str,
+    area: Rect,
+    tabs: &[(&str, &str)],
+    selected: usize,
+    font: egui::FontId,
+    separators: bool,
+) -> PanelTabs {
+    let t = Tokens::get(ui.ctx());
+    let labels: Vec<_> = tabs.iter().map(|&(_, label)| tl!(label)).collect();
+    let galleys: Vec<_> = labels
+        .iter()
+        .enumerate()
+        .map(|(i, label)| ui.painter().layout_no_wrap((*label).to_string(), font.clone(), if i == selected { t.text_strong } else { t.text_dim }))
+        .collect();
+    let natural: Vec<_> = galleys.iter().map(|g| g.size().x + 24.0).collect();
+    let fit = craft_ui::tabs::fit(&natural, selected, area.width(), 40.0, 18.0);
+    let mut out = PanelTabs { responses: Vec::with_capacity(fit.shown.len()), picked: None, right: area.left() };
+    for (i, width) in fit.shown {
+        let Some((key, _)) = tabs.get(i) else { continue };
+        let Some(label) = labels.get(i) else { continue };
+        let Some(galley) = galleys.get(i) else { continue };
+        let rect = Rect::from_min_size(egui::pos2(out.right, area.top()), vec2(width, area.height()));
+        let shrunk = natural.get(i).is_some_and(|natural| *natural > width + 0.5);
+        let galley = if shrunk {
+            let mut job =
+                egui::text::LayoutJob::simple_singleline((*label).to_string(), font.clone(), if i == selected { t.text_strong } else { t.text_dim });
+            job.wrap =
+                egui::text::TextWrapping { max_width: (width - 8.0).max(1.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+            ui.painter().layout_job(job)
+        } else {
+            galley.clone()
+        };
+        let resp = craft_ui::tabs::Tab::new(ui.id().with((id, key)), label, i == selected)
+            .sense(Sense::click_and_drag())
+            .focus_stroke(Stroke::new(1.0, t.accent))
+            .show_at(ui, rect, |ui, _| {
+                if i == selected {
+                    ui.painter().rect_filled(rect, 0.0, t.panel);
+                }
+                ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(rect.center() - galley.size() / 2.0, galley, t.text);
+                if separators {
+                    ui.painter().line_segment([rect.right_top(), rect.right_bottom()], Stroke::new(1.0, t.border));
+                }
+            });
+        out.responses.push((i, if shrunk { resp.on_hover_text(*label) } else { resp }));
+        out.right = rect.right();
+    }
+    if !fit.overflow.is_empty() && fit.overflow_width > 0.0 {
+        let rect = Rect::from_min_size(egui::pos2(out.right, area.top()), vec2(fit.overflow_width, area.height()));
+        let resp = ui.interact(rect, ui.id().with((id, "overflow")), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, 0.0, t.hover);
+        }
+        if resp.has_focus() && rect.width() > 4.0 {
+            ui.painter().rect_stroke(rect.shrink(2.0), 0.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        }
+        icons::paint(ui, "chevrons-right", Rect::from_center_size(rect.center(), vec2(12.0, 12.0)).intersect(rect), t.text);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tl!("Panels")));
+        let resp = resp.on_hover_text(tl!("Panels"));
+        egui::Popup::menu(&resp).show(|ui| {
+            widgets::menu_scroll(ui, |ui| {
+                for i in fit.overflow {
+                    if let Some(label) = labels.get(i)
+                        && ui.button(*label).clicked()
+                    {
+                        out.picked = Some(i);
+                        ui.close();
+                    }
+                }
+            });
+        });
+        out.right = rect.right();
+    }
+    out
 }
 
 /// A panel popped out next to the icon column: an icon panel, or one of the tabbed group's panels
@@ -226,7 +324,9 @@ pub fn floating_panel(app: &mut VectorcraftApp, ctx: &egui::Context) {
     } else {
         screen.right()
     };
-    let right = column - 6.0;
+    let left = ctx.data(|d| d.get_temp::<f32>(dock_left_id())).filter(|x| x.is_finite() && *x > screen.left() && *x <= column).unwrap_or(column);
+    let right = if app.ui.dock && app.ui.screen_mode < 3 { left } else { column };
+    let right = right - 6.0;
     // The tabbed group's panels fill their height (Layers) or scroll (Properties): give them one
     // that keeps the flyout on screen.
     let width = panel_width(id);
@@ -324,6 +424,98 @@ mod tests {
 
     use super::*;
     use crate::toolbar::tests::{wheel, widget_rects};
+
+    #[test]
+    fn tab_headers_fit_narrow_widths_keep_the_selected_tab_and_clip_labels() {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        theme::install_fonts(&ctx);
+        theme::apply(&ctx, theme::Brightness::MediumDark);
+        let names = [("one", "Long panel name"), ("two", "Another long panel name"), ("three", "Layers")];
+        for width in [0.0, 1.0, 5.0, 18.0, 19.0, 80.0, 180.0, 300.0] {
+            for selected in 0..names.len() {
+                let area = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(width, 32.0));
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let out = panel_tabs(ui, "fit-test", area, &names, selected, theme::semibold(12.5), true);
+                    assert!(out.responses.iter().any(|(i, _)| *i == selected), "selected index {selected} stays on the strip");
+                    assert!(out.right <= area.right() + 0.001, "{width}: strip ends at {}", out.right);
+                    for (_, response) in &out.responses {
+                        if response.rect.is_positive() {
+                            assert!(area.contains_rect(response.rect), "{width}: {:?}", response.rect);
+                        }
+                    }
+                });
+                output.textures_delta.clear();
+                for shape in output.shapes.iter().filter(|s| matches!(s.shape, egui::Shape::Text(_))) {
+                    assert!(shape.clip_rect.right() <= area.right() + 0.001, "{width}: a label is clipped to its tab");
+                }
+                if width > 0.0 && width < 18.0 {
+                    assert!(
+                        output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Rect(rect) if rect.brush.is_some())),
+                        "the actual overflow SVG was painted"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overflow_menu_can_activate_a_hidden_panel() {
+        crate::i18n::set_current(crate::i18n::Lang::EN);
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        egui_extras::install_image_loaders(&ctx);
+        theme::install_fonts(&ctx);
+        theme::apply(&ctx, theme::Brightness::MediumDark);
+        let names = [("properties", "Properties"), ("layers", "Layers"), ("libraries", "Libraries")];
+        let mut selected = 0;
+        let mut time = 0.0;
+        let mut frame = |events| {
+            time += 0.1;
+            let input = egui::RawInput {
+                events,
+                time: Some(time),
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(400.0, 300.0))),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                let area = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(90.0, 32.0));
+                let out = panel_tabs(ui, "overflow-test", area, &names, selected, theme::semibold(12.5), true);
+                if let Some(picked) = out.picked {
+                    selected = picked;
+                }
+            });
+            output.textures_delta.clear();
+            output
+        };
+        let button = |output: &egui::FullOutput, label: &str| {
+            let bounds = output
+                .platform_output
+                .accesskit_update
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .find(|(_, n)| n.label() == Some(label) && n.role() == egui::accesskit::Role::Button)
+                .unwrap()
+                .1
+                .bounds()
+                .unwrap();
+            egui::pos2((bounds.x0 + bounds.x1) as f32 * 0.5, (bounds.y0 + bounds.y1) as f32 * 0.5)
+        };
+        let press =
+            |pos, pressed| egui::Event::PointerButton { pos, pressed, button: egui::PointerButton::Primary, modifiers: egui::Modifiers::NONE };
+        frame(vec![]);
+        let output = frame(vec![]);
+        let overflow = button(&output, "Panels");
+        frame(vec![egui::Event::PointerMoved(overflow), press(overflow, true)]);
+        frame(vec![press(overflow, false)]);
+        let output = frame(vec![]);
+        let libraries = button(&output, "Libraries");
+        frame(vec![egui::Event::PointerMoved(libraries), press(libraries, true)]);
+        frame(vec![press(libraries, false)]);
+        assert_eq!(selected, 2);
+    }
 
     #[test]
     fn every_flyout_stays_left_of_the_icon_column() {

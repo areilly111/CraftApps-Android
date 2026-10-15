@@ -54,7 +54,7 @@ impl Brackets {
     }
 
     fn of_node(cx: &ToolContext, id: NodeId) -> Option<Self> {
-        let n = cx.doc.node(id).filter(|n| n.perspective.is_none() && cx.doc.is_editable(id))?;
+        let n = cx.doc.node(id).filter(|n| n.extras().perspective.is_none() && cx.doc.is_editable(id))?;
         let NodeKind::Text(t) = &n.kind else { return None };
         let TextKind::OnPath { path, end, .. } = &t.kind else { return None };
         let det = t.xf.determinant();

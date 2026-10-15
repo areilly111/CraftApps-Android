@@ -23,6 +23,7 @@ const FILES: &[(&str, f64)] = &[
     ("patchy-group.af", 0.25),                  // 0.00
     ("patchy-transform.af", 1.0),               // 0.19
     ("patchy-vector.af", 1.0),                  // 0.12
+    ("patchy-shapes.af", 1.0),                  // 0.24: per-corner radii, a straight corner
     ("patchy-lazy-placed.af", 1.0),             // 0.50: upstream byte-derived lazy-image regression
     ("patchy-embedded-jpeg.af", 1.0),           // 0.50
     ("affinity3-mexican-guy.af", 3.0),          // 1.80: brush strokes as plain strokes

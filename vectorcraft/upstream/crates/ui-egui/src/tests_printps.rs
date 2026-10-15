@@ -63,3 +63,55 @@ fn postscript_is_saved_not_printed() {
     assert_eq!(*sent.borrow(), 1);
     assert!(app.run("file.print", json!({"format": "ps2"})).is_err());
 }
+
+/// Submission stays off the frame and the eventual queue receipt/refusal reaches the status bar.
+#[test]
+fn desktop_print_pending_receipt_and_refusal_are_distinct() {
+    use std::sync::{Arc, Mutex, mpsc};
+    struct AsyncPrinter {
+        release: Arc<Mutex<mpsc::Receiver<()>>>,
+        refused: bool,
+    }
+    impl PrintService for AsyncPrinter {
+        fn printers(&mut self) -> Vec<Printer> {
+            Vec::new()
+        }
+        fn print(&mut self, _: &PrintJob) -> Result<String, String> {
+            Err("UI thread must not submit".into())
+        }
+        fn shared_print(&self) -> Option<crate::print::SharedPrintFn> {
+            let release = self.release.clone();
+            let refused = self.refused;
+            Some(Arc::new(move |job| {
+                release.lock().unwrap().recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+                assert_eq!(job.printer, Some("Office Laser"));
+                assert!(job.pdf.starts_with(b"%PDF-"));
+                if refused { Err("queue refused this job".into()) } else { Ok("Sent to Office Laser".into()) }
+            }))
+        }
+    }
+    for refused in [false, true] {
+        let (release, wait) = mpsc::channel();
+        let services = Services {
+            print: Some(Box::new(AsyncPrinter { release: Arc::new(Mutex::new(wait)), refused })),
+            write_shared: Some(Arc::new(|_, _| Err("printing must not write a document".into()))),
+            ..Default::default()
+        };
+        let mut app = VectorcraftApp::new(Session::new(), services);
+        app.run("file.new", json!({ "width": 100, "height": 80 })).unwrap();
+        let pending = app.run("file.print", json!({ "printer": "Office Laser" })).unwrap();
+        assert_eq!(pending["background"], true);
+        assert_eq!(pending["printed"], false);
+        assert_eq!(pending["pages"], 1);
+        assert!(pending["bytes"].as_u64().is_some_and(|bytes| bytes > 0));
+        assert!(!app.ui.status.starts_with("Sent"));
+        release.send(()).unwrap();
+        crate::background::wait_all(&mut app);
+        assert!(app.background.jobs.is_empty());
+        if refused {
+            assert!(app.ui.status.contains("queue refused this job"));
+        } else {
+            assert_eq!(app.ui.status, "Sent to Office Laser");
+        }
+    }
+}

@@ -32,6 +32,11 @@ fn map_err(f: Format, e: image::ImageError) -> CodecError {
     }
 }
 
+pub(crate) fn bmp_palette(bytes: &[u8]) -> Result<Option<Vec<[u8; 3]>>, CodecError> {
+    let decoder = image::codecs::bmp::BmpDecoder::new(Cursor::new(bytes)).map_err(|e| map_err(Format::Bmp, e))?;
+    Ok(decoder.get_palette().map(|palette| palette.to_vec()))
+}
+
 pub(crate) fn decode(f: Format, bytes: &[u8], limits: &Limits) -> Result<Image, CodecError> {
     let fmt = image_format(f).ok_or_else(|| CodecError::unsupported(f, "not handled by image backend"))?;
     let mut reader = image::ImageReader::with_format(Cursor::new(bytes), fmt);

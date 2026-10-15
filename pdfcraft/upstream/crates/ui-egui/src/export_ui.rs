@@ -90,7 +90,9 @@ pub(crate) fn body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, kind: E
     } else if kind == ExportKind::AllImages {
         ui.horizontal(|ui| {
             ui.label(tl!("Exclude images smaller than"));
-            let label = move |n: u32| if n == 0 { tl!("No limit").to_string() } else { format!("{n} pixels") };
+            let label = move |n: u32| {
+                if n == 0 { tl!("No limit").to_string() } else { crate::i18n::trn(crate::i18n::current(), u64::from(n), "{n} pixel", "{n} pixels") }
+            };
             egui::ComboBox::from_id_salt("export-min").selected_text(label(d.min_side)).show_ui(ui, |ui| {
                 for n in [0, 16, 32, 64, 128, 256] {
                     ui.selectable_value(&mut d.min_side, n, label(n));
@@ -221,6 +223,9 @@ impl PdfCraftApp {
             return;
         }
         let Some((_, id)) = self.active_ids() else { return };
+        if !self.may_copy(id) {
+            return;
+        }
         let Some(doc) = self.session.get(id) else { return };
         let src = doc.export_source();
         let stem = doc.name.trim_end_matches(".pdf").trim_end_matches(".PDF").to_string();
@@ -256,7 +261,7 @@ impl PdfCraftApp {
             match self.export_dir_override.clone() {
                 Some(d) => start(self, d.into(), true),
                 None => {
-                    let dialog = crate::pickers::FileDialog::new().set_title(tl!("Choose a folder for the exported files").to_string());
+                    let dialog = rfd::AsyncFileDialog::new().set_title(tl!("Choose a folder for the exported files").to_string());
                     self.ask_one(crate::pickers::Ask::Folder(dialog), None, move |app, dir| start(app, dir, false));
                 }
             }

@@ -1,7 +1,9 @@
 # Releasing VectorCraft
 
+> **Last updated:** 2026-10-12 · **Change:** minor (RPM runtime capabilities and metadata checks, #1275)
+
 Every push to the `release` branch runs `.github/workflows/release.yml`. The workflow builds
-installers for macOS, Windows, Linux (including Flatpak bundles) and FreeBSD, plus the web build, and creates or updates a
+installers for macOS, Windows, Linux (including Flatpak bundles and a RISC-V tarball) and FreeBSD, plus the web build, and creates or updates a
 **draft** GitHub Release named `VectorCraft v<version>`. Nobody sees a draft until a maintainer
 publishes it.
 
@@ -50,6 +52,7 @@ and no draft release is created.
 | Windows on ARM64 | `vectorcraft-<v>-windows-arm64.msi`, `vectorcraft-<v>-windows-arm64-portable.zip` | `windows-latest` (cross-compiled) |
 | Linux x86_64 | `vectorcraft-<v>-linux-x86_64.{AppImage,deb,rpm,tar.gz}` | `ubuntu-22.04` |
 | Linux aarch64 | `vectorcraft-<v>-linux-aarch64.{AppImage,deb,rpm,tar.gz}` | `ubuntu-22.04-arm` |
+| Linux riscv64 | `vectorcraft-<v>-linux-riscv64.tar.gz` (cross-compiled, glibc >= 2.39; CLI smoke-tested under QEMU) | `ubuntu-24.04` |
 | Linux AppImage updates | `vectorcraft-<v>-linux-{x86_64,aarch64}.AppImage.zsync` | with the AppImages |
 | Flatpak x86_64, aarch64 | `vectorcraft-<v>-linux-{x86_64,aarch64}.flatpak` | `ubuntu-24.04`, `ubuntu-24.04-arm` (repackages the Linux tarball) |
 | FreeBSD 14 x86_64 | `vectorcraft-<v>-freebsd-x86_64.tar.gz` | a FreeBSD 14.3 VM on `ubuntu-latest` |
@@ -84,8 +87,9 @@ The rules are in craftrules `standards/fonts.md`, the build option in
   (`entitlements.plist`) are deliberately empty.
 - **Notarization:** the app is zipped and sent with `xcrun notarytool submit --wait`, then the
   ticket is stapled and checked with `stapler validate` and `spctl`. The app goes on a DMG
-  (`hdiutil makehybrid` and `convert`, with an `Applications` link to drag onto), which is signed,
-  notarized and stapled too. Its Finder window (background, icon size and positions) comes from
+  (`hdiutil create -srcfolder`, retried when a CI runner's device is busy, with an `Applications` link
+  to drag onto), which is signed, notarized and stapled too; the app mounted from it must pass
+  `codesign --verify --strict --deep` (#1085). Its Finder window (background, icon size and positions) comes from
   [`packaging/macos/dmg/`](../packaging/macos/dmg/README.md), and its volume is named `VectorCraft`
   without the version, which the window's background needs; the DMG file name keeps the version.
 - **CLI:** the universal `vectorcraft-cli` is signed the same way, zipped, and the zip is
@@ -114,11 +118,12 @@ to the target triple, so host build scripts aren't affected.
   candidates replace each other.
 - Double-clicking the MSI opens a setup wizard (WixUI_InstallDir without the licence page):
   Welcome, install folder (remembered for upgrades in `HKLM\Software\VectorCraft\InstallDir`),
-  Ready, a progress page, and a Finish page that says where to find the app, with a ticked "Launch
-  VectorCraft" box. The pages name the full version (`vectorcraft.en-us.wxl`). `package.ps1` draws
-  the wizard's banner and side bitmaps from the app icon, so no WiX stock art ships. `msiexec /qn`
-  still installs silently. Building needs the WiX UI and Util extensions:
-  `wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2`.
+  Shortcuts (a ticked "Create a desktop shortcut" box), Ready, a progress page, and a Finish page
+  that says where to find the app, with a ticked "Launch VectorCraft" box. The pages name the full
+  version (`vectorcraft.en-us.wxl`). `package.ps1` draws the wizard's banner and side bitmaps from
+  the app icon, so no WiX stock art ships. `msiexec /qn` still installs silently, with the desktop
+  shortcut unless `INSTALLDESKTOPSHORTCUT=""` is passed. Building needs the WiX UI and Util
+  extensions: `wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2`.
 - The ARM64 build is cross-compiled on the x64 runner. `.github/workflows/windows-arm64.yml`
   installs that MSI on a Windows 11 ARM64 runner, checks that both installed programs are ARM64,
   runs `vectorcraft-cli --version` natively and uninstalls.
@@ -143,6 +148,26 @@ The jobs run on `ubuntu-22.04`, the oldest GitHub-hosted image, so the binaries 
 glibc 2.35 or newer: Ubuntu 22.04+, Debian 12+, Fedora 36+ and RHEL 10. Moving the job to a newer
 image raises that floor, so do it deliberately. After packaging, the job prints the `.deb`'s
 metadata and contents, runs `ldd` on the binary and runs each AppImage with `--version`.
+
+**RPM dependencies.** The x86_64 and aarch64 RPMs require 64-bit shared-library
+capabilities rather than distribution-specific package names: glibc's `GLIBC_2.35`,
+`libm`, `libgcc_s`, `libxkbcommon`, and either Vulkan or EGL. Windowing and GPU
+libraries are loaded at runtime, so `ldd` alone does not list every requirement.
+The glibc capability enforces the same floor as the `.deb`; a distribution with
+an older glibc is not supported by these binaries. Weak recommendations still use
+package names and do not block installation.
+
+Before publishing a Linux release:
+
+- [ ] Check `rpm -qp --requires` on both architectures for the runtime capabilities
+  above, including the Vulkan/EGL alternative and glibc floor.
+- [ ] Install and start the package on the target RPM distributions. Synthetic
+  provider tests verify metadata resolution, not a real desktop installation.
+
+**RISC-V.** The `linux-riscv64` job cross-compiles `riscv64gc-unknown-linux-gnu` on `ubuntu-24.04`
+against riscv64 libraries from ports.ubuntu.com (so the floor there is glibc 2.39) and runs
+`package.sh --formats tar` with `CROSS_ARCH`, `CROSS_TARGET`, `CROSS_COMPILE` and
+`EMULATOR=qemu-riscv64` set: a `.tar.gz` only, with `vectorcraft-cli --version` run under QEMU.
 
 **AppImage updates.** Each AppImage embeds the update information
 `gh-releases-zsync|storytold|vectorcraft|latest|vectorcraft-*-linux-<arch>.AppImage.zsync`
@@ -194,3 +219,9 @@ warning, never a failed build.
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | notarization (`APPLE_PASSWORD` is an app-specific password) |
 | `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` | Windows signing with a `.pfx` |
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE` | Windows signing with Azure Trusted Signing |
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-12 | minor | RPM dependencies use 64-bit runtime capabilities and enforce glibc 2.35 (#1275); real distro install/start-up checks remain pending |

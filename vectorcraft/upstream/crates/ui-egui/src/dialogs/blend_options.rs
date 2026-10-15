@@ -147,7 +147,7 @@ mod tests {
 
     fn spec(app: &VectorcraftApp, id: u64) -> vectorcraft_doc::BlendSpec {
         match &app.session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(id)).unwrap().kind {
-            NodeKind::Blend { spec, .. } => spec.clone(),
+            NodeKind::Blend { spec, .. } => (**spec).clone(),
             _ => panic!("not a blend"),
         }
     }

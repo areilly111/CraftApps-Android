@@ -143,6 +143,43 @@ fn tone_dropped_on_a_video_row_goes_to_the_audio_track_without_error() {
     assert_eq!(clip_counts(&h), (0, 1), "status: {}", h.state().ui.status);
 }
 
+/// Empty project: no sequence yet. Dropping on the empty Timeline must import *and* make a sequence.
+fn empty_harness() -> Harness<'static, FilmcraftApp> {
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).build_eframe(move |_cc| FilmcraftApp::new(Session::default()));
+    for _ in 0..4 {
+        step(&mut h);
+    }
+    h
+}
+
+fn drop_on_empty_timeline(h: &mut Harness<'static, FilmcraftApp>, path: &Path) {
+    let panel = control_rect(h, "panel.Timeline");
+    pointer_to(h, panel.center());
+    h.input_mut().dropped_files.push(std::sync::Arc::new(OsFile(path.to_path_buf())));
+    step(h);
+    h.input_mut().dropped_files.clear();
+    step(h);
+}
+
+#[test]
+fn still_dropped_on_empty_timeline_creates_a_sequence() {
+    let mut h = empty_harness();
+    assert!(h.state().session.active_sequence().is_none());
+    drop_on_empty_timeline(&mut h, &still("drop_still_empty_timeline.png"));
+    assert_eq!(h.state().session.project.items.len(), 2, "still plus the new sequence");
+    assert!(h.state().session.active_sequence().is_some(), "status: {}", h.state().ui.status);
+    assert_eq!(clip_counts(&h), (1, 0), "status: {}", h.state().ui.status);
+}
+
+#[test]
+fn with_drop_import_off_empty_timeline_does_not_create_a_sequence() {
+    let mut h = empty_harness();
+    h.state_mut().session.prefs.timeline.drop_import_to_timeline = false;
+    drop_on_empty_timeline(&mut h, &still("drop_still_empty_pref_off.png"));
+    assert_eq!(h.state().session.project.items.len(), 1, "imported to the bin only");
+    assert!(h.state().session.active_sequence().is_none());
+}
+
 #[test]
 fn with_drop_import_off_the_file_is_only_imported() {
     let mut h = harness();
@@ -151,4 +188,142 @@ fn with_drop_import_off_the_file_is_only_imported() {
     drop_on_row(&mut h, "timeline.track.V1.target", &still("drop_still_pref_off.png"));
     assert_eq!(h.state().session.project.items.len(), items_before + 1, "the still is imported to the bin");
     assert_eq!(clip_counts(&h), (0, 0), "status: {}", h.state().ui.status);
+}
+
+/// Several files dropped at once land end to end, and one undo takes all of them off the Timeline.
+#[test]
+fn several_files_dropped_together_are_placed_in_one_undo_step() {
+    let mut h = harness();
+    let at = point_on_row(&h, "timeline.track.V1.target");
+    pointer_to(&mut h, at);
+    for name in ["drop_many_a.png", "drop_many_b.png", "drop_many_c.png"] {
+        h.input_mut().dropped_files.push(std::sync::Arc::new(OsFile(still(name))));
+    }
+    step(&mut h);
+    h.input_mut().dropped_files.clear();
+    step(&mut h);
+    assert_eq!(clip_counts(&h), (3, 0), "status: {}", h.state().ui.status);
+    let spans: Vec<(i64, i64)> = {
+        let q = h.state().session.active_sequence().unwrap();
+        let mut v: Vec<_> = q.video_tracks.iter().flat_map(|t| t.items.iter()).map(|i| (i.start.0, i.end().0)).collect();
+        v.sort();
+        v
+    };
+    assert!(spans.windows(2).all(|w| w[0].1 == w[1].0), "end to end: {spans:?}");
+    h.state_mut().session.execute("edit.undo", serde_json::json!({})).unwrap();
+    assert_eq!(clip_counts(&h), (0, 0), "one undo removes every placed clip");
+}
+
+fn float_panel(h: &mut Harness<'static, FilmcraftApp>, panel: &str, rect: [f32; 4]) {
+    let ctx = h.ctx.clone();
+    filmcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.floatPanel", json!({"panel": panel, "rect": rect})).unwrap();
+    for _ in 0..4 {
+        step(h);
+    }
+}
+
+fn drop_at(h: &mut Harness<'static, FilmcraftApp>, pos: egui::Pos2, path: &Path) {
+    pointer_to(h, pos);
+    h.input_mut().dropped_files.push(std::sync::Arc::new(OsFile(path.to_path_buf())));
+    step(h);
+    h.input_mut().dropped_files.clear();
+    step(h);
+}
+
+fn hover_at(h: &mut Harness<'static, FilmcraftApp>, pos: egui::Pos2) -> bool {
+    pointer_to(h, pos);
+    h.input_mut().hovered_files.push(Default::default());
+    step(h);
+    let preview = h.state().auto.elements.iter().any(|element| element.id == "timeline.fileDropPreview");
+    h.input_mut().hovered_files.clear();
+    step(h);
+    preview
+}
+
+#[test]
+fn floating_panel_blocks_os_drop_and_hover_but_uncovered_timeline_still_accepts() {
+    for scale in [1.0, 2.0] {
+        let mut h = harness();
+        h.ctx.set_pixels_per_point(scale);
+        for _ in 0..4 {
+            step(&mut h);
+        }
+        let at = point_on_row(&h, "timeline.track.V1.target");
+        float_panel(&mut h, "Info", [at.x - 20.0, at.y - 60.0, 320.0, 200.0]);
+        let project = h.state().session.project.clone();
+        let covered_preview = hover_at(&mut h, at);
+        assert!(std::sync::Arc::ptr_eq(&project, &h.state().session.project), "hover does not edit the project");
+        let items_before = h.state().session.project.items.len();
+        drop_at(&mut h, at, &still(&format!("drop_covered_{scale}.png")));
+        assert_eq!(h.state().session.project.items.len(), items_before + 1);
+        assert_eq!(clip_counts(&h), (0, 0), "a covered Timeline must not be edited");
+        assert!(!covered_preview, "a covered Timeline must not preview a placement");
+        float_panel(&mut h, "Info", [5.0, 5.0, 320.0, 200.0]);
+        let at = point_on_row(&h, "timeline.track.V1.target");
+        assert!(hover_at(&mut h, at));
+        drop_at(&mut h, at, &still(&format!("drop_uncovered_{scale}.png")));
+        assert_eq!(clip_counts(&h), (1, 0));
+    }
+}
+
+#[test]
+fn floating_timeline_accepts_once_and_another_float_can_occlude_it() {
+    let mut h = harness();
+    float_panel(&mut h, "Timeline", [300.0, 180.0, 950.0, 640.0]);
+    let at = point_on_row(&h, "timeline.track.V1.target");
+    assert!(hover_at(&mut h, at));
+    drop_at(&mut h, at, &still("drop_floating_timeline.png"));
+    assert_eq!(clip_counts(&h), (1, 0));
+    float_panel(&mut h, "Info", [at.x - 20.0, at.y - 60.0, 320.0, 200.0]);
+    assert!(!hover_at(&mut h, at));
+    drop_at(&mut h, at, &still("drop_occluded_floating_timeline.png"));
+    assert_eq!(clip_counts(&h), (1, 0));
+}
+
+#[test]
+fn offscreen_float_uses_rendered_clamp_and_maximized_timeline_ignores_hidden_floats() {
+    let mut h = harness();
+    let at = point_on_row(&h, "timeline.track.V1.target");
+    // The very wide offscreen float is clamped back to x=0, over this row.
+    float_panel(&mut h, "Info", [-5000.0, at.y - 60.0, 1500.0, 200.0]);
+    let visible = control_rect(&h, "panel.Info");
+    assert!(visible.contains(at), "rendered={visible:?}, drop={at:?}, floats={:?}", h.state().ui.floating);
+    assert!(!hover_at(&mut h, at));
+    drop_at(&mut h, at, &still("drop_clamped_occlusion.png"));
+    assert_eq!(clip_counts(&h), (0, 0));
+    h.state_mut().ui.keys.maximized = Some(filmcraft_ui_egui::dock::PanelKind::Timeline);
+    for _ in 0..4 {
+        step(&mut h);
+    }
+    let at = point_on_row(&h, "timeline.track.V1.target");
+    assert!(hover_at(&mut h, at));
+    drop_at(&mut h, at, &still("drop_maximized_timeline.png"));
+    assert_eq!(clip_counts(&h), (1, 0));
+}
+
+#[test]
+fn os_cursor_hook_selects_destination_when_egui_pointer_has_no_motion() {
+    let mut h = harness();
+    let at = point_on_row(&h, "timeline.track.V1.target");
+    float_panel(&mut h, "Info", [at.x - 20.0, at.y - 60.0, 320.0, 200.0]);
+    // Physical pixels at 1x, with the synthetic viewport origin fixed at zero.
+    h.state_mut().hooks.cursor_screen_position = Some(Box::new(move || Some((at.x.round() as i32, at.y.round() as i32))));
+    if let Some(viewport) = h.input_mut().viewports.get_mut(&egui::ViewportId::ROOT) {
+        viewport.inner_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 980.0)));
+    }
+    h.input_mut().hovered_files.push(Default::default());
+    step(&mut h);
+    assert!(!h.state().auto.elements.iter().any(|element| element.id == "timeline.fileDropPreview"));
+    h.input_mut().hovered_files.clear();
+    h.input_mut().dropped_files.push(std::sync::Arc::new(OsFile(still("drop_os_hook_covered.png"))));
+    step(&mut h);
+    h.input_mut().dropped_files.clear();
+    step(&mut h);
+    assert_eq!(clip_counts(&h), (0, 0));
+    h.state_mut().ui.floating.clear();
+    h.input_mut().dropped_files.push(std::sync::Arc::new(OsFile(still("drop_os_hook_visible.png"))));
+    step(&mut h);
+    h.input_mut().dropped_files.clear();
+    step(&mut h);
+    assert_eq!(clip_counts(&h), (1, 0));
 }

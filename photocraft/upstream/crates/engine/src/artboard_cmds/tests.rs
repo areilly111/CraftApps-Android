@@ -108,6 +108,31 @@ fn clear_artboard_guides_only_inside() {
     assert_eq!(doc(&s).guides.vertical, vec![10.0]);
 }
 
+/// Clearing guides drops their colours, so a guide added later at the same place doesn't inherit one.
+#[test]
+fn clearing_guides_drops_their_colours() {
+    let mut s = session(8);
+    let coloured = |s: &mut Session, x: f64| s.execute("view.newGuide", json!({"orientation": "vertical", "position": x, "color": "magenta"})).unwrap();
+    let colour = |s: &Session, x: f64| doc(s).guides.color(true, x);
+    s.execute("layer.new.artboard", json!({"rect": [0, 0, 50, 50]})).unwrap();
+    coloured(&mut s, 10.0);
+    coloured(&mut s, 70.0);
+    s.execute("view.clearSelectedArtboardGuides", json!({})).unwrap();
+    s.execute("view.clearCanvasGuides", json!({})).unwrap();
+    assert!(doc(&s).guides.colors.is_empty());
+    s.execute("view.newGuide", json!({"orientation": "vertical", "position": 10})).unwrap();
+    s.execute("view.newGuide", json!({"orientation": "vertical", "position": 70})).unwrap();
+    assert_eq!((colour(&s, 10.0), colour(&s, 70.0)), (None, None));
+    // New Guide Layout's Clear Existing Guides likewise; a guide it keeps keeps its colour.
+    s.execute("view.clearGuides", json!({})).unwrap();
+    coloured(&mut s, 0.0);
+    s.execute("view.newGuideLayout", json!({"columns": 1})).unwrap();
+    assert_eq!(colour(&s, 0.0), Some([0xff, 0x00, 0xff]));
+    s.execute("view.newGuideLayout", json!({"columns": 1, "clearExisting": true})).unwrap();
+    assert!(doc(&s).guides.vertical.contains(&0.0));
+    assert_eq!(colour(&s, 0.0), None);
+}
+
 #[test]
 fn export_to_files_and_pdf() {
     let mut s = session(16);
@@ -384,4 +409,179 @@ fn moving_an_artboard_past_the_canvas_grows_it() {
     assert!(red_at(&s, 215, 75));
     s.undo();
     assert_eq!((doc(&s).size.width, doc(&s).size.height), (100, 80));
+}
+
+#[test]
+fn moving_an_artboard_past_the_canvas_keeps_its_shapes_whole() {
+    // #2389: a shape's pixels are cut at the canvas; the board moved before the canvas grew,
+    // so its shape rendered against the old edge and stayed missing or clipped.
+    let shape_board = |s: &mut Session| {
+        s.execute("file.new", json!({"width": 100, "height": 100, "background": "transparent"})).unwrap();
+        let sh = s.execute("shape.create", json!({"kind": "rect", "rect": [10, 20, 30, 30], "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.new.artboardFromLayers", json!({})).unwrap();
+        sh
+    };
+    for (cmd, p, size, red, not_red) in [
+        ("layer.artboard.set", json!({"x": 120}), (150, 100), [(121, 21), (130, 30), (149, 49)], None),
+        ("layer.translate", json!({"dx": 110, "dy": 0}), (150, 100), [(121, 21), (130, 30), (149, 49)], None),
+        ("layer.artboard.set", json!({"y": 120}), (100, 150), [(11, 121), (20, 130), (39, 149)], None),
+        // Partly past the edge: the whole shape, not just the part inside the old canvas.
+        ("layer.artboard.set", json!({"x": 90}), (120, 100), [(91, 21), (95, 30), (110, 30)], Some((15, 30))),
+    ] {
+        let mut s = Session::new();
+        let sh = shape_board(&mut s);
+        s.execute(cmd, p.clone()).unwrap();
+        assert_eq!((doc(&s).size.width, doc(&s).size.height), size, "{cmd} {p}");
+        for (x, y) in red {
+            assert!(red_at(&s, x, y), "{cmd} {p}: ({x}, {y})");
+        }
+        if let Some((x, y)) = not_red {
+            assert!(!red_at(&s, x, y), "{cmd} {p}: ({x}, {y}) left behind");
+        }
+        let info = s.execute("shape.info", json!({"layer": sh})).unwrap();
+        assert_eq!(info["bounds"], json!([red[0].0 - 1, red[0].1 - 1, 30, 30]), "{cmd} {p}");
+        // One undo step back to the original board; redo brings the whole shape back.
+        s.undo();
+        assert_eq!((doc(&s).size.width, doc(&s).size.height), (100, 100));
+        assert!(red_at(&s, 20, 30), "{cmd} {p}: undo");
+        s.redo();
+        assert_eq!((doc(&s).size.width, doc(&s).size.height), size);
+        for (x, y) in red {
+            assert!(red_at(&s, x, y), "{cmd} {p}: redo ({x}, {y})");
+        }
+    }
+}
+
+/// A type layer as a PSD import leaves it: Photoshop's rendering as the cache (deliberately not
+/// what PhotoCraft would draw, a solid block, so a re-render shows) and Photoshop's `TySh`.
+fn add_imported_type(s: &mut Session, block: Rect) -> LayerId {
+    s.edit("type", |doc, active| {
+        let mut t = photocraft_doc::TextLayer { text: "Hello!".into(), font_family: "No Such Font".into(), size_pt: 26.0, ..Default::default() };
+        t.transform = photocraft_geom::Affine::translate(f64::from(block.x0), f64::from(block.y1));
+        t.psd_raw = Some(std::sync::Arc::new(photocraft_text::psd::build_tysh(&t, 72.0, None)));
+        let fmt = doc.pixel_format();
+        let mut cache = photocraft_raster::Surface::new(fmt);
+        cache.fill_rect(block, &photocraft_raster::from_rgba(&fmt, [0.4, 0.2, 0.6, 1.0]));
+        t.cache = Some(cache);
+        let id = doc.insert_above(None, Layer::new("Hello!", LayerContent::Text(t)));
+        *active = Some(id);
+        Ok(id)
+    })
+    .unwrap()
+}
+
+fn type_layer(doc: &Document, id: LayerId) -> photocraft_doc::TextLayer {
+    match &doc.layer(id).unwrap().content {
+        LayerContent::Text(t) => t.clone(),
+        other => panic!("not a type layer: {}", other.kind_name()),
+    }
+}
+
+#[test]
+fn artboard_export_keeps_imported_type_as_rendered() {
+    for depth in [8, 16, 32] {
+        let mut s = session(depth);
+        let text = add_imported_type(&mut s, Rect::new(30, 20, 60, 30));
+        s.execute("layer.new.artboard", json!({"rect": [20, 10, 50, 40]})).unwrap();
+        let board = doc(&s).artboards()[0].0;
+        s.edit("into board", |doc, _| {
+            let l = doc.remove(text).unwrap();
+            let Some(LayerContent::Group(g)) = doc.layer_mut(board).map(|b| &mut b.content) else { panic!("artboard group") };
+            g.children.push(l);
+            Ok(())
+        })
+        .unwrap();
+        let one = artboard_document(doc(&s), board).unwrap().unwrap();
+        let t = type_layer(&one, text);
+        // The same pixels, moved to the board's origin: not re-rendered.
+        let c = t.cache.as_ref().unwrap();
+        assert_eq!(c.content_bounds(), Rect::new(10, 10, 40, 20), "depth {depth}");
+        let px = photocraft_raster::to_rgba(&c.format(), &c.pixel(15, 15));
+        assert!((px[0] - 0.4).abs() < 0.01 && (px[2] - 0.6).abs() < 0.01, "depth {depth}: {px:?}");
+        let tysh = photocraft_text::psd::parse_tysh(t.psd_raw.as_deref().unwrap()).unwrap();
+        assert_eq!((tysh.transform.m[4], tysh.transform.m[5]), (10.0, 20.0), "the PSD position moves with it");
+    }
+}
+
+#[test]
+fn moving_imported_type_shifts_it_without_re_rendering() {
+    let mut s = session(8);
+    let text = add_imported_type(&mut s, Rect::new(30, 20, 60, 30));
+    let before = type_layer(doc(&s), text);
+    s.execute("layer.translate", json!({"layer": text.0, "dx": 5, "dy": -3})).unwrap();
+    let after = type_layer(doc(&s), text);
+    assert_eq!(after.cache.as_ref().unwrap().content_bounds(), Rect::new(35, 17, 65, 27));
+    assert_eq!(after.transform.m[4..], [35.0, 27.0]);
+    let (old, new) = (before.psd_raw.unwrap(), after.psd_raw.unwrap());
+    assert_eq!((&new[..34], &new[50..]), (&old[..34], &old[50..]), "only the TySh translation changes");
+    s.undo();
+    assert_eq!(type_layer(doc(&s), text).cache, before.cache);
+    // Type with nothing rendered yet is rendered after the move, as before.
+    s.edit("drop cache", |doc, _| {
+        if let Some(LayerContent::Text(t)) = doc.layer_mut(text).map(|l| &mut l.content) {
+            t.cache = None;
+        }
+        Ok(())
+    })
+    .unwrap();
+    s.execute("layer.translate", json!({"layer": text.0, "dx": 1, "dy": 0})).unwrap();
+    assert!(type_layer(doc(&s), text).cache.is_some());
+}
+
+#[test]
+fn moving_an_artboard_left_of_or_above_the_origin_grows_the_canvas_there() {
+    // Photoshop grows an artboard document in every direction; the canvas only grew right and
+    // down, so a board moved past the origin stayed partly off-canvas. Now everything shifts
+    // right/down (boards, contents, guides) and the canvas grows, in the move's undo step.
+    for (cmd, p) in [("layer.translate", json!({"dx": -60, "dy": -30})), ("layer.artboard.set", json!({"x": -50, "y": -20}))] {
+        let mut s = session(8);
+        let gid = board_with_square(&mut s);
+        let other = s.execute("layer.new.artboard", json!({"rect": [60, 10, 30, 30]})).unwrap()["layer"].as_u64().unwrap();
+        s.edit("guide", |doc, _| {
+            doc.guides.vertical.push(70.0);
+            Ok(())
+        })
+        .unwrap();
+        s.execute("layer.select", json!({"layer": gid.0})).unwrap();
+        s.execute(cmd, p.clone()).unwrap();
+        assert_eq!(board_rect(&s, gid.0), Rect::new(0, 0, 40, 40), "{cmd}");
+        assert_eq!(board_rect(&s, other), Rect::new(110, 30, 140, 60), "{cmd}: the other board shifts too");
+        assert_eq!((doc(&s).size.width, doc(&s).size.height), (150, 100), "{cmd}");
+        assert_eq!(doc(&s).guides.vertical, vec![120.0], "{cmd}");
+        assert!(red_at(&s, 0, 0) && red_at(&s, 19, 19) && !red_at(&s, 20, 20), "{cmd}: the contents moved with the board");
+        // One undo step back.
+        s.undo();
+        assert_eq!(board_rect(&s, gid.0), Rect::new(10, 10, 50, 50), "{cmd}");
+        assert_eq!(board_rect(&s, other), Rect::new(60, 10, 90, 40), "{cmd}");
+        assert_eq!((doc(&s).size.width, doc(&s).size.height), (100, 80), "{cmd}");
+        assert_eq!(doc(&s).guides.vertical, vec![70.0], "{cmd}");
+    }
+}
+
+#[test]
+fn add_beside_places_a_board_on_each_side_and_alt_duplicates_contents() {
+    // #3033: the Artboard tool's "+" buttons. Board 40×40 at (10, 10) holding a red square.
+    let mut s = session(8);
+    let gid = board_with_square(&mut s);
+    let r = s.execute("layer.artboard.addBeside", json!({"side": "right"})).unwrap();
+    assert_eq!(r["rect"], json!([150, 10, 40, 40]), "same size, a gap to the right");
+    assert!(!red_at(&s, 155, 15), "a plain \"+\" adds an empty board");
+    let r = s.execute("layer.artboard.addBeside", json!({"layer": gid.0, "side": "bottom", "duplicate": true})).unwrap();
+    assert_eq!(r["rect"], json!([10, 150, 40, 40]));
+    assert!(red_at(&s, 15, 155), "⌥: the copy brings the contents");
+    // Again on the right: that spot is taken, so the next free one.
+    let r = s.execute("layer.artboard.addBeside", json!({"layer": gid.0})).unwrap();
+    assert_eq!(r["rect"], json!([290, 10, 40, 40]));
+    // Left of x = 10 is past the canvas origin: everything shifts right by 130 to make room.
+    let before = doc(&s).size;
+    let r = s.execute("layer.artboard.addBeside", json!({"layer": gid.0, "side": "left"})).unwrap();
+    assert_eq!(r["rect"], json!([0, 10, 40, 40]));
+    assert_eq!(board_rect(&s, gid.0), Rect::new(140, 10, 180, 50));
+    assert!(red_at(&s, 145, 15), "the original's contents moved with the shift");
+    assert_eq!(doc(&s).size.width, before.width + 130);
+    // One undo step.
+    s.undo();
+    assert_eq!(board_rect(&s, gid.0), Rect::new(10, 10, 50, 50));
+    assert_eq!(doc(&s).size, before);
+    assert!(s.execute("layer.artboard.addBeside", json!({"side": "diagonal"})).is_err());
 }

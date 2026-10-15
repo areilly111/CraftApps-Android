@@ -50,6 +50,7 @@ published (`gh workflow run release.yml --ref <branch>`).
 | Windows 11 on ARM64 | `pdfcraft-<v>-windows-arm64.msi`, `pdfcraft-<v>-windows-arm64-portable.zip` | `windows-latest` (cross-compiled) |
 | Linux x86_64 | `pdfcraft-<v>-linux-x86_64.{AppImage,AppImage.zsync,deb,rpm,tar.gz}`, `pdfcraft-cli-<v>-linux-x86_64.tar.gz` | `ubuntu-22.04` |
 | Linux aarch64 | `pdfcraft-<v>-linux-aarch64.{AppImage,AppImage.zsync,deb,rpm,tar.gz}`, `pdfcraft-cli-<v>-linux-aarch64.tar.gz` | `ubuntu-22.04-arm` |
+| Linux riscv64 | `pdfcraft-<v>-linux-riscv64.tar.gz`, `pdfcraft-cli-<v>-linux-riscv64.tar.gz` (glibc 2.39+) | `ubuntu-24.04` (cross-compiled; CLI smoke-tested under QEMU) |
 | Flatpak x86_64 | `pdfcraft-<v>-linux-x86_64.flatpak` | `ubuntu-24.04` (repackages the Linux tarball) |
 | Flatpak aarch64 | `pdfcraft-<v>-linux-aarch64.flatpak` | `ubuntu-24.04-arm` (repackages the Linux tarball) |
 | FreeBSD 14 x86_64 | `pdfcraft-<v>-freebsd-x86_64.tar.gz` | FreeBSD VM on `ubuntu-latest` |
@@ -118,10 +119,18 @@ neither the MSI nor the portable zip needs the Visual C++ redistributable.
   this.
 - `installer-ui.wxs` supplies native welcome, maintenance, progress, files-in-use and outcome
   dialogs. Full UI confirms success with Finish; failures and cancellations have distinct messages.
-  The welcome dialog has a "Create a desktop shortcut" checkbox, ticked by default. `/qn` and `/qb`
-  stay unattended and create the desktop shortcut unless `INSTALLDESKTOPSHORTCUT=0` is passed.
-- `test-msi.ps1 <file.msi>` checks the compiled shortcut and dialog tables. Packaging runs it in a
-  child process before signing, so the MSI isn't held open when signtool runs. The ARM64 install
+  The welcome dialog has a "Create a desktop shortcut" checkbox and an "Edit with PdfCraft"
+  right-click menu checkbox, both ticked by default. `/qn` and `/qb` stay unattended and create
+  both unless `INSTALLDESKTOPSHORTCUT=0` or `INSTALLPDFCONTEXTMENU=0` is passed.
+- The PDF right-click entry (#682) is a classic verb under
+  `HKLM\Software\Classes\SystemFileAssociations\.pdf\shell\PdfCraft.Edit`, so it shows whichever app
+  is the default for `.pdf` and never changes that default. Several selected PDFs (up to 15, the
+  limit for a `Document` verb) start one `pdfcraft.exe "<file>"` each, and the single-instance
+  hand-off opens them as tabs. On Windows 11 it is under "Show more options"; a first-level entry
+  needs an `IExplorerCommand` handler and package identity (a sparse MSIX package), which the MSI
+  doesn't have.
+- `test-msi.ps1 <file.msi>` checks the compiled shortcut, context-menu and dialog tables. Packaging
+  runs it in a child process before signing, so the MSI isn't held open when signtool runs. The ARM64 install
   smoke test checks that both all-users shortcuts point at the installed `pdfcraft.exe` and are
   removed on uninstall, and that `INSTALLDESKTOPSHORTCUT=0` skips the desktop one.
 - The portable zip holds both executables, the README, the licences, the OFL licence of each

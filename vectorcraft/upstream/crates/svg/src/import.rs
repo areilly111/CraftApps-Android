@@ -301,7 +301,7 @@ struct SymbolMade {
 fn without_ids(n: &Node) -> Node {
     let mut n = n.clone();
     n.id = vectorcraft_doc::NodeId(0);
-    if let Some(m) = n.mask.as_deref_mut() {
+    if let Some(m) = n.extras_if_any().and_then(|e| e.mask.as_deref_mut()) {
         m.art = Arc::new(without_ids(&m.art));
     }
     for c in n.children_mut().into_iter().flatten() {
@@ -713,7 +713,7 @@ impl Importer {
     /// Give `n` the `data-*` attributes of element `id`, unless it has data already (what an
     /// inner element made of it keeps).
     fn keep_data(&self, id: &str, n: &mut Node) {
-        if let Some(data) = self.data.get(id).filter(|_| n.attrs.as_ref().is_none_or(|a| a.data.is_empty())) {
+        if let Some(data) = self.data.get(id).filter(|_| n.extras().attrs.as_ref().is_none_or(|a| a.data.is_empty())) {
             n.edit_attrs(|a| a.data = data.clone());
         }
     }
@@ -799,7 +799,7 @@ impl Importer {
         n.opacity = g.opacity().get();
         n.blend = blend(g.blend_mode());
         n.isolate = g.isolate();
-        n.mask = mask;
+        n.extras_mut().mask = mask;
         Some(n)
     }
 
@@ -860,7 +860,7 @@ impl Importer {
         text::fold_scale(&mut obj, grow);
         let mut n = self.named(&name, NodeKind::Text(Box::new(obj)));
         if let Some(ap) = under {
-            n.appearance = ap;
+            n.appearance = ap.into();
         }
         Some(vec![Arc::new(n)])
     }
@@ -912,7 +912,7 @@ impl Importer {
             if (is_text || id.is_empty() && mask.is_none())
                 && children.len() == 1
                 && (g.blend_mode() == usvg::BlendMode::Normal || children[0].blend == BlendMode::Normal)
-                && (effects.is_empty() || children[0].blend == BlendMode::Normal && children[0].mask.is_none())
+                && (effects.is_empty() || children[0].blend == BlendMode::Normal && children[0].extras().mask.is_none())
                 && let Some(only) = children.pop()
             {
                 let mut c = Arc::unwrap_or_clone(only);
@@ -922,7 +922,7 @@ impl Importer {
                 }
                 c.isolate |= g.isolate();
                 if mask.is_some() {
-                    c.mask = mask;
+                    c.extras_mut().mask = mask;
                 }
                 c.appearance.effects.extend(effects);
                 return Some(c);
@@ -934,7 +934,7 @@ impl Importer {
         n.opacity = g.opacity().get();
         n.blend = blend(g.blend_mode());
         n.isolate = g.isolate();
-        n.mask = mask;
+        n.extras_mut().mask = mask;
         if !is_text && self.sublayers.contains(g.id()) {
             self.sublayer_groups.insert(n.id);
         }
@@ -965,8 +965,9 @@ impl Importer {
             nodes = rest;
         }
         let mut children: Vec<Arc<Node>> = nodes.iter().filter_map(|c| self.node(c, ts)).map(Arc::new).collect();
+        // Mask art that is all hidden draws nothing: that is an empty mask, not no mask (black all
+        // over when clipped, white when not, inverted when the mask is).
         let art = match children.len() {
-            0 => return None,
             1 => Arc::unwrap_or_clone(children.pop()?),
             _ => self.named("", NodeKind::Group { children, clip: false }),
         };
@@ -1189,7 +1190,7 @@ impl Importer {
                 .map(|sp| {
                     let id = self.doc.alloc_id();
                     let mut c = Node::new(id, NodeKind::Path { path: PathData::single(sp), rule: r, live: None, clipping: false, guide: false });
-                    c.appearance = appearance.clone();
+                    c.appearance = appearance.clone().into();
                     Arc::new(c)
                 })
                 .collect();
@@ -1197,7 +1198,7 @@ impl Importer {
         } else {
             self.named(p.id(), NodeKind::Path { path, rule: r, live: None, clipping: false, guide: false })
         };
-        n.appearance = appearance;
+        n.appearance = appearance.into();
         Some(n)
     }
 
@@ -1228,7 +1229,7 @@ impl Importer {
             if link.is_some() && !missing { blob.with_proxy() } else { blob }
         });
         let xf = acc * Affine::scale_non_uniform(size.width() as f64 / pw as f64, size.height() as f64 / ph as f64);
-        Some(self.named(i.id(), NodeKind::Image(ImageObject { key, width: pw, height: ph, xf, link, placement: Default::default() })))
+        Some(self.named(i.id(), NodeKind::Image(Box::new(ImageObject { key, width: pw, height: ph, xf, link, placement: Default::default() }))))
     }
 
     /// An SVG shown as an image (a data URL or a linked file) → its art, `acc` mapping its size.

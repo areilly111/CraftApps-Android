@@ -69,6 +69,7 @@ fn write(doc: &Document, opts: &ExportOptions, native: Option<&[u8]>, id_prefix:
         fonts: Vec::new(),
         shared_images: HashMap::new(),
         layer_nest: 0,
+        non_latin1_names: false,
     };
     w.assign_name_ids();
     // Page Isolated Blending / Page Knockout Group: the page content is one isolated group.
@@ -84,11 +85,18 @@ fn write(doc: &Document, opts: &ExportOptions, native: Option<&[u8]>, id_prefix:
         w.line("</g>");
     }
 
+    // XML names cannot use character references. Preserve names that Latin-1 cannot encode.
+    let encoding = if opts.encoding == Encoding::Latin1 && w.non_latin1_names {
+        w.warn("Unicode data attribute names require UTF-8; SVG was written in UTF-8");
+        Encoding::Utf8
+    } else {
+        opts.encoding
+    };
     let nl = if opts.minify { "" } else { "\n" };
     let mut out = String::new();
     // A file in neither UTF-8 nor UTF-16 must name its encoding.
-    if !opts.minify || opts.encoding == Encoding::Latin1 {
-        out.push_str(&format!("<?xml version=\"1.0\" encoding=\"{}\"?>{nl}", opts.encoding.xml_name()));
+    if !opts.minify || encoding == Encoding::Latin1 {
+        out.push_str(&format!("<?xml version=\"1.0\" encoding=\"{}\"?>{nl}", encoding.xml_name()));
     }
     if opts.styling == Styling::StyleEntities && !w.classes.is_empty() {
         out.push_str("<!DOCTYPE svg [");
@@ -133,7 +141,7 @@ fn write(doc: &Document, opts: &ExportOptions, native: Option<&[u8]>, id_prefix:
         out.push_str(&w.indent(1));
         out.push_str(&format!("<desc>{}</desc>{nl}", xml_escape(&doc.metadata.description)));
     }
-    let latin1 = opts.encoding == Encoding::Latin1;
+    let latin1 = encoding == Encoding::Latin1;
     if latin1 {
         latin1_refs(&mut out);
         latin1_refs(&mut w.body);
@@ -149,11 +157,32 @@ fn write(doc: &Document, opts: &ExportOptions, native: Option<&[u8]>, id_prefix:
     out.push_str(&w.body);
     out.push_str("</svg>");
     out.push_str(nl);
-    Output { svg: out, linked: w.linked, warnings: w.warnings, encoding: opts.encoding }
+    Output { svg: out, linked: w.linked, warnings: w.warnings, encoding }
 }
 
-/// Write every character of `s` beyond ISO 8859-1 as a character reference (all of them sit in
-/// attribute values, text or style sheets, where references read as the character).
+/// XML 1.0 literal attribute whitespace is normalized to spaces; references retain the value.
+fn xml_attr_escape(s: &str) -> String {
+    xml_escape(s).replace('\t', "&#9;").replace('\n', "&#10;").replace('\r', "&#13;")
+}
+
+fn valid_xml_value(s: &str) -> bool {
+    s.chars().all(|c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}'))
+}
+
+/// Namespace-free XML 1.0 NameChar. The fixed `data-` prefix supplies NameStartChar.
+fn xml_name_char(c: char) -> bool {
+    matches!(c,
+        'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '-' | '.' | '\u{b7}' |
+        '\u{c0}'..='\u{d6}' | '\u{d8}'..='\u{f6}' | '\u{f8}'..='\u{2ff}' |
+        '\u{300}'..='\u{37d}' | '\u{37f}'..='\u{1fff}' | '\u{200c}'..='\u{200d}' |
+        '\u{203f}'..='\u{2040}' | '\u{2070}'..='\u{218f}' | '\u{2c00}'..='\u{2fef}' |
+        '\u{3001}'..='\u{d7ff}' | '\u{f900}'..='\u{fdcf}' | '\u{fdf0}'..='\u{fffd}' |
+        '\u{10000}'..='\u{effff}'
+    )
+}
+
+/// Write every character of `s` beyond ISO 8859-1 as a character reference. Called only when
+/// names fit Latin-1, so references occur in values, text or style sheets.
 fn latin1_refs(s: &mut String) {
     if s.chars().all(|c| u32::from(c) < 0x100) {
         return;
@@ -269,6 +298,8 @@ struct Writer<'a> {
     shared_images: HashMap<(String, u32, u32), String>,
     /// Layers being written inside one another (more than one: a sublayer).
     layer_nest: usize,
+    /// An emitted attribute name requires an encoding wider than Latin-1.
+    non_latin1_names: bool,
 }
 
 /// The characters type uses from one face, under one `@font-face` description: the family the
@@ -325,7 +356,7 @@ impl Reuse {
     fn scan(&mut self, doc: &Document, n: &Node, depth: u32) {
         let pattern = |p: &Paint| matches!(p, Paint::Pattern { .. });
         let text_patterns = matches!(&n.kind, NodeKind::Text(t) if t.runs.iter().any(|r| pattern(&r.style.fill) || pattern(&r.style.stroke)));
-        let unlinked_mask = n.mask.as_ref().is_some_and(|m| !m.linked);
+        let unlinked_mask = n.extras().mask.as_ref().is_some_and(|m| !m.linked);
         if depth > MAX_SYMBOL_NEST || text_patterns || unlinked_mask || vectorcraft_doc::pattern::uses_pattern(n, None) {
             *self = Self::NONE;
             return;
@@ -356,7 +387,7 @@ impl Reuse {
             }
             _ => {}
         }
-        if let Some(m) = &n.mask {
+        if let Some(m) = &n.extras().mask {
             self.scan(doc, &m.art, depth);
         }
         for c in n.children().into_iter().flatten() {
@@ -381,7 +412,7 @@ impl Reuse {
 /// and the art of unlinked opacity masks.
 fn pin_to_page(n: &mut Node, m: Affine) {
     vectorcraft_doc::pattern::transform_pattern_paints(n, m);
-    if let Some(mask) = n.mask.as_deref_mut() {
+    if let Some(mask) = n.extras_if_any().and_then(|e| e.mask.as_deref_mut()) {
         let linked = mask.linked;
         let art = std::sync::Arc::make_mut(&mut mask.art);
         if !linked {
@@ -548,27 +579,43 @@ impl Writer<'_> {
     }
     /// ` id="…"` for a named object, plus ` data-name="…"` with the name itself when the id had to
     /// differ from it (spaces, punctuation, duplicates, the unique prefix).
-    /// The id of `n`'s element (with its name when the id isn't it), a sublayer's mark
-    /// ([`crate::import::SUBLAYER`]), then the object's own data as `data-*` attributes.
-    fn id_attr(&self, n: &Node) -> String {
+    /// The id of `n`'s element (with its name when the id isn't it), then the object's own data
+    /// as `data-*` attributes. Sublayers also retain their import marker.
+    fn id_attr(&mut self, n: &Node) -> String {
         if self.anonymous {
             return String::new();
         }
-        let mut out = match (self.names.get(&n.id), n.name.as_deref()) {
-            (Some(id), Some(name)) if name != id => format!(" id=\"{}\" data-name=\"{}\"", xml_escape(id), xml_escape(name)),
-            (Some(id), _) => format!(" id=\"{}\"", xml_escape(id)),
-            (None, _) => String::new(),
-        };
-        // A sublayer is marked as one, so import makes it a sublayer again, not a group.
+        let mut out = self.names.get(&n.id).map_or_else(String::new, |id| format!(" id=\"{}\"", xml_escape(id)));
+        if let (Some(id), Some(name)) = (self.names.get(&n.id), n.name.as_deref())
+            && name != id
+        {
+            if valid_xml_value(name) {
+                out.push_str(&format!(" data-name=\"{}\"", xml_attr_escape(name)));
+            } else {
+                self.warn("Object names containing invalid XML characters were left out of SVG name attributes");
+            }
+        }
+        // Preserve sublayer identity independently of object data attributes.
         if !out.is_empty() && n.is_layer() && self.layer_nest > 1 {
             out.push_str(&format!(" {}=\"sublayer\"", crate::import::SUBLAYER));
         }
-        for (k, v) in n.attrs.as_deref().map_or(&[][..], |a| a.data.as_slice()) {
-            // Names as XML takes them; ours (`name`, `vc-…`) are written by the export itself.
-            let valid = k.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) && k != "name" && !k.starts_with("vc-");
-            if valid && !k.is_empty() {
-                out.push_str(&format!(" data-{k}=\"{}\"", xml_escape(v)));
+        let mut keys = HashSet::new();
+        for (k, v) in n.extras().attrs.as_deref().map_or(&[][..], |a| a.data.as_slice()) {
+            // Ours (`name`, `vc-…`) are written by the export itself.
+            if k == "name" || k.starts_with("vc-") {
+                continue;
             }
+            if k.is_empty() || !k.chars().all(xml_name_char) || !valid_xml_value(v) {
+                self.warn("Data attributes with invalid XML names or characters were left out of SVG");
+                continue;
+            }
+            // Native data is an ordered list. Keep the first valid value of each key.
+            if !keys.insert(k.as_str()) {
+                self.warn("Repeated data attribute keys were written only once in SVG");
+                continue;
+            }
+            self.non_latin1_names |= k.chars().any(|c| u32::from(c) > 0xff);
+            out.push_str(&format!(" data-{k}=\"{}\"", xml_attr_escape(v)));
         }
         out
     }
@@ -656,9 +703,13 @@ impl Writer<'_> {
 
     fn path_d(&self, p: &PathData, m: Affine) -> String {
         let mut s = String::new();
-        let pt = |p: Point| {
+        // Each point as "x y", appended in place (no string per number or per point).
+        let dec = self.opts.decimals;
+        let pt = |s: &mut String, p: Point| {
             let p = m * p;
-            format!("{} {}", self.num(p.x), self.num(p.y))
+            crate::push_num(s, p.x, dec);
+            s.push(' ');
+            crate::push_num(s, p.y, dec);
         };
         for sp in &p.subpaths {
             let n = sp.anchors.len();
@@ -669,16 +720,22 @@ impl Writer<'_> {
                 s.push(' ');
             }
             s.push('M');
-            s.push_str(&pt(sp.anchors[0].p));
+            pt(&mut s, sp.anchors[0].p);
             for i in 0..sp.segment_count() {
                 let (a, b) = (&sp.anchors[i], &sp.anchors[(i + 1) % n]);
                 if sp.segment_is_line(i) {
                     if sp.closed && i == n - 1 {
                         break;
                     }
-                    s.push_str(&format!(" L{}", pt(b.p)));
+                    s.push_str(" L");
+                    pt(&mut s, b.p);
                 } else {
-                    s.push_str(&format!(" C{} {} {}", pt(a.h_out), pt(b.h_in), pt(b.p)));
+                    s.push_str(" C");
+                    pt(&mut s, a.h_out);
+                    s.push(' ');
+                    pt(&mut s, b.h_in);
+                    s.push(' ');
+                    pt(&mut s, b.p);
                 }
             }
             if sp.closed {
@@ -1098,7 +1155,7 @@ impl Writer<'_> {
         if self.tiny() {
             self.warn(TINY_MASKS);
             let mut bare = n.clone();
-            bare.mask = None;
+            bare.extras_mut().mask = None;
             return self.node_body(&bare);
         }
         let mid = self.fresh_id("mask");
@@ -1132,7 +1189,7 @@ impl Writer<'_> {
         self.line(&format!("<g mask=\"url(#{mid})\">"));
         self.depth += 1;
         let mut bare = n.clone();
-        bare.mask = None;
+        bare.extras_mut().mask = None;
         self.node_body(&bare);
         self.depth -= 1;
         self.line("</g>");
@@ -1206,7 +1263,13 @@ impl Writer<'_> {
                 f
             }
         };
-        let shape = if c.knockout_shape { c.clone() } else { Node { opacity: 1.0, mask: None, ..c.clone() } };
+        let shape = if c.knockout_shape {
+            c.clone()
+        } else {
+            let mut s = c.clone().with_mask(None);
+            s.opacity = 1.0;
+            s
+        };
         let anonymous = std::mem::replace(&mut self.anonymous, true);
         let art = self.detached(3, |w| w.node(&shape));
         self.anonymous = anonymous;
@@ -1246,7 +1309,7 @@ impl Writer<'_> {
         if has_raster(&n.appearance.effects) {
             return self.filtered(n);
         }
-        if let Some(m) = n.mask.as_deref()
+        if let Some(m) = n.extras().mask.as_deref()
             && !m.disabled
         {
             return self.masked(n, m);
@@ -1475,7 +1538,14 @@ impl Writer<'_> {
         self.symbol_nest -= 1;
         (self.xf, self.instance_xf, self.knockout, self.names, self.anonymous) = saved;
         // The symbol's name, when the id had to differ from it, comes back on import.
-        let name = if id == sym.name { String::new() } else { format!(" data-name=\"{}\"", xml_escape(&sym.name)) };
+        let name = if id == sym.name {
+            String::new()
+        } else if valid_xml_value(&sym.name) {
+            format!(" data-name=\"{}\"", xml_attr_escape(&sym.name))
+        } else {
+            self.warn("Symbol names containing invalid XML characters were left out of SVG name attributes");
+            String::new()
+        };
         self.def(1, &format!("<symbol id=\"{id}\"{name} overflow=\"visible\">"));
         self.defs.push_str(&art);
         self.def(1, "</symbol>");
@@ -1656,7 +1726,8 @@ impl Writer<'_> {
         };
         glyphs(self, below);
         // The group carries the id and the object's transparency.
-        let bare = Node { opacity: 1.0, blend: BlendMode::Normal, isolate: false, ..n.clone() };
+        let mut bare = n.clone();
+        (bare.opacity, bare.blend, bare.isolate) = (1.0, BlendMode::Normal, false);
         let anonymous = std::mem::replace(&mut self.anonymous, true);
         chars(self, &bare);
         for ig in &lay.inlines {
@@ -1861,9 +1932,9 @@ impl Writer<'_> {
                 self.fonts.len() - 1
             });
             let Some(chars) = self.fonts.get_mut(at).map(|u| &mut u.chars) else { continue };
-            // As written: a hyphen where a line breaks, capitals for All Caps.
+            // As written: a hyphen where a line breaks, capitals for All Caps, the style's Digits.
             let src = if g.len == 0 { "-" } else { plain.get(g.byte..g.byte + g.len).unwrap_or("") };
-            for c in src.chars().filter(|c| !c.is_control() && *c != '\u{ad}') {
+            for c in src.chars().filter(|c| !c.is_control() && *c != '\u{ad}').map(|c| st.digits.map(c)) {
                 if st.all_caps {
                     chars.extend(c.to_uppercase());
                 } else {
@@ -2055,7 +2126,7 @@ fn text_lines(t: &TextObject, lay: &vectorcraft_text::TextLayout, fewer: bool) -
                 continue;
             }
             cluster = Some(g.byte);
-            let src: String = source(g).chars().filter(|c| *c != '\u{ad}').collect();
+            let src: String = source(g).chars().filter(|c| *c != '\u{ad}').map(|c| run.style.digits.map(c)).collect();
             let piece = if run.style.all_caps { src.to_uppercase() } else { src };
             let brk = piece == "\t" || (split_words && !piece.is_empty() && piece.chars().all(char::is_whitespace));
             let fresh = std::mem::take(&mut after_inline);

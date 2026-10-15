@@ -41,6 +41,17 @@ pub fn previews(doc: &Document) -> SaveOptions {
     SaveOptions { thumbnail: Some(photocraft_compose::thumbnail(doc, 256)), composite: Some(photocraft_compose::thumbnail(doc, 1024)) }
 }
 
+/// Encode the name the saved native bundle will report on reopening. Save As updates
+/// the session identity only *after* a successful write; without a separate snapshot
+/// the manifest serializes the previous name instead.
+fn named_for_output(doc: &Document, path: &str) -> Document {
+    let mut named = doc.clone();
+    if let Some(name) = path.rsplit(['/', '\\']).next().filter(|name| !name.is_empty()) {
+        named.name = name.to_owned();
+    }
+    named
+}
+
 /// Save or export `doc` to `path`, choosing the format from the extension
 /// (or `format_override`, an extension such as `"png"`). `writer` makes
 /// repeated `.pcraft` saves incremental. Returns warnings about lost data.
@@ -56,9 +67,10 @@ pub fn save(
         .or_else(|| path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()))
         .ok_or_else(|| AutomationError::BadRequest(format!("cannot tell the format of `{}`; pass a format", path.display())))?;
     if ext == photocraft_format::EXTENSION {
+        let named = named_for_output(doc, &path.to_string_lossy());
         let mut local = PcraftWriter::new();
         let w = writer.unwrap_or(&mut local);
-        w.save_path(doc, path, &previews(doc))?;
+        w.save_path(&named, path, &previews(&named))?;
         return Ok(Vec::new());
     }
     let r = photocraft_io::export(doc, &ext, opts)?;
@@ -75,7 +87,8 @@ pub fn save_bytes(doc: &Document, name: &str, format_override: Option<&str>, opt
         .or_else(|| Path::new(name).extension().map(|extension| extension.to_string_lossy().to_ascii_lowercase()))
         .ok_or_else(|| AutomationError::BadRequest(format!("cannot tell the format of `{name}`; pass a format")))?;
     if ext == photocraft_format::EXTENSION {
-        return Ok((photocraft_format::save_to_bytes(doc, &previews(doc))?, Vec::new()));
+        let named = named_for_output(doc, name);
+        return Ok((photocraft_format::save_to_bytes(&named, &previews(&named))?, Vec::new()));
     }
     let result = photocraft_io::export(doc, &ext, opts)?;
     Ok((result.bytes, result.warnings))

@@ -163,24 +163,25 @@ pub fn fresh_ids(d: &mut Document, n: &mut Node, seen: &mut std::collections::Ha
 fn piece(d: &mut Document, n: &Node, path: PathData, rule: FillRule, item: AppearanceItem) -> Node {
     let id = d.alloc_id();
     let kind = path_kind(d, path, rule);
-    Node {
-        id,
-        name: None,
-        appearance: Appearance { items: vec![item], ..Default::default() },
-        opacity: 1.0,
-        blend: Default::default(),
-        isolate: false,
-        knockout: Default::default(),
-        knockout_shape: false,
-        mask: None,
-        trace: None,
-        wrap: None,
-        graph: None,
-        // The group keeps the URL (one link around the pieces).
-        attrs: None,
-        kind,
-        ..n.clone()
-    }
+    let mut out = n.clone();
+    out.id = id;
+    out.name = None;
+    out.appearance = Appearance { items: vec![item], ..Default::default() }.into();
+    out.opacity = 1.0;
+    out.blend = Default::default();
+    out.isolate = false;
+    out.knockout = Default::default();
+    out.knockout_shape = false;
+    out.kind = kind;
+    let mut extras = out.extras_mut();
+    extras.mask = None;
+    extras.trace = None;
+    extras.wrap = None;
+    extras.graph = None;
+    // The group keeps the URL (one link around the pieces).
+    extras.attrs = None;
+    drop(extras);
+    out
 }
 
 /// `n`'s geometry with its object-level geometry effects applied, its fill rule, the context of

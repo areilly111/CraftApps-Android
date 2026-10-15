@@ -1,6 +1,6 @@
 # Vertical text watermarks
 
-Set `watermark.vertical` to `true` in export options, or choose Vertical in the export dialog. Text runs down each column; a newline starts the next column to its left. The size, nine anchors, inset, opacity, colour and shadow use the same controls as horizontal watermarks. Existing presets without `vertical` remain horizontal.
+Set `watermark.vertical` to `true` in export options, or choose Vertical in the export dialog. Text runs down each column; a newline starts the next column to its left. The size, nine anchors, horizontal and vertical insets, opacity, colour and shadow use the same controls as horizontal watermarks. Existing presets without `vertical` remain horizontal.
 
 ## Character cells
 

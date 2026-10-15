@@ -66,7 +66,7 @@ fn shadow(sigma: f64, color: peniko::Color) -> Filter {
 
 impl Renderer {
     /// Draw an item with soft effects: below-effects, the (feathered) body, inner shadow.
-    pub(crate) fn draw_item_fx(&mut self, ctx: &mut RenderContext, f: &Frame, it: &Item, bp: &BezPath, xf: Affine, page_name: Option<&str>) {
+    pub(crate) fn draw_item_fx(&mut self, ctx: &mut RenderContext, f: &Frame, it: &Item, bp: &BezPath, xf: Affine, page: Option<usize>) {
         let doc = f.doc;
         let e = &it.effects;
         let sw = if it.stroke.is_none() { 0.0 } else { it.stroke.extent() };
@@ -95,7 +95,7 @@ impl Renderer {
                 let moved = Frame { view: fr.view * Affine::translate(off), ..*fr };
                 c.set_transform(moved.view);
                 c.push_layer(None, None, None, None, Some(filter));
-                me.draw_body(c, &moved, it, bp, xf, page_name);
+                me.draw_body(c, &moved, it, bp, xf, page);
                 if grow > 0.0 && solid {
                     c.set_transform(moved.view * xf);
                     c.set_paint(peniko::Color::BLACK);
@@ -119,7 +119,7 @@ impl Renderer {
             self.with_filters(ctx, f, reach, w / 4.0, |me, c, fr| {
                 c.set_transform(fr.view * xf);
                 c.push_clip_layer(bp);
-                me.draw_body(c, fr, it, bp, xf, page_name);
+                me.draw_body(c, fr, it, bp, xf, page);
                 // Keep the body where the blurred inset silhouette is.
                 c.set_transform(Affine::IDENTITY);
                 c.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestIn)), None, None, None);
@@ -139,7 +139,7 @@ impl Renderer {
                 c.pop_layer();
             });
         } else {
-            self.draw_body(ctx, f, it, bp, xf, page_name);
+            self.draw_body(ctx, f, it, bp, xf, page);
         }
         // Directional feather: one fading ramp per side, multiplied in.
         let df = &e.directional_feather;

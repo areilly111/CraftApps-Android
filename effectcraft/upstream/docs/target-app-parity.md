@@ -681,8 +681,15 @@ Fixes from measured reports:
   too large (#390).
 - The viewer's Auto resolution renders the pixels the magnification needs (Full above 50 %), and
   frames shown below 100 % are averaged (GPU frames through mip levels, CPU frames by a whole
-  factor) instead of minified bilinearly (#417). Not yet: the viewer resolution and magnification
-  are not remembered between launches.
+  factor) instead of minified bilinearly (#417).
+- Each composition keeps its Resolution (Auto, Full, Half, Third, Quarter or Custom) in the
+  project, as in After Effects: switching to another comp and back, or saving and reopening the
+  project, shows the same resolution. Changing it marks the project modified but adds no undo
+  step (undo and redo keep it) and keeps the comp's cached frames; projects saved before open
+  with Auto. View ▸ Resolution and the panel's popup run `view.res.full|half|third|quarter|auto`
+  and `view.res.custom {factor}`, which now work headless too; `comp.info` reports `resolution`
+  and `resolutionFactor` (#417). Not yet: the magnification is not saved per comp, and the
+  Composition Settings dialog has no Resolution popup.
 
 ### Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 
@@ -889,7 +896,11 @@ saved warns that what this version doesn't know is lost on saving (`file.open` r
 `savedBy`). Saving checks that the file reads back first, so a value JSON can't hold (NaN)
 fails the save with a message instead of writing a project that can never be opened (the file
 on disk is left as it was). Increment and Save and Save a Copy keep an XML project (`.ecprojx`)
-XML; a file that isn't a project says so by name.
+XML; a file that isn't a project says so by name. A corrupt or hostile project opens within the
+limits the commands use (#788): compositions, solids and footage at most 30,000 × 30,000 px (as in
+After Effects), frame rates 0.001–1000 fps, pixel aspect 0.1–10, compositions at least one frame
+long and 2–64 motion-blur samples; `file.open` lists what it corrected (`repaired`) and a toast
+names it.
 
 ### Update: M3.13 menu bar
 

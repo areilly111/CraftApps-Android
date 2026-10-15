@@ -16,6 +16,9 @@ use filmcraft_media::{FrameRequest, MediaError, MediaSource};
 const NOISE: &[&str] =
     &["-f", "lavfi", "-i", "aevalsrc=exprs=0.3*sin(2*PI*441*t)+0.1*sin(2*PI*3100*t)|0.25*sin(2*PI*660*t)+0.1*sin(2*PI*(500+4000*t)*t):s=48000"];
 
+/// A mono tone.
+const MONO: &[&str] = &["-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000"];
+
 fn spec(name: &str) -> Vec<String> {
     let cat = |p: &[&[&str]]| p.concat().into_iter().map(String::from).collect::<Vec<_>>();
     match name {
@@ -142,6 +145,12 @@ fn spec(name: &str) -> Vec<String> {
             cat(&[&["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"], NOISE, &["-t", "0.6", "-c:v", "mpeg2video", "-bf", "2", "-g", "6", "-c:a", "mp2"]])
         }
         "audio.mp2" => cat(&[NOISE, &["-t", "1", "-c:a", "mp2", "-b:a", "224k", "-f", "mp2"]]),
+        // mono MP2 at ffmpeg's default bit rate, 384 kbit/s, which ISO/IEC 11172-3 does not allow
+        "audio_mono.mp2" => cat(&[MONO, &["-t", "1", "-c:a", "mp2", "-f", "mp2"]]),
+        "ts_mpeg2_mono_mp2.ts" => {
+            cat(&[&["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"], MONO, &["-t", "1", "-c:v", "mpeg2video", "-c:a", "mp2", "-f", "mpegts"]])
+        }
+        "mkv_mono_mp2.mkv" => cat(&[MONO, &["-t", "1", "-c:a", "mp2"]]),
         "es_mpeg2.m2v" => {
             cat(&[&["-f", "lavfi", "-i", "testsrc2=size=352x288:rate=25"], &["-t", "1", "-c:v", "mpeg2video", "-bf", "2", "-g", "9", "-f", "mpeg2video"]])
         }
@@ -164,6 +173,9 @@ pub const ALL: &[&str] = &[
     "mp4_mpeg2.mp4",
     "mkv_mpeg2.mkv",
     "audio.mp2",
+    "audio_mono.mp2",
+    "ts_mpeg2_mono_mp2.ts",
+    "mkv_mono_mp2.mkv",
     "es_mpeg2.m2v",
 ];
 
@@ -513,6 +525,53 @@ fn standalone_mp2_file() {
     let buf = src.audio(0, n, 48_000).unwrap();
     let worst = (0..n).map(|i| (buf.channels[0][i] - want[2 * i]).abs().max((buf.channels[1][i] - want[2 * i + 1]).abs())).fold(0f32, f32::max);
     assert!(worst <= 2e-4, "{worst}");
+}
+
+/// #809: mono MP2 at 384 kbit/s, ffmpeg's default, played as silence in every container because
+/// symphonia rejects the bit rate / mode combinations ISO/IEC 11172-3 does not allow.
+#[test]
+fn mono_mp2_at_ffmpegs_default_bit_rate() {
+    let ff = filmcraft_testkit::require_ffmpeg!();
+    let f = make(&ff, "audio_mono.mp2");
+    assert_eq!(std::fs::read(&f).unwrap()[2] >> 4, 14, "384 kbit/s");
+    let worst = check_audio(&ff, &make(&ff, "ts_mpeg2_mono_mp2.ts"), 2e-4);
+    println!("ts_mpeg2_mono_mp2.ts: max error {worst}");
+    // Matroska stores the encoder's 481-sample priming as `CodecDelay`. Whether ffmpeg's CLI trims
+    // it depends on its version (9.x does; 2023-24 builds keep the priming samples), and until
+    // #790 we trim it rounded to the millisecond. So for .mkv ffmpeg's decode is searched at
+    // lags within a sample or two of 0 (trimmed) and of `CodecDelay` (kept). The plain .mp2 file
+    // has no such ambiguity and must line up exactly.
+    for name in ["audio_mono.mp2", "mkv_mono_mp2.mkv"] {
+        let f = make(&ff, name);
+        let file = bytes(&f);
+        let src = filmcraft_codecs::open_bytes(name, file.clone()).unwrap();
+        let a = src.info().audio().cloned().unwrap();
+        assert_eq!((a.sample_rate, a.channels), (48_000, 1), "{name}");
+        let want = ffmpeg_audio_f32(&ff, &f, &[]);
+        let (delay, lags): (usize, Vec<i64>) = match name.ends_with(".mkv") {
+            true => {
+                let mkv = filmcraft_matroska::open(file).unwrap();
+                let ns = mkv.tracks.first().map_or(0, |t| t.codec_delay_ns);
+                let delay = ((ns * 48_000 + 500_000_000) / 1_000_000_000) as usize;
+                assert!(delay > 0, "{name}: no CodecDelay");
+                (delay, (-2..=2).chain(delay as i64 - 2..=delay as i64 + 2).collect())
+            }
+            false => (0, vec![0]),
+        };
+        // ours from sample 2 on, against ffmpeg's from sample 2 + lag (inside both decodes)
+        let n = want.len() - delay - 6;
+        let buf = src.audio(0, n, 48_000).unwrap();
+        let (worst, lag) = lags
+            .into_iter()
+            .map(|lag| {
+                let err = (2..n - 2).map(|i| (want[(i as i64 + lag) as usize] - buf.channels[0][i]).abs()).fold(0f32, f32::max);
+                (err, lag)
+            })
+            .fold((f32::INFINITY, 0), |m, x| if x.0 < m.0 { x } else { m });
+        let peak = want.iter().fold(0f32, |m, x| m.max(x.abs()));
+        println!("{name}: max error {worst} at lag {lag} (CodecDelay {delay}), peak {peak}");
+        assert!(peak > 0.1 && worst <= 2e-4, "{name}: peak {peak}, max error {worst} at lag {lag}");
+    }
 }
 
 #[test]

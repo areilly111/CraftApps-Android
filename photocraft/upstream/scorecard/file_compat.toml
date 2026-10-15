@@ -29,9 +29,9 @@ note = "smart_cmds.rs:382 mask only from the selection"
 [[item]]
 id = "FILE-215-4"
 target = "Adjustments (Hue/Sat + Colorize, Curves, Levels, Shadows/Highlights) apply as Smart Filters"
-status = "partial"
+status = "done"
 issue = 215
-note = "PSD Levels/Curves/Shadows-Highlights smart filters render (adjust_cmds.rs adjust_as_filter); Image › Adjustments on a smart object doesn't add one yet"
+note = "Image › Adjustments on a smart object records image.adjustments.<kind> as a smart filter (adjust_cmds.rs adjust_as_smart_filter; the selection becomes the filter mask), re-rendered from the source by adjust_as_filter and re-editable with layer.smartFilter.setParams; PSD maps Levels/Curves/Shadows-Highlights both ways (smart_map.rs). Opening the editor from the smart-filter row is FILE-215-5's row work"
 
 [[item]]
 id = "FILE-215-5"
@@ -106,9 +106,9 @@ note = "engine presets/swatches.rs (RGB/HSB/CMYK/Lab/Gray + verbatim colour book
 [[item]]
 id = "FILE-215-15"
 target = "Layer Style contour picker, curve editor, presets, .shc import/export"
-status = "missing"
-issue = 215
-note = "doc effects.rs:57 Contour model only"
+status = "partial"
+issue = 2912
+note = "Layer Style dialog: contour thumbnail + preset picker (12 standard shapes, own control points) and Anti-aliased on Drop/Inner Shadow, Outer/Inner Glow, Satin, Bevel Gloss Contour and Contour element; Contour Editor (add/drag/delete, Corner, Input/Output, Preset, Load…/Save… .shc per Adobe's public spec, psd shc.rs); corner points render (compose contour_curve_lut) and map to PSD Cnty. Missing: a user contour library (New…, picker Load/Save/Replace Contours), Anti-aliased doesn't change the render yet, .shc not yet checked against a Photoshop-written file"
 
 [[item]]
 id = "FILE-215-16"
@@ -143,7 +143,7 @@ id = "FILE-215-20"
 target = "Artboard tool with handles and + buttons, Duplicate Artboard beside, vector PDF pages"
 status = "partial"
 issue = 215
-note = "artboard_ui.rs:1 names/properties only; no tool, + buttons or duplicate"
+note = "artboard_tool.rs: Artboard tool draws, selects, moves and resizes boards by their handles (⇧ keeps proportions), its + buttons add a board or (⌥) a copy beside the selected one (#3033); Duplicate Artboard places the copy beside (#1584); raster PDF pages only"
 
 [[item]]
 id = "FILE-215-21"
@@ -155,9 +155,9 @@ note = "Only preset libraries (preset_store.rs)"
 [[item]]
 id = "FILE-216-1"
 target = "Every corpus fetched and enforced in CI, cached by pin"
-status = "missing"
+status = "done"
 issue = 216
-note = "No corpus step in ci.yml; in progress in #190"
+note = "ci.yml has a corpus job (name: corpus tests) on every PR and on main: the corpora are pinned in xtask/src/corpus_pins.rs, sha256-verified after both a cache restore and a download, and a missing corpus fails the tests. The cache key follows the pins, so it is cached by pin as this row asks (#190)"
 
 [[item]]
 id = "FILE-216-2"
@@ -183,13 +183,13 @@ note = "The round trip is our export -> our import"
 [[item]]
 id = "FILE-216-5"
 target = "Save-path tests: layered TIFF, PDF, SVG, ACO/ASE, .shc, Smart Filters, atomic-save failure"
-status = "missing"
+status = "partial"
 issue = 216
-note = "Features absent; no atomic-save failure-injection test"
+note = "Every save path that exists is tested by saving and reading back: layered TIFF io tests/tiff_layers.rs (every_compression_keeps_the_layers, advanced_blending_survives_layered_tiff_in_both_byte_orders), print PDF engine print_cmds/tests.rs (print_dry_run_renders_a_pdf_and_reports_lp decodes the image back), ACO/ASE engine swatch_cmds/tests.rs (aco_round_trip_keeps_16_bit_values_and_books, ase_round_trip_keeps_groups_floats_and_kinds), .shc psd shc.rs shc_round_trips_and_rejects_hostile_input and engine layer_style.rs contour_presets_and_custom_curves_apply_in_one_undo_step, Smart Filters engine tests/smart_psd.rs (smart_filters_survive_psd_in_every_colour_model), atomic-save failure format/src/atomic/tests.rs (BUG-203-6). There is no SVG writer (SVG opens only) and no Photoshop PDF save (FILE-215-10), so those have nothing to test yet; the row stays partial until they exist"
 
 [[item]]
 id = "FILE-216-6"
 target = "30-50 end-to-end workflow acceptance tasks driven through MCP or commands"
 status = "partial"
 issue = 216
-note = "automation/tests/agent_tasks.rs: 10 MCP tasks"
+note = "automation/tests/agent_tasks.rs: 20 MCP tasks"

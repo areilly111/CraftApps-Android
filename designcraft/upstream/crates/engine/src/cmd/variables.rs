@@ -129,6 +129,63 @@ fn define(s: &mut Session, p: &Value) -> Result<Value> {
 mod tests {
     use super::*;
 
+    /// A parent-page page-number marker follows Numbering & Section Options: changing a section's
+    /// start number renames its pages without changing their index or the number of sections, and
+    /// the marker composed for a page shows the new name.
+    #[test]
+    fn parent_page_number_follows_section_renumbering() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 3, "facingPages": false})).unwrap();
+        let marker = designcraft_doc::story::PAGE_NUMBER.to_string();
+        let r = s
+            .execute("frame.create", &json!({"spread": {"kind": "parent", "index": 0}, "rect": [72, 30, 500, 60], "content": "text", "text": marker}))
+            .unwrap();
+        let sid = s.doc().unwrap().doc.item(designcraft_doc::ItemId(r["id"].as_u64().unwrap())).unwrap().text_frame().unwrap().story;
+        assert_eq!(s.doc().unwrap().doc.story(sid).unwrap().text, marker);
+        let shown = |s: &Session, page: usize| -> usize {
+            let d = s.doc().unwrap().doc.clone();
+            let cs = s.cache.get(&d, sid, Some(page));
+            cs.frames.iter().flat_map(|f| f.lines.iter()).map(|l| l.glyphs.iter().filter(|g| g.visible && g.adv > 0.0).count()).sum()
+        };
+        assert_eq!(shown(&s, 2), 1, "page 3");
+        s.execute("layout.section", &json!({"page": 1, "startNumber": 100})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.page_name(2), "102");
+        assert_eq!(shown(&s, 2), 3, "page 102 after renumbering");
+    }
+
+    /// Two sections that both number from 1 repeat page names ("1, 2, 1, 2"). A parent-page running
+    /// header is composed for the page it is shown on, not the first page with that name.
+    #[test]
+    fn running_header_on_parent_page_with_repeated_page_numbers() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"pages": 4, "facingPages": false})).unwrap();
+        s.execute("layout.section", &json!({"page": 3, "startNumber": 1})).unwrap();
+        let names: Vec<String> = (0..4).map(|i| s.doc().unwrap().doc.page_name(i)).collect();
+        assert_eq!(names, ["1", "2", "1", "2"]);
+        s.execute("style.paragraph.create", &json!({"name": "Heading"})).ok();
+        // The only heading is on the third page (the second section's page 1).
+        let sp = s.doc().unwrap().doc.page_loc(2).unwrap().0;
+        let r = s.execute("frame.create", &json!({"spread": sp, "rect": [72, 200, 400, 260], "content": "text", "text": "Epsilon"})).unwrap();
+        let sid = s.doc().unwrap().doc.item(designcraft_doc::ItemId(r["id"].as_u64().unwrap())).unwrap().text_frame().unwrap().story;
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 0, "focus": 1})).unwrap();
+        s.execute("style.paragraph.apply", &json!({"name": "Heading"})).unwrap();
+        s.execute("variables.define", &json!({"name": "Chapter Head", "type": "runningHeader", "style": "Heading"})).unwrap();
+        let r = s
+            .execute("frame.create", &json!({"spread": {"kind": "parent", "index": 0}, "rect": [72, 30, 500, 60], "content": "text", "text": ""}))
+            .unwrap();
+        let sid = s.doc().unwrap().doc.item(designcraft_doc::ItemId(r["id"].as_u64().unwrap())).unwrap().text_frame().unwrap().story;
+        s.execute("text.select", &json!({"story": sid.0, "anchor": 0, "focus": 0})).unwrap();
+        s.execute("variables.insert", &json!({"name": "Chapter Head"})).unwrap();
+        let d = s.doc().unwrap().doc.clone();
+        let shown = |page: usize| -> usize {
+            let cs = s.cache.get(&d, sid, Some(page));
+            cs.frames.iter().flat_map(|f| f.lines.iter()).map(|l| l.glyphs.iter().filter(|g| g.visible && g.adv > 0.0).count()).sum()
+        };
+        assert_eq!(shown(0), 0, "no heading on or before the first page");
+        assert_eq!(shown(2), "Epsilon".len(), "the third page (named 1) shows its own heading");
+        assert_eq!(shown(3), "Epsilon".len(), "the fourth page (named 2) carries it");
+    }
+
     #[test]
     fn running_header_on_parent_page_follows_headings() {
         let mut s = Session::new();
@@ -158,7 +215,7 @@ mod tests {
         assert!(matches!(d.find(fid).unwrap().spread, designcraft_doc::SpreadRef::Parent(0)));
         // Visible glyphs of the header composed for each page: "Alpha · 3" vs "Epsilon · 3".
         let shown = |page: usize| -> usize {
-            let cs = s.cache.get(&d, sid, Some(&d.page_name(page)));
+            let cs = s.cache.get(&d, sid, Some(page));
             cs.frames.iter().flat_map(|f| f.lines.iter()).map(|l| l.glyphs.iter().filter(|g| g.visible && g.adv > 0.0).count()).sum()
         };
         let (p1, p2, p3) = (shown(0), shown(1), shown(2));

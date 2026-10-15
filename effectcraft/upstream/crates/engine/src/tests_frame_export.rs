@@ -1,4 +1,4 @@
-//! Composition ▸ Save Frame As ▸ Photoshop Layers… / ProEXR….
+//! Composition ▸ Save Frame As ▸ Photoshop Layers… / ProEXR…, and Copy Frame to Clipboard.
 
 use serde_json::json;
 
@@ -120,4 +120,34 @@ fn proexr_values_at_or_below_one_are_unchanged() {
     for got in [comp, layer] {
         assert!((got[0] - 1.0).abs() < 1e-4 && (got[1] - 0.1329).abs() < 1e-3 && got[2].abs() < 1e-6, "{got:?}");
     }
+}
+
+/// Composition ▸ Copy Frame to Clipboard (After Effects 26.3): the frame, as Save Frame As
+/// renders it, goes to the frontend as an image for the system clipboard.
+#[test]
+fn copy_frame_hands_the_rendered_frame_to_the_frontend() {
+    let mut s = frame();
+    s.drain_events();
+    let r = s.execute("comp.copyFrame", json!({})).unwrap();
+    assert_eq!((r["width"].as_u64(), r["height"].as_u64()), (Some(32), Some(32)));
+    let events = s.drain_events();
+    let Some((width, height, rgba)) = events.iter().find_map(|e| match e {
+        crate::Event::CopyImage { width, height, rgba } => Some((*width, *height, rgba)),
+        _ => None,
+    }) else {
+        panic!("no CopyImage event in {events:?}")
+    };
+    assert_eq!((width, height, rgba.len()), (32, 32, 32 * 32 * 4));
+    // Red in the corner; red × (50% blue multiply) in the middle; opaque everywhere.
+    assert_eq!(&rgba[..4], &[255, 0, 0, 255]);
+    let mid = &rgba[(16 * 32 + 16) * 4..][..4];
+    assert!(mid[0] > 100 && mid[0] < 160 && mid[2] < 13 && mid[3] == 255, "{mid:?}");
+    assert!(rgba.chunks(4).all(|p| p[3] == 255));
+    // The pixels are not serialized into the event stream.
+    let json = serde_json::to_value(events.iter().find(|e| matches!(e, crate::Event::CopyImage { .. })).unwrap()).unwrap();
+    assert!(json["CopyImage"].get("rgba").is_none(), "{json}");
+    // Scaled, and refused without a composition.
+    assert_eq!(s.execute("comp.copyFrame", json!({"scale": 0.5})).unwrap()["width"], 16);
+    assert!(Session::default().execute("comp.copyFrame", json!({})).is_err());
+    assert!(crate::menus::entries().iter().any(|(path, e)| e.command == "comp.copyFrame" && path.first().map(String::as_str) == Some("Composition")));
 }

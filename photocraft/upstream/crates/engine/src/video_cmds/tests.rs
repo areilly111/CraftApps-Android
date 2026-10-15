@@ -117,6 +117,41 @@ fn render_video_to_animated_gif() {
 }
 
 #[test]
+fn animated_gif_keeps_transparency() {
+    // #3061: a transparent document rendered as an animated GIF came out opaque black.
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 8, "height": 8, "background": "transparent"})).unwrap();
+    s.execute("timeline.create", json!({"duration": 2, "fps": 10})).unwrap();
+    s.execute("select.rect", json!({"x": 2, "y": 2, "width": 4, "height": 4})).unwrap();
+    s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+    let mut gif = Vec::new();
+    render_video_with(
+        &s,
+        &json!({"format": "gif"}),
+        |_, bytes| {
+            gif = bytes.to_vec();
+            Ok(())
+        },
+        |_, _| true,
+    )
+    .unwrap();
+    // Each frame has a transparent index and is cleared before the next (disposal 2).
+    let packed: Vec<u8> = gif.windows(4).filter(|w| w[..3] == [0x21, 0xF9, 0x04]).map(|w| w[3]).collect();
+    assert_eq!(packed, [0x09, 0x09]);
+    let px = photocraft_compose::flatten(&photocraft_io::import("t.gif", &gif).unwrap().document).px;
+    assert_eq!(px[0][3], 0.0, "the corner stays transparent");
+    assert_eq!(px[3 * 8 + 3], [1.0, 0.0, 0.0, 1.0], "the square stays red");
+}
+
+#[test]
+fn a_fully_transparent_animated_gif_frame_encodes() {
+    let px = vec![[0.0f32; 4]; 4];
+    let f = gif_frame(px, 2, 5).unwrap();
+    assert_eq!(f.transparent, Some((f.palette.len() - 1) as u8));
+    assert!(f.indices.iter().all(|&i| Some(i) == f.transparent));
+}
+
+#[test]
 fn inspect_reports_video_layer() {
     let dir = tmpdir("vinsp");
     write_png(&format!("{dir}/a.png"), 6, 4, "#ff0000");
@@ -202,4 +237,196 @@ fn render_writer_progress_and_cancellation_leave_session_unchanged() {
         assert_eq!(progress.last(), Some(&(2, 4)));
         assert_eq!(s.active().unwrap().doc.timeline, before.timeline);
     }
+}
+
+/// A 16×12 32-bit Targa: red, alpha 255 on the left half and 0 on the right.
+fn write_tga(path: &str) {
+    let mut b = vec![0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 0, 12, 0, 32, 8];
+    for _y in 0..12 {
+        for x in 0..16 {
+            b.extend_from_slice(&[0, 0, 255, if x < 8 { 255 } else { 0 }]);
+        }
+    }
+    std::fs::write(path, b).unwrap();
+}
+
+/// #2225: a Targa opens with its alpha as an "Alpha 1" channel (as in Photoshop), but an image
+/// sequence treats a frame's alpha as transparency, as video footage does, so TGA sequences
+/// keep their transparent areas.
+#[test]
+fn tga_sequence_frames_keep_their_transparency() {
+    let dir = tmpdir("tga");
+    write_tga(&format!("{dir}/f01.tga"));
+    write_tga(&format!("{dir}/f02.tga"));
+    let frames =
+        load_frames(&dir, photocraft_color::PixelFormat::new(photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8, true)).unwrap().frames;
+    assert_eq!(frames.len(), 2);
+    for f in &frames {
+        assert_eq!(f.pixel(2, 6), vec![1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(f.pixel(12, 6)[3], 0.0, "the right half stays transparent");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ------------------------------------------------------------------ animated GIF footage
+
+/// An animated GIF of solid `w`x`h` frames: one `(colour, delay in centiseconds)` each.
+fn write_gif(path: &str, w: u32, h: u32, frames: &[([u8; 3], u16)]) {
+    use photocraft_codecs::web::{GifFrame, encode_gif_animated};
+    let list: Vec<GifFrame> =
+        frames.iter().map(|&(c, delay_cs)| GifFrame { indices: vec![0; (w * h) as usize], palette: vec![c], transparent: None, delay_cs }).collect();
+    std::fs::write(path, encode_gif_animated(w, h, &list, true).unwrap()).unwrap();
+}
+
+fn frame_rgb(s: &Session, id: LayerId, frame: usize) -> Vec<f32> {
+    let v = s.active().unwrap().doc.layer(id).unwrap().video.as_ref().unwrap();
+    v.frames[frame].pixel(1, 1)[..3].to_vec()
+}
+
+#[test]
+fn an_animated_gif_becomes_a_video_layer_with_every_frame() {
+    let dir = tmpdir("gifin");
+    let path = format!("{dir}/anim.gif");
+    write_gif(&path, 16, 12, &[([255, 0, 0], 4), ([0, 255, 0], 4), ([0, 0, 255], 4)]);
+    let mut s = session();
+    let r = s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": path})).unwrap();
+    assert_eq!(r["frames"], 3);
+    let id = LayerId(r["layer"].as_u64().unwrap());
+    assert_eq!(frames(&s, id), 3);
+    assert_eq!(frame_rgb(&s, id, 0), [1.0, 0.0, 0.0]);
+    assert_eq!(frame_rgb(&s, id, 1), [0.0, 1.0, 0.0]);
+    assert_eq!(frame_rgb(&s, id, 2), [0.0, 0.0, 1.0]);
+    let doc = &s.active().unwrap().doc;
+    assert_eq!(doc.timeline.as_ref().unwrap().duration, 3);
+    // 4 cs = 40 ms per frame: 25 fps, on the timeline and on the layer.
+    assert_eq!(doc.timeline.as_ref().unwrap().fps, 25.0);
+    assert_eq!(doc.layer(id).unwrap().video.as_ref().unwrap().fps, 25.0);
+    // One history step: undo takes the layer back.
+    assert!(s.undo());
+    assert!(s.active().unwrap().doc.layer(id).is_none());
+}
+
+#[test]
+fn an_explicit_fps_beats_the_gif_delays() {
+    let dir = tmpdir("gifin-fps");
+    let path = format!("{dir}/anim.gif");
+    write_gif(&path, 8, 8, &[([255, 0, 0], 10), ([0, 255, 0], 10)]);
+    let mut s = session();
+    let r = s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": path, "fps": 12.0})).unwrap();
+    let id = LayerId(r["layer"].as_u64().unwrap());
+    assert_eq!(s.active().unwrap().doc.layer(id).unwrap().video.as_ref().unwrap().fps, 12.0);
+}
+
+#[test]
+fn a_still_gif_is_one_frame_at_the_default_rate() {
+    let dir = tmpdir("gifin-still");
+    let path = format!("{dir}/still.gif");
+    write_gif(&path, 8, 8, &[([255, 0, 0], 0)]);
+    let mut s = session();
+    let r = s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": path})).unwrap();
+    assert_eq!(r["frames"], 1);
+    // A 0 delay is shown at 100 ms, so 10 fps.
+    let id = LayerId(r["layer"].as_u64().unwrap());
+    assert_eq!(s.active().unwrap().doc.layer(id).unwrap().video.as_ref().unwrap().fps, 10.0);
+}
+
+#[test]
+fn video_frames_to_layers_takes_every_gif_frame() {
+    let dir = tmpdir("gifin-ftl");
+    let path = format!("{dir}/anim.gif");
+    write_gif(&path, 8, 8, &[([255, 0, 0], 5), ([0, 255, 0], 5), ([0, 0, 255], 5), ([9, 9, 9], 5)]);
+    let mut s = session();
+    let r = s.execute("file.import.videoFramesToLayers", json!({"path": path})).unwrap();
+    assert_eq!(r["layers"], 4);
+}
+
+#[test]
+fn a_gif_rendered_by_render_video_loads_back_frame_for_frame() {
+    let src = tmpdir("gifrt-src");
+    write_png(&format!("{src}/a.png"), 10, 8, "#ff0000");
+    write_png(&format!("{src}/b.png"), 10, 8, "#0000ff");
+    let mut s = session();
+    s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": src, "fps": 20.0})).unwrap();
+    let out = tmpdir("gifrt-out");
+    let r = s.execute("file.export.renderVideo", json!({"dir": out, "format": "gif"})).unwrap();
+    let mut t = session();
+    let back = t.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": r["file"]})).unwrap();
+    assert_eq!(back["frames"], 2);
+    let id = LayerId(back["layer"].as_u64().unwrap());
+    assert_eq!(t.active().unwrap().doc.timeline.as_ref().unwrap().fps, 20.0);
+    // GIF palettes are 8-bit: the colours come back to within a quantization step.
+    let (a, b) = (frame_rgb(&t, id, 0), frame_rgb(&t, id, 1));
+    assert!(a[0] > 0.9 && a[2] < 0.1, "{a:?}");
+    assert!(b[2] > 0.9 && b[0] < 0.1, "{b:?}");
+}
+
+#[test]
+fn a_broken_gif_is_an_error_not_a_panic() {
+    let dir = tmpdir("gifin-bad");
+    let path = format!("{dir}/bad.gif");
+    std::fs::write(&path, b"GIF89a\x01\x00").unwrap();
+    let mut s = session();
+    assert!(s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": path})).is_err());
+}
+
+#[test]
+fn gif_delays_map_to_one_frame_rate() {
+    // The most common delay wins; the first seen on a tie.
+    assert_eq!(fps_from_delays(&[40, 40, 100]), Some(25.0));
+    assert_eq!(fps_from_delays(&[100, 40]), Some(10.0));
+    // Delays under 20 ms (0 and 10 are common) play at 100 ms, as in browsers.
+    assert_eq!(fps_from_delays(&[0, 10, 0]), Some(10.0));
+    assert_eq!(fps_from_delays(&[]), None);
+}
+
+#[test]
+fn imported_video_restore_frame_and_all_keep_source_pixels() {
+    let dir = tmpdir("original-footage");
+    write_png(&format!("{dir}/f0.png"), 8, 8, "#ff0000");
+    write_png(&format!("{dir}/f1.png"), 8, 8, "#00ff00");
+    let mut s = session();
+    let id = LayerId(s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": dir})).unwrap()["layer"].as_u64().unwrap());
+    assert_eq!(layer_px(&s, id), vec![1.0, 0.0, 0.0, 1.0]);
+
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("layer.videoLayers.restoreFrame", json!({})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![1.0, 0.0, 0.0, 1.0], "current frame restores the red original");
+
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("timeline.setFrame", json!({"frame": 1})).unwrap();
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("layer.videoLayers.restoreAllFrames", json!({})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![0.0, 1.0, 0.0, 1.0], "frame 1 restores green");
+    s.execute("timeline.setFrame", json!({"frame": 0})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![1.0, 0.0, 0.0, 1.0], "frame 0 restores red");
+    assert!(s.undo(), "restoration stays in history");
+}
+
+#[test]
+fn show_altered_video_switches_between_original_and_edited_frames() {
+    let dir = tmpdir("show-altered-original");
+    write_png(&format!("{dir}/f0.png"), 8, 8, "#ff0000");
+    write_png(&format!("{dir}/f1.png"), 8, 8, "#00ff00");
+    let mut s = session();
+    let id = LayerId(s.execute("layer.videoLayers.newVideoLayerFromFile", json!({"path": dir})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![0.0, 0.0, 1.0, 1.0]);
+
+    s.execute("layer.videoLayers.showAlteredVideo", json!({})).unwrap();
+    assert!(!s.active().unwrap().doc.layer(id).unwrap().video.as_ref().unwrap().show_altered);
+    assert_eq!(layer_px(&s, id), vec![1.0, 0.0, 0.0, 1.0], "hidden altered footage shows red original");
+    s.execute("timeline.setFrame", json!({"frame": 1})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![0.0, 1.0, 0.0, 1.0], "scrubbing while hidden shows green original");
+    s.execute("timeline.setFrame", json!({"frame": 0})).unwrap();
+    s.execute("layer.videoLayers.showAlteredVideo", json!({})).unwrap();
+    assert_eq!(layer_px(&s, id), vec![0.0, 0.0, 1.0, 1.0], "switching back reveals the blue edit");
+}
+
+#[test]
+fn restoring_blank_video_frames_still_produces_blank_frames() {
+    let mut s = session();
+    let id = LayerId(s.execute("layer.videoLayers.newBlankVideoLayer", json!({})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("layer.videoLayers.restoreFrame", json!({})).unwrap();
+    assert_eq!(layer_px(&s, id)[3], 0.0);
 }

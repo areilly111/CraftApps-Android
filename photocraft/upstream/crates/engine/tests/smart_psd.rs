@@ -403,3 +403,68 @@ fn edited_psd_smart_objects_drop_their_old_file() {
     let SmartSource::Linked { path } = &sm.source else { panic!() };
     assert_eq!(uuids, vec![path.clone()]);
 }
+
+/// A Displace smart filter from a Photoshop mockup PSD carries its displacement map embedded
+/// (`DspD`, stretched over the canvas): it re-renders displaced instead of passing the pixels
+/// through, and keeps that map through PSD export, `.pcraft` and a PSD re-import.
+#[test]
+fn displace_psd_filter_renders_with_its_embedded_map() {
+    use photocraft_psd::descriptor::{Descriptor, Id, UnicodeString, Value};
+    for depth in [8, 16, 32] {
+        let mut s = session(depth);
+        s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
+        let id = photocraft_doc::LayerId(s.active().unwrap().active_layer.unwrap().0);
+        // Photoshop's layout: height, width, mode 3, horizontal plane (all right), vertical plane
+        // (neutral), padding. 128/255 is a hair over mid-grey: a sub-pixel vertical shift.
+        let (mw, mh) = (12u32, 8u32);
+        let n = (mw * mh) as usize;
+        let mut tdta = [mh.to_le_bytes().as_slice(), &mw.to_le_bytes(), &3u16.to_le_bytes()].concat();
+        tdta.extend(std::iter::repeat_n(255, n).chain(std::iter::repeat_n(128, n)).chain(std::iter::repeat_n(0, mw as usize)));
+        let e = |t: &str, v: &str| Value::Enumerated { type_id: Id::new(t), value: Id::new(v) };
+        let fltr = Descriptor::new("Dspl")
+            .with("HrzS", Value::Integer(10))
+            .with("VrtS", Value::Integer(10))
+            .with("DspM", e("DspM", "StrF"))
+            .with("UndA", e("UndA", "RptE"))
+            .with("DspF", Value::Alias(b"Macintosh HD:displace.psd".to_vec()))
+            .with("EmbF", Value::Boolean(true))
+            .with("DspD", Value::RawData(tdta));
+        let item = Descriptor::new("filterFX")
+            .with("Nm  ", Value::Text(UnicodeString::new_nul("Displace...")))
+            .with("enab", Value::Boolean(true))
+            .with("hasoptions", Value::Boolean(true))
+            .with("Fltr", Value::Descriptor(fltr))
+            .with("filterID", Value::Integer(1148416108));
+        let filter = photocraft_io::smart_map::filter_from_item(&item);
+        assert_eq!(filter.command, "filter.distort.displace");
+        s.edit("displace", |doc, _| {
+            let mut l = doc.layer(id).unwrap().clone();
+            let LayerContent::Smart(sm) = &mut l.content else { panic!("smart") };
+            sm.smart_filters.push(filter.clone());
+            assert!(refresh_layer(doc, &mut l).unwrap());
+            *doc.layer_mut(id).unwrap() = l;
+            Ok(())
+        })
+        .unwrap();
+        let doc = s.active().unwrap().doc.clone();
+        let alpha = |doc: &Document, x: i32| smart(doc).1.cache.unwrap().pixel(x, 30)[3];
+        // 10 % of 128 px at full map contrast: the content (x 8..80) is read from 12.8 px to the
+        // right, so it moves left over the canvas edge and leaves its right edge.
+        assert!(alpha(&doc, 2) > 0.99 && alpha(&doc, 75) < 0.01, "depth {depth}: {} {}", alpha(&doc, 2), alpha(&doc, 75));
+
+        let out = photocraft_io::export(&doc, "psd", &Default::default()).unwrap();
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        assert_eq!(structure_errors(&out.bytes), Vec::<String>::new());
+        let back = photocraft_io::import("displace.psd", &out.bytes).unwrap().document;
+        let native = photocraft_format::load_from_bytes(&photocraft_format::save_to_bytes(&back, &Default::default()).unwrap()).unwrap();
+        for doc in [&back, &native] {
+            let (bid, after) = smart(doc);
+            assert_eq!(after.smart_filters, vec![filter.clone()], "depth {depth}");
+            let mut l = doc.layer(photocraft_doc::LayerId(bid)).unwrap().clone();
+            assert!(refresh_layer(doc, &mut l).unwrap());
+            let LayerContent::Smart(sm) = &l.content else { panic!("smart") };
+            let (a, b) = (sm.cache.as_ref().unwrap(), smart(&s.active().unwrap().doc).1.cache.unwrap());
+            assert_eq!((a.pixel(2, 30)[3], a.pixel(75, 30)[3]), (b.pixel(2, 30)[3], b.pixel(75, 30)[3]), "depth {depth}: re-render");
+        }
+    }
+}

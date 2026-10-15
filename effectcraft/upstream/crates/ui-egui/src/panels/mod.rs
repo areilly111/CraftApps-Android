@@ -17,6 +17,8 @@ pub mod footage_panel;
 pub mod forms;
 pub mod fx_editors;
 pub mod fx_widgets;
+pub mod gradient_editor;
+pub mod gradient_handles;
 pub mod graph;
 pub mod graph_tools;
 pub mod home;
@@ -173,19 +175,31 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rec
 pub fn panel_menu_popup(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     let id = egui::Id::new("panel-menu");
     let Some((panel, pos)) = ui.ctx().data(|d| d.get_temp::<(PanelKind, egui::Pos2)>(id)) else { return };
+    // The menu opens in the window that shows the panel (a panel can have its own window).
+    if app.panel_viewport(ui.ctx(), panel) != ui.ctx().viewport_id() {
+        return;
+    }
     let mut close = false;
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.set_min_width(200.0);
             if ui.button(tr("Close Panel")).clicked() {
-                app.close_panel(panel);
+                let _ = app.dock_command(ui.ctx(), craft_ui::docking::Action::Close { panel });
                 close = true;
             }
             let floating = app.ui.floating.iter().any(|f| f.panels.contains(&panel));
             if !floating && ui.button(tr("Undock Panel")).clicked() {
                 let r = crate::dock_ui::default_float_rect(ui.ctx().content_rect());
-                app.edit_layout(|l| l.float(panel, r));
+                let _ = app.dock_command(ui.ctx(), craft_ui::docking::Action::Float { panel, rect: r });
                 close = true;
+            }
+            // Multiple monitors: a native window of its own, which can go on another screen.
+            if !ui.ctx().embed_viewports() {
+                let windowed = app.in_panel_window(panel);
+                if ui.button(if windowed { tr("Move Panel to Main Window") } else { tr("Move Panel to New Window") }).clicked() {
+                    let _ = crate::menus::invoke(app, &ui.ctx().clone(), "window.panelWindow", serde_json::json!({"panel": panel, "window": !windowed}));
+                    close = true;
+                }
             }
             if !floating && ui.button(if app.ui.maximized == Some(panel) { tr("Restore Panel Size") } else { tr("Maximize Panel") }).clicked() {
                 app.toggle_maximize(panel);

@@ -159,6 +159,60 @@ fn color_replacement_modes() {
     assert!(s.execute("paint.colorReplacement", json!({"points": [[1, 1]], "mode": "bogus"})).is_err());
 }
 
+/// The live Color Replacement stroke shows what `paint.colorReplacement` commits, at 8 and 16
+/// bits: red-left/blue-right halves, a stroke from red into blue in each sampling mode. The live
+/// working copy is stored at the layer's depth between dabs, so 8 bits may round a level apart.
+#[test]
+fn live_color_replacement_matches_the_commit() {
+    for depth in [8, 16] {
+        for sampling in ["continuous", "once", "backgroundSwatch"] {
+            let mut s = Session::new();
+            s.execute("file.new", json!({"width": 80, "height": 40, "background": "#ff0000", "depth": depth})).unwrap();
+            s.execute("select.rect", json!({"x": 40, "y": 0, "width": 40, "height": 40})).unwrap();
+            s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+            s.execute("select.deselect", json!({})).unwrap();
+            s.execute("tools.setColors", json!({"foreground": "#00ff00", "background": "#0000ff"})).unwrap();
+            let all = [[10.0, 20.0], [30.0, 20.0], [50.0, 20.0], [70.0, 22.0]];
+            let pts = |v: &[[f64; 2]]| v.iter().map(|q| StrokePoint::new(q[0], q[1], 1.0)).collect::<Vec<_>>();
+            let opts = |p: &[[f64; 2]]| json!({"points": p, "size": 12, "hardness": 50, "sampling": sampling, "tolerance": 30, "target": "pixels"});
+            let mut live = live_color_replacement(&s, &opts(&all[..1])).unwrap();
+            live.push(&pts(&all[1..3])).unwrap();
+            live.push(&pts(&all[3..])).unwrap();
+            let shown = live.doc.clone();
+            s.execute("paint.colorReplacement", opts(&all)).unwrap();
+            let id = s.active().unwrap().active_layer.unwrap();
+            let (a, b) = (shown.layer(id).unwrap().surface().unwrap(), s.active().unwrap().doc.layer(id).unwrap().surface().unwrap());
+            let mut worst = 0.0f32;
+            // Everywhere, the stroke's finishing dab included (the live stroke previews it).
+            for y in 0..40 {
+                for x in 0..80 {
+                    let (got, want) = (a.rgba(x, y), b.rgba(x, y));
+                    worst = (0..4).map(|c| (got[c] - want[c]).abs()).fold(worst, f32::max);
+                }
+            }
+            assert!(b.rgba(10, 20)[1] > 0.5 || sampling == "backgroundSwatch", "{depth}-bit {sampling}: recoloured");
+            assert!(worst <= 2.0 / 255.0, "{depth}-bit {sampling}: live and commit differ by {worst}");
+        }
+    }
+}
+
+/// Color Replacement recolours layer pixels only: a mask, channel or Quick Mask target is
+/// refused (it would otherwise recolour the layer behind the user's back).
+#[test]
+fn color_replacement_refuses_non_pixel_targets() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 20, "height": 20, "background": "#ff0000"})).unwrap();
+    let steps = s.active().unwrap().history.entries().len();
+    for t in [json!("mask"), json!("quickMask"), json!({"channel": 0}), json!(3)] {
+        let p = json!({"points": [[10, 10]], "size": 6, "target": t});
+        assert!(s.execute("paint.colorReplacement", p.clone()).is_err(), "{t}");
+        assert!(live_color_replacement(&s, &p).is_err(), "{t}");
+    }
+    assert_eq!(s.active().unwrap().history.entries().len(), steps);
+    s.execute("paint.colorReplacement", json!({"points": [[10, 10]], "size": 6, "target": "pixels"})).unwrap();
+    assert_eq!(s.active().unwrap().history.entries().len(), steps + 1);
+}
+
 #[test]
 fn presets_save_load_delete_round_trip() {
     let mut s = session(10, 10);
@@ -694,4 +748,138 @@ fn out_of_range_scatter_is_rejected_and_the_maximum_still_paints() {
     let mut s = new();
     s.execute("tools.setBrush", json!({ "brush": scatter(2.0) })).unwrap();
     assert_eq!(s.execute("paint.stroke", stroke).unwrap(), json!({"damage": [17, 14, 23, 23]}));
+}
+
+#[test]
+fn strokes_convert_through_the_documents_cmyk_profile() {
+    // A synthetic uncoated-like profile: heavier dot gain than the built-in coated CMYK (whose
+    // params are the defaults here), so painted ink differs from the default conversion. The
+    // compositors and composite exports enter the document's space; the stroke must too (#583).
+    let profile = photocraft_cms::synth::cmyk_profile(&photocraft_cms::synth::CmykParams {
+        description: "Stroke Test Uncoated".into(),
+        tvi: [0.26, 0.26, 0.26, 0.3],
+        grid_a2b: 5,
+        grid_b2a: 9,
+        ..Default::default()
+    })
+    .to_bytes();
+    let cmyk_session = |tagged: bool| {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 32, "height": 32, "mode": "cmyk", "background": "white"})).unwrap();
+        if tagged {
+            s.edit("icc", |doc, _| {
+                doc.icc_profile = Some(profile.clone());
+                Ok(())
+            })
+            .unwrap();
+        }
+        s
+    };
+    let params = json!({"points": [[4, 16], [28, 16]], "size": 8, "hardness": 1, "opacity": 1, "flow": 1, "color": "#cc3366", "smoothing": 0});
+    let mut s = cmyk_session(true);
+    // The live preview enters the same space, so it commits the pixels it shows.
+    let mut live =
+        LiveStroke::begin(&s, &json!({"points": [[4, 16]], "size": 8, "hardness": 1, "opacity": 1, "flow": 1, "color": "#cc3366", "smoothing": 0})).unwrap();
+    live.push(&[StrokePoint::new(28.0, 16.0, 1.0)]).unwrap();
+    let mut commit = params.clone();
+    commit["seed"] = json!(live.seed);
+    s.execute("paint.stroke", commit).unwrap();
+    let shown = live.doc.layer(s.active().unwrap().active_layer.unwrap()).unwrap().surface().unwrap().clone();
+    assert!(same_pixels(&shown, &surface(&s), Rect::new(0, 0, 32, 32)), "the preview commits the pixels it shows");
+    // The stroke's ink differs from the same stroke without the embedded profile.
+    let ink = |surf: &Surface| surf.read_region(Rect::new(15, 16, 17, 18));
+    let tagged = ink(&surface(&s));
+    let mut plain = cmyk_session(false);
+    plain.execute("paint.stroke", params).unwrap();
+    let untagged = ink(&surface(&plain));
+    assert!(tagged != untagged, "the document's CMYK profile must convert the painted ink: {tagged:?} vs {untagged:?}");
+}
+
+/// A live stroke over `pts` (pushed in chunks, as the canvas does) and its commit params.
+fn live_and_commit(s: &Session, cmd: &str, base: Value, pts: &[[f64; 3]]) -> (LiveStroke, Value) {
+    let mut p = base;
+    p["points"] = json!([pts[0]]);
+    let mut live = LiveStroke::begin_with(s, cmd, &p).unwrap();
+    for c in pts[1..].chunks(2) {
+        let sp: Vec<StrokePoint> = c.iter().map(|q| StrokePoint::new(q[0], q[1], q[2] as f32)).collect();
+        live.push(&sp).unwrap();
+    }
+    p["points"] = json!(pts);
+    p["seed"] = json!(live.seed);
+    (live, p)
+}
+
+#[test]
+fn a_commit_takes_the_live_strokes_pixels_and_they_equal_a_fresh_render() {
+    let pts = [[10.0, 50.0, 1.0], [60.0, 30.0, 0.7], [120.0, 60.0, 0.9], [180.0, 40.0, 0.4], [150.0, 80.0, 1.0]];
+    for (cmd, base) in [
+        ("paint.stroke", json!({"brush": {"size": 18, "hardness": 0.0, "flow": 0.5}, "smoothing": 0.5, "target": "pixels"})),
+        ("paint.stroke", json!({"preset": "Spatter", "smoothing": 0.0, "target": "pixels"})),
+        ("paint.stroke", json!({"brush": {"size": 12}, "erase": true, "target": "pixels"})),
+        ("paint.pencil", json!({"smoothing": 0.0})),
+    ] {
+        let mut s = session(200, 100);
+        let (live, p) = live_and_commit(&s, cmd, base.clone(), &pts);
+        let steps = s.active().unwrap().history.past_len();
+        s.offer_live_stroke(live).unwrap();
+        let r = s.execute(cmd, p.clone()).unwrap();
+        s.clear_live_stroke();
+        assert_eq!(r["fromLive"], true, "{cmd} {base}: the commit took the live pixels");
+        assert_eq!(s.active().unwrap().history.past_len(), steps + 1, "one undo step");
+        // The journal's replay renders from scratch and must give the same pixels.
+        let mut fresh = session(200, 100);
+        let r = fresh.execute(cmd, p).unwrap();
+        assert!(r.get("fromLive").is_none());
+        assert!(same_pixels(&surface(&s), &surface(&fresh), Rect::new(0, 0, 200, 100)), "{cmd} {base}");
+        // Undo restores the pre-stroke pixels.
+        s.undo();
+        assert!(same_pixels(&surface(&s), &surface(&session(200, 100)), Rect::new(0, 0, 200, 100)));
+    }
+}
+
+#[test]
+fn an_offer_that_does_not_match_the_commit_is_ignored() {
+    let pts = [[10.0, 50.0, 1.0], [60.0, 30.0, 0.7], [120.0, 60.0, 0.9]];
+    let base = json!({"brush": {"size": 10}, "smoothing": 0.0, "target": "pixels"});
+    // Different points.
+    let mut s = session(200, 100);
+    let (live, mut p) = live_and_commit(&s, "paint.stroke", base.clone(), &pts);
+    p["points"] = json!([[10.0, 50.0, 1.0], [190.0, 90.0, 1.0]]);
+    s.offer_live_stroke(live).unwrap();
+    let r = s.execute("paint.stroke", p.clone()).unwrap();
+    s.clear_live_stroke();
+    assert!(r.get("fromLive").is_none());
+    let mut fresh = session(200, 100);
+    fresh.execute("paint.stroke", p).unwrap();
+    assert!(same_pixels(&surface(&s), &surface(&fresh), Rect::new(0, 0, 200, 100)));
+    // The document changed after the stroke began.
+    let mut s = session(200, 100);
+    let (live, p) = live_and_commit(&s, "paint.stroke", base.clone(), &pts);
+    s.execute("layer.new.layer", json!({})).unwrap();
+    s.offer_live_stroke(live).unwrap();
+    let r = s.execute("paint.stroke", p).unwrap();
+    s.clear_live_stroke();
+    assert!(r.get("fromLive").is_none(), "a stale offer is never used");
+    // Another command leaves an offer untaken, and a later unrelated stroke can't use it.
+    let mut s = session(200, 100);
+    let (live, _) = live_and_commit(&s, "paint.stroke", base.clone(), &pts);
+    s.offer_live_stroke(live).unwrap();
+    let mut other = base;
+    other["points"] = json!([[5.0, 5.0, 1.0], [40.0, 5.0, 1.0]]);
+    let r = s.execute("paint.stroke", other).unwrap();
+    assert!(r.get("fromLive").is_none());
+}
+
+/// Photoshop's Clear painting mode (#3439): a Brush or Pencil stroke in `"mode": "clear"` erases
+/// with that brush, and History still names the tool rather than the Eraser.
+#[test]
+fn clear_mode_erases_with_the_brush_or_pencil() {
+    for (cmd, label) in [("paint.stroke", "Brush Tool"), ("paint.pencil", "Pencil")] {
+        let mut s = session(40, 20);
+        s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+        s.execute(cmd, json!({"points": [[2, 10], [38, 10]], "size": 6, "mode": "clear", "brush": {"hardness": 1.0}})).unwrap();
+        assert_eq!(rgba(&s, 20, 10)[3], 0.0, "{cmd}: cleared to transparency");
+        assert_eq!(rgba(&s, 20, 2), [1.0, 0.0, 0.0, 1.0], "{cmd}: untouched pixels stay");
+        assert_eq!(s.active().unwrap().history.undo_label(), Some(label), "{cmd}");
+    }
 }

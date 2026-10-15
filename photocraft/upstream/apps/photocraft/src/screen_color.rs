@@ -48,6 +48,66 @@ fn count(width: usize, height: usize) -> Result<usize, String> {
     width.checked_mul(height).filter(|&n| n > 0 && n <= MAX_PIXELS).ok_or_else(|| "Screen capture exceeds the 64 MP memory budget".into())
 }
 #[cfg(target_os = "linux")]
+const MAX_ICC_PROFILE_BYTES: usize = 1024 * 1024;
+#[cfg(target_os = "linux")]
+const ICC_PROFILE_PROPERTY_LONG_LENGTH: u32 = 256 * 1024;
+#[cfg(target_os = "linux")]
+fn icc_profile(bytes: Vec<u8>) -> Option<Vec<u8>> {
+    if bytes.is_empty() || bytes.len() > MAX_ICC_PROFILE_BYTES {
+        return None;
+    }
+    let profile = match photocraft_cms::Profile::parse(&bytes) {
+        Ok(profile) => profile,
+        Err(_) => return None,
+    };
+    (profile.color_space == photocraft_cms::ColorSpace::Rgb).then_some(bytes)
+}
+#[cfg(target_os = "linux")]
+fn icc_profile_atom<C: x11rb::connection::RequestConnection>(conn: &C, name: &str) -> Option<u32> {
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    let cookie = match conn.intern_atom(true, name.as_bytes()) {
+        Ok(cookie) => cookie,
+        Err(_) => return None,
+    };
+    let atom = match cookie.reply() {
+        Ok(reply) => reply.atom,
+        Err(_) => return None,
+    };
+    (atom != 0).then_some(atom)
+}
+#[cfg(target_os = "linux")]
+fn output_icc_profile<C: x11rb::connection::RequestConnection>(conn: &C, output: u32, atom: u32) -> Option<Vec<u8>> {
+    use x11rb::protocol::{randr::ConnectionExt as _, xproto::AtomEnum};
+    let cookie = match conn.randr_get_output_property(output, atom, AtomEnum::CARDINAL, 0, ICC_PROFILE_PROPERTY_LONG_LENGTH, false, false) {
+        Ok(cookie) => cookie,
+        Err(_) => return None,
+    };
+    let reply = match cookie.reply() {
+        Ok(reply) => reply,
+        Err(_) => return None,
+    };
+    if reply.type_ != u32::from(AtomEnum::CARDINAL) || reply.format != 8 || reply.bytes_after != 0 {
+        return None;
+    }
+    icc_profile(reply.data)
+}
+#[cfg(target_os = "linux")]
+fn root_icc_profile<C: x11rb::connection::RequestConnection>(conn: &C, root: u32, atom: u32) -> Option<Vec<u8>> {
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _};
+    let cookie = match conn.get_property(false, root, atom, AtomEnum::ANY, 0, ICC_PROFILE_PROPERTY_LONG_LENGTH) {
+        Ok(cookie) => cookie,
+        Err(_) => return None,
+    };
+    let reply = match cookie.reply() {
+        Ok(reply) => reply,
+        Err(_) => return None,
+    };
+    if reply.format != 8 || reply.bytes_after != 0 {
+        return None;
+    }
+    icc_profile(reply.value)
+}
+#[cfg(target_os = "linux")]
 fn capture(wayland: bool, scale: f32, stop: &std::sync::atomic::AtomicBool, placements: &[Placement]) -> Result<Capture, String> {
     if wayland {
         return portal(stop);
@@ -55,10 +115,7 @@ fn capture(wayland: bool, scale: f32, stop: &std::sync::atomic::AtomicBool, plac
     use x11rb::{
         connection::Connection,
         image::{Image, PixelLayout},
-        protocol::{
-            randr::ConnectionExt as _,
-            xproto::{AtomEnum, ConnectionExt, VisualClass},
-        },
+        protocol::{randr::ConnectionExt as _, xproto::VisualClass},
     };
     let (conn, index) = x11rb::connect(None).map_err(|e| e.to_string())?;
     let screen = conn.setup().roots.get(index).ok_or("X11 screen is missing")?;
@@ -71,13 +128,16 @@ fn capture(wayland: bool, scale: f32, stop: &std::sync::atomic::AtomicBool, plac
     {
         first.primary = true;
     }
-    let regions: Vec<(i16, i16, u16, u16, bool)> =
-        if monitors.is_empty() { vec![(0, 0, w, h, true)] } else { monitors.iter().map(|m| (m.x, m.y, m.width, m.height, m.primary)).collect() };
+    let regions: Vec<(i16, i16, u16, u16, bool, Vec<x11rb::protocol::randr::Output>)> = if monitors.is_empty() {
+        vec![(0, 0, w, h, true, Vec::new())]
+    } else {
+        monitors.iter().map(|m| (m.x, m.y, m.width, m.height, m.primary, m.outputs.clone())).collect()
+    };
     if regions.len() > 16 {
         return Err("Too many screens for the color picker".into());
     }
     let mut total = 0usize;
-    for &(x, y, mw, mh, _) in &regions {
+    for &(x, y, mw, mh, _, _) in &regions {
         if x < 0 || y < 0 || u32::from(x as u16) + u32::from(mw) > u32::from(w) || u32::from(y as u16) + u32::from(mh) > u32::from(h) {
             return Err("Invalid X11 display geometry".into());
         }
@@ -92,20 +152,20 @@ fn capture(wayland: bool, scale: f32, stop: &std::sync::atomic::AtomicBool, plac
         return Err("Screen picking requires an X11 TrueColor visual".into());
     }
     let layout = PixelLayout::from_visual_type(*visual).map_err(|e| e.to_string())?;
-    let atom = conn.intern_atom(true, b"_ICC_PROFILE").map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?.atom;
-    let primary_profile = if atom == 0 {
-        None
-    } else {
-        let reply = conn.get_property(false, screen.root, atom, AtomEnum::ANY, 0, 256 * 1024).map_err(|e| e.to_string())?.reply().map_err(|e| e.to_string())?;
-        (reply.bytes_after == 0 && reply.format == 8 && !reply.value.is_empty()).then_some(reply.value)
-    };
+    let output_profile_atom = icc_profile_atom(&conn, "_ICC_PROFILE");
     let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
     let byte = |v: u16| ((u32::from(v) + 128) / 257) as u8;
     let mut images = Vec::new();
-    for (x, y, mw, mh, primary) in regions {
+    for (x, y, mw, mh, primary, outputs) in regions {
         if stop.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(Capture::Color(None));
         }
+        let profile = output_profile_atom.and_then(|atom| outputs.iter().find_map(|output| output_icc_profile(&conn, *output, atom))).or_else(|| {
+            if !primary {
+                return None;
+            }
+            icc_profile_atom(&conn, "_ICC_PROFILE").and_then(|atom| root_icc_profile(&conn, screen.root, atom))
+        });
         let mut rgba = Vec::with_capacity(count(usize::from(mw), usize::from(mh))?.saturating_mul(4));
         for row in 0..mh {
             for col in 0..mw {
@@ -120,7 +180,7 @@ fn capture(wayland: bool, scale: f32, stop: &std::sync::atomic::AtomicBool, plac
             width: usize::from(mw),
             height: usize::from(mh),
             rgba,
-            profile: if primary { primary_profile.clone() } else { None },
+            profile,
         });
     }
     Ok(Capture::Images(images))
@@ -356,6 +416,18 @@ mod tests {
         assert!(checked_stride(1, MAX_PIXELS, 4096).is_err());
         assert!(unpack_rgba(&[0; 3], 1, 1, 4, [0, 1, 2, 3], false, true).is_err());
         assert!(unpack_rgba(&[0; 4], 1, 1, 4, [4, 1, 2, 3], false, true).is_err());
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn x11_screen_capture_accepts_only_bounded_rgb_icc_profiles() {
+        let rgb = photocraft_cms::Builtin::Srgb.profile().to_bytes();
+        let bytes = rgb.as_ref().clone();
+        assert_eq!(icc_profile(bytes.clone()), Some(bytes));
+
+        assert!(icc_profile(Vec::new()).is_none());
+        assert!(icc_profile(vec![0; MAX_ICC_PROFILE_BYTES + 1]).is_none());
+        let cmyk = photocraft_cms::Builtin::CoatedCmyk.profile().to_bytes();
+        assert!(icc_profile(cmyk.as_ref().clone()).is_none());
     }
     #[cfg(target_os = "linux")]
     #[test]

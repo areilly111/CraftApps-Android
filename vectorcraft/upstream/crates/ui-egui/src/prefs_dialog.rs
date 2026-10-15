@@ -19,23 +19,6 @@ pub const UI_FIELDS: &[(&str, &str, &str)] = &[
     ("__taskBar", "General", "Enable Contextual Task Bar"),
 ];
 
-/// Android only: the port's own Preferences categories (shared `/ArtCraft` storage layout and
-/// stylus settings), drawn by the port — not engine prefs, so they never reach `prefs.set`.
-#[cfg(target_os = "android")]
-const ANDROID_CATEGORIES: &[&str] = &["Storage", "Stylus"];
-
-/// Every Preferences category: the engine's, plus the port's Android-only ones.
-fn categories() -> impl Iterator<Item = &'static str> {
-    #[cfg(target_os = "android")]
-    {
-        PREF_CATEGORIES.iter().copied().chain(ANDROID_CATEGORIES.iter().copied())
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        PREF_CATEGORIES.iter().copied()
-    }
-}
-
 pub fn open(app: &mut VectorcraftApp, category: Option<&str>) {
     // One field per preference key or group (the flattener presets have commands of their own).
     let mut fields: Map<String, Value> = app.session.prefs.to_json().as_object().cloned().unwrap_or_default();
@@ -168,8 +151,7 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let (mut ok, mut cancel, mut reset) = (false, false, false);
     let cat = d.str("__category");
-    let cats: Vec<&str> = categories().collect();
-    let cat = cats.iter().find(|c| **c == cat).copied().unwrap_or(PREF_CATEGORIES[0]);
+    let cat = PREF_CATEGORIES.iter().find(|c| **c == cat).copied().unwrap_or(PREF_CATEGORIES[0]);
     crate::dialogs::modal::show(ctx, tl!("Preferences"), egui::Id::new("dialog-preferences"), -20.0, 20, |ui| {
         ui.set_width(760.0);
         crate::dialogs::modal::heading(ui, tl!("Preferences"));
@@ -181,7 +163,7 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
                 ui.set_min_height(430.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    for c in &cats {
+                    for c in PREF_CATEGORIES {
                         let sel = *c == cat;
                         let text = egui::RichText::new(tl!(*c)).size(12.5).color(if sel { t.text_strong } else { t.text });
                         let b = egui::Button::selectable(sel, text).frame_when_inactive(false).min_size(egui::vec2(184.0, 24.0));
@@ -198,17 +180,6 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
                 ui.label(egui::RichText::new(tl!(cat)).font(theme::semibold(14.0)).color(t.text_strong));
                 ui.add_space(8.0);
                 egui::ScrollArea::vertical().id_salt(("prefs", cat)).max_height(400.0).auto_shrink([false, false]).show(ui, |ui| {
-                    // Android only: the port draws its own Storage and Stylus sections (shared
-                    // /ArtCraft layout + SD-card option; pen settings) — not engine prefs.
-                    #[cfg(target_os = "android")]
-                    if cat == "Storage" {
-                        android_storage_section(ui, app);
-                    } else if cat == "Stylus" {
-                        android_stylus_section(ui, &mut d);
-                    } else {
-                        category_fields(ui, &mut d, cat);
-                    }
-                    #[cfg(not(target_os = "android"))]
                     category_fields(ui, &mut d, cat);
                 });
             });
@@ -230,12 +201,12 @@ pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
                     cancel = true;
                 }
                 ui.add_space(16.0);
-                let i = cats.iter().position(|c| *c == cat).unwrap_or(0);
-                if ui.add_enabled(i + 1 < cats.len(), egui::Button::new(tl!("Next"))).clicked() {
-                    d.fields.insert("__category".into(), json!(cats[i + 1]));
+                let i = PREF_CATEGORIES.iter().position(|c| *c == cat).unwrap_or(0);
+                if ui.add_enabled(i + 1 < PREF_CATEGORIES.len(), egui::Button::new(tl!("Next"))).clicked() {
+                    d.fields.insert("__category".into(), json!(PREF_CATEGORIES[i + 1]));
                 }
                 if ui.add_enabled(i > 0, egui::Button::new(tl!("Previous"))).clicked() {
-                    d.fields.insert("__category".into(), json!(cats[i - 1]));
+                    d.fields.insert("__category".into(), json!(PREF_CATEGORIES[i - 1]));
                 }
             });
         });
@@ -335,6 +306,8 @@ fn category_fields(ui: &mut egui::Ui, d: &mut Dialog, cat: &str) {
                     }
                 });
             }
+            // Linux only: the other platforms have a single display server.
+            PrefKind::Choice(_) if sp.key == "linuxDisplayServer" && !cfg!(target_os = "linux") => {}
             PrefKind::Choice(opts) => {
                 labeled(ui, sp.label, |ui| {
                     let cur = v.as_str().unwrap_or("");
@@ -344,8 +317,8 @@ fn category_fields(ui: &mut egui::Ui, d: &mut Dialog, cat: &str) {
                         d.fields.insert(sp.key.into(), json!(opts[i].0));
                     }
                 });
-                if sp.key == "gpuPreference" {
-                    // The window's graphics device is chosen once, when the app starts.
+                if sp.key == "gpuPreference" || sp.key == "linuxDisplayServer" {
+                    // The window's graphics device and display server are chosen once, when the app starts.
                     ui.label(egui::RichText::new(tl!("Applies the next time VectorCraft starts.")).color(t.text_dim).size(11.0));
                 }
             }
@@ -392,9 +365,10 @@ fn picas_in_use(d: &Dialog) -> bool {
 }
 
 fn bool_row(ui: &mut egui::Ui, d: &mut Dialog, key: &str, label: &str) {
-    let mut b = d.bool(key);
-    if ui.checkbox(&mut b, tl!(label)).changed() {
-        d.fields.insert(key.into(), json!(b));
+    // The app's outlined checkbox (it translates `label`): egui's own has no border at rest.
+    let on = d.bool(key);
+    if widgets::check(ui, label, on, ui.is_enabled()) {
+        d.fields.insert(key.into(), json!(!on));
     }
 }
 
@@ -409,121 +383,33 @@ fn labeled(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-/// Android only: `Preferences › Storage` — the port's shared-storage layout.
-/// Drawn by the port (not engine prefs): where documents live by default, and
-/// the SD-card option. The hooks reach the native shell (see `Services::android_hooks`).
-#[cfg(target_os = "android")]
-fn android_storage_section(ui: &mut egui::Ui, app: &mut VectorcraftApp) {
-    let t = Tokens::get(ui.ctx());
-    ui.label(
-        egui::RichText::new(
-            "Where new documents are kept. VectorCraft and the other craft apps share this folder, so a file saved here is visible to all of them.",
-        )
-        .color(t.text_dim),
-    );
-    ui.add_space(8.0);
-    let Some(hooks) = app.services.android_hooks.as_ref() else {
-        ui.label(egui::RichText::new("Storage settings are unavailable.").color(t.text_disabled));
-        return;
-    };
-    ui.label(egui::RichText::new(format!("Current: {}", (hooks.storage.location_label)())).color(t.text));
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui.button("Tablet storage").clicked() {
-            (hooks.storage.use_tablet_storage)();
-        }
-        if ui.button("SD card…").clicked() {
-            (hooks.storage.pick_sd_card)();
-        }
-    });
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(
-            "“SD card…” opens the system folder picker. The chosen folder is remembered, and documents are read and written through it directly.",
-        )
-        .color(t.text_disabled),
-    );
-}
-
-/// Android only: `Preferences › Stylus` — the pen settings in one place.
-///
-/// VectorCraft has no pressure preference to toggle: the drawing tools read the pen's pressure
-/// straight from touch input, so this section is the live pressure test.
-#[cfg(target_os = "android")]
-fn android_stylus_section(ui: &mut egui::Ui, d: &mut Dialog) {
-    let t = Tokens::get(ui.ctx());
-    ui.label(
-        egui::RichText::new("VectorCraft reads your pen's pressure from touch input automatically — no setup needed.")
-            .color(t.text_dim),
-    );
-    ui.add_space(10.0);
-    ui.label(egui::RichText::new("Pen test").font(theme::semibold(12.5)).color(t.text));
-    ui.label(egui::RichText::new("Draw in the box with the pen: the bar shows the pressure the app sees.").color(t.text_dim));
-    ui.add_space(4.0);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 110.0), egui::Sense::drag());
-    let mut peak = d.fields.get("__stylusPeak").and_then(Value::as_f64).map(|v| v as f32).unwrap_or(0.0);
-    // Last reported pressure, kept across frames until the pen lifts (a held-still pen sends
-    // no move events, so the per-frame scan alone would flicker).
-    let mut last = d.fields.get("__stylusLast").and_then(Value::as_f64).map(|v| v as f32);
-    let mut lifted = false;
-    ui.ctx().input(|i| {
-        for e in &i.events {
-            if let egui::Event::Touch { pos, force, phase, .. } = e {
-                if !rect.contains(*pos) {
-                    continue;
-                }
-                match phase {
-                    egui::TouchPhase::Start | egui::TouchPhase::Move => {
-                        if let Some(p) = force.filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0)) {
-                            last = Some(last.map_or(p, |q: f32| q.max(p)));
-                        }
-                    }
-                    egui::TouchPhase::End | egui::TouchPhase::Cancel => lifted = true,
-                }
-            }
-        }
-    });
-    if lifted {
-        last = None;
-    }
-    if let Some(p) = last {
-        if p > peak {
-            peak = p;
-        }
-        // `__`-prefixed keys are dialog scratch: never committed (see `confirm`).
-        d.fields.insert("__stylusPeak".into(), json!(peak));
-        d.fields.insert("__stylusLast".into(), json!(p));
-        // Keep repainting while the pen is down so the bar tracks the stroke.
-        ui.ctx().request_repaint();
-    } else {
-        d.fields.remove("__stylusLast");
-    }
-    let painter = ui.painter();
-    painter.rect_filled(rect, t.radius, t.input);
-    painter.rect_stroke(rect, t.radius, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    let readout = match last {
-        Some(p) => format!("Pressure: {:.2}", p),
-        None => "Pressure: —".to_string(),
-    };
-    painter.text(rect.left_top() + egui::vec2(10.0, 8.0), egui::Align2::LEFT_TOP, readout, egui::FontId::proportional(12.5), t.text);
-    let bar = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + 10.0, rect.bottom() - 24.0),
-        egui::vec2(rect.width() - 20.0, 10.0),
-    );
-    painter.rect_filled(bar, 5.0, t.panel_darker);
-    if let Some(p) = last {
-        let fill = egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * p, bar.height()));
-        painter.rect_filled(fill, 5.0, t.accent);
-    }
-    ui.add_space(4.0);
-    ui.label(egui::RichText::new(format!("Peak this session: {:.2}", peak)).color(t.text_disabled));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Services;
     use vectorcraft_engine::Session;
+
+    /// A resting checkbox must have a visible outline in both states and every brightness.
+    #[test]
+    fn preference_checkboxes_draw_outlines_without_hover() {
+        for brightness in Brightness::ALL {
+            let ctx = egui::Context::default();
+            crate::theme::install_fonts(&ctx);
+            theme::apply(&ctx, brightness);
+            for checked in [false, true] {
+                let mut d = Dialog::new("preferences", json!({"showToolTips": checked}));
+                let raw =
+                    egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))), ..Default::default() };
+                let mut out = ctx.run_ui(raw, |ui| bool_row(ui, &mut d, "showToolTips", "Show Tool Tips"));
+                out.textures_delta.clear();
+                let outlined = out.shapes.iter().any(|shape| match &shape.shape {
+                    egui::Shape::Rect(r) => r.stroke.width > 0.0 && r.rect.width() <= 24.0 && r.rect.height() <= 24.0,
+                    _ => false,
+                });
+                assert!(outlined, "{brightness:?}, checked={checked}: no checkbox outline");
+            }
+        }
+    }
 
     /// User Interface › Canvas Color (#663): White and the three greys paint the canvas around the
     /// artboards; Match User Interface Brightness keeps the theme's.
@@ -699,8 +585,9 @@ mod tests {
         out.textures_delta.clear();
         let mut shown = vec![];
         out.shapes.iter().for_each(|c| texts(&c.shape, &mut shown));
-        assert!(shown.iter().any(|t| t == "System Title Bar"), "{shown:?}");
-        assert!(shown.iter().any(|t| t == "Applies the next time VectorCraft starts."), "{shown:?}");
+        let supported = cfg!(all(not(target_arch = "wasm32"), not(target_os = "macos")));
+        assert_eq!(shown.iter().any(|t| t == "System Title Bar"), supported, "{shown:?}");
+        assert_eq!(shown.iter().any(|t| t == "Applies the next time VectorCraft starts."), supported, "{shown:?}");
         a.ui.dialog.as_mut().unwrap().fields.insert("systemTitleBar".into(), json!(true));
         confirm(&mut a).unwrap();
         assert!(a.session.prefs.system_title_bar);

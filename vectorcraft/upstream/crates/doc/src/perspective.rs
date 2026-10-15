@@ -46,7 +46,7 @@ impl Node {
     /// The projective map type or a symbol instance in perspective is drawn through (not while
     /// Edit Text shows it flat).
     pub fn projection(&self) -> Option<Homography> {
-        let a = self.perspective.as_deref().filter(|a| !a.editing)?;
+        let a = self.extras().perspective.as_deref().filter(|a| !a.editing)?;
         matches!(self.kind, NodeKind::Text(_) | NodeKind::SymbolInstance { .. }).then(|| a.homography()).flatten()
     }
 
@@ -60,7 +60,7 @@ impl Node {
 
     /// Keep a projection drawing the same picture moved by `a` (the flat art moves by `a` too).
     pub(crate) fn transform_projection(&mut self, a: vectorcraft_geom::Affine) {
-        if let Some(p) = self.perspective.as_deref_mut()
+        if let Some(p) = self.extras_if_any().and_then(|e| e.perspective.as_deref_mut())
             && let Some(h) = p.homography().and_then(|h| h.conjugated(a))
         {
             p.projection = Some(h.to_array());

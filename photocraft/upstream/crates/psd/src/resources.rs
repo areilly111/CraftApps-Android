@@ -250,15 +250,16 @@ pub(crate) fn write_section(out: &mut Vec<u8>, res: &[ImageResource]) -> Result<
     out.end_len(at, false)
 }
 
-/// Builds the data for a 1057 version info resource.
+/// Builds the data for a 1057 version info resource, with the writer and reader names Photoshop
+/// 2026 writes ("Adobe Photoshop", "Adobe Photoshop 2026"), without a NUL terminator.
 pub fn version_info_resource(has_real_merged_data: bool) -> ImageResource {
     ImageResource::new(
         ids::VERSION_INFO,
         VersionInfo {
             version: 1,
             has_real_merged_data,
-            writer: UnicodeString::new_nul("Adobe Photoshop"),
-            reader: UnicodeString::new_nul("Adobe Photoshop CS6"),
+            writer: UnicodeString::new("Adobe Photoshop"),
+            reader: UnicodeString::new("Adobe Photoshop 2026"),
             file_version: 1,
         }
         .to_bytes(),
@@ -364,5 +365,18 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    /// Byte for byte what Photoshop 2026 writes (every Photoshop-authored oracle in the corpus):
+    /// u32 count + UTF-16BE, no NUL terminator.
+    #[test]
+    fn version_info_matches_photoshop_bytes() {
+        let mut want = vec![0, 0, 0, 1, 1];
+        for s in ["Adobe Photoshop", "Adobe Photoshop 2026"] {
+            want.extend_from_slice(&(s.len() as u32).to_be_bytes());
+            want.extend(s.encode_utf16().flat_map(u16::to_be_bytes));
+        }
+        want.extend_from_slice(&[0, 0, 0, 1]);
+        assert_eq!(version_info_resource(true).data, want);
     }
 }

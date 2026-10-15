@@ -1,6 +1,7 @@
 //! Import fidelity: soft masks → opacity masks, isolated and knockout groups, tiling patterns →
-//! pattern swatches, text → point type, mesh shadings → gradient meshes, gradient stop opacity
-//! and shading Extend flags; strokes stay live strokes.
+//! pattern swatches, text → point type, mesh shadings → gradient meshes, gradient stop opacity,
+//! shading Extend flags and shapes filled with a shading → gradient-filled paths; strokes stay
+//! live strokes.
 
 use std::sync::Arc;
 
@@ -72,8 +73,8 @@ fn masked(smask: &str, mask: &str) -> Vec<u8> {
 }
 
 fn the_mask(d: &Document) -> (Node, OpacityMask) {
-    let n = all(d).into_iter().find(|n| n.mask.is_some()).expect("a masked object");
-    let m = n.mask.as_deref().unwrap().clone();
+    let n = all(d).into_iter().find(|n| n.extras().mask.is_some()).expect("a masked object");
+    let m = n.extras().mask.as_deref().unwrap().clone();
     (n, m)
 }
 
@@ -121,7 +122,7 @@ fn opacity_masks_round_trip_through_pdf() {
         let mut d = Document::new(100.0, 100.0);
         let mut n = rect(Rect::new(10.0, 10.0, 90.0, 90.0), Color::rgb(1.0, 0.0, 0.0));
         let art = rect(Rect::new(10.0, 10.0, 50.0, 90.0), Color::gray(0.25));
-        n.mask = Some(Box::new(OpacityMask { invert, ..OpacityMask::new(art, clip) }));
+        n.extras_mut().mask = Some(Box::new(OpacityMask { invert, ..OpacityMask::new(art, clip) }));
         add(&mut d, n);
         let back = roundtrip(&d);
         let (n, m) = the_mask(&back);
@@ -152,14 +153,14 @@ fn isolated_and_non_isolated_groups_round_trip() {
     let back = roundtrip(&half_group(true));
     let groups: Vec<Node> = all(&back).into_iter().filter(|n| matches!(n.kind, NodeKind::Group { clip: false, .. })).collect();
     let [g] = groups.as_slice() else { panic!("one group: {groups:?}") };
-    assert!(g.isolate && g.mask.is_none());
+    assert!(g.isolate && g.extras().mask.is_none());
     assert!((g.opacity - 0.5).abs() < 0.01, "{}", g.opacity);
     assert_eq!(g.children().unwrap()[0].blend, BlendMode::Multiply);
     // Not isolated: its 50% (a constant alpha mask in the file) is opacity again, here on the
     // only object inside, which blends with the backdrop as before.
     let back = roundtrip(&half_group(false));
     let nodes = all(&back);
-    assert!(nodes.iter().all(|n| !n.isolate && n.mask.is_none()));
+    assert!(nodes.iter().all(|n| !n.isolate && n.extras().mask.is_none()));
     let m = nodes.iter().find(|n| n.blend == BlendMode::Multiply).unwrap();
     let opacity: f32 =
         nodes.iter().filter(|n| n.children().is_some_and(|c| c.iter().any(|c| c.id == m.id))).map(|g| g.opacity).product::<f32>() * m.opacity;
@@ -320,7 +321,7 @@ fn gradient_stop_opacity_round_trips() {
     add(&mut d, n);
     let back = roundtrip(&d);
     let nodes = all(&back);
-    assert!(nodes.iter().all(|n| n.mask.is_none()), "the opacity is in the stops, not a mask");
+    assert!(nodes.iter().all(|n| n.extras().mask.is_none()), "the opacity is in the stops, not a mask");
     let g = nodes.iter().find_map(|n| match n.appearance.fill().map(|f| &f.paint) {
         Some(Paint::Gradient(g)) => Some(g.gradient.clone()),
         _ => None,
@@ -352,13 +353,44 @@ fn a_shading_that_does_not_extend_paints_only_between_its_ends() {
     assert!(b.x0 <= 0.0 && (b.x1 - 80.0).abs() < 0.01, "{b:?}");
 }
 
+/// A diamond (10–90 × 10–90) clipping `paint`, which fills its bounds: how a shape filled with a
+/// gradient is written (`W n`, then `sh`).
+fn clipped_diamond(paint: &str) -> Document {
+    let shading = "<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [10 0 90 0] /Extend [true true] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] /C1 [0 0 1] /N 1 >> >>";
+    let resources = format!("/Shading << /Sh0 {shading} >> /Pattern << /P0 << /PatternType 2 /Shading {shading} >> >>");
+    open(&one_page(&format!("q 10 50 m 50 90 l 90 50 l 50 10 l h W n {paint} Q"), &resources, &[]))
+}
+
+#[test]
+fn a_shape_filled_with_a_shading_becomes_one_path_with_the_gradient() {
+    let d = clipped_diamond("/Sh0 sh");
+    assert!(!all(&d).iter().any(|n| matches!(n.kind, NodeKind::Group { .. })), "no group");
+    let objs = objects(&d);
+    let [n] = objs.as_slice() else { panic!("one object: {objs:#?}") };
+    let p = n.path_data().unwrap();
+    assert!(p.is_closed() && p.anchor_count() == 4, "the diamond: {p:?}");
+    assert!(near(n.geometric_bounds().unwrap(), Rect::new(10.0, 10.0, 90.0, 90.0)), "{:?}", n.geometric_bounds());
+    let Some(Paint::Gradient(g)) = n.appearance.fill().map(|f| &f.paint) else { panic!("a gradient fill: {:?}", n.appearance.items) };
+    assert_eq!(g.gradient.kind, GradientKind::Linear);
+    assert_eq!(g.gradient.stops.first().map(|s| s.color.to_rgb()), Some([1.0, 0.0, 0.0]));
+    assert_eq!(g.gradient.stops.last().map(|s| s.color.to_rgb()), Some([0.0, 0.0, 1.0]));
+    let geom = g.geom.as_ref().unwrap();
+    assert!((geom.start.x - 10.0).abs() < 0.01 && (geom.end.x - 90.0).abs() < 0.01, "placed as before: {geom:?}");
+    assert!(n.appearance.stroke().is_none());
+    // A gradient that doesn't cover the clip, and a flat colour, stay clipped.
+    for paint in ["/Pattern cs /P0 scn 40 40 20 20 re f", "1 0 0 rg 0 0 100 100 re f"] {
+        let d = clipped_diamond(paint);
+        assert!(all(&d).iter().any(|n| matches!(n.kind, NodeKind::Group { clip: true, .. })), "{paint}");
+    }
+}
+
 #[test]
 fn appearance_items_are_untouched_for_plain_art() {
     // Plain art keeps importing as before: no masks, groups or clips appear.
     let d = open(&one_page("q 1 0 0 rg 10 10 30 30 re f Q 0 0 1 RG 2 w 50 50 30 30 re S", "", &[]));
     let nodes = all(&d);
     assert_eq!(nodes.iter().filter(|n| n.path_data().is_some()).count(), 2);
-    assert!(nodes.iter().all(|n| n.mask.is_none() && !matches!(n.kind, NodeKind::Group { .. })));
+    assert!(nodes.iter().all(|n| n.extras().mask.is_none() && !matches!(n.kind, NodeKind::Group { .. })));
     assert!(matches!(nodes.iter().find(|n| n.appearance.stroke().is_some()).unwrap().appearance.items[0], AppearanceItem::Stroke(_)));
 }
 
@@ -463,4 +495,13 @@ fn art_past_the_page_clip_keeps_the_clip() {
     let r = open_with(&one_page("0 0 100 100 re W n 1 0 0 rg 10 10 20 20 re f", "", &[]), |_| {});
     assert!(!all(&r.document).iter().any(|n| matches!(n.kind, NodeKind::Group { clip: true, .. })));
     assert!(!r.warnings.iter().any(|w| w == crate::import::PAST_PAGE_NOTE), "{:?}", r.warnings);
+}
+
+/// Glyphs closed up by up to half an em (the proportional widths of CJK punctuation) still
+/// continue their line.
+#[test]
+fn glyphs_closed_up_by_half_an_em_stay_one_line() {
+    let t = texts(&open(&one_page("BT /F1 20 Tf 10 40 Td [(T) 400 (i) 450 (g) 0 (h) 0 (t)] TJ ET", HELVETICA, &[])));
+    assert_eq!(t.len(), 1, "one line: {:?}", t.iter().map(|t| t.plain_text()).collect::<Vec<_>>());
+    assert_eq!(t[0].plain_text(), "Tight");
 }

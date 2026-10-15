@@ -415,6 +415,12 @@ fn marquee_steps_are_named_after_their_tool() {
     assert_eq!(last(&s).as_deref(), Some("Elliptical Marquee"));
     s.execute("select.rect", json!({"x": 0, "y": 0, "width": 20, "height": 10})).unwrap();
     assert_eq!(last(&s).as_deref(), Some("Rectangular Marquee"));
+    // #3031: the Single Row / Single Column Marquee name theirs; an unknown `line` is an error.
+    s.execute("select.rect", json!({"x": 0, "y": 3, "width": 64, "height": 1, "line": "row"})).unwrap();
+    assert_eq!(last(&s).as_deref(), Some("Single Row Marquee"));
+    s.execute("select.rect", json!({"x": 3, "y": 0, "width": 1, "height": 48, "line": "column"})).unwrap();
+    assert_eq!(last(&s).as_deref(), Some("Single Column Marquee"));
+    assert!(s.execute("select.rect", json!({"x": 0, "y": 0, "width": 1, "height": 1, "line": "diagonal"})).is_err());
 }
 
 #[test]
@@ -630,6 +636,24 @@ fn fill_layers_and_colors() {
 }
 
 #[test]
+fn default_colors_with_mask_targeted_resets_to_mask_colors() {
+    let mut s = Session::new();
+    s.tools.foreground = [0.2, 0.4, 0.6, 1.0];
+    s.tools.background = [0.8, 0.6, 0.4, 1.0];
+    s.tools.target_mask(true);
+    s.execute("tools.setColors", json!({"foreground": "#112233", "background": "#445566"})).unwrap();
+    s.execute("tools.defaultColors", json!({})).unwrap();
+    assert_eq!(s.tools.foreground, [1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(s.tools.background, [0.0, 0.0, 0.0, 1.0]);
+    s.tools.target_mask(false);
+    assert_eq!(s.tools.foreground, [0.2, 0.4, 0.6, 1.0]);
+    assert_eq!(s.tools.background, [0.8, 0.6, 0.4, 1.0]);
+    s.execute("tools.defaultColors", json!({})).unwrap();
+    assert_eq!(s.tools.foreground, [0.0, 0.0, 0.0, 1.0]);
+    assert_eq!(s.tools.background, [1.0, 1.0, 1.0, 1.0]);
+}
+
+#[test]
 fn fill_layer_pixel_rewrites_refresh_the_effect_maps() {
     // A pixel-only rewrite of a fill layer's cache (what Image › Transform and friends do)
     // leaves the Fill spec alone; the CPU effect maps must follow the cache surface, or the
@@ -741,6 +765,33 @@ fn command_list_reports_enablement() {
     let find = |id: &str| list.as_array().unwrap().iter().find(|c| c["id"] == id).unwrap().clone();
     assert_eq!(find("file.new")["enabled"], true);
     assert_eq!(find("layer.new.layer")["enabled"], false);
+}
+
+/// With no document open, a document command says so instead of only `enabled: false` (#3664).
+#[test]
+fn command_list_tells_no_document_from_other_preconditions() {
+    let mut s = Session::new();
+    let list = s.execute("command.list", json!({})).unwrap();
+    let find = |list: &Value, id: &str| list.as_array().unwrap().iter().find(|c| c["id"] == id).unwrap().clone();
+    for id in ["paint.stroke", "layer.new.layer", "filter.blur.gaussianBlur"] {
+        let c = find(&list, id);
+        assert_eq!((c["enabled"].clone(), c["needsDocument"].clone()), (json!(false), json!(true)), "{id}: {c}");
+        assert!(c["disabledReason"].as_str().is_some_and(|r| r.starts_with("no document")), "{id}: {c}");
+    }
+    let new = find(&list, "file.new");
+    assert_eq!((new["enabled"].clone(), new["needsDocument"].clone(), new["disabledReason"].clone()), (json!(true), json!(false), Value::Null));
+    // A precondition that isn't the missing document keeps its own reason.
+    let paste = find(&list, "file.newFromClipboard");
+    assert_eq!((paste["enabled"].clone(), paste["needsDocument"].clone()), (json!(false), json!(false)));
+    assert_eq!(paste["disabledReason"], "the clipboard is empty");
+    // With a document, the same commands run; a missing selection is not a missing document.
+    let mut s = session_with_doc();
+    let list = s.execute("command.list", json!({})).unwrap();
+    assert_eq!(find(&list, "paint.stroke")["needsDocument"], false);
+    assert_eq!(find(&list, "paint.stroke")["disabledReason"], Value::Null);
+    let deselect = find(&list, "select.deselect");
+    assert_eq!((deselect["enabled"].clone(), deselect["needsDocument"].clone()), (json!(false), json!(false)));
+    assert_eq!(deselect["disabledReason"], "no selection");
 }
 
 #[test]
@@ -1145,6 +1196,35 @@ fn layer_locks_are_set_and_enforced() {
 }
 
 #[test]
+fn all_lock_blocks_painting_a_mask_but_pixels_lock_does_not() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 20, "height": 20})).unwrap();
+    s.execute("layer.new.layer", json!({})).unwrap();
+    let id = s.active().unwrap().active_layer.unwrap();
+    s.edit("mask", |doc, _| {
+        doc.layer_mut(id).unwrap().mask = Some(photocraft_doc::LayerMask::reveal_all());
+        Ok(())
+    })
+    .unwrap();
+
+    s.execute("layer.setProps", json!({"locks": {"all": true}})).unwrap();
+    let history_steps = s.active().unwrap().history.entries().len();
+    let err = s.execute("paint.stroke", json!({"points": [[5, 5]], "size": 4, "hardness": 1.0, "color": "#000000", "target": "mask"})).unwrap_err();
+    assert_eq!(err.to_string(), "Could not complete your request because the layer \"Layer 1\" is locked");
+    let state = s.active().unwrap();
+    let mask = &state.doc.layer(id).unwrap().mask.as_ref().unwrap().surface;
+    assert!(mask.pixel(5, 5)[0] > 0.99, "rejected stroke leaves the mask reveal-all");
+    assert_eq!(state.history.entries().len(), history_steps, "rejected stroke adds no Brush Tool history step");
+
+    s.execute("layer.setProps", json!({"locks": {"all": false, "pixels": true}})).unwrap();
+    s.execute("paint.stroke", json!({"points": [[5, 5]], "size": 4, "hardness": 1.0, "color": "#000000", "target": "mask"})).unwrap();
+    let mask_value = |s: &Session| s.active().unwrap().doc.layer(id).unwrap().mask.as_ref().unwrap().surface.pixel(5, 5)[0];
+    assert!(mask_value(&s) < 0.01, "pixels-only lock permits mask painting");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(mask_value(&s) > 0.99, "undo restores the mask");
+}
+
+#[test]
 fn moving_a_layer_moves_its_effects_reference_point() {
     let mut s = session_with_doc();
     s.execute("layer.new.layer", json!({})).unwrap();
@@ -1283,4 +1363,147 @@ fn document_inspect_and_activate_invalid_index() {
 
     let err_act = s.execute("document.activate", json!({"document": 9})).unwrap_err();
     assert_eq!(err_act.to_string(), "no document at index 9");
+}
+
+/// #2166, measured in Photoshop 25.1: a layer mask and the layer pixels keep separate
+/// foreground/background pairs, swapped when the edit target changes.
+#[test]
+fn mask_and_pixels_keep_their_own_colour_pair() {
+    const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
+    const GREEN: [f32; 4] = [0.0, 1.0, 0.0, 1.0];
+    const BLUE: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+    const GRAY: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
+    let [white, black] = ToolState::MASK_COLORS;
+    let mut s = session_with_doc();
+    s.execute("tools.setColors", json!({"foreground": "#ff0000", "background": "#0000ff"})).unwrap();
+    let pair = |s: &Session| (s.tools.foreground, s.tools.background);
+    assert!(!s.tools.target_mask(false), "already on the pixels: nothing changes");
+    assert_eq!(pair(&s), (RED, BLUE));
+    assert!(s.tools.target_mask(true));
+    assert_eq!(pair(&s), (white, black), "a mask starts at white/black");
+    assert!(!s.tools.target_mask(true), "targeting it again changes nothing");
+    assert_eq!(pair(&s), (white, black));
+    s.tools.target_mask(false);
+    assert_eq!(pair(&s), (RED, BLUE), "the pixels get their colours back");
+    s.execute("tools.setColors", json!({"foreground": "#00ff00"})).unwrap();
+    s.tools.target_mask(true);
+    assert_eq!(pair(&s), (white, black));
+    s.tools.target_mask(false);
+    assert_eq!(pair(&s), (GREEN, BLUE), "a colour picked on the pixels is remembered");
+    // A colour picked while the mask is targeted is remembered for masks.
+    s.tools.target_mask(true);
+    s.execute("tools.setColors", json!({"foreground": "#808080"})).unwrap();
+    let mask_fg = s.tools.foreground;
+    assert!((mask_fg[0] - GRAY[0]).abs() < 0.01);
+    s.tools.target_mask(false);
+    assert_eq!(pair(&s), (GREEN, BLUE));
+    s.tools.target_mask(true);
+    assert_eq!(pair(&s), (mask_fg, black));
+}
+
+#[test]
+fn delete_layer_selects_neighbour_and_undo_restores_layer() {
+    for deleted_index in 0..3 {
+        let mut s = session_with_doc();
+        let ids = ["bottom", "middle", "top"].map(|name| LayerId(s.execute("layer.new.layer", json!({"name":name})).unwrap()["layer"].as_u64().unwrap()));
+        if deleted_index == 0 {
+            let background = s.active().unwrap().doc.layers[0].id;
+            s.execute("layer.delete", json!({"layer":background.0})).unwrap();
+        }
+        s.execute("layer.select", json!({"layer":ids[deleted_index].0})).unwrap();
+        s.execute("layer.delete", json!({})).unwrap();
+        let neighbour = if deleted_index == 0 { ids[1] } else { ids[deleted_index - 1] };
+        assert_eq!(s.active().unwrap().active_layer, Some(neighbour));
+        assert_eq!(s.active().unwrap().selected_layers, vec![neighbour]);
+        assert!(s.active().unwrap().doc.layer(ids[deleted_index]).is_none());
+        s.undo();
+        assert!(s.active().unwrap().doc.layer(ids[deleted_index]).is_some());
+        assert!(s.active().unwrap().active_layer.is_some_and(|id| s.active().unwrap().doc.layer(id).is_some()));
+        s.redo();
+        assert_eq!(s.active().unwrap().active_layer, Some(neighbour));
+    }
+}
+
+#[test]
+fn delete_multiple_layers_selects_next_survivor() {
+    let mut s = session_with_doc();
+    let ids = ["bottom", "middle", "top"].map(|name| LayerId(s.execute("layer.new.layer", json!({"name":name})).unwrap()["layer"].as_u64().unwrap()));
+    s.execute("layer.select", json!({"layer":ids[1].0})).unwrap();
+    s.execute("layer.select", json!({"layer":ids[2].0,"mode":"add"})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(ids[0]));
+    assert!(s.active().unwrap().doc.layer(ids[1]).is_none());
+    assert!(s.active().unwrap().doc.layer(ids[2]).is_none());
+    s.undo();
+    assert_eq!(s.active().unwrap().active_layer, Some(ids[2]));
+}
+
+#[test]
+fn delete_layer_neighbours_follow_group_row_order() {
+    let mut s = session_with_doc();
+    let background = s.active().unwrap().active_layer.unwrap();
+    let lower = LayerId(s.execute("layer.new.layer", json!({"name":"Below group"})).unwrap()["layer"].as_u64().unwrap());
+    let child = LayerId(s.execute("layer.new.layer", json!({"name":"Child"})).unwrap()["layer"].as_u64().unwrap());
+    let group = LayerId(s.execute("layer.groupLayers", json!({"name":"Group"})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("layer.select", json!({"layer":child.0})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(lower), "the next row below a group's final child is outside the group");
+    s.undo();
+    s.execute("layer.delete", json!({"layer":background.0})).unwrap();
+    s.execute("layer.setExpanded", json!({"layer":group.0,"expanded":false})).unwrap();
+    s.execute("layer.select", json!({"layer":lower.0})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(group), "fallback above uses the collapsed group header, not its hidden child");
+}
+
+#[test]
+fn delete_layer_preserves_an_unaffected_active_layer_and_last_layer_guard() {
+    let mut s = session_with_doc();
+    let background = s.active().unwrap().active_layer.unwrap();
+    let other = LayerId(s.execute("layer.new.layer", json!({"name":"Other"})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("layer.delete", json!({"layer":background.0})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(other));
+    let before = s.active().unwrap().history.past_len();
+    assert!(s.execute("layer.delete", json!({})).is_err());
+    assert_eq!(s.active().unwrap().doc.layer_count(), 1);
+    assert_eq!(s.active().unwrap().active_layer, Some(other));
+    assert_eq!(s.active().unwrap().history.past_len(), before);
+}
+
+#[test]
+fn merge_down_on_a_group_merges_the_group() {
+    // #3832: with a group selected, Merge Down is Photoshop's Merge Group (⌘E): the group's
+    // contents become one layer in its place, named after it, and the layer below is untouched.
+    let mut s = session_with_doc();
+    let below = s.execute("layer.new.layer", json!({"name": "Below"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("edit.fill", json!({"color": "#00ff00"})).unwrap();
+    let a = s.execute("layer.new.layer", json!({"name": "A"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("select.rect", json!({"x": 0, "y": 0, "width": 10, "height": 48})).unwrap();
+    s.execute("edit.fill", json!({"color": "#ff0000"})).unwrap();
+    s.execute("select.deselect", json!({})).unwrap();
+    let b = s.execute("layer.new.layer", json!({"name": "B"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("select.rect", json!({"x": 20, "y": 0, "width": 10, "height": 48})).unwrap();
+    s.execute("edit.fill", json!({"color": "#0000ff"})).unwrap();
+    s.execute("select.deselect", json!({})).unwrap();
+    s.execute("layer.select", json!({"layer": b})).unwrap();
+    s.execute("layer.select", json!({"layer": a, "mode": "add"})).unwrap();
+    let group = s.execute("layer.groupLayers", json!({"name": "Badge"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.setProps", json!({"layer": group, "opacity": 0.5})).ok();
+    let before = [px(&mut s, 5, 5), px(&mut s, 25, 5), px(&mut s, 50, 5)];
+    let layers = s.active().unwrap().doc.layer_count();
+    s.execute("layer.select", json!({"layer": group})).unwrap();
+    s.execute("layer.mergeLayers", json!({})).unwrap();
+    let st = s.active().unwrap();
+    let merged = st.doc.layer(st.active_layer.unwrap()).unwrap().clone();
+    assert_eq!(merged.name, "Badge");
+    assert!(matches!(merged.content, photocraft_doc::LayerContent::Raster(_)), "one pixel layer");
+    assert!(st.doc.layer(photocraft_doc::LayerId(below)).is_some(), "the layer below stays");
+    assert_eq!(st.doc.layer_count(), layers - 2, "group and its two layers became one");
+    let after = [px(&mut s, 5, 5), px(&mut s, 25, 5), px(&mut s, 50, 5)];
+    for (a, b) in before.iter().zip(&after) {
+        assert!(a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1.0 / 255.0), "{before:?} -> {after:?}");
+    }
+    // Undo brings the group back.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(s.active().unwrap().doc.layer(photocraft_doc::LayerId(group)).is_some());
 }

@@ -103,7 +103,7 @@ fn groups_layers_type_images_and_symbols_keep_their_raster_effects() {
     let xf = Affine::translate((40.0, 50.0)) * Affine::scale(2.5);
     let im = Node::new(
         d.alloc_id(),
-        NodeKind::Image(ImageObject { key: "pic".into(), width: 40, height: 30, xf, link: None, placement: Default::default() }),
+        NodeKind::Image(Box::new(ImageObject { key: "pic".into(), width: 40, height: 30, xf, link: None, placement: Default::default() })),
     );
     add(&mut d, with(im, shadow()));
     assert_written("image", &d);
@@ -181,4 +181,43 @@ fn shadows_and_glows_keep_their_blend_modes() {
     let modes: Vec<_> =
         flat.layers[0].children().unwrap()[0].children().unwrap().iter().filter(|c| matches!(c.kind, NodeKind::Image(_))).map(|c| c.blend).collect();
     assert_eq!(modes, [vectorcraft_color::BlendMode::Multiply, vectorcraft_color::BlendMode::Screen]);
+}
+
+#[test]
+fn pdf_resolution_cap_warns_once_for_original_object_when_appearance_items_split() {
+    let mut d = Document::new(300.0, 300.0);
+    d.raster_effects_ppi = 2400.0;
+    d.raster_effects.anti_alias = false;
+    let mut n = Node::path(
+        d.alloc_id(),
+        shapes::rectangle(Rect::new(20.0, 20.0, 270.0, 270.0)),
+        Appearance::basic(Paint::solid(Color::BLACK), Paint::solid(Color::BLACK), 20.0),
+    );
+    let id = n.id;
+    n.name = Some("Large original".into());
+    for item in &mut n.appearance.items {
+        item.effects_mut().push(Effect { params: json!({"radius": 0.0}), ..blur() });
+    }
+    add(&mut d, n);
+
+    let r = crate::cmd::rasterfx::export_pdf_with_report(&d, &Default::default()).unwrap();
+
+    assert!(String::from_utf8_lossy(&r.bytes).contains("/Subtype/Image"));
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+    let warning = &r.warnings[0];
+    assert!(warning.contains(&format!("object {}", id.0)) && warning.contains("Large original"), "{warning}");
+    assert!(warning.contains("requested 2400.0 ppi") && warning.contains("achieved 1268.7 ppi"), "{warning}");
+}
+
+#[test]
+fn pdf_resolution_cap_stays_quiet_when_small_effect_meets_requested_ppi() {
+    let mut d = Document::new(50.0, 50.0);
+    d.raster_effects_ppi = 300.0;
+    let n = with(rect(&mut d, Rect::new(10.0, 10.0, 30.0, 30.0), Color::BLACK), blur());
+    add(&mut d, n);
+
+    let r = crate::cmd::rasterfx::export_pdf_with_report(&d, &Default::default()).unwrap();
+
+    assert!(String::from_utf8_lossy(&r.bytes).contains("/Subtype/Image"));
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
 }

@@ -269,7 +269,7 @@ fn png_doc() -> Document {
         link: None,
         placement: Default::default(),
     };
-    let n = Node::new(d.alloc_id(), NodeKind::Image(im));
+    let n = Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)));
     let layer = d.layers[0].id;
     d.insert(Some(layer), 0, n).unwrap();
     d

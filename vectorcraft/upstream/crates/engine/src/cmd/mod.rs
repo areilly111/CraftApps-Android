@@ -35,6 +35,7 @@ pub(crate) mod inline;
 mod layer;
 mod layerpanel;
 pub mod library;
+pub mod linkfiles;
 pub mod links;
 mod live;
 pub(crate) mod maskedit;
@@ -261,6 +262,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(newdoc::specs());
         v.extend(place::specs());
         v.extend(links::specs());
+        v.extend(linkfiles::specs());
         v.extend(pdfcmds::specs());
         v.extend(fileio::dxf::specs());
         v.extend(fileio::eps::specs());
@@ -316,6 +318,11 @@ pub(crate) fn checked_ids_param(s: &Session, p: &Value, key: &str, command: &str
     values.iter().map(|value| checked_id(s, value, command)).collect()
 }
 
+/// The objects a command acts on: `ids` when given (every one checked), else the selected objects.
+pub(crate) fn checked_ids_or_selection(s: &Session, p: &Value, command: &str) -> Result<Vec<NodeId>> {
+    if p.get("ids").is_some() { checked_ids_param(s, p, "ids", command) } else { edit::selected_roots(s) }
+}
+
 pub(crate) fn checked_id(s: &Session, value: &Value, command: &str) -> Result<NodeId> {
     let id = value.as_u64().map(NodeId).ok_or_else(|| bad(command, format!("invalid object id {value}: expected a non-negative integer")))?;
     if s.doc()?.doc.node(id).is_none() {
@@ -335,6 +342,12 @@ pub(crate) fn finite_numbers<const N: usize>(v: &Value) -> Option<[f64; N]> {
     Some(out)
 }
 
+/// `v` as a list of point indices: `None` unless it is an array of non-negative integers, so no
+/// malformed index is dropped or wrapped round.
+pub(crate) fn point_indices(v: &Value) -> Option<Vec<usize>> {
+    v.as_array()?.iter().map(|i| usize::try_from(i.as_u64()?).ok()).collect()
+}
+
 pub(crate) fn point_param(p: &Value, key: &str) -> Option<Point> {
     let a = p.get(key)?.as_array()?;
     Some(Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?))
@@ -352,7 +365,7 @@ pub fn matrix_param(p: &Value, key: &str) -> Option<Affine> {
     Some(Affine::new(c))
 }
 /// A colour from `"#rrggbb"`, a colour key (`"cmyk 0 100 100 0"`, `"lab 55 60 40"`), `[r,g,b]` (0..1),
-/// `{"c":..,"m":..,"y":..,"k":..}`, `{"gray":..}` or `{"l":..,"a":..,"b":..}` (CIE Lab: L 0..100, a and b about
+/// `{"c":..,"m":..,"y":..,"k":..}` (percent when any component is above 1, else 0..1), `{"gray":..}` or `{"l":..,"a":..,"b":..}` (CIE Lab: L 0..100, a and b about
 /// −128..127).
 pub fn color_value(v: &Value) -> Option<Color> {
     match v {
@@ -361,8 +374,12 @@ pub fn color_value(v: &Value) -> Option<Color> {
         Value::Array(a) if a.len() >= 3 => Some(Color::rgb(a[0].as_f64()? as f32, a[1].as_f64()? as f32, a[2].as_f64()? as f32)),
         Value::Object(o) => {
             if let (Some(c), Some(m), Some(y), Some(k)) = (o.get("c"), o.get("m"), o.get("y"), o.get("k")) {
-                let f = |v: &Value| v.as_f64().map(|x| if x > 1.0 { x / 100.0 } else { x } as f32);
-                return Some(Color::cmyk(f(c)?, f(m)?, f(y)?, f(k)?));
+                // One scale for the whole colour: percent when any component is above 1, else 0..1.
+                // Deciding per component read {c: 18, k: 0.79} as K 79 %.
+                let v = [c.as_f64()?, m.as_f64()?, y.as_f64()?, k.as_f64()?];
+                let scale = if v.iter().any(|x| *x > 1.0) { 100.0 } else { 1.0 };
+                let f = |x: f64| (x / scale) as f32;
+                return Some(Color::cmyk(f(v[0]), f(v[1]), f(v[2]), f(v[3])));
             }
             if let Some(g) = o.get("gray") {
                 let g = g.as_f64()?;

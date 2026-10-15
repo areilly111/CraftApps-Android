@@ -15,7 +15,7 @@ focused monitor (Program by default). Code: `crates/ui-egui/src/panels/monitor_v
 | `view.display.multicam` | Display Mode ▸ Multi-Camera | the Program's multi-camera view (`multicam.toggleView`) |
 | `view.display.audioWaveform`, `view.display.videoAndWaveform` | Display Mode ▸ Audio Waveform / Video and Audio Waveform Split | Source Monitor: the clip's waveform (click to move the source playhead); audio-only clips always show it |
 | `view.display.comparison` | Display Mode ▸ Comparison View | Program: the reference frame (left) beside the current frame; the reference starts at the playhead and is stepped or reset with the buttons under it, or `view.compare.setReference {time\|seconds}` |
-| `view.magnification.<fit\|10\|25\|50\|75\|100\|150\|200\|400\|800\|1600>` | View ▸ Magnification and the zoom dropdown | 100% = one frame pixel per screen pixel; scroll or drag with the Hand tool to pan |
+| `view.magnification.<fit\|10\|25\|50\|75\|100\|150\|200\|400\|800\|1600>` | View ▸ Magnification and the zoom dropdown | 100% = one frame pixel per screen pixel. The mouse wheel (or a pinch) over a monitor zooms about the pointer, from Fit too, within 10%–1600%; drag with the middle mouse button, or with the Hand tool, to pan; Fit resets both. Each monitor keeps its own zoom and pan |
 | `view.showRulers`, `view.showGuides`, `view.lockGuides`, `view.clearGuides` | View | toggles take `{"enabled": bool}` |
 | `view.addGuide` | View ▸ Add Guide… | dialog, or `{"orientation": "vertical\|horizontal", "position": px}` |
 | `view.snapInProgramMonitor` | View ▸ Snap in Program Monitor | graphic moves snap to the frame edges / centre and the guides (6 pt) |
@@ -123,6 +123,20 @@ playhead-blue color and translucent gray band. Runtime review remains Windows-on
 The playhead has drag priority above the range band and trim handles, including a full-span
 selection. Drag it to scrub; the unoccupied upper ruler can also scrub. Drag the gray band away
 from the playhead to translate the marked range.
+
+## Zoom the time ruler
+
+Under each monitor's time ruler is a zoom scroll bar like the Timeline's. Its thumb is the part of
+the clip or sequence the ruler shows: drag a handle at either end to zoom in or out, drag the
+middle to scroll, or press beside the thumb to move it there. A thumb filling the bar shows the
+whole duration; the ruler zooms in as far as five frames. The playhead, markers, In/Out and ticks
+follow the part shown, and clicking or scrubbing the ruler sets a time within it; what lies
+outside it is not drawn. While the monitor plays, a zoomed ruler follows the playhead as the
+Timeline does (Settings ▸ Timeline ▸ Timeline Playback Auto-Scrolling): it pages when the playhead
+runs off the right edge or jumps before the left one, or keeps the playhead in the middle with
+smooth scrolling, and keeps its width; scrubbing and clicking never move it. Each monitor keeps its own range in its view state (`time_zoom`: start
+and end as fractions of the duration, `null` for all of it). Automation ids: `<monitor>.zoomBar`
+(the thumb) and `<monitor>.zoomBar.track`.
 
 ## Export Frame
 

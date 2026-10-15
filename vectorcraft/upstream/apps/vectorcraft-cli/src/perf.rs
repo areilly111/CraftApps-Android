@@ -113,11 +113,149 @@ fn edit_drags(n: usize) -> Result<(f64, f64), String> {
     Ok((handle, segment))
 }
 
+/// Resident memory of this process in MB (`ps`), if available.
+fn rss_mb() -> Option<f64> {
+    let pid = std::process::id().to_string();
+    let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &pid]).output().ok().filter(|o| o.status.success())?;
+    String::from_utf8_lossy(&out.stdout).trim().parse::<f64>().ok().map(|kb| kb / 1024.0)
+}
+
+/// `--deep`: tracked rows (no budget yet) for work the budgets above don't reach: editing a whole
+/// selection, live effects, every Pathfinder operation, typing in a long story, and memory.
+fn deep(n: usize) -> Result<(), String> {
+    let err = |e: vectorcraft_engine::EngineError| e.to_string();
+    let mut rows: Vec<(String, f64)> = vec![];
+    let mut mem: Vec<(String, f64)> = vec![];
+    let mut note = |what: &str| {
+        if let Some(m) = rss_mb() {
+            mem.push((what.to_string(), m));
+        }
+    };
+    note("start");
+    // Editing every object of an n-path document.
+    let mut s = vectorcraft_engine::Session::new();
+    s.add_document(synthetic(n)?, None);
+    note("document built");
+    rows.push((format!("select all, {n} paths"), median_ms(3, || drop(s.execute("select.all", &json!({}))))));
+    rows.push((format!("nudge the selection ({n} paths)"), median_ms(5, || drop(s.execute("object.move", &json!({"dx": 1, "dy": 0}))))));
+    rows.push((format!("undo a nudge ({n} paths)"), median_ms(5, || drop(s.execute("edit.undo", &json!({}))))));
+    rows.push((format!("redo a nudge ({n} paths)"), median_ms(5, || drop(s.execute("edit.redo", &json!({}))))));
+    // Dragging the whole selection with the Selection tool: one pointer move (the preview).
+    {
+        use vectorcraft_engine::tools::{Mods, PointerEvent, PointerKind};
+        use vectorcraft_geom::Vec2;
+        let view = vectorcraft_engine::ViewInfo { zoom: 1.0, ..Default::default() };
+        let first = s.doc().map_err(err)?.selection.objects.first().copied();
+        let at = first.and_then(|id| s.doc().ok()?.doc.node(id)?.geometric_bounds()).map(|b| b.center());
+        if let Some(down) = at {
+            let ev = |kind, dx: f64| PointerEvent { kind, pos: down + Vec2::new(dx, 0.0), mods: Mods::default(), pressure: 1.0 };
+            s.select_tool("selection", view).map_err(err)?;
+            s.pointer(&ev(PointerKind::Down, 0.0), view).map_err(err)?;
+            let mut dx = 0.0;
+            rows.push((
+                format!("drag the selection, per move ({n} paths)"),
+                median_ms(5, || {
+                    dx += 2.0;
+                    let _ = s.pointer(&ev(PointerKind::Drag, dx), view);
+                }),
+            ));
+            s.pointer(&ev(PointerKind::Up, dx), view).map_err(err)?;
+        }
+    }
+    for _ in 0..40 {
+        s.execute("object.move", &json!({"dx": 1, "dy": 0})).map_err(err)?;
+    }
+    note("after 45 whole-selection edits");
+    drop(s);
+    // Live effects on 2,000 paths: render a page whose every object has the effect.
+    let opts = RenderOptions::default();
+    for (fx, params) in [("path.offsetPath", json!({"offset": 3})), ("distort.roughen", json!({"size": 5, "relative": true}))] {
+        let mut s = vectorcraft_engine::Session::new();
+        s.add_document(synthetic(2000)?, None);
+        s.execute("select.all", &json!({})).map_err(err)?;
+        s.execute("effect.apply", &json!({"effect": fx, "params": params})).map_err(err)?;
+        let doc = s.doc().map_err(err)?.doc.clone();
+        let mut r = Renderer::new();
+        r.render(&doc, 2880, 1800, Affine::scale(1.6), &opts);
+        rows.push((format!("render, 2,000 paths with {fx} (warm)"), median_ms(5, || drop(r.render(&doc, 2880, 1800, Affine::scale(1.6), &opts)))));
+    }
+    note("after live effects");
+    // Every Pathfinder operation on 300 overlapping paths.
+    for op in ["unite", "intersect", "exclude", "minusFront", "minusBack", "divide", "trim", "merge", "crop", "outline"] {
+        let ms = median_ms(1, || {
+            let mut s = vectorcraft_engine::Session::new();
+            if let Ok(d) = synthetic(300) {
+                s.add_document(d, None);
+                let _ = s.execute("select.all", &json!({})).and_then(|_| s.execute(&format!("object.pathfinder.{op}"), &json!({})));
+            }
+        });
+        rows.push((format!("Pathfinder {op}, 300 paths"), ms));
+    }
+    note("after Pathfinder");
+    // Typing one character in the middle of a 20,000-character area-type story.
+    let mut s = vectorcraft_engine::Session::new();
+    s.add_document(Document::new(1600.0, 1200.0), None);
+    let text: String = (0..2000).map(|i| if i % 12 == 11 { "paragraph.\n" } else { "lorem ips " }).collect();
+    let id = s.execute("text.create", &json!({"x": 20, "y": 20, "text": text, "size": 10, "area": {"width": 1500, "height": 1100}})).map_err(err)?;
+    let id = id.get("id").cloned().unwrap_or(json!(0));
+    let mut at = 10_000;
+    rows.push((
+        "type one character, 20,000-character area text".into(),
+        median_ms(9, || {
+            at += 1;
+            let _ = s.execute("text.editRange", &json!({"id": id, "start": at, "end": at, "insert": "x"}));
+        }),
+    ));
+    note("after typing");
+    // Four embedded 24 MP photos drawn at fit page by three renderers, as the app's canvas, render
+    // worker and a panel each draw them.
+    {
+        let art = synthetic(3000)?;
+        let mut d = Document::new(1600.0, 1200.0);
+        let l = d.layers.first().map(|l| l.id);
+        for i in 0..4u32 {
+            let photo = Renderer::new().render(&art, 6000, 4000, Affine::scale(3.75 + f64::from(i) * 0.1), &opts).to_png()?;
+            let key = format!("photo {i}");
+            d.images.insert(key.clone(), vectorcraft_doc::ImageBlob::new("image/png", photo));
+            let xf = Affine::translate((f64::from(i % 2) * 800.0, f64::from(i / 2) * 600.0)) * Affine::scale(800.0 / 6000.0);
+            let image = vectorcraft_doc::ImageObject { key, width: 6000, height: 4000, xf, link: None, placement: Default::default() };
+            let id = d.alloc_id();
+            d.insert(l, usize::MAX, Node::new(id, vectorcraft_doc::NodeKind::Image(Box::new(image)))).map_err(|e| e.to_string())?;
+        }
+        note("4 embedded 24 MP photos");
+        let mut renderers = [Renderer::new(), Renderer::new(), Renderer::new()];
+        let ms = median_ms(1, || {
+            for r in &mut renderers {
+                r.render(&d, 2880, 1800, Affine::scale(1.6), &opts);
+            }
+        });
+        rows.push(("render 4 embedded 24 MP photos with 3 renderers (cold)".into(), ms));
+        note("after rendering the photos with 3 renderers");
+    }
+    // Output hashes, to compare builds: the SVG export and a save → open → save round trip.
+    let fnv = |b: &[u8]| b.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &x| (h ^ u64::from(x)).wrapping_mul(0x100_0000_01b3));
+    let doc = synthetic(n)?;
+    let svg = vectorcraft_svg::export(&doc, &vectorcraft_svg::ExportOptions::default());
+    let saved = vectorcraft_format::save_file(&doc);
+    let reopened = vectorcraft_format::load(&saved).map_err(|e| e.to_string())?;
+    outln!("  output hash: SVG export {:016x}, save→open→save {:016x}", fnv(svg.as_bytes()), fnv(&vectorcraft_format::save_file(&reopened)));
+    outln!("  tracked (no budget yet)");
+    for (name, ms) in &rows {
+        outln!("  {name:<52} {ms:>10.2} ms");
+    }
+    for (what, mb) in &mem {
+        outln!("  memory {what:<45} {mb:>8.0} MB");
+    }
+    Ok(())
+}
+
 pub fn run(args: &[String]) -> Result<(), String> {
     let mut n = 50_000usize;
+    let mut want_deep = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "--deep" => want_deep = true,
             "--paths" => n = it.next().and_then(|v| v.parse().ok()).ok_or("--paths needs a number")?,
             other => return Err(format!("unknown perf option `{other}`")),
         }
@@ -199,6 +337,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
     rows.push(("segment drag, 5,000-anchor path (per move)", segment, 8.0));
     if let Some(e) = failed {
         return Err(e);
+    }
+    if want_deep {
+        deep(n)?;
     }
 
     let mut over = 0;

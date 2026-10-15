@@ -420,6 +420,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         // ---- search + command list + editor
         ui.horizontal(|ui| {
             let r = ui.add(egui::TextEdit::singleline(&mut st.query).hint_text(tr("Search commands or shortcuts")).desired_width(360.0));
+            crate::widgets::focus_on_open(ui.ctx(), &r, &st.query);
             app.auto.add("shortcuts.search", r.rect, "Search");
         });
         ui.add_space(4.0);

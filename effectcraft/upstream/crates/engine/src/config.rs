@@ -14,6 +14,16 @@ use std::sync::Mutex;
 /// Named text blobs (`prefs.json`, `shortcuts.json`, `session.lock`).
 pub trait ConfigStore: Send + Sync {
     fn read(&self, name: &str) -> Option<String>;
+    /// Read a bounded UTF-8 entry, distinguishing missing entries from read errors.
+    /// The compatible default checks an existing store's returned string. Stores that read
+    /// from disk should override this to enforce the limit while reading.
+    fn read_bounded(&self, name: &str, max_bytes: usize) -> std::io::Result<Option<String>> {
+        let text = self.read(name);
+        if text.as_ref().is_some_and(|text| text.len() > max_bytes) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "configuration entry exceeds its size limit"));
+        }
+        Ok(text)
+    }
     fn write(&self, name: &str, data: &str) -> std::io::Result<()>;
     fn remove(&self, name: &str) -> std::io::Result<()>;
     /// Names of the entries directly in `dir` (a `/`-separated name prefix such as `Scripts`),
@@ -113,6 +123,24 @@ impl DirConfig {
 impl ConfigStore for DirConfig {
     fn read(&self, name: &str) -> Option<String> {
         std::fs::read_to_string(self.dir.join(name)).ok()
+    }
+    fn read_bounded(&self, name: &str, max_bytes: usize) -> std::io::Result<Option<String>> {
+        use std::io::Read;
+        let limit = u64::try_from(max_bytes)
+            .ok()
+            .and_then(|n| n.checked_add(1))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "configuration read limit is too large"))?;
+        let file = match std::fs::File::open(self.dir.join(name)) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let mut text = String::new();
+        file.take(limit).read_to_string(&mut text)?;
+        if text.len() > max_bytes {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "configuration entry exceeds its size limit"));
+        }
+        Ok(Some(text))
     }
     fn write(&self, name: &str, data: &str) -> std::io::Result<()> {
         let path = self.dir.join(name);

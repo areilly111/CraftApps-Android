@@ -53,6 +53,7 @@ in the dialog.
 | Windows 10+ x86 (32-bit) | `photocraft-<v>-windows-x86.msi`, `photocraft-<v>-windows-x86-portable.zip` | `windows-latest` |
 | Linux x86_64 | `photocraft-<v>-linux-x86_64.{AppImage,AppImage.zsync,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04` (Flatpak: `ubuntu-24.04`) |
 | Linux aarch64 | `photocraft-<v>-linux-aarch64.{AppImage,AppImage.zsync,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04-arm` (Flatpak: `ubuntu-24.04-arm`) |
+| Linux riscv64 (glibc 2.39+) | `photocraft-<v>-linux-riscv64.tar.gz` | cross-compiled on `ubuntu-24.04` (ports.ubuntu.com riscv64 libs); CLI smoke-tested under QEMU |
 | FreeBSD 14 x86_64 | `photocraft-<v>-freebsd-x86_64.tar.gz` | FreeBSD 14.3 VM on `ubuntu-latest` |
 | Web | `photocraft-web-<v>.zip` (static site; see [`packaging/web/README.md`](../packaging/web/README.md)) | `ubuntu-latest` |
 
@@ -62,7 +63,7 @@ Every binary reports its version, the commit and the build date: `photocraft --v
 `cargo build` doesn't set them and reports `0.2.0 (dev build)`.
 
 Every desktop build job (macOS, Windows, Linux, FreeBSD) also checks out [craft-fonts](https://github.com/storytold/craft-fonts)
-at the commit in `CRAFT_FONTS_REF` (top of `release.yml`) and builds with `CRAFT_FONTS_DIR` and
+at the `craft-fonts-ref` commit in `.github/workflows/release.yml` and builds with `CRAFT_FONTS_DIR` and
 `CRAFT_FONTS_REQUIRED=1`, so desktop releases embed its Japanese fonts (the web build embeds none: see
 `docs/development.md` › Fonts) and fail rather than ship without them. The packages carry each font's licence as
 `OFL-<family>.txt` (`copy_font_licences` in `packaging/env.sh`; the portable zip on Windows;
@@ -182,6 +183,13 @@ Why these formats:
 - **AppImage** runs on any distribution without installing anything. The
   download-and-go option and the fallback for distros the packages don't cover. It's built
   with the maintained `AppImage/appimagetool`, whose static runtime doesn't need libfuse2.
+  The packaging script verifies pinned AppImageTool 1.9.1 and type2 runtime 20251108 binaries.
+  For an offline build, pre-seed `$CARGO_TARGET_DIR/appimagetool-1.9.1-$ARCH.AppImage` and
+  `$CARGO_TARGET_DIR/type2-runtime-20251108-$ARCH` with the matching official release assets;
+  the script checks both SHA-256 digests and makes the cached AppImageTool executable after verification;
+  the runtime is only read as data.
+  An `APPIMAGETOOL` override must point to that same verified AppImageTool binary and already be
+  executable (`chmod +x` it before packaging).
   Each AppImage embeds update information (`gh-releases-zsync|…|latest|…`, #349) and ships
   with a `.zsync` beside it, so AppImageUpdate, AppImageLauncher and similar tools can find
   the next release and download only the blocks that changed.

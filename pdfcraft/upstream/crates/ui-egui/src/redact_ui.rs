@@ -92,6 +92,8 @@ pub struct SearchDraft {
     pub text: String,
     /// The word list, one word or phrase per line.
     pub words: String,
+    pub case_sensitive: bool,
+    pub whole_words: bool,
     pub pattern: RedactPattern,
     /// The result of the last search (matches marked), shown in the dialog.
     pub found: Option<usize>,
@@ -99,7 +101,15 @@ pub struct SearchDraft {
 
 impl Default for SearchDraft {
     fn default() -> Self {
-        Self { mode: SearchMode::Phrase, text: String::new(), words: String::new(), pattern: RedactPattern::Phone, found: None }
+        Self {
+            mode: SearchMode::Phrase,
+            text: String::new(),
+            words: String::new(),
+            case_sensitive: false,
+            whole_words: false,
+            pattern: RedactPattern::Phone,
+            found: None,
+        }
     }
 }
 
@@ -196,15 +206,15 @@ impl PdfCraftApp {
         let mut r = pdfcraft_render::PageRenderer::new(doc.bytes.clone(), config);
         let mut edits = Vec::new();
         let author = self.comment_prefs.author.clone();
-        for page in 0..doc.info.pages.len() {
+        for (page, page_info) in doc.info.pages.iter().enumerate() {
             let out = r.render(pdfcraft_render::RenderRequest { page, kind: pdfcraft_render::RequestKind::Text, scale: 1.0, ..Default::default() });
             let Some(text) = out.text else { continue };
             let hits = match d.mode {
                 SearchMode::Patterns => text.find_with(|c| pdfcraft_engine::find_pattern(d.pattern, c)),
-                _ => needles.iter().flat_map(|w| text.find(w)).collect(),
+                _ => needles.iter().flat_map(|w| text.find_opts(w, d.case_sensitive, d.whole_words)).collect(),
             };
             for h in hits {
-                let quads: Vec<[f64; 8]> = text.line_rects(h).into_iter().map(|r| doc.info.pages[page].view_rect_to_quad(r)).collect();
+                let quads: Vec<[f64; 8]> = text.line_rects(h).into_iter().map(|r| page_info.view_rect_to_quad(r)).collect();
                 if !quads.is_empty() {
                     edits.push(self.redact_prefs.mark(page, quads, &author));
                 }
@@ -248,9 +258,9 @@ impl PdfCraftApp {
 pub(crate) fn pages_body(ui: &mut egui::Ui, d: &mut PagesDraft, pages: usize, _t: &Tokens) -> (bool, bool) {
     ui.label(egui::RichText::new(tl!("Mark Page Range")).font(crate::theme::semibold(18.0)));
     ui.add_space(8.0);
-    ui.radio_value(&mut d.current, true, tl!("Current page"));
+    widgets::radio_value(ui, &mut d.current, true, tl!("Current page"));
     ui.horizontal(|ui| {
-        ui.radio_value(&mut d.current, false, tl!("Pages from"));
+        widgets::radio_value(ui, &mut d.current, false, tl!("Pages from"));
         ui.add_enabled(!d.current, egui::DragValue::new(&mut d.from).range(1..=pages));
         ui.label(tl!("to"));
         ui.add_enabled(!d.current, egui::DragValue::new(&mut d.to).range(1..=pages));
@@ -266,14 +276,14 @@ pub(crate) fn search_body(ui: &mut egui::Ui, d: &mut SearchDraft, t: &Tokens) ->
     ui.set_width(420.0);
     ui.label(egui::RichText::new(tl!("Find text and redact")).font(crate::theme::semibold(18.0)));
     ui.add_space(8.0);
-    ui.radio_value(&mut d.mode, SearchMode::Phrase, tl!("Single word or phrase"));
+    widgets::radio_value(ui, &mut d.mode, SearchMode::Phrase, tl!("Single word or phrase"));
     let mut enter = false;
     ui.add_enabled_ui(d.mode == SearchMode::Phrase, |ui| {
-        let r = ui.add(egui::TextEdit::singleline(&mut d.text).hint_text(tl!("Text to find")).desired_width(380.0));
+        let r = ui.add(crate::widgets::line(&mut d.text).hint_text(tl!("Text to find")).desired_width(380.0));
         enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     });
     ui.add_space(6.0);
-    ui.radio_value(&mut d.mode, SearchMode::Words, tl!("Multiple words or phrases"));
+    widgets::radio_value(ui, &mut d.mode, SearchMode::Words, tl!("Multiple words or phrases"));
     let mut import = false;
     ui.add_enabled_ui(d.mode == SearchMode::Words, |ui| {
         egui::ScrollArea::vertical().id_salt("redact-words").max_height(120.0).show(ui, |ui| {
@@ -285,8 +295,12 @@ pub(crate) fn search_body(ui: &mut egui::Ui, d: &mut SearchDraft, t: &Tokens) ->
             ui.label(egui::RichText::new(crate::i18n::fmt(tl!("{n} word(s) or phrase(s)"), &[("n", &n.to_string())])).small().color(t.text_faint));
         });
     });
+    ui.add_enabled_ui(d.mode != SearchMode::Patterns, |ui| {
+        ui.add(widgets::checkbox(&mut d.whole_words, tl!("Whole words only")));
+        ui.add(widgets::checkbox(&mut d.case_sensitive, tl!("Case-sensitive")));
+    });
     ui.add_space(6.0);
-    ui.radio_value(&mut d.mode, SearchMode::Patterns, tl!("Patterns"));
+    widgets::radio_value(ui, &mut d.mode, SearchMode::Patterns, tl!("Patterns"));
     ui.add_enabled_ui(d.mode == SearchMode::Patterns, |ui| {
         egui::ComboBox::from_id_salt("redact-pattern").selected_text(tl!(d.pattern.label())).width(240.0).show_ui(ui, |ui| {
             for p in REDACT_PATTERNS {
@@ -320,7 +334,7 @@ pub(crate) fn props_body(ui: &mut egui::Ui, d: &mut RedactPrefs, _t: &Tokens) ->
         ui.label(tl!("Redacted area fill colour:"));
         ui.horizontal(|ui| {
             let mut none = d.fill.is_none();
-            if ui.checkbox(&mut none, tl!("No colour")).changed() {
+            if ui.add(widgets::checkbox(&mut none, tl!("No colour"))).changed() {
                 d.fill = if none { None } else { Some([0.0, 0.0, 0.0]) };
             }
         });
@@ -331,16 +345,16 @@ pub(crate) fn props_body(ui: &mut egui::Ui, d: &mut RedactPrefs, _t: &Tokens) ->
         }
         ui.end_row();
         ui.label("");
-        ui.checkbox(&mut d.use_overlay, tl!("Use overlay text"));
+        ui.add(widgets::checkbox(&mut d.use_overlay, tl!("Use overlay text")));
         ui.end_row();
         let on = d.use_overlay;
-        let l = ui.add_enabled(on, egui::RadioButton::new(!d.use_code, tl!("Custom text:")));
+        let l = ui.add_enabled(on, widgets::radio(!d.use_code, tl!("Custom text:")));
         if l.clicked() {
             d.use_code = false;
         }
-        ui.add_enabled(on && !d.use_code, egui::TextEdit::singleline(&mut d.overlay).desired_width(220.0)).labelled_by(l.id);
+        ui.add_enabled(on && !d.use_code, crate::widgets::line(&mut d.overlay).desired_width(220.0)).labelled_by(l.id);
         ui.end_row();
-        if ui.add_enabled(on, egui::RadioButton::new(d.use_code, tl!("Redaction code:"))).clicked() {
+        if ui.add_enabled(on, widgets::radio(d.use_code, tl!("Redaction code:"))).clicked() {
             d.use_code = true;
         }
         let codes_on = on && d.use_code;
@@ -361,7 +375,7 @@ pub(crate) fn props_body(ui: &mut egui::Ui, d: &mut RedactPrefs, _t: &Tokens) ->
                 ui.horizontal(|ui| {
                     for &code in row {
                         let mut picked = d.codes.contains(&code);
-                        if ui.add_sized([62.0, 18.0], egui::Checkbox::new(&mut picked, code)).changed() {
+                        if ui.add_sized([62.0, 18.0], widgets::checkbox(&mut picked, code)).changed() {
                             d.codes.retain(|c| *c != code);
                             if picked {
                                 d.codes.push(code);
@@ -386,7 +400,7 @@ pub(crate) fn props_body(ui: &mut egui::Ui, d: &mut RedactPrefs, _t: &Tokens) ->
         ui.add_enabled_ui(on, |ui| {
             ui.horizontal(|ui| {
                 let mut auto = look.size <= 0.0;
-                if ui.checkbox(&mut auto, tl!("Auto-size text to fit redaction region")).changed() {
+                if ui.add(widgets::checkbox(&mut auto, tl!("Auto-size text to fit redaction region"))).changed() {
                     look.size = if auto { 0.0 } else { 10.0 };
                 }
                 if !auto {
@@ -403,13 +417,13 @@ pub(crate) fn props_body(ui: &mut egui::Ui, d: &mut RedactPrefs, _t: &Tokens) ->
         });
         ui.end_row();
         ui.label("");
-        ui.add_enabled(on, egui::Checkbox::new(&mut look.repeat, tl!("Repeat overlay text")));
+        ui.add_enabled(on, widgets::checkbox(&mut look.repeat, tl!("Repeat overlay text")));
         ui.end_row();
         ui.label(tl!("Text alignment:"));
         ui.add_enabled_ui(on, |ui| {
             ui.horizontal(|ui| {
                 for (a, label) in [(0u8, tl!("Left")), (1, tl!("Center")), (2, tl!("Right"))] {
-                    ui.radio_value(&mut look.align, a, label);
+                    widgets::radio_value(ui, &mut look.align, a, label);
                 }
             });
         });
@@ -480,7 +494,7 @@ pub(crate) fn hidden_body(ui: &mut egui::Ui, d: &mut HiddenDraft, t: &Tokens) ->
     for (h, n, on) in d.found.iter_mut() {
         ui.add_enabled_ui(*n > 0, |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(on, tl!(h.label()));
+                ui.add(widgets::checkbox(on, tl!(h.label())));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(if *n == 0 { tl!("None found").to_string() } else { n.to_string() }).color(t.text_muted));
                 });

@@ -1,7 +1,8 @@
 //! Monitor view options (the View menu and the monitors' wrench menus): Playback / Paused
 //! Resolution, High Quality Playback, Display Mode (Composite Video, Alpha, Red, Green, Blue,
 //! Multi-Camera, Audio Waveform, Comparison View, Video and Audio Waveform Split), Magnification
-//! (Fit, 10%…1600%, scroll or Hand-tool panning), rulers, guides (dragged out of the rulers, Add
+//! (Fit, 10%…1600%, the wheel zooming about the pointer, middle-button or Hand-tool panning),
+//! rulers, guides (dragged out of the rulers, Add
 //! Guide…, Clear Guides, Lock Guides, templates saved in the user preferences) and Snap in Program
 //! Monitor (graphic drags snap to guides, the frame edges and centre).
 //!
@@ -354,14 +355,43 @@ pub fn picture_rect(area: Rect, fw: f32, fh: f32, v: &MonitorView, ppp: f32) -> 
     }
 }
 
-/// Pan a magnified picture: scroll over it, or drag with the Hand tool.
-pub fn pan_input(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, area: Rect, pic: Rect) {
+/// Zoom and pan the picture `pic` shown in `area`: the wheel (or a pinch) zooms about the pointer,
+/// from Fit too, between the zoom menu's 10% and 1600%; a middle-button drag, or a drag with the
+/// Hand tool, pans a magnified picture. `fw` is the picture's width in frame pixels.
+pub fn zoom_pan_input(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, area: Rect, pic: Rect, fw: f32, ppp: f32) {
+    let ctx = ui.ctx().clone();
+    if ui.rect_contains_pointer(area)
+        && let Some(p) = ctx.pointer_hover_pos()
+    {
+        // about 10% per wheel notch (40 points), exponential in the wheel travel so a notch out
+        // undoes a notch in exactly
+        let wheel = crate::panels::timeline::wheel_input(&ctx);
+        let f = if (wheel.pinch - 1.0).abs() > 1e-4 { wheel.pinch } else { (wheel.delta.y * 1.1_f32.ln() / 40.0).exp().clamp(0.5, 2.0) };
+        if (f - 1.0).abs() > 1e-4 && pic.width() > 0.0 && fw > 0.0 {
+            let cur = pic.width() * ppp / fw;
+            let z = (cur * f).clamp(ZOOMS[0].1, ZOOMS[ZOOMS.len() - 1].1);
+            let k = z / cur;
+            // the point of the picture under the pointer stays under it
+            let centre = p - (p - pic.center()) * k;
+            let max = ((pic.size() * k - area.size()) / 2.0).max(Vec2::ZERO);
+            let v = view_mut(app, w);
+            v.zoom = Some(z);
+            v.pan = [(centre.x - area.center().x).clamp(-max.x, max.x), (centre.y - area.center().y).clamp(-max.y, max.y)];
+            return;
+        }
+    }
     if view(app, w).zoom.is_none() {
         return;
     }
     let mut d = Vec2::ZERO;
-    if ui.rect_contains_pointer(area) {
-        d += ui.input(|i| i.smooth_scroll_delta);
+    // a middle-button drag that began over the picture pans it, whatever the tool
+    let held = egui::Id::new((prefix(w), "middle-pan"));
+    let (pressed, down, moved) = ui.input(|i| (i.pointer.button_pressed(egui::PointerButton::Middle), i.pointer.middle_down(), i.pointer.delta()));
+    let panning = down && (ui.data(|m| m.get_temp::<bool>(held)).unwrap_or(false) || (pressed && ui.rect_contains_pointer(area)));
+    ui.data_mut(|m| m.insert_temp(held, panning));
+    if panning {
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        d += moved;
     }
     if app.ui.tool == Tool::Hand {
         let resp = ui.interact(area, egui::Id::new((prefix(w), "pan")), Sense::drag());
@@ -483,7 +513,8 @@ pub fn rulers(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, top: Rect, le
         if resp.hovered() {
             ui.ctx().set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
         }
-        if resp.drag_started() {
+        // the left button only, as for the other things dragged on the monitor
+        if resp.drag_started_by(egui::PointerButton::Primary) {
             ui.data_mut(|d| d.insert_temp(drag_id, NewGuide { vertical }));
         }
         let Some(ng) = ui.data(|d| d.get_temp::<NewGuide>(drag_id)).filter(|g| g.vertical == vertical) else { continue };
@@ -494,7 +525,8 @@ pub fn rulers(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, top: Rect, le
         }
         if resp.drag_stopped() {
             ui.data_mut(|d| d.remove::<NewGuide>(drag_id));
-            if area.contains(pos) {
+            // egui ends a drag on Escape: that stop adds no guide (#580)
+            if area.contains(pos) && !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 let position = if ng.vertical { ((pos.x - pic.min.x) / kx).round() } else { ((pos.y - pic.min.y) / ky).round() } as f64;
                 let v = view_mut(app, w);
                 v.guides.push(Guide { vertical: ng.vertical, position });
@@ -532,8 +564,23 @@ pub fn guides(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, area: Rect, p
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(if g.vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
         }
+        let left = egui::PointerButton::Primary;
+        // egui ends a drag on Escape: that stop puts the guide back where it was (#580)
+        let before_id = egui::Id::new((pfx, "guide-before-drag", i));
+        if resp.drag_started_by(left) {
+            ui.data_mut(|d| d.insert_temp(before_id, g.position));
+        }
+        if resp.drag_stopped_by(left) {
+            let before = ui.data_mut(|d| d.remove_temp::<f64>(before_id));
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                if let (Some(p0), Some(guide)) = (before, view_mut(app, w).guides.get_mut(i)) {
+                    guide.position = p0;
+                }
+                continue;
+            }
+        }
         if let Some(pos) = resp.interact_pointer_pos()
-            && (resp.dragged() || resp.drag_stopped())
+            && (resp.dragged_by(left) || resp.drag_stopped_by(left))
         {
             if !area.contains(pos) {
                 // outside the picture area: dropping here removes the guide
@@ -746,8 +793,9 @@ fn push(e: &mut Elems, id: &str, r: &egui::Response, label: &str) {
 /// Add Guide… / Save Guides as Template… / Manage Guides… dialogs.
 pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let Some(mut d) = app.ui.guide_dialog.clone() else { return };
+    crate::widgets::revert_drag_on_escape(ctx, egui::Id::new("guide-dialog-before-drag"), &mut d);
     let mut elems: Elems = Vec::new();
-    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let mut close = crate::widgets::escape_closes(ctx);
     let mut act: Option<(String, Value)> = None;
     let templates: Vec<String> = app.session.prefs.guides.templates.iter().map(|t| t.name.clone()).collect();
     let (title, shown) = match &d {
@@ -755,9 +803,13 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
         GuideDialog::SaveTemplate { .. } => ("Save Guides as Template", tl!("Save Guides as Template")),
         GuideDialog::Manage { .. } => ("Manage Guides", tl!("Manage Guides")),
     };
-    egui::Window::new(shown).id(egui::Id::new(title)).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| match &mut d {
+    egui::Window::new(shown)
+        .id(egui::Id::new(title))
+        .collapsible(false)
+        .resizable(false)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
+        .show(ctx, |ui| match &mut d {
             GuideDialog::Add { vertical, position, source } => {
                 let m = if *source { "source" } else { "program" };
                 ui.horizontal(|ui| {
@@ -775,7 +827,7 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 });
                 ui.horizontal(|ui| {
                     ui.label(tl!("Position:"));
-                    let r = ui.add(egui::DragValue::new(position).speed(1.0).suffix(" px"));
+                    let r = ui.add(crate::widgets::number_drag(position).speed(1.0).suffix(" px"));
                     push(&mut elems, "guides.add.position", &r, "Position");
                 });
                 ui.horizontal(|ui| {
@@ -845,8 +897,7 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     close |= r.clicked();
                 });
             }
-        },
-    );
+        });
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }

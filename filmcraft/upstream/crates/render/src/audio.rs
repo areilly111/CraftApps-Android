@@ -351,7 +351,8 @@ pub fn clip_is_mono(item: &TrackItem, sources: &dyn SourceProvider) -> Option<bo
 }
 
 /// The clip's audio (after speed/reverse) for timeline samples `[x0, x0 + len)` as `w` channels
-/// (2: stereo, mono sources on both sides; 6: 5.1), with silence outside the clip.
+/// (2: stereo, mono sources on both sides, 5.1 sources folded down; 6: 5.1), with silence outside
+/// the clip.
 fn raw_channels(item: &TrackItem, src: SourceAudio, x0: i64, len: usize, sr: u32, w: usize) -> Vec<Vec<f32>> {
     let mut out = vec![vec![0.0f32; len]; w];
     let item_s0 = item.start.to_units_floor(sr as i64);
@@ -394,6 +395,17 @@ fn raw_channels(item: &TrackItem, src: SourceAudio, x0: i64, len: usize, sr: u32
         return out;
     }
     if w == 2 {
+        // a 5.1 source (or a six-channel pick) folds down with ITU-R BS.775, as the Mix and the
+        // Source Monitor do: picking its first two channels would drop C (dialogue) and surrounds
+        if let Some(six) = source_51_fold(item, buf.channel_count()) {
+            let picked: Vec<&[f32]> = six.iter().filter_map(|&c| buf.channels.get(c).map(Vec::as_slice)).collect();
+            let conv = chans::convert(&picked, Layout::Surround51, Layout::Stereo, Mixdown::FrontRear);
+            for (dst, ch) in out.iter_mut().zip(&conv) {
+                let m = n.min(ch.len());
+                dst[off..off + m].copy_from_slice(&ch[..m]);
+            }
+            return out;
+        }
         let (left, right) = source_pair(item, buf.channel_count());
         for (c, dst) in out.iter_mut().enumerate() {
             let ch = &buf.channels[if c == 0 { left } else { right }];
@@ -428,6 +440,17 @@ pub fn source_51(item: &TrackItem, available: usize) -> Vec<usize> {
         1 => vec![ok(item.source_channels[0])],
         2..=5 => vec![ok(item.source_channels[0]), ok(item.source_channels[1])],
         _ => item.source_channels.iter().take(6).map(|&c| ok(c)).collect(),
+    }
+}
+
+/// The six source channels (L, R, C, LFE, Ls, Rs) a clip on a stereo track folds down: a six-channel
+/// pick (Modify ▸ Audio Channels), else all of a six-channel source. `None` plays [`source_pair`]
+/// (sources with another channel count have no known 5.1 layout).
+fn source_51_fold(item: &TrackItem, available: usize) -> Option<Vec<usize>> {
+    match item.source_channels.len() {
+        0 if available == 6 => Some((0..6).collect()),
+        6.. => Some(source_51(item, available)),
+        _ => None,
     }
 }
 

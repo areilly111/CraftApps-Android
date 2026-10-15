@@ -66,8 +66,12 @@ pub(crate) fn run_chain(e: &mut Enc, chain: &[FxStep], buf: &Buf, levels: Option
     }
     let misses = deferred.as_ref().map(|d| d.misses());
     let mut b = GBuf { img: e.g.upload_image(&buf.img)?, offset: buf.offset, scale: buf.scale };
+    e.take_missing();
     for step in chain {
         b = apply(e, step.spec.id, &step.ctx, b)?;
+        if e.take_missing() {
+            return None;
+        }
         if let Some(l) = levels {
             b.img = ops::quantize(e, &b.img, l);
         }
@@ -119,8 +123,13 @@ impl effectcraft_render::FxTarget for GpuFx<'_, '_> {
     fn gpu(&mut self, steps: &[FxStep]) -> bool {
         let Some(b) = &self.b else { return false };
         let mut cur = GBuf { img: b.img.clone(), offset: b.offset, scale: b.scale };
+        self.e.take_missing();
         for step in steps {
             let Some(next) = apply(self.e, step.spec.id, &step.ctx, cur) else { return false };
+            // A kernel the device couldn't build: the effects render on the CPU (#613).
+            if self.e.take_missing() {
+                return false;
+            }
             cur = next;
             if let Some(l) = self.levels {
                 cur.img = ops::quantize(self.e, &cur.img, l);
@@ -135,6 +144,21 @@ impl effectcraft_render::FxTarget for GpuFx<'_, '_> {
         let Some(img) = self.e.download(&b.img) else { return };
         let out = f(Buf { img, offset: b.offset, scale: b.scale });
         self.b = self.e.g.upload_image(&out.img).map(|img| GBuf { img, offset: out.offset, scale: out.scale });
+    }
+
+    /// GBuf::cover, like `pad`: a bigger texture with the old one copied into place, no
+    /// readback. A region the device can't allocate leaves the buffer as it is.
+    fn cover(&mut self, size: [f64; 2]) {
+        let Some(b) = self.b.take() else { return };
+        let out = match effectcraft_effects::cover_plan(b.offset, b.scale, size, b.img.width, b.img.height) {
+            Some((dx, dy, w, h)) if self.e.g.fits(w, h) => {
+                let img = self.e.image(w, h);
+                self.e.copy_into(&b.img, &img, dx, dy);
+                GBuf { img, offset: [b.offset[0] + dx as f64, b.offset[1] + dy as f64], scale: b.scale }
+            }
+            _ => b,
+        };
+        self.b = Some(out);
     }
 }
 

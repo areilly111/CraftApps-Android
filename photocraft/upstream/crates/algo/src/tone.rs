@@ -4,7 +4,8 @@
 //! All work on straight (non-premultiplied) RGBA buffers in 0..=1, row-major `w × h`, so callers
 //! convert any colour model / bit depth to RGBA first (as `Image › Adjustments` does for the
 //! per-pixel adjustments). Formulas are documented approximations of Photoshop's behaviour,
-//! derived from its manual and observation, not from its implementation.
+//! derived from its manual and observation, not from its implementation; Shadows/Highlights is
+//! measured on Photoshop (see [`shadows_highlights`]).
 
 use photocraft_color::convert::{lab_to_srgb, srgb_to_lab};
 use serde::{Deserialize, Serialize};
@@ -15,18 +16,6 @@ use crate::photo_util::{par_map, par_rows};
 
 fn luma(c: [f32; 3]) -> f32 {
     0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
-}
-
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// Blurred luminance (Gaussian, `radius` px ≈ 2σ like Photoshop's radius fields).
-fn blurred_luma(px: &[[f32; 4]], w: usize, h: usize, radius: f32) -> Vec<f32> {
-    let mut l: Vec<f32> = px.iter().map(|p| luma([p[0], p[1], p[2]])).collect();
-    gauss_blur_n(&mut l, w, h, 1, radius.max(0.0) / 2.0);
-    l
 }
 
 /// Image › Adjustments › Shadows/Highlights parameters (Photoshop's dialog, percentages as 0..=100).
@@ -64,95 +53,8 @@ impl Default for ShadowsHighlights {
     }
 }
 
-/// Local tone mapping: a blurred-luminance mask selects shadows (dark neighbourhoods, up to the
-/// tonal width) and highlights; shadows are lifted and highlights pulled down by a gain that
-/// preserves hue, then saturation is corrected where the gain moved tones, midtone contrast is
-/// applied, and the result is stretched by the clip percentages.
-pub fn shadows_highlights(px: &mut [[f32; 4]], w: usize, h: usize, p: &ShadowsHighlights) {
-    if px.is_empty() {
-        return;
-    }
-    let ls = blurred_luma(px, w, h, p.shadow_radius);
-    let lh = if (p.highlight_radius - p.shadow_radius).abs() < 1e-3 { ls.clone() } else { blurred_luma(px, w, h, p.highlight_radius) };
-    let (sa, ha) = (p.shadow_amount / 100.0, p.highlight_amount / 100.0);
-    let (st, ht) = ((p.shadow_tone / 100.0).max(0.01), (p.highlight_tone / 100.0).max(0.01));
-    let color = p.color / 100.0;
-    let mid = p.midtone / 100.0;
-    par_rows(px, w, 1, |y, pxrow| {
-        for (x, q) in pxrow.iter_mut().enumerate() {
-            let i = y * w + x;
-            if q[3] <= 0.0 {
-                continue;
-            }
-            let c = [q[0], q[1], q[2]];
-            // Mask weights: 1 in deep shadows (resp. bright highlights), fading out at the tonal width.
-            let ms = 1.0 - smoothstep(0.0, st, ls[i]);
-            let mh = smoothstep(1.0 - ht, 1.0, lh[i]);
-            let mut out = c;
-            if sa > 0.0 && ms > 0.0 {
-                // Lift: a gamma-like curve on the pixel, stronger for darker neighbourhoods.
-                let g = 1.0 / (1.0 + 2.0 * sa * ms);
-                out = out.map(|v| v.max(0.0).powf(g));
-            }
-            if ha > 0.0 && mh > 0.0 {
-                let g = 1.0 / (1.0 + 2.0 * ha * mh);
-                out = out.map(|v| 1.0 - (1.0 - v.min(1.0)).powf(g));
-            }
-            if mid != 0.0 {
-                let k = 1.0 + mid * (1.0 - ms - mh).clamp(0.0, 1.0);
-                out = out.map(|v| (v - 0.5) * k + 0.5);
-            }
-            let changed = (ms * sa + mh * ha).min(1.0);
-            if color != 0.0 && changed > 0.0 {
-                let l1 = luma(out);
-                let s = 1.0 + color * changed;
-                out = out.map(|v| l1 + (v - l1) * s);
-            }
-            q[0] = out[0].clamp(0.0, 1.0);
-            q[1] = out[1].clamp(0.0, 1.0);
-            q[2] = out[2].clamp(0.0, 1.0);
-        }
-    });
-    clip_stretch(px, p.black_clip, p.white_clip);
-}
-
-/// Stretches levels so `black`% of pixels clip to 0 and `white`% to 1 (luminance histogram).
-fn clip_stretch(px: &mut [[f32; 4]], black: f32, white: f32) {
-    if black <= 0.0 && white <= 0.0 {
-        return;
-    }
-    let mut hist = [0u32; 1024];
-    let mut n = 0u32;
-    for q in px.iter().filter(|q| q[3] > 0.0) {
-        hist[((luma([q[0], q[1], q[2]]).clamp(0.0, 1.0)) * 1023.0).round() as usize] += 1;
-        n += 1;
-    }
-    if n == 0 {
-        return;
-    }
-    let find = |pct: f32, rev: bool| -> f32 {
-        let target = (pct.clamp(0.0, 50.0) / 100.0 * n as f32) as u32;
-        let mut acc = 0;
-        for k in 0..1024 {
-            let i = if rev { 1023 - k } else { k };
-            acc += hist[i];
-            if acc > target {
-                return i as f32 / 1023.0;
-            }
-        }
-        if rev { 0.0 } else { 1.0 }
-    };
-    let lo = find(black, false);
-    let hi = find(white, true);
-    if hi - lo < 1e-3 {
-        return;
-    }
-    for q in px.iter_mut().filter(|q| q[3] > 0.0) {
-        for v in &mut q[..3] {
-            *v = ((*v - lo) / (hi - lo)).clamp(0.0, 1.0);
-        }
-    }
-}
+mod shadows_highlights;
+pub use shadows_highlights::shadows_highlights;
 
 /// Image › Adjustments › Replace Color: Color Range-style selection (fuzziness in 0..=200 levels)
 /// around `color`, then a hue (±180°), saturation and lightness (±100) shift weighted by it.
@@ -376,31 +278,6 @@ mod tests {
                 [x, x * 0.8, x * 0.6 + 0.1, 1.0]
             })
             .collect()
-    }
-
-    #[test]
-    fn shadows_lift_dark_pixels_more_than_bright() {
-        let mut px = ramp(32, 8);
-        let orig = px.clone();
-        shadows_highlights(&mut px, 32, 8, &ShadowsHighlights { black_clip: 0.0, white_clip: 0.0, ..Default::default() });
-        let gain = |i: usize| luma([px[i][0], px[i][1], px[i][2]]) - luma([orig[i][0], orig[i][1], orig[i][2]]);
-        assert!(gain(3) > 0.02, "{}", gain(3));
-        assert!(gain(3) > gain(30), "{} {}", gain(3), gain(30));
-        // Zero amounts and no clipping: identity.
-        let mut px2 = orig.clone();
-        let id = ShadowsHighlights { shadow_amount: 0.0, highlight_amount: 0.0, color: 0.0, black_clip: 0.0, white_clip: 0.0, ..Default::default() };
-        shadows_highlights(&mut px2, 32, 8, &id);
-        assert_eq!(px2, orig);
-    }
-
-    #[test]
-    fn highlights_darken_bright_pixels() {
-        let mut px = ramp(32, 8);
-        let orig = px.clone();
-        let p = ShadowsHighlights { shadow_amount: 0.0, highlight_amount: 80.0, black_clip: 0.0, white_clip: 0.0, ..Default::default() };
-        shadows_highlights(&mut px, 32, 8, &p);
-        assert!(px[30][0] < orig[30][0]);
-        assert!((px[1][0] - orig[1][0]).abs() < 1e-6);
     }
 
     #[test]

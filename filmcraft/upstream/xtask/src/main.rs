@@ -11,9 +11,10 @@
 //! - `fixtures [crate…]`: pre-generate the ffmpeg fixture matrix of the oracle tests (runs each
 //!   crate's ignored `generate_fixtures` test, i.e. the same generators the tests use) and print
 //!   what was made, reused or skipped.
-//! - `parity [--reference FILE] [--out FILE] [--min PERCENT]`: measured menu parity of our shipped
-//!   menu bar against a reference list of menu paths (default: the local `plan/premiere/menus.json`),
-//!   presence and placement reported separately (`parity.rs`, docs/gaps.md G7).
+//! - `parity [--area menus|effects|transitions] [--reference FILE] [--out FILE] [--min PERCENT]`:
+//!   measured parity of our shipped menu bar, or of the effects / transitions the Effects panel
+//!   lists, against a reference list (default: the local `plan/premiere/<area>.json`), presence and
+//!   placement reported separately (`parity.rs`, docs/gaps.md G7).
 //! - `ico <out.ico> <in.png>…`: pack PNGs into a Windows `.ico` (used by `packaging/icons.sh`).
 //! - `ci`: fmt check, clippy -D warnings, tests, layers, assets, wasm.
 
@@ -33,24 +34,29 @@ const LAYERS: &[(&str, u8)] = &[
     ("color", 0),
     ("bitstream", 0),
     ("isobmff", 0),
+    ("avi", 0),
     ("matroska", 0),
     ("mxf", 0),
     ("cfb", 0),
     ("mpegts", 0),
     ("mpeg2v", 0),
     ("ac3", 0),
+    ("mpa", 0),
     ("ogg", 0),
     ("riff", 0),
     ("h264", 0),
     ("h264enc", 0),
     ("hevc", 0),
+    ("vp8", 0),
     ("vp9", 0),
     ("prores", 0),
     ("mjpeg", 0),
     ("dnx", 0),
     ("apv", 0),
+    ("dng", 0),
     ("av1", 0),
     ("aac", 0),
+    ("flac", 0),
     ("opus", 0),
     ("frame", 1),
     ("media", 1),
@@ -103,7 +109,7 @@ const SAME_LAYER: &[(&str, &str)] = &[
 ];
 
 /// Crates that must not appear below L5 (UI toolkits, windowing, OS audio/menus).
-const UI_ONLY: &[&str] = &["egui", "eframe", "egui-wgpu", "winit", "rfd", "cpal", "muda"];
+const UI_ONLY: &[&str] = &["craft-ui", "egui", "eframe", "egui-wgpu", "winit", "rfd", "cpal", "muda"];
 
 fn short(name: &str) -> &str {
     name.strip_prefix("filmcraft-").unwrap_or(name)
@@ -406,6 +412,7 @@ const FIXTURE_GENERATORS: &[(&str, &str)] = &[
     ("codecs", "mpeg_oracle"),
     ("mpeg2v", "oracle"),
     ("ac3", "oracle"),
+    ("mpa", "oracle"),
     ("codecs", "ogg_oracle"),
 ];
 
@@ -500,7 +507,7 @@ fn main() -> ExitCode {
             ico::run(&rest.iter().map(String::as_str).collect::<Vec<_>>())
         }
         _ => Err(
-            "usage: cargo xtask <layers|assets|wasm|web [--dev] [--serve PORT]|fixtures [crate…]|parity [--reference FILE] [--out FILE] [--min PERCENT]|ico OUT IN…|version [set X.Y.Z]|ci|bench [args]|bench-playback [args]>"
+            "usage: cargo xtask <layers|assets|wasm|web [--dev] [--serve PORT]|fixtures [crate…]|parity [--area menus|effects|transitions] [--reference FILE] [--out FILE] [--min PERCENT]|ico OUT IN…|version [set X.Y.Z]|ci|bench [args]|bench-playback [args]>"
                 .into(),
         ),
     };
@@ -519,7 +526,8 @@ mod tests {
 
     fn macos_packaging(file: &str) -> String {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packaging/macos").join(file);
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        // Git may check out packaging files with CRLF on Windows.
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display())).replace("\r\n", "\n")
     }
 
     /// Voice-over recording needs both halves on macOS: the usage string (else the permission

@@ -49,7 +49,7 @@ pub(crate) fn image_node(d: &mut Document, bytes: Vec<u8>, w: u32, h: u32, xf: A
     let blob = ImageBlob::new("image/png", bytes);
     let key = blob.content_key();
     d.images.insert(key.clone(), blob);
-    Node::new(NodeId(0), NodeKind::Image(ImageObject { key, width: w, height: h, xf, link: None, placement: Default::default() }))
+    Node::new(NodeId(0), NodeKind::Image(Box::new(ImageObject { key, width: w, height: h, xf, link: None, placement: Default::default() })))
 }
 
 pub(crate) fn u32_at(b: &[u8], at: usize) -> u32 {

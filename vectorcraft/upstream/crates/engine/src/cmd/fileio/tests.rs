@@ -43,7 +43,7 @@ fn image_bytes(w: u32, h: u32, format: image::ImageFormat) -> Vec<u8> {
 fn image_of(s: &Session) -> vectorcraft_doc::ImageObject {
     let doc = &s.doc().unwrap().doc;
     match &doc.layers[0].children().unwrap()[0].kind {
-        NodeKind::Image(im) => im.clone(),
+        NodeKind::Image(im) => (**im).clone(),
         other => panic!("expected an image, got {other:?}"),
     }
 }
@@ -411,4 +411,77 @@ fn new_files_never_replace_a_file() {
     assert!(e.starts_with(&format!("{path}: ")), "{e}");
     assert_eq!(std::fs::read(&path).unwrap(), b"first");
     let _ = std::fs::remove_dir_all(d);
+}
+
+#[test]
+fn a_native_save_streams_the_bytes_the_encoder_makes() {
+    let d = tmp_dir("stream");
+    let mut s = session(200.0, 100.0, 1);
+    s.execute("shape.rectangle", &json!({"x": 10, "y": 10, "width": 50, "height": 20})).unwrap();
+    for (name, compress) in [("a.vectorcraft", false), ("b.vectorcraft", true), ("c.vctemplate", true)] {
+        let path = d.join(name).to_string_lossy().to_string();
+        let p = json!({"path": path, "compress": compress});
+        let r = s.execute("file.saveCopy", &p).unwrap();
+        let written = std::fs::read(&path).unwrap();
+        assert_eq!(r["bytes"], written.len(), "{r}");
+        let plan = save_plan(&s, SaveMode::Copy, &p).unwrap();
+        let job = save_job(&mut s, plan).unwrap();
+        assert!(job.streams());
+        assert_eq!(written, job.encode().unwrap().files[0].1, "{name}");
+        assert_eq!(vectorcraft_format::load(&written).unwrap().template, name.ends_with("vctemplate"));
+    }
+    // A writer that fails: the save fails with its error.
+    let plan = save_plan(&s, SaveMode::Copy, &json!({"path": "/x/y.vectorcraft"})).unwrap();
+    let job = save_job(&mut s, plan).unwrap();
+    let e = job
+        .write_streamed(&mut |_, fill| {
+            fill(&mut std::io::sink()).unwrap();
+            Err(EngineError::Other("disk full".into()))
+        })
+        .unwrap_err();
+    assert_eq!(e.to_string(), "disk full");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A native save whose file write fails partway (a full disk) leaves the file as it was, and no
+/// temporary file behind.
+#[test]
+fn a_save_that_fails_while_streaming_leaves_the_file_as_it_was() {
+    /// Takes `left` bytes, then fails as a full disk does.
+    struct FailAfter<'a> {
+        inner: &'a mut dyn std::io::Write,
+        left: usize,
+    }
+    impl std::io::Write for FailAfter<'_> {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            if self.left == 0 {
+                return Err(std::io::Error::other("disk full"));
+            }
+            let n = b.len().min(self.left);
+            self.left -= n;
+            self.inner.write(&b[..n])
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.inner.flush()
+        }
+    }
+    let d = tmp_dir("stream-fail");
+    let mut s = session(2000.0, 2000.0, 1);
+    // Enough objects that the file is written in several pieces, the failure in the middle.
+    for i in 0..1500 {
+        s.execute("shape.rectangle", &json!({"x": i % 100 * 20, "y": i / 100 * 20, "width": 10, "height": 10})).unwrap();
+    }
+    for compress in [false, true] {
+        let path = d.join("a.vectorcraft").to_string_lossy().to_string();
+        s.execute("file.saveCopy", &json!({"path": path, "compress": compress})).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        s.execute("shape.ellipse", &json!({"x": 0, "y": 0, "width": 50, "height": 50})).unwrap();
+        let plan = save_plan(&s, SaveMode::Copy, &json!({"path": path, "compress": compress})).unwrap();
+        let job = save_job(&mut s, plan).unwrap();
+        let e = job.write_streamed(&mut |p, fill| super::write_file_with(p, &mut |w| fill(&mut FailAfter { inner: w, left: 10_000 }))).unwrap_err();
+        assert!(e.to_string().contains("disk full") || e.to_string().contains("couldn't be encoded"), "{e}");
+        assert_eq!(std::fs::read(&path).unwrap(), before, "compress: {compress}");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1, "no temporary file is left");
+    }
+    let _ = std::fs::remove_dir_all(&d);
 }

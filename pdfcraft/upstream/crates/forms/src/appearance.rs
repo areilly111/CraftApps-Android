@@ -5,17 +5,23 @@
 //! marked-content block as viewers expect. Supported: single-line, multiline (wrapped), comb,
 //! password, quadding, auto font size (`0 Tf`), combo boxes and list boxes (selection shown).
 //!
-//! The `/DA` font is used when the form's `/DR` defines it as a simple font (text encoded in
-//! WinAnsi) or as a composite font with a predefined Unicode CMap such as `UniJIS-UTF16-H`, as
-//! Japanese forms use (text encoded in that CMap). Otherwise (other composite fonts, missing
-//! resources) Helvetica is used, so text is always visible. Widths use the approximate metrics
-//! of `pdfcraft-fonts` (Helvetica, or one em per full-width character in composite fonts).
+//! The `/DA` font is used when the form's `/DR` defines it as a simple font that can encode the
+//! displayed text (using its own encoding and Differences), or as a composite font with a
+//! predefined Unicode CMap such as `UniJIS-UTF16-H`, as Japanese forms use. Otherwise (unsupported
+//! characters, other composite fonts, missing resources) Helvetica is used. Text the chosen font
+//! can't hold (outside WinAnsi in Helvetica, or beyond U+FFFF in a UCS-2 CMap) is drawn as `?`, as
+//! Acrobat keeps a value its field font can't show: the value itself is stored as typed,
+//! [`field_appearance_drawn`] returns the first such character, and the caller marks the widget
+//! (`pdfcraft_fonts::UNDRAWN_MARK`) and asks other viewers to redraw the field
+//! (`/NeedAppearances`). Widths use the approximate metrics of `pdfcraft-fonts` (Helvetica, or one
+//! em per full-width character in composite fonts).
 //!
 //! `/MK /R` (0, 90, 180, 270, counterclockwise) lays the content out in the upright box and sets
 //! the appearance `/Matrix` so that box lands on the widget rectangle. Any other value is 0, and
 //! rotation 0 leaves `/Matrix` off.
 
 use pdfcraft_cos::{Dict, Document, Object, Stream};
+use pdfcraft_fonts::pdf::Metrics;
 use pdfcraft_fonts::{UnicodeCMap, cjk_width, helvetica_width, literal, win_ansi, wrap_with};
 
 use crate::{Field, FieldKind, Widget, acroform, flags};
@@ -111,24 +117,48 @@ pub fn parse_da(da: &str) -> Da {
 }
 
 /// How a field font's text is encoded and measured.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum FontText {
     WinAnsi,
+    /// A reused simple font's encoding, including indirect dictionaries and Differences.
+    Simple(Box<Metrics>),
     /// A composite font with a predefined Unicode CMap.
     Unicode(UnicodeCMap),
 }
 
 impl FontText {
-    fn encode(self, s: &str) -> Vec<u8> {
+    fn encode(&self, s: &str) -> Vec<u8> {
         match self {
             Self::WinAnsi => win_ansi(s),
+            // Selection checks every displayed string first; wrapping only removes line breaks.
+            Self::Simple(metrics) => metrics.encode(&s.replace('\t', " ")).unwrap_or_default(),
             Self::Unicode(cmap) => cmap.encode(s),
         }
     }
 
-    fn width(self, s: &str, size: f64) -> f64 {
+    fn can_encode(&self, s: &str) -> bool {
         match self {
-            Self::WinAnsi => helvetica_width(s, size),
+            Self::Simple(metrics) => metrics.encode(&s.replace('\t', " ")).is_some(),
+            _ => true,
+        }
+    }
+
+    /// The first character of `s` the encoding can't hold, which [`Self::encode`] writes as `?`
+    /// (a reused simple font is only chosen when it holds them all): reported by
+    /// [`field_appearance_drawn`], so that `?` is never silent (AGENTS.md §4).
+    fn first_unencodable(&self, s: &str) -> Option<char> {
+        match self {
+            Self::WinAnsi => pdfcraft_fonts::first_undrawable(s),
+            Self::Simple(metrics) => {
+                s.chars().map(|c| if c == '\t' { ' ' } else { c }).find(|c| metrics.encode(c.encode_utf8(&mut [0; 4])).is_none())
+            }
+            Self::Unicode(cmap) => cmap.first_unencodable(s),
+        }
+    }
+
+    fn width(&self, s: &str, size: f64) -> f64 {
+        match self {
+            Self::WinAnsi | Self::Simple(_) => helvetica_width(s, size),
             Self::Unicode(_) => cjk_width(s, size),
         }
     }
@@ -154,7 +184,7 @@ fn dr_font(doc: &Document, name: &str) -> Option<(Object, FontText)> {
     if matches!(fd.name(b"BaseFont"), Some(b"ZapfDingbats" | b"Symbol")) {
         return None;
     }
-    Some((entry, FontText::WinAnsi))
+    Some((entry, FontText::Simple(Box::new(Metrics::from_dict(doc, fd)))))
 }
 
 fn helvetica() -> Object {
@@ -255,7 +285,8 @@ fn frame(doc: &Document, wd: &Dict, w: f64, h: f64) -> (String, f64) {
     (c, 0.0)
 }
 
-/// The appearance of a text or choice field's widget showing `values`.
+/// The appearance of a text or choice field's widget showing `values`. Characters its font can't
+/// hold come out as `?`; [`field_appearance_drawn`] says which.
 pub fn field_appearance(doc: &Document, f: &Field, w: &Widget, values: &[String]) -> Stream {
     field_appearance_as(doc, f, w, values, true)
 }
@@ -263,6 +294,13 @@ pub fn field_appearance(doc: &Document, f: &Field, w: &Widget, values: &[String]
 /// [`field_appearance`], where `format` false means `values` are already what to show (a
 /// custom Format script ran).
 pub fn field_appearance_as(doc: &Document, f: &Field, w: &Widget, values: &[String], format: bool) -> Stream {
+    field_appearance_drawn(doc, f, w, values, format).0
+}
+
+/// [`field_appearance_as`] with the first character it drew as `?` because the field's font can't
+/// hold it: the form's font is a simple (WinAnsi) font, Helvetica stands in for one PdfCraft can't
+/// write with (an embedded subset, `Identity-H`), or a UCS-2 CMap meets a character beyond U+FFFF.
+pub fn field_appearance_drawn(doc: &Document, f: &Field, w: &Widget, values: &[String], format: bool) -> (Stream, Option<char>) {
     // The Format event: what is shown, not what is stored.
     let formatted: Vec<String>;
     let values = if format
@@ -281,7 +319,22 @@ pub fn field_appearance_as(doc: &Document, f: &Field, w: &Widget, values: &[Stri
     let place = placement(mk_rotation(doc, &wd), page_w, page_h);
     let (width, height) = (place.layout_w, place.layout_h);
     let da = parse_da(wd.get(b"DA").and_then(|o| doc.resolve(o).as_string().map(|s| s.to_text())).as_deref().unwrap_or(&f.da));
-    let (font_name, font_obj, enc) = match dr_font(doc, &da.font) {
+    let text: String = if f.kind == FieldKind::Combo {
+        values.iter().map(|v| f.options.iter().find(|(e, _)| e == v).map_or(v.clone(), |(_, d)| d.clone())).collect::<Vec<_>>().join(", ")
+    } else {
+        values.first().cloned().unwrap_or_default()
+    };
+    let text = if f.has(flags::PASSWORD) { "*".repeat(text.chars().count()) } else { text };
+    let can_show = |enc: &FontText| {
+        if f.kind == FieldKind::List {
+            f.options.iter().all(|(_, display)| enc.can_encode(display))
+        } else if f.kind == FieldKind::Text && f.has(flags::MULTILINE) {
+            text.split(['\n', '\r']).all(|line| enc.can_encode(line))
+        } else {
+            enc.can_encode(&text)
+        }
+    };
+    let (font_name, font_obj, enc) = match dr_font(doc, &da.font).filter(|(_, enc)| can_show(enc)) {
         Some((o, enc)) => (da.font.clone(), o, enc),
         None => ("Helv".to_string(), helvetica(), FontText::WinAnsi),
     };
@@ -291,9 +344,16 @@ pub fn field_appearance_as(doc: &Document, f: &Field, w: &Widget, values: &[Stri
     let inner_w = (width - 2.0 * pad).max(1.0);
     let q = wd.get(b"Q").and_then(|o| doc.resolve(o).as_int()).unwrap_or(f.quadding);
     let mut body: Vec<u8> = Vec::new();
-    let show = |body: &mut Vec<u8>, x: f64, y: f64, text: &str| {
+    // The first character drawn that the font can't hold (drawn as `?`), for the caller to report.
+    let mut unencodable: Option<char> = None;
+    let mut show = |body: &mut Vec<u8>, x: f64, y: f64, text: &str| {
+        // A line break in a single-line value is a space, as in viewers (multiline text is split).
+        let text: String = text.chars().map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c }).collect();
+        if unencodable.is_none() {
+            unencodable = enc.first_unencodable(&text);
+        }
         body.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
-        body.extend(literal(&enc.encode(text)));
+        body.extend(literal(&enc.encode(&text)));
         body.extend_from_slice(b" Tj\n");
     };
     let x_for = |text: &str, size: f64| -> f64 {
@@ -326,12 +386,6 @@ pub fn field_appearance_as(doc: &Document, f: &Field, w: &Widget, values: &[Stri
             }
         }
         _ => {
-            let text: String = if f.kind == FieldKind::Combo {
-                values.iter().map(|v| f.options.iter().find(|(e, _)| e == v).map_or(v.clone(), |(_, d)| d.clone())).collect::<Vec<_>>().join(", ")
-            } else {
-                values.first().cloned().unwrap_or_default()
-            };
-            let text = if f.has(flags::PASSWORD) { "*".repeat(text.chars().count()) } else { text };
             let comb = f.has(flags::COMB) && !f.has(flags::MULTILINE) && !f.has(flags::PASSWORD) && f.max_len.is_some_and(|m| m > 0);
             if f.kind == FieldKind::Text && f.has(flags::MULTILINE) {
                 if size == 0.0 {
@@ -397,7 +451,7 @@ pub fn field_appearance_as(doc: &Document, f: &Field, w: &Widget, values: &[Stri
     d.set(b"Subtype".to_vec(), Object::name("Form"));
     set_form_box(&mut d, place);
     d.set(b"Resources".to_vec(), Object::Dict(res));
-    Stream::flate(d, &content)
+    (Stream::flate(d, &content), unencodable)
 }
 
 /// On/Off appearances for a check box or radio button that has none (a check mark or a dot,

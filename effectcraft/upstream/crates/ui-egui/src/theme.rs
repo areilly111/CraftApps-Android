@@ -81,6 +81,20 @@ pub struct Tokens {
     pub timecode: Color32,
     pub danger: Color32,
     pub warning: Color32,
+    /// Effect Controls effect headers, and the header of the effect being worked on (it or one
+    /// of its properties selected).
+    pub fx_header: Color32,
+    pub fx_header_active: Color32,
+    /// Timeline: a selected layer's row in the time graph, the boxes behind the A/V and layer
+    /// switches, the time navigator and the work area bar.
+    pub tl_graph_selected: Color32,
+    pub switch_well: Color32,
+    pub tl_nav_bar: Color32,
+    pub tl_work_area_bar: Color32,
+    /// The Timeline's expression field and the colour of enabled expressions (their text and
+    /// the names of properties that have one).
+    pub expr_bg: Color32,
+    pub expr_text: Color32,
     /// Label colours (`Label::ALL` order), from Settings ▸ Labels.
     pub labels: [Color32; 17],
     pub radius: f32,
@@ -153,6 +167,14 @@ impl Tokens {
             timecode: Color32::from_rgb(0x3d, 0x8f, 0xf5),
             danger: Color32::from_rgb(0xe0, 0x4a, 0x3c),
             warning: Color32::from_rgb(0xe8, 0x9a, 0x2c),
+            fx_header: Color32::from_rgb(0x2a, 0x2a, 0x2a),
+            fx_header_active: Color32::from_rgb(0x2f, 0x3a, 0x52),
+            tl_graph_selected: Color32::from_rgb(0x2a, 0x2a, 0x2a),
+            switch_well: Color32::from_rgb(0x19, 0x19, 0x19),
+            tl_nav_bar: Color32::from_rgb(0x55, 0x55, 0x55),
+            tl_work_area_bar: Color32::from_rgb(0x5c, 0x5c, 0x5c),
+            expr_bg: Color32::from_rgb(0x1a, 0x1a, 0x1a),
+            expr_text: Color32::from_rgb(0xe8, 0x7c, 0x5c),
             labels: default_labels(),
             radius: 6.0,
             radius_sm: 3.0,
@@ -202,6 +224,16 @@ impl Tokens {
                 pasteboard: Color32::from_rgb(0xa8, 0xa8, 0xa8),
                 // Keyframes have no outline: dark enough to stand out on the light time graph.
                 keyframe: Color32::from_rgb(0x6c, 0x6c, 0x6c),
+                // Custom-painted surfaces in the Light palette, so dark text stays readable on
+                // them (#644).
+                fx_header: Color32::from_rgb(0xd8, 0xd8, 0xd8),
+                fx_header_active: Color32::from_rgb(0xb0, 0xcf, 0xec),
+                tl_graph_selected: Color32::from_rgb(0xc2, 0xc2, 0xc2),
+                switch_well: Color32::from_rgb(0xf2, 0xf2, 0xf2),
+                tl_nav_bar: Color32::from_rgb(0x9a, 0x9a, 0x9a),
+                tl_work_area_bar: Color32::from_rgb(0x94, 0x94, 0x94),
+                expr_bg: Color32::from_rgb(0xf2, 0xf2, 0xf2),
+                expr_text: Color32::from_rgb(0xa3, 0x34, 0x17),
                 ..dark
             },
         }
@@ -268,6 +300,10 @@ impl Tokens {
             &mut self.tl_ruler_bg,
             &mut self.pasteboard,
             &mut self.work_area,
+            &mut self.fx_header,
+            &mut self.tl_graph_selected,
+            &mut self.switch_well,
+            &mut self.expr_bg,
         ] {
             adj(c);
         }
@@ -304,6 +340,13 @@ pub fn install(ctx: &egui::Context, t: &Tokens, language: &str) {
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "jbmono".into());
     fonts.families.insert(FontFamily::Name("semibold".into()), vec!["inter-semibold".into(), "inter".into()]);
     fonts.families.insert(FontFamily::Name("medium".into()), vec!["inter-medium".into(), "inter".into()]);
+    // Inter and egui's own fallbacks have no small triangles (the `▸` of "File ▸ Import"), which
+    // would draw as missing-glyph boxes: JetBrains Mono fills in the symbols the others lack.
+    for (family, stack) in &mut fonts.families {
+        if *family != FontFamily::Monospace {
+            stack.push("jbmono".into());
+        }
+    }
     install_script_fallbacks(&mut fonts, language);
     ctx.set_fonts(fonts);
     apply_visuals(ctx, t);
@@ -405,11 +448,20 @@ fn is_chinese(language: &str) -> bool {
     matches!(language, "zh-hans" | "zh-hant")
 }
 
+/// egui's theme preference for an appearance mode showing a `light` (or dark) theme. Sync with
+/// System leaves it at System: a concrete preference makes egui set the native window's
+/// appearance, and on macOS a window with its own appearance no longer hears when the system's
+/// changes (#642). A fixed Light or Dark mode pins the window to match.
+pub fn theme_preference(appearance_mode: &str, light: bool) -> egui::ThemePreference {
+    match appearance_mode {
+        "auto" => egui::ThemePreference::System,
+        _ if light => egui::ThemePreference::Light,
+        _ => egui::ThemePreference::Dark,
+    }
+}
+
 pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
     let light = t.kind.is_light();
-    // egui keeps one style per light/dark theme and by default picks it by the system appearance;
-    // pin it to ours so a fixed Dark or Light mode isn't swapped for egui's defaults.
-    ctx.set_theme(if light { egui::ThemePreference::Light } else { egui::ThemePreference::Dark });
     let mut v = if light { Visuals::light() } else { Visuals::dark() };
     v.panel_fill = t.panel_bg;
     v.window_fill = t.panel_bg;
@@ -444,8 +496,10 @@ pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
     v.widgets.active.fg_stroke = Stroke::new(1.0, t.tab_text_active);
     v.widgets.open.bg_fill = t.hover;
     v.widgets.open.weak_bg_fill = t.hover;
-    ctx.set_visuals(v);
-    ctx.global_style_mut(|s| {
+    // egui keeps one style per light/dark theme and picks it by its theme preference (see
+    // [`theme_preference`]); both get ours, so whichever it picks, egui's defaults never show.
+    ctx.all_styles_mut(|s| {
+        s.visuals = v.clone();
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 3.0);
         s.spacing.interact_size.y = 22.0;
@@ -600,6 +654,19 @@ mod tests {
         // And an English interface leaves the operating system's locale in charge.
         let mut english = FontDefinitions::default();
         install_script_fallbacks(&mut english, "en");
+    }
+
+    #[test]
+    fn interface_symbols_have_a_glyph_in_every_family() {
+        let ctx = egui::Context::default();
+        install(&ctx, &Tokens::for_kind(Default::default()), "en");
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+        for family in [FontFamily::Proportional, FontFamily::Monospace, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
+            let id = FontId::new(12.0, family);
+            for c in "▸•›·▶◀●○⚠…×".chars() {
+                assert!(ctx.fonts_mut(|f| f.has_glyph(&id, c)), "{c} has no glyph in {id:?}");
+            }
+        }
     }
 
     #[test]

@@ -69,8 +69,8 @@ mod syntax;
 pub use editing::{EDITING_FILE, Editing, LEGACY_EDITING_FILE, editing, editing_with};
 pub use encrypt::Encryption;
 pub use export::{export, export_with_report, page_areas};
-pub use import::{OFF_ARTBOARD_NOTE, import, import_with_report};
-pub use pages::{PageInfo, PdfInfo, illustrator_data, info, is_postscript};
+pub use import::{OFF_ARTBOARD_NOTE, PAST_PAGE_NOTE, import, import_with_report};
+pub use pages::{PageInfo, PdfInfo, has_illustrator_data, illustrator_data, info, is_postscript};
 pub use post::{THUMBNAIL_SIZE, Thumbnail};
 pub use presets::*;
 pub use print::*;
@@ -148,6 +148,7 @@ settings::choice! {
         Art = "art", "Art";
         /// The visible page area (what viewers show).
         Crop = "crop", "Crop";
+        /// The finished page: an import takes the bleed box round it as the document's bleed.
         Trim = "trim", "Trim";
         Bleed = "bleed", "Bleed";
         /// The whole sheet.

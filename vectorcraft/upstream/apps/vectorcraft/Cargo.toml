@@ -34,6 +34,10 @@ webbrowser = { workspace = true }
 # The window's monitors, size and position (the same winit eframe runs on).
 winit = { version = "0.30", default-features = false }
 
+# The win7 target retains the viewer fallback; craft-print's WinRT PDF renderer needs newer Windows.
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_vendor = "win7")))'.dependencies]
+craft-print = { workspace = true }
+
 [target.'cfg(windows)'.dependencies]
 clipboard-win = { workspace = true }
 # Which GPU drives which display (EnumDisplayDevices, src/gpu.rs), so the window is drawn on the
@@ -51,7 +55,7 @@ windows = { version = "0.62", features = ["Win32_Graphics_DirectWrite"] }
 # with default features off). Pinned exactly: review the diff before bumping.
 muda = { version = "=0.21.1", default-features = false }
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSEvent", "NSPasteboard", "NSResponder", "NSTextInputContext", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSMenu", "NSEvent", "NSPasteboard", "NSPopUpButton", "NSResponder", "NSSavePanel", "NSTextField", "NSTextInputContext", "NSView", "NSWindow"] }
 # Files opened from Finder and the Dock (src/open_documents.rs) and pasted bitmaps (src/clipboard.rs); both already come with winit, muda and rfd.
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSArray", "NSData", "NSGeometry", "NSNotification", "NSOperation", "NSString", "NSURL"] }
 block2 = "0.6"
@@ -63,6 +67,15 @@ raw-window-handle = "0.6"
 # objc2-foundation.
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFArray", "CFString", "CFURL"] }
 objc2-core-text = { version = "0.3", default-features = false, features = ["std", "CTFontManager"] }
+# Waits for the answer of a file dialog shown as a sheet (src/main.rs, #867). MIT OR Apache-2.0,
+# already in the build through eframe.
+pollster = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Asks the Wayland compositor which GPU it draws with (linux-dmabuf feedback, src/compositor_gpu.rs),
+# so Automatic draws on that one. Both are already in the build through winit.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
 
 [build-dependencies]
 # Icon + VERSIONINFO for vectorcraft.exe; build.rs only uses it when targeting Windows.

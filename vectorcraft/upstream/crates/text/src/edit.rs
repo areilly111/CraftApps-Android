@@ -190,32 +190,64 @@ pub fn next_char(s: &str, i: usize) -> usize {
     s[i..].chars().next().map(|c| i + c.len_utf8()).unwrap_or(s.len())
 }
 
-fn is_word_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '\'' || c == '’'
+/// The start of the grapheme cluster before `i` (Left arrow): a Thai consonant with its vowel and
+/// tone marks, an accented letter or an emoji sequence is passed over whole.
+pub fn prev_cluster(s: &str, i: usize) -> usize {
+    use unicode_segmentation::GraphemeCursor;
+    let i = floor_char(s, i);
+    GraphemeCursor::new(i, s.len(), true).prev_boundary(s, 0).ok().flatten().unwrap_or(0)
 }
 
-/// Start of the previous word (Cmd/Alt+Left).
+/// The end of the grapheme cluster at `i` (Right arrow, Delete): see [`prev_cluster`].
+pub fn next_cluster(s: &str, i: usize) -> usize {
+    use unicode_segmentation::GraphemeCursor;
+    let i = floor_char(s, i);
+    GraphemeCursor::new(i, s.len(), true).next_boundary(s, 0).ok().flatten().unwrap_or(s.len())
+}
+
+/// Part of a word: a letter, digit or mark (Thai vowel and tone marks, combining accents), an
+/// underscore or an apostrophe.
+fn is_word_char(c: char) -> bool {
+    use unicode_general_category::{GeneralCategory as G, get_general_category};
+    c.is_alphanumeric() || matches!(c, '_' | '\'' | '’') || matches!(get_general_category(c), G::NonspacingMark | G::SpacingMark | G::EnclosingMark)
+}
+
+/// Is byte `b` of `s` (with `breaks`, its [`crate::shape::unspaced_word_breaks`]) a boundary
+/// between two words of Thai, Lao, Khmer or Myanmar, which no space separates?
+fn inner_word_break(s: &str, breaks: &[usize], b: usize) -> bool {
+    use crate::shape::is_unspaced_script;
+    breaks.binary_search(&b).is_ok()
+        && s.get(b..).and_then(|t| t.chars().next()).is_some_and(is_unspaced_script)
+        && s.get(..b).and_then(|t| t.chars().next_back()).is_some_and(is_unspaced_script)
+}
+
+/// Start of the previous word (Cmd/Alt+Left). Thai (Lao, Khmer, Myanmar) words end where their
+/// script's word boundaries are, spaces or not.
 pub fn prev_word(s: &str, i: usize) -> usize {
     let i = floor_char(s, i);
+    let breaks = crate::shape::unspaced_word_breaks(s);
     let chars: Vec<(usize, char)> = s[..i].char_indices().collect();
     let mut k = chars.len();
     while k > 0 && !is_word_char(chars[k - 1].1) {
         k -= 1;
     }
-    while k > 0 && is_word_char(chars[k - 1].1) {
+    let end = k;
+    while k > 0 && is_word_char(chars[k - 1].1) && !(k < end && inner_word_break(s, &breaks, chars[k].0)) {
         k -= 1;
     }
     chars.get(k).map(|c| c.0).unwrap_or(i)
 }
 
-/// End of the next word (Cmd/Alt+Right).
+/// End of the next word (Cmd/Alt+Right): see [`prev_word`].
 pub fn next_word(s: &str, i: usize) -> usize {
     let i = floor_char(s, i);
+    let breaks = crate::shape::unspaced_word_breaks(s);
     let mut it = s[i..].char_indices().peekable();
     while it.peek().is_some_and(|(_, c)| !is_word_char(*c)) {
         it.next();
     }
-    while it.peek().is_some_and(|(_, c)| is_word_char(*c)) {
+    let start = it.peek().map(|(k, _)| i + k);
+    while it.peek().is_some_and(|(k, c)| is_word_char(*c) && !(Some(i + k) != start && inner_word_break(s, &breaks, i + k))) {
         it.next();
     }
     it.peek().map(|(k, _)| i + k).unwrap_or(s.len())
@@ -245,16 +277,18 @@ pub fn word_at(s: &str, i: usize) -> Range<usize> {
     if k == 2 {
         return at..at + c.len_utf8();
     }
+    // Thai (Lao, Khmer, Myanmar) words also end where their script's word boundaries are.
+    let breaks = if k == 0 { crate::shape::unspaced_word_breaks(s) } else { vec![] };
     let mut a = at;
     for (p, d) in s[..at].char_indices().rev() {
-        if class(d) != k {
+        if class(d) != k || inner_word_break(s, &breaks, a) {
             break;
         }
         a = p;
     }
     let mut b = at;
     for (p, d) in s[at..].char_indices() {
-        if class(d) != k {
+        if class(d) != k || (b > at && inner_word_break(s, &breaks, b)) {
             break;
         }
         b = at + p + d.len_utf8();

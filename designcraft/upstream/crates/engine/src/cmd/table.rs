@@ -834,7 +834,7 @@ fn distribute_rows(s: &mut Session, p: &Value) -> Result<Value> {
     }
     for key in ["row", "story", "table"] {
         if let Some(v) = p.get(key)
-            && !v.as_u64().is_some_and(|n| usize::try_from(n).is_ok())
+            && v.as_u64().is_none_or(|n| usize::try_from(n).is_err())
         {
             return Err(bad(ID, format!("{key} must be a non-negative integer")));
         }
@@ -1402,20 +1402,10 @@ fn place_graphic(s: &mut Session, p: &Value) -> Result<Value> {
     let (pw, ph) = designcraft_render::image_size(&bytes).ok_or_else(|| bad(ID, "unsupported or corrupt image"))?;
     let fill = p.get("fit").and_then(Value::as_str) == Some("fill");
     s.edit(|d, sel| {
-        let aid = designcraft_doc::AssetId(d.alloc());
+        let fresh = designcraft_doc::AssetId(d.alloc());
         let mime = designcraft_render::image_mime(&bytes).to_string();
-        d.assets.insert(
-            aid,
-            std::sync::Arc::new(designcraft_doc::Asset {
-                page: 0,
-                id: aid,
-                name,
-                mime,
-                link,
-                data: std::sync::Arc::new(bytes),
-                pixels: Some((pw, ph)),
-            }),
-        );
+        let aid =
+            d.add_asset(designcraft_doc::Asset { page: 0, id: fresh, name, mime, link, data: std::sync::Arc::new(bytes), pixels: Some((pw, ph)) });
         let st = d.story_mut(g.story).ok_or_else(|| bad(ID, "no story"))?;
         let t = st.table_mut(g.table).ok_or_else(|| bad(ID, "no table"))?;
         let (r, c) = t.owner(g.range.r0, g.range.c0);

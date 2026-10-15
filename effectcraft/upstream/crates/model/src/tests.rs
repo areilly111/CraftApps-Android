@@ -309,6 +309,35 @@ fn bevels_shrink_the_caps() {
 }
 
 #[test]
+fn extrusions_split_into_front_bevel_side_and_back() {
+    use super::extrude::{Surface, extrude_surfaces, extrude_surfaces_stacked};
+    let square = Outline { outer: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], holes: vec![] };
+    let p = ExtrudeParams { bevel: BevelStyle::Angular, bevel_depth: 10.0, hole_bevel: 1.0, depth: 50.0 };
+    let whole = extrude(std::slice::from_ref(&square), &p);
+    let parts = extrude_surfaces(std::slice::from_ref(&square), &p);
+    // The parts hold exactly the triangles of the whole mesh.
+    assert_eq!(parts.iter().map(|m| m.triangle_count()).sum::<usize>(), whole.triangle_count());
+    let [front, bevel, side, back] = &parts;
+    // Caps: flat, at the layer plane (front, facing −z) and at the extrusion depth (back, +z).
+    assert!(front.positions.iter().all(|q| q[2] == 0.0) && front.normals.iter().all(|n| n[2] < -0.99));
+    assert!(back.positions.iter().all(|q| q[2] == 50.0) && back.normals.iter().all(|n| n[2] > 0.99));
+    // Walls: the full outline, between the bevels (z 10..40), with sideways normals.
+    assert!(side.positions.iter().all(|q| (10.0..=40.0).contains(&q[2])) && side.normals.iter().all(|n| n[2].abs() < 1e-6));
+    assert!(side.positions.iter().any(|q| q[0] == 0.0));
+    // Bevels: slanted between the caps and the walls, front and back.
+    assert!(bevel.triangle_count() > 0 && bevel.normals.iter().all(|n| n[2].abs() > 0.1 && n[2].abs() < 0.99));
+    assert!(bevel.positions.iter().any(|q| q[2] == 0.0) && bevel.positions.iter().any(|q| q[2] == 50.0));
+    assert_eq!(Surface::ALL.map(Surface::index), [0, 1, 2, 3]);
+    // Without a bevel there is nothing on the Bevel surface.
+    let flat = extrude_surfaces(std::slice::from_ref(&square), &ExtrudeParams { bevel: BevelStyle::None, ..p });
+    assert_eq!(flat[Surface::Bevel.index()].triangle_count(), 0);
+    assert!(flat[Surface::Side.index()].triangle_count() > 0);
+    // Stacked like `extrude_stacked`.
+    let up = extrude_surfaces_stacked(std::slice::from_ref(&square), &p, 2);
+    assert!(up[0].positions.iter().all(|q| (q[2] + 2.0 * super::extrude::STACK_GAP as f32).abs() < 1e-6));
+}
+
+#[test]
 fn contours_group_into_outlines_by_nesting() {
     let sq = |x: f64, y: f64, s: f64| vec![[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
     // "O" (outer + hole) next to an island inside another hole.
@@ -372,4 +401,94 @@ fn stacked_extrusions_move_towards_the_camera() {
         assert!((a[2] - b[2] - 3.0 * super::extrude::STACK_GAP as f32).abs() < 1e-6);
         assert_eq!((a[0], a[1]), (b[0], b[1]));
     }
+}
+
+/// A binary STL: `header` (padded to 80 bytes) and facets of (normal, vertices, attribute).
+fn binary_stl(header: &[u8], facets: &[([f32; 3], [[f32; 3]; 3], u16)]) -> Vec<u8> {
+    let mut b = header.to_vec();
+    b.resize(80, 0);
+    b.extend((facets.len() as u32).to_le_bytes());
+    for (n, v, attr) in facets {
+        for c in n.iter().chain(v.iter().flatten()) {
+            b.extend(c.to_le_bytes());
+        }
+        b.extend(attr.to_le_bytes());
+    }
+    b
+}
+
+/// The unit square in the XY plane (Z-up file), facing +Z, as two facets.
+const SQUARE: [[[f32; 3]; 3]; 2] = [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]], [[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]]];
+
+#[test]
+fn stl_binary_is_faceted_and_turned_y_up() {
+    // A header that begins with `solid`, as many binary exporters write it.
+    let bytes = binary_stl(b"solid part", &[([0.0, 0.0, 1.0], SQUARE[0], 0), ([0.0, 0.0, 1.0], SQUARE[1], 0)]);
+    let m = load("part.STL", &bytes, &|_| None).unwrap();
+    assert_eq!(format_of("part.STL"), Some("stl"));
+    assert_eq!(m.meshes[0].name, "part");
+    assert!(m.materials.is_empty());
+    let p = &m.meshes[0].primitives[0];
+    assert_eq!((p.triangle_count(), p.positions.len()), (2, 6));
+    assert!(p.uvs.is_empty());
+    // Z-up +Z becomes Y-up +Y; file Y becomes −Z.
+    assert_eq!(p.normals, vec![[0.0, 1.0, 0.0]; 6]);
+    assert_eq!(p.positions[2], [1.0, 0.0, -1.0]);
+    // Counter-clockwise from outside after the turn.
+    let (a, b, c) = (p.positions[0], p.positions[1], p.positions[2]);
+    assert!(dot(cross(sub(b, a), sub(c, a)), p.normals[0]) > 0.0);
+    // Trailing bytes after the last facet are ignored.
+    let mut longer = bytes.clone();
+    longer.extend([0u8; 7]);
+    assert_eq!(stl::parse(&longer).unwrap().meshes, m.meshes);
+}
+
+#[test]
+fn stl_ascii_with_polygon_loops_and_several_solids() {
+    let src = "solid Bracket\n  facet normal 0 0 1\n    outer loop\n      vertex 0 0 0\n      vertex 1 0 0\n      vertex 1 1 0\n      vertex 0 1 0\n    endloop\n  endfacet\nendsolid Bracket\n\
+               solid second\nfacet normal 0 0 0\nouter loop\nvertex 0 0 1\nvertex 1 0 1\nvertex 1E0 1 1\nendloop\nendfacet\nendsolid\n";
+    let m = load("bracket.stl", src.as_bytes(), &|_| None).unwrap();
+    assert_eq!(m.meshes[0].name, "Bracket");
+    // The quad fans into two triangles; the second solid adds one.
+    assert_eq!(m.triangle_count(), 3);
+    let (lo, hi) = m.bounds().unwrap();
+    assert_eq!((lo, hi), ([0.0, 0.0, -1.0], [1.0, 1.0, 0.0]));
+    assert!(stl::parse(b"solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 zero 0\n").is_err());
+}
+
+#[test]
+fn stl_binary_colours() {
+    // VisCAM / SolidView: bit 15 set, red in bits 10–14.
+    let red = 0x8000 | (31 << 10);
+    let m = stl::parse(&binary_stl(b"", &[([0.0; 3], SQUARE[0], red), ([0.0; 3], SQUARE[1], 0)])).unwrap();
+    assert_eq!(m.meshes[0].primitives.len(), 2);
+    assert_eq!(m.materials.len(), 2);
+    assert!(m.materials[0].base_color.iter().zip([1.0, 0.0, 0.0, 1.0]).all(|(x, y)| (x - y).abs() < 1e-5));
+    assert_eq!(m.materials[0].metallic, 0.0);
+    assert_eq!(m.meshes[0].primitives[1].material, Some(1));
+    // Materialise Magics: a part colour in the header; bit 15 clear = the facet's own colour
+    // with red in bits 0–4.
+    let mut header = b"COLOR=".to_vec();
+    header.extend([0, 255, 0, 255]);
+    let m = stl::parse(&binary_stl(&header, &[([0.0; 3], SQUARE[0], 31), ([0.0; 3], SQUARE[1], 0x8000)])).unwrap();
+    let close = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-5);
+    assert!(close(m.materials[0].base_color, [1.0, 0.0, 0.0, 1.0]), "{:?}", m.materials[0]);
+    assert!(close(m.materials[1].base_color, [0.0, 1.0, 0.0, 1.0]), "{:?}", m.materials[1]);
+}
+
+#[test]
+fn stl_hostile_input_is_an_error() {
+    // Claims four billion facets but has one: truncated.
+    let mut bytes = binary_stl(b"", &[([0.0; 3], SQUARE[0], 0)]);
+    bytes.splice(80..84, u32::MAX.to_le_bytes());
+    assert!(stl::parse(&bytes).is_err());
+    assert!(stl::parse(b"").is_err());
+    assert!(stl::parse(&[0u8; 83]).is_err());
+    // No facets, or only non-finite ones.
+    assert!(stl::parse(&binary_stl(b"", &[])).is_err());
+    assert!(stl::parse(&binary_stl(b"", &[([0.0; 3], [[f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], 0)])).is_err());
+    assert!(stl::parse(b"solid empty\nendsolid empty\n").is_err());
+    // A degenerate facet keeps its stored normal.
+    let m = stl::parse(&binary_stl(b"", &[([1.0, 0.0, 0.0], [[0.0; 3]; 3], 0)])).unwrap();
+    assert_eq!(m.meshes[0].primitives[0].normals[0], [1.0, 0.0, 0.0]);
 }

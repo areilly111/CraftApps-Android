@@ -54,9 +54,26 @@ fn session_fields(current: &BrushSettings, brush: &BrushSettings) -> BrushSettin
     BrushSettings { color: current.color, background: current.background, erase: current.erase, seed: current.seed, ..brush.clone() }
 }
 
+/// A tool's brush as it starts out (Reset Tool, #2825): the default brush at Photoshop's
+/// smoothing, with the session's own fields of `current`.
+pub(crate) fn fresh_brush(current: &BrushSettings) -> BrushSettings {
+    session_fields(current, &BrushSettings { smoothing: first_smoothing(), ..BrushSettings::default() })
+}
+
 /// Photoshop's 10 % stroke smoothing, what a tool's brush starts at.
 fn first_smoothing() -> photocraft_engine::paint::brush::Smoothing {
     photocraft_engine::paint::brush::Smoothing { amount: 0.1, ..Default::default() }
+}
+
+/// Does a stroke with `tool` starting now paint in Photoshop's Clear mode, erasing with its own
+/// brush (#3439)? Clear chosen in its Mode dropdown, or `~` held (`hold_keys::erase_held`).
+pub fn clears(app: &PhotocraftApp, tool: Tool) -> bool {
+    let chosen = match tool {
+        Tool::Brush => app.ui.tool_options.brush_clear,
+        Tool::Pencil => app.ui.tool_options.pencil_clear,
+        _ => false,
+    };
+    crate::hold_keys::erases_while_held(tool) && (chosen || app.held_erase)
 }
 
 /// Which tool events this frame's canvas response produces.
@@ -104,7 +121,7 @@ pub fn canvas_buttons(app: &mut PhotocraftApp, response: &Response, tool: Tool) 
         && has_brush_picker(tool)
         && let Some(p) = response.interact_pointer_pos()
     {
-        app.ui.brush_picker = Some([p.x, p.y]);
+        crate::brush_picker::open(&mut app.ui, &response.ctx, [p.x, p.y]);
     }
     let erase_click = erase && right_click;
     app.secondary_erase = right_start || erase_click;
@@ -121,7 +138,7 @@ pub fn canvas_buttons(app: &mut PhotocraftApp, response: &Response, tool: Tool) 
 /// Alt+right-drag brush resize, `brush_resize_armed` for its `Down`; or an erasing right stroke,
 /// `secondary_erase` armed for its `Down`). Otherwise a right-click with a painting tool opens
 /// the Brush Preset picker at screen point `at`, and nothing paints.
-pub fn pointer_secondary(app: &mut PhotocraftApp, down: bool, mods: egui::Modifiers, at: [f32; 2]) -> bool {
+pub fn pointer_secondary(app: &mut PhotocraftApp, ctx: &egui::Context, down: bool, mods: egui::Modifiers, at: [f32; 2]) -> bool {
     let tool = app.ui.tool;
     if crate::brush_resize::applies(tool) && (crate::brush_resize::is_right_gesture(mods) || app.brush_resize.is_some_and(|r| r.secondary)) {
         app.brush_resize_armed = down && app.drag.is_none();
@@ -132,7 +149,7 @@ pub fn pointer_secondary(app: &mut PhotocraftApp, down: bool, mods: egui::Modifi
         return true;
     }
     if down && has_brush_picker(tool) {
-        app.ui.brush_picker = Some(at);
+        crate::brush_picker::open(&mut app.ui, ctx, at);
     }
     false
 }
@@ -150,26 +167,43 @@ pub fn show_picker(app: &mut PhotocraftApp, ctx: &egui::Context) {
     // end a rename in its rename bar.
     let key_close = app.ui.brush_picker_list.renaming.is_none() && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter));
     let screen = ctx.content_rect();
-    // Keep the whole picker on screen: its last size, or about 320 × 480 points before it shows.
-    let id = egui::Id::new("canvas-brush-picker");
-    let size = ctx.memory(|m| m.area_rect(id)).map_or(egui::vec2(324.0, 480.0), |r| r.size());
+    // The picker's content size: the one its grip was dragged to, or the one it last closed with
+    // (kept in egui's own memory, which outlives the app's), or the default. The frame's chrome
+    // sits around it, and together they keep the whole picker on screen.
+    let id = crate::brush_picker::picker_id();
+    let size_id = id.with("content-size");
+    let content = app.ui.brush_picker_size.or_else(|| ctx.data_mut(|d| d.get_persisted::<[f32; 2]>(size_id))).map_or_else(
+        || egui::vec2(crate::brush_picker::DEFAULT_SIZE[0], crate::brush_picker::DEFAULT_SIZE[1]),
+        |s| crate::brush_picker::clamp_size(s, screen.size()),
+    );
+    // Remember it for the picker's next open, and — egui's memory being saved — the next run.
+    ctx.data_mut(|d| d.insert_persisted(size_id, [content.x, content.y]));
+    let style = ctx.global_style();
+    let size = content + style.spacing.menu_margin.sum() + egui::Vec2::splat(2.0 * style.visuals.window_stroke().width);
     let pos = egui::pos2(x.min(screen.right() - size.x).max(screen.left()), y.min(screen.bottom() - size.y).max(screen.top()));
     let area = egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
         let before = app.session.tools.brush.clone();
         let mut b = before.clone();
         let list = &mut app.ui.brush_picker_list;
-        let picks = egui::Frame::popup(ui.style())
-            .show(ui, |ui| crate::brush_picker::body(ui, &mut b, &app.session.tools.presets, app.session.tools.current_preset.as_deref(), list))
-            .inner;
+        let frame = egui::Frame::popup(ui.style())
+            .show(ui, |ui| crate::brush_picker::body(ui, &mut b, &app.session.tools.presets, app.session.tools.current_preset.as_deref(), list, content));
+        let picks = frame.inner;
+        // The corner grip resizes the picker, and the size is remembered across opens.
+        if let Some(new) = crate::brush_picker::resize_grip(ui, frame.response.rect, content) {
+            app.ui.brush_picker_size = Some([new.x, new.y]);
+        }
         crate::brush_panel::commit_gesture(app, ui.ctx(), &before, &b);
         let closes = picks.iter().any(crate::brush_picker::Pick::closes);
         crate::brush_picker::apply(app, ui.ctx(), picks);
         closes
     });
     // Not a press on a menu the picker opened (the gear, a preset's context menu), nor on the
-    // options-bar chip, whose click toggles the picker.
+    // options-bar chip, whose click toggles the picker. A menu floats over the picker in the
+    // foreground order, so the press is told apart by the layer it lands on, not by any popup
+    // just being open: a press elsewhere closes the picker in the same click that closes the menu.
     let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
-    let outside = press.is_some_and(|p| !area.response.rect.contains(p) && !crate::brush_picker::on_chip(ctx, p)) && !egui::Popup::is_any_open(ctx);
+    let on_menu = press.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Foreground));
+    let outside = crate::canvas_popup::outside_pressed(ctx, id, area.response.rect) && press.is_some_and(|p| !crate::brush_picker::on_chip(ctx, p)) && !on_menu;
     if outside || key_close || area.inner {
         crate::brush_picker::close(&mut app.ui);
     }
@@ -423,12 +457,18 @@ mod tests {
         assert!(h.state().session.tools.presets.iter().any(|p| p.name == "Inky"), "renamed");
         assert!(h.state().ui.brush_picker_list.renaming.is_none());
         assert!(h.state().ui.brush_picker.is_some(), "Enter ended the rename, not the picker");
-        // The gear's view items switch the list between tips and names.
+        // The gear's boxes pick the card parts; the last one on can't be turned off.
         h.get_by_label("Brush Preset Options").click();
         h.run_steps(2);
-        h.get_by_label("List view").click();
+        h.get_by_label("Brush Tip").click();
         h.run_steps(2);
-        assert_eq!(h.state().ui.brush_picker_list.view, crate::brush_panel::BrushesView::List);
+        assert!(!h.state().ui.brush_picker_list.show_tip);
+        h.get_by_label("Brush Stroke").click();
+        h.run_steps(2);
+        h.get_by_label("Brush Name").click();
+        h.run_steps(2);
+        assert!(h.state().ui.brush_picker_list.show_name, "the last part on stays on");
+        assert!(!h.state().ui.brush_picker_list.show_stroke && !h.state().ui.brush_picker_list.show_tip);
         assert!(h.state().ui.brush_picker.is_some());
         // A rename left open goes with the picker.
         h.state_mut().ui.brush_picker_list.renaming =
@@ -468,7 +508,7 @@ mod tests {
         app.run("prefs.set", json!({"path": "tools.rightClickWithPaintingTools", "value": "erase"})).unwrap();
         app.ui.tool = Tool::Brush;
         let m = Modifiers::NONE;
-        assert!(pointer_secondary(&mut app, true, egui::Modifiers::NONE, [0.0, 0.0]));
+        assert!(pointer_secondary(&mut app, &egui::Context::default(), true, egui::Modifiers::NONE, [0.0, 0.0]));
         tool_event(&mut app, ToolEvent::Down { x: 10.0, y: 40.0, pressure: 0.4 }, m);
         assert!(!app.secondary_erase, "armed for one stroke only");
         tool_event(&mut app, ToolEvent::Move { x: 100.0, y: 40.0, pressure: 0.8 }, m);
@@ -481,7 +521,7 @@ mod tests {
         assert_eq!(st.doc.layers[0].surface().unwrap().rgba(50, 40), [1.0, 1.0, 1.0, 1.0]);
         // With the default preference the right button opens the picker and nothing paints.
         app.run("prefs.set", json!({"path": "tools.rightClickWithPaintingTools", "value": "brushPicker"})).unwrap();
-        assert!(!pointer_secondary(&mut app, true, egui::Modifiers::NONE, [0.0, 0.0]));
+        assert!(!pointer_secondary(&mut app, &egui::Context::default(), true, egui::Modifiers::NONE, [0.0, 0.0]));
         assert!(app.ui.brush_picker.is_some() && !app.secondary_erase);
     }
 

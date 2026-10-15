@@ -148,3 +148,50 @@ fn generate_fixtures() {
         filmcraft_testkit::fixtures::generate_and_report(&format!("h264/{}", f.name), &outs, || common::ensure(f));
     }
 }
+
+/// Concurrent consumers must publish one complete fixture without replacing an open file.
+#[test]
+fn concurrent_fixture_publication_is_safe() {
+    if filmcraft_testkit::ffmpeg_or_skip("concurrent_fixture_publication").is_none() {
+        return;
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let name = Box::leak(format!("concurrent_fixture_{}_{stamp}", std::process::id()).into_boxed_str());
+    let fixture =
+        common::Fixture { name, source: "testsrc2", width: 64, height: 48, frames: 2, filter: "", args: &["-preset", "ultrafast", "-x264-params", "keyint=1"] };
+    let open_published = |path: &std::path::Path| {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // Like the external decoder, allow reads but deny replacement while open.
+            options.share_mode(1);
+        }
+        options.open(path).unwrap()
+    };
+    let start = std::sync::Barrier::new(4);
+    let results = std::thread::scope(|scope| {
+        let jobs: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    let paths = common::ensure(&fixture).expect("software fixture must generate");
+                    // Keep both published files open until every producer has finished.
+                    let files = (open_published(&paths.0), open_published(&paths.1));
+                    (paths, files)
+                })
+            })
+            .collect();
+        jobs.into_iter().map(|j| j.join().expect("fixture producer panicked")).collect::<Vec<_>>()
+    });
+    let paths = results[0].0.clone();
+    for (got, _) in &results {
+        assert_eq!(got, &paths);
+    }
+    assert!(!std::fs::read(&paths.0).unwrap().is_empty());
+    assert_eq!(std::fs::metadata(&paths.1).unwrap().len(), 2 * (64 * 48 + 2 * 32 * 24));
+    drop(results);
+    std::fs::remove_file(paths.0).unwrap();
+    std::fs::remove_file(paths.1).unwrap();
+}

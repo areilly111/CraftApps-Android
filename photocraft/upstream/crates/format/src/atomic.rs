@@ -32,6 +32,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub trait AtomicFs {
     /// Create `tmp` (it must not exist), write all of `bytes` and flush it ([`sync_file`]).
     fn write_new(&self, tmp: &Path, bytes: &[u8]) -> io::Result<()>;
+    /// [`write_new`](Self::write_new), reporting the fraction of `bytes` written so far to
+    /// `progress` (a save's progress bar, #3389). By default it reports nothing.
+    fn write_new_progress(&self, tmp: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> io::Result<()> {
+        let _ = progress;
+        self.write_new(tmp, bytes)
+    }
     /// Rename `from` over `to`, replacing it.
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     /// Remove a (temporary) file.
@@ -47,10 +53,21 @@ pub trait AtomicFs {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RealFs;
 
+/// How much [`RealFs::write_new_progress`] writes between progress reports.
+const WRITE_CHUNK: usize = 8 << 20;
+
 impl AtomicFs for RealFs {
     fn write_new(&self, tmp: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.write_new_progress(tmp, bytes, &|_| {})
+    }
+    fn write_new_progress(&self, tmp: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> io::Result<()> {
         let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(tmp)?;
-        f.write_all(bytes)?;
+        let mut written = 0usize;
+        for chunk in bytes.chunks(WRITE_CHUNK) {
+            f.write_all(chunk)?;
+            written = written.saturating_add(chunk.len());
+            progress(written as f32 / bytes.len().max(1) as f32);
+        }
         sync_file(&f)
     }
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
@@ -132,8 +149,19 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     atomic_write_with(&RealFs, RenameRetry::platform(), path, bytes)
 }
 
+/// [`atomic_write`] reporting the fraction of `bytes` written to `progress` as it goes (a save's
+/// progress bar, #3389); the flush and rename follow the last report.
+pub fn atomic_write_progress(path: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> io::Result<()> {
+    atomic_write_with_progress(&RealFs, RenameRetry::platform(), path, bytes, progress)
+}
+
 /// [`atomic_write`] through an explicit file system and retry policy (the failure-injection seam).
 pub fn atomic_write_with(fs: &dyn AtomicFs, retry: RenameRetry, path: &Path, bytes: &[u8]) -> io::Result<()> {
+    atomic_write_with_progress(fs, retry, path, bytes, &|_| {})
+}
+
+/// [`atomic_write_with`] reporting write progress (see [`atomic_write_progress`]).
+pub fn atomic_write_with_progress(fs: &dyn AtomicFs, retry: RenameRetry, path: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> io::Result<()> {
     let target = resolve_symlink(path);
     let name = target.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("{}: not a file path", path.display())))?;
     let dir = match target.parent() {
@@ -147,7 +175,7 @@ pub fn atomic_write_with(fs: &dyn AtomicFs, retry: RenameRetry, path: &Path, byt
     let mut tmp = None;
     for _ in 0..8 {
         let candidate = dir.join(temp_name(&name.to_string_lossy()));
-        match fs.write_new(&candidate, bytes) {
+        match fs.write_new_progress(&candidate, bytes, progress) {
             Ok(()) => {
                 tmp = Some(candidate);
                 break;

@@ -42,3 +42,59 @@ path = "fuzz_targets/image_source_data.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "grd"
+path = "fuzz_targets/grd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ase"
+path = "fuzz_targets/ase.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aco"
+path = "fuzz_targets/aco.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "patterns"
+path = "fuzz_targets/patterns.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "filter_effects"
+path = "fuzz_targets/filter_effects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata"
+path = "fuzz_targets/metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tagged"
+path = "fuzz_targets/tagged.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resources"
+path = "fuzz_targets/resources.rs"
+test = false
+doc = false
+bench = false

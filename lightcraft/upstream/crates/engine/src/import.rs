@@ -6,6 +6,8 @@
 //! 3. Probe the rest — dimensions, metadata, and the **content hash** of the bytes — in parallel
 //!    on native targets.
 //! 4. Skip **duplicates by content** (same bytes already in the library, or twice in this batch).
+//!    A duplicate (by path or content) of a photo in Recently Deleted is restored instead, with
+//!    its edits, unless the import says otherwise ([`OnDeleted`]).
 //! 5. *Add* in place (the photo points at the original file), *copy* into the library's
 //!    `Originals/YYYY/YYYY-MM-DD/` folder (names made unique) and point at the copy, or *move*
 //!    there: placed like a copy (with its XMP sidecars), and the original removed only once its
@@ -53,12 +55,19 @@ pub enum ImportMode {
 }
 
 /// What an import does with a file the library already has in Recently Deleted.
+///
+/// Someone who imports such a file wants the photo in the library again, so the default brings
+/// it back (issues #298, #706: before, the import skipped it as "already in the library" while
+/// the grid showed it deleted, and the user was stuck). Restoring loses nothing — the edits,
+/// rating and albums come back with the photo and Reset Edits gives a clean start — where
+/// importing afresh would silently drop them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OnDeleted {
     /// Leave it there; the report says so ([`Duplicate::existing_deleted`]).
-    #[default]
     Skip,
-    /// Bring the trashed photo back, with its edits ([`ImportReport::restored`]).
+    /// Bring the trashed photo back, with its edits ([`ImportReport::restored`]); a photo whose
+    /// file is no longer where the library had it is relinked to the imported file.
+    #[default]
     Restore,
     /// Delete the trashed record permanently and import the file as a new photo.
     Fresh,
@@ -78,7 +87,7 @@ impl OnDeleted {
 /// What an import does besides adding the photos.
 #[derive(Clone, Debug, Default)]
 pub struct ImportOptions {
-    /// A file that is in Recently Deleted: skip (default), restore, or import afresh.
+    /// A file that is in Recently Deleted: restore (default), skip, or import afresh.
     pub on_deleted: OnDeleted,
     pub mode: ImportMode,
     /// Applied to every imported photo (one History entry).
@@ -201,6 +210,48 @@ pub struct ImportReport {
     pub scanned: usize,
     /// Photos whose metadata/develop settings were read from an XMP sidecar (or embedded XMP).
     pub sidecars: usize,
+    /// Per-photo diagnostics from foreign XMP develop settings that could not be fully carried over.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<ImportWarning>,
+}
+
+/// A structured diagnostic from foreign XMP develop settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ImportWarningCode {
+    /// A named camera profile was found but cannot be applied as Lightroom does.
+    CameraProfile,
+    /// Lightroom geometry data was found but its saved transform is not retained.
+    UprightGeometry,
+    /// One or more other XMP develop fields have no LightCraft mapping.
+    UnmappedXmp,
+}
+
+/// The saved Lightroom Upright mode associated with a foreign geometry transform.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ImportUprightMode {
+    Off,
+    Auto,
+    Level,
+    Vertical,
+    Full,
+    Guided,
+    Unknown,
+}
+
+/// One actionable XMP import diagnostic. `path` is filled when its photo is committed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportWarning {
+    pub path: String,
+    pub code: ImportWarningCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ImportUprightMode>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
 }
 
 /// A file moved by an import.
@@ -912,7 +963,7 @@ impl ImportJob {
             let packet = crate::sidecar::find_sidecar(&path, self.naming)
                 .and_then(|f| std::fs::read_to_string(f).ok())
                 .or_else(|| info.xmp.clone().filter(|_| raw));
-            let target = crate::crs::Target::for_file(info.kind, &info.format, info.preview_only.is_some());
+            let target = crate::crs::Target::for_file(info.kind, &info.format, info.preview_only.is_some(), &info.meta.camera);
             let sidecar = packet.and_then(|x| match crate::sidecar::parse_sidecar(&x, target) {
                 Ok(sc) => Some(sc),
                 Err(e) => {
@@ -1170,6 +1221,16 @@ fn run_transfer(t: Transfer, file_bytes: Option<&crate::merge::ByteReader>) -> P
     PreparedItem::Ready(Box::new(ReadyFile { path, stored, info, sidecar, placed }))
 }
 
+/// A trashed photo's file is not where the library had it (never on the web, where paths are
+/// storage keys, not files).
+fn trashed_file_is_gone(cat: &lightcraft_catalog::Catalog, id: PhotoId) -> bool {
+    !cfg!(target_arch = "wasm32")
+        && match cat.photo(id).map(|p| &p.source) {
+            Some(Source::File { path }) => !Path::new(path).exists(),
+            _ => false,
+        }
+}
+
 /// The catalog half of an import: add the photos [`ImportJob::prepare`] readied (one undoable op;
 /// a Move's sources are removed once it is saved). On a failed commit a Move's placed files are
 /// taken back.
@@ -1210,9 +1271,15 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 });
                 let trashed = existing.filter(|id| s.catalog.photo(*id).is_some_and(|p| p.deleted));
                 match trashed {
-                    Some(id) if opts.on_deleted == OnDeleted::Restore => {
+                    // (browsing a folder in Local only looks: it never restores)
+                    Some(id) if opts.on_deleted == OnDeleted::Restore && !opts.local => {
                         if !report.restored.contains(&id.0) {
                             ops.push(Op::SetDeleted { id, deleted: false });
+                            // matched by content from another path, and the file the record
+                            // points at is gone (moved, renamed): the photo follows the file
+                            if reason == "content" && trashed_file_is_gone(&s.catalog, id) {
+                                ops.push(crate::cmd::missing::relink_op(id, &path));
+                            }
                             report.restored.push(id.0);
                         }
                     }
@@ -1249,6 +1316,10 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 if let Some(sc) = &sidecar {
                     crate::sidecar::merge_into(&mut p, sc, &now);
                     report.sidecars += 1;
+                    report.warnings.extend(sc.warnings.iter().cloned().map(|mut warning| {
+                        warning.path = path.clone();
+                        warning
+                    }));
                 }
                 if let Some(mp) = opts.metadata_preset.as_ref().and_then(|n| s.metadata_presets.iter().find(|m| m.name.eq_ignore_ascii_case(n))) {
                     crate::cmd::metadata::apply_to(&mut p.meta, &mp.fields);

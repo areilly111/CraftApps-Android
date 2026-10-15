@@ -316,13 +316,39 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context, req: &ControlRequest
             ok(Value::Null)
         }
         "ui.set" => {
+            // an arrangement of the sidebar is checked, not made whole as a settings file's is
+            let sidebar = match p.get("sidebar").map(crate::sidebar::SidebarLayout::parse).transpose() {
+                Ok(s) => s,
+                Err(e) => return err(e),
+            };
             let mut v = serde_json::to_value(&app.ui).unwrap_or_default();
             lightcraft_develop::presets::deep_merge(&mut v, p);
             match serde_json::from_value::<crate::UiState>(v) {
                 Ok(mut u) => {
+                    if let Err(error) = crate::docking::set_widths(&mut u, p) {
+                        return err(error);
+                    }
+                    if let Some(sidebar) = sidebar {
+                        u.sidebar = sidebar;
+                    }
+                    // `collapsedSidebar`, as scripts from before `sidebar` set it: the folded sections
+                    if let Some(ids) = p.get("collapsedSidebar").and_then(Value::as_array) {
+                        use crate::sidebar::SidebarSection;
+                        if p.get("sidebar").is_some() {
+                            return err("ui.set: give `sidebar` or the older `collapsedSidebar`, not both".to_string());
+                        }
+                        if let Some(unknown) = ids.iter().find(|id| id.as_str().and_then(SidebarSection::from_id).is_none()) {
+                            return err(format!("ui.set: `collapsedSidebar`: unknown section {unknown} ({})", SidebarSection::ids()));
+                        }
+                        for section in SidebarSection::ALL {
+                            u.sidebar.set_collapsed(section, ids.iter().any(|id| id.as_str() == Some(section.id())));
+                        }
+                    }
+                    u.collapsed_sidebar.clear();
                     u.toast = app.ui.toast.clone();
                     u.dialog = app.ui.dialog.clone();
                     u.status = app.ui.status.clone();
+                    crate::docking::cancel_replaced_gesture(app, u.docking.as_ref());
                     app.ui = u;
                     crate::i18n::set_language(app.ui.language);
                     ctx.request_repaint();
@@ -468,13 +494,23 @@ pub fn export_active(app: &mut LightcraftApp, p: &Value) -> Result<Value, String
         return Err(NO_EXPORT_FOLDER.into());
     }
     let to = Destination { dir: dir.clone(), exact };
+    // Add to Apple Photos: refused here, before anything is written, when it can't be done
+    let after = app.session.after_export(&opts)?;
     let background = p.get("background").and_then(Value::as_bool).unwrap_or(false) && app.services.write_shared.is_some();
     let out = if background {
         let items = lightcraft_engine::export::prepare_batch(&mut app.session, &ids, &opts)?;
-        crate::export_task::start(app, items, opts, to)?
+        crate::export_task::start(app, items, opts, to, after)?
     } else {
         let w = app.services.write.as_mut().ok_or("no writer")?;
-        json!({"files": export_batch(&mut app.session, &ids, &opts, &to, &mut |path, bytes| w(path, bytes), &|path| std::path::Path::new(path).exists())?})
+        let files = export_batch(&mut app.session, &ids, &opts, &to, &mut |path, bytes| w(path, bytes), &|path| std::path::Path::new(path).exists())?;
+        let mut out = json!({"files": files});
+        // Photos may take minutes (and waits for the permission prompt): in the desktop app on a
+        // worker, never on this (UI) thread; the app announces the outcome and
+        // `export.photosImports` reports it. A window-less run (snapshot scripts) waits.
+        if let Some(photos) = after.finish(&app.session, &files) {
+            out["applePhotos"] = photos;
+        }
+        out
     };
     // remember for Export with Previous (and to prefill the dialog)
     let mut last = p.clone();

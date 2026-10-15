@@ -191,6 +191,81 @@ pub struct Proof {
     pub space: OutputSpace,
     pub dest_warning: bool,
     pub display_warning: bool,
+    /// An output-device profile to proof against instead of `space` (a printer / paper profile):
+    /// the id [`register_proof_profile`] gave its table; 0 = none. An id with no table is ignored.
+    #[serde(skip_serializing_if = "is_zero_id")]
+    pub profile: u64,
+}
+
+fn is_zero_id(v: &u64) -> bool {
+    *v == 0
+}
+
+/// A soft-proof table for an output-device profile, built by the caller's CMS: `n³` entries over
+/// working-space (linear Rec.2020) RGB encoded with the sRGB curve, index `(r * n + g) * n + b`,
+/// each the colour the device reproduces (linear Rec.2020, paper white already applied when the
+/// proof simulates paper and ink) and, in `[3]`, how far outside the device gamut the colour is
+/// (0 inside; above [`PROOF_GAMUT_TOLERANCE`] counts as outside).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProofLut {
+    n: usize,
+    data: Vec<[f32; 4]>,
+}
+
+/// Gamut distance (sRGB-curve code values, 0..1) above which a colour is out of the proof gamut.
+pub const PROOF_GAMUT_TOLERANCE: f32 = 0.02;
+
+impl ProofLut {
+    /// `None` unless `data` holds `n³` finite entries with `2 ≤ n ≤ 129`.
+    pub fn new(n: usize, data: Vec<[f32; 4]>) -> Option<ProofLut> {
+        let ok = (2..=129).contains(&n) && data.len() == n * n * n && data.iter().flatten().all(|v| v.is_finite());
+        ok.then_some(ProofLut { n, data })
+    }
+
+    /// The proofed colour and gamut distance of working-space `rgb` (trilinear).
+    pub fn sample(&self, rgb: [f32; 3]) -> ([f32; 3], f32) {
+        let m = (self.n - 1) as f32;
+        let f = rgb.map(|v| lightcraft_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * m);
+        let i0 = f.map(|v| (v.floor() as usize).min(self.n - 2));
+        let t = [f[0] - i0[0] as f32, f[1] - i0[1] as f32, f[2] - i0[2] as f32];
+        let mut acc = [0.0f32; 4];
+        for corner in 0..8usize {
+            let b = [corner >> 2 & 1, corner >> 1 & 1, corner & 1];
+            let w: f32 = (0..3).map(|k| if b[k] == 1 { t[k] } else { 1.0 - t[k] }).product();
+            let idx = ((i0[0] + b[0]) * self.n + i0[1] + b[1]) * self.n + i0[2] + b[2];
+            if let Some(e) = self.data.get(idx) {
+                for k in 0..4 {
+                    acc[k] += e[k] * w;
+                }
+            }
+        }
+        ([acc[0], acc[1], acc[2]], acc[3])
+    }
+}
+
+/// Proof tables by id (a few: the profiles a session proofs against).
+static PROOF_PROFILES: std::sync::Mutex<Vec<(u64, std::sync::Arc<ProofLut>)>> = std::sync::Mutex::new(Vec::new());
+const PROOF_PROFILES_KEPT: usize = 8;
+
+/// Make `lut` available to renders as [`Proof::profile`] `id` (any nonzero number that identifies
+/// the profile and its options, e.g. a hash). Returns `id` (`1` for `0`).
+pub fn register_proof_profile(id: u64, lut: ProofLut) -> u64 {
+    let id = id.max(1);
+    let mut v = PROOF_PROFILES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    v.retain(|(k, _)| *k != id);
+    v.push((id, std::sync::Arc::new(lut)));
+    let extra = v.len().saturating_sub(PROOF_PROFILES_KEPT);
+    v.drain(..extra);
+    id
+}
+
+/// The table registered as `id`.
+pub fn proof_profile(id: u64) -> Option<std::sync::Arc<ProofLut>> {
+    if id == 0 {
+        return None;
+    }
+    let v = PROOF_PROFILES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    v.iter().find(|(k, _)| *k == id).map(|(_, l)| l.clone())
 }
 
 /// Warning colours (sRGB-encoded): destination gamut red, display gamut blue.
@@ -198,8 +273,10 @@ pub const PROOF_DEST_WARNING: [f32; 3] = [1.0, 0.0, 0.0];
 pub const PROOF_DISPLAY_WARNING: [f32; 3] = [0.0, 0.25, 1.0];
 
 /// [`Proof`] as the per-pixel stage uses it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ProofParams {
+    /// The output-device table (replaces `to_proof` / `proof_to_out` when present).
+    pub table: Option<std::sync::Arc<ProofLut>>,
     /// Linear Rec.2020 → linear proof RGB, its luminance weights, linear proof → linear output RGB.
     pub to_proof: [[f32; 3]; 3],
     pub luma: [f32; 3],
@@ -210,11 +287,12 @@ pub struct ProofParams {
 
 impl Proof {
     pub fn key(self) -> u64 {
-        (self.space as u64 + 1) | (self.dest_warning as u64) << 8 | (self.display_warning as u64) << 9
+        ((self.space as u64 + 1) | (self.dest_warning as u64) << 8 | (self.display_warning as u64) << 9) ^ self.profile.rotate_left(16)
     }
 
     pub fn params(self, out: OutputSpace) -> ProofParams {
         ProofParams {
+            table: proof_profile(self.profile),
             to_proof: self.space.from_working(),
             luma: self.space.luma(),
             proof_to_out: self.space.rgb_space().to_space(&out.rgb_space()).to_f32(),

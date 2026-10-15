@@ -117,6 +117,22 @@ impl Driver {
         img.save(dir.join(format!("{name}.png"))).unwrap();
     }
 
+    fn right_marker(&mut self, marker: u64, range: bool) {
+        self.frames(3);
+        let id = format!("timeline.marker.{marker}");
+        let elements = self.ok("ui.elements", json!({"prefix":id}));
+        let rect = elements.as_array().unwrap().iter().find(|e| e["id"] == id).unwrap()["rect"].as_array().unwrap();
+        let mut x = rect[0].as_f64().unwrap() + rect[2].as_f64().unwrap() / 2.0;
+        let y = rect[1].as_f64().unwrap() + rect[3].as_f64().unwrap() / 2.0;
+        if range {
+            let app = self.app();
+            let m = app.session.active_sequence().unwrap().markers.iter().find(|m| m.id.0 == marker).unwrap();
+            x += m.duration.seconds() * app.ui.timeline.pps * 0.5;
+        }
+        self.ok("ui.click", json!({"x":x,"y":y,"button":"right"}));
+        self.frames(3);
+    }
+
     fn ids(&mut self, prefix: &str) -> Vec<String> {
         let v = self.ok("ui.elements", json!({"prefix": prefix}));
         v.as_array().unwrap().iter().filter_map(|e| e["id"].as_str().map(str::to_string)).collect()
@@ -672,4 +688,135 @@ fn new_sequence_opens_its_dialog() {
     assert_eq!(d.label("sequenceSettings.name"), "Direct");
     assert!(d.ids("sequenceSettings.tab.color").iter().any(|i| i == "sequenceSettings.tab.color"));
     d.click("sequenceSettings.cancel");
+}
+
+#[test]
+fn timeline_marker_label_edits_only_the_clicked_marker_and_is_undoable() {
+    let mut d = Driver::demo();
+    d.exec("markers.clearAll", json!({}));
+    let target = d.exec("markers.add", json!({"frame":30,"name":"Review","comment":"Keep this note"}))["marker"].as_u64().unwrap();
+    d.exec("markers.add", json!({"frame":90,"name":"Other","color":"Rose"}));
+    let clip = d.app().session.active_sequence().unwrap().video_tracks[0].items[0].id;
+    d.exec("timeline.select", json!({"clips":[clip.0]}));
+    let before = d.app().session.active_sequence().unwrap().clone();
+    let undo = d.app().session.history.undo.len();
+    d.right_marker(target, false);
+    assert!(d.ids("timeline.markerMenu.").contains(&"timeline.markerMenu.label".into()), "a marker needs its own Label menu");
+    d.click("timeline.markerMenu.label");
+    assert_eq!(d.ids("timeline.markerMenu.color.").len(), filmcraft_project::Label::ALL.len());
+    d.snapshot("marker-colour-menu", "timeline.markerMenu.");
+    d.click("timeline.markerMenu.color.Blue");
+    let mut expected = before.clone();
+    expected.markers.iter_mut().find(|m| m.id.0 == target).unwrap().color = filmcraft_project::Label::Blue;
+    let actual = d.app().session.active_sequence().unwrap().clone();
+    assert_eq!(serde_json::to_value(&actual).unwrap(), serde_json::to_value(&expected).unwrap(), "only the chosen marker changes, not a selected clip");
+    assert_eq!(d.app().session.history.undo.len(), undo + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(serde_json::to_value(d.app().session.active_sequence().unwrap()).unwrap(), serde_json::to_value(&before).unwrap());
+    d.exec("edit.redo", json!({}));
+    assert_eq!(serde_json::to_value(d.app().session.active_sequence().unwrap()).unwrap(), serde_json::to_value(&expected).unwrap());
+}
+
+#[test]
+fn a_range_marker_band_opens_its_menu_and_keeps_the_marker_identity() {
+    let mut d = Driver::demo();
+    d.exec("markers.clearAll", json!({}));
+    let other = d.exec("markers.add", json!({"frame":30,"name":"Underneath","color":"Rose"}))["marker"].as_u64().unwrap();
+    let target = d.exec("markers.addRange", json!({"frame":30,"durationFrames":48,"name":"Review range"}))["marker"].as_u64().unwrap();
+    let before = d.app().session.active_sequence().unwrap().clone();
+    d.right_marker(target, true);
+    assert!(
+        d.ids("timeline.markerMenu.").contains(&"timeline.markerMenu.markers.clearCurrent".into()),
+        "right-clicking the range band must open the marker menu"
+    );
+    assert!(!d.ids("timeline.clipMenu.").iter().any(|id| id == "timeline.clipMenu.edit.cut"));
+    d.exec("playhead.set", json!({"frame":0}));
+    d.click("timeline.markerMenu.label");
+    d.click("timeline.markerMenu.color.Yellow");
+    let mut expected = before;
+    expected.markers.iter_mut().find(|m| m.id.0 == target).unwrap().color = filmcraft_project::Label::Yellow;
+    let actual = d.app().session.active_sequence().unwrap();
+    assert_eq!(actual.markers.iter().find(|m| m.id.0 == other).unwrap().color, filmcraft_project::Label::Rose);
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(&expected).unwrap(),
+        "target the clicked id, even when starts coincide or the playhead changes"
+    );
+    d.snapshot("marker-range-colour", "timeline.markerRange.");
+}
+
+#[test]
+fn markers_panel_label_refreshes_the_colour_filter_in_both_themes() {
+    for theme in ["dark", "light"] {
+        let mut d = Driver::demo();
+        d.ok("ui.set", json!({"theme":theme}));
+        d.exec("markers.clearAll", json!({}));
+        let target = d.exec("markers.add", json!({"frame":30,"name":"Review colour"}))["marker"].as_u64().unwrap();
+        d.exec("markers.filterColors", json!({"color":"Blue","visible":false}));
+        d.ok("ui.panel.show", json!({"panel":"Markers"}));
+        d.frames(3);
+        d.ok("ui.click", json!({"id":format!("markers.row.{target}"),"button":"right"}));
+        d.frames(3);
+        d.click("markers.menu.label");
+        assert_eq!(d.ids("markers.menu.color.").len(), filmcraft_project::Label::ALL.len());
+        d.snapshot(&format!("marker-panel-label-{theme}"), "markers.menu.");
+        let undo = d.app().session.history.undo.len();
+        d.click("markers.menu.color.Blue");
+        assert_eq!(d.app().session.active_sequence().unwrap().markers[0].color, filmcraft_project::Label::Blue);
+        assert_eq!(d.app().session.history.undo.len(), undo + 1);
+        assert!(d.ids("markers.row.").is_empty(), "the newly blue marker follows the existing filter");
+        d.exec("edit.undo", json!({}));
+        d.frames(3);
+        assert_eq!(d.ids("markers.row."), vec![format!("markers.row.{target}")]);
+    }
+}
+
+#[test]
+fn timeline_clip_label_is_disabled_without_a_selected_clip() {
+    let mut d = Driver::demo();
+    d.exec("markers.clearAll", json!({}));
+    d.exec("timeline.select", json!({"clips":[]}));
+    d.ok("ui.click", json!({"id":"timeline.ruler","fx":0.8,"fy":0.5,"button":"right"}));
+    d.frames(3);
+    let enabled = |d: &mut Driver| {
+        let elements = d.ok("ui.elements", json!({"prefix":"timeline.clipMenu.edit.label"}));
+        elements[0]["enabled"].clone()
+    };
+    assert_eq!(enabled(&mut d), json!(false));
+    let undo = d.app().session.history.undo.len();
+    d.click("timeline.clipMenu.edit.label");
+    assert!(d.ids("timeline.clipMenu.label.").is_empty());
+    assert_eq!(d.app().session.history.undo.len(), undo);
+    d.ok("ui.key", json!({"key":"Escape"}));
+    let clip = d.app().session.active_sequence().unwrap().video_tracks[0].items[0].id;
+    d.ok("ui.click", json!({"id":format!("timeline.clip.{}",clip.0),"fx":0.5,"button":"right"}));
+    d.frames(3);
+    assert_eq!(enabled(&mut d), json!(true));
+    d.click("timeline.clipMenu.edit.label");
+    d.click("timeline.clipMenu.label.Blue");
+    assert_eq!(d.app().session.active_sequence().unwrap().find_item(clip).unwrap().1.label, filmcraft_project::Label::Blue);
+    assert!(d.app().session.active_sequence().unwrap().markers.is_empty());
+}
+
+/// New Sequence stays open when the engine rejects the frame size so the rest of the draft is not lost.
+#[test]
+fn new_sequence_stays_open_on_invalid_frame_size() {
+    let mut d = Driver::demo();
+    let n0 = d.app().session.project.sequences().count();
+    d.ok("ui.menu.invoke", json!({"id": "file.newSequence"}));
+    d.frames(10);
+    {
+        let s = &mut d.app().ui.sequence_settings;
+        s.name = "Keep Me".into();
+        // within the dialog's per-side range, over the engine's pixel budget
+        (s.width, s.height) = (20_000, 20_000);
+    }
+    d.frames(2);
+    d.click("sequenceSettings.ok");
+    d.frames(2);
+    assert_eq!(d.app().session.project.sequences().count(), n0, "nothing is made");
+    assert!(!d.ids("sequenceSettings.").is_empty(), "dialog stays open: {}", d.app().ui.status);
+    assert_eq!(d.label("sequenceSettings.name"), "Keep Me");
+    assert_eq!(d.label("sequenceSettings.width"), "20000");
+    assert_eq!(d.label("sequenceSettings.height"), "20000");
 }

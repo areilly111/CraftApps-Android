@@ -595,6 +595,8 @@
 	Description:	Descrição:
 	Deselect	Desmarcar
 	Design…	Projeto…
+	Graph Design	Projeto do gráfico
+	Graph Marker	Marcador do gráfico
 	Destination:	Destino:
 	Detail:	Detalhe:
 	Devices	Dispositivos
@@ -1334,6 +1336,7 @@
 	Move Plane to Match Object	Mover Plano para Corresponder ao Objeto
 	Move Slices	Mover Fatias
 	Move Spine Point	Mover Ponto de Coluna
+	Reshape Spine Segment	Remodelar Segmento da Coluna
 	Move Swatch	Mover Amostra
 	Move Up	Mover para Cima
 	Move in Perspective	Mover em Perspectiva
@@ -1721,6 +1724,11 @@
 	Proof Colors	Provar Cores
 	Proof Setup	Configuração de Prova
 	Properties	Propriedades
+	Proportional Metrics	Métrica Proporcional
+	Digits	Dígitos
+	Arabic	Arábicos
+	Hindi	Hindi
+	Farsi	Farsi
 	Pucker & Bloat…	Encolher e Inchar…
 	Pucker Tool	Ferramenta Encolher
 	Punctuation Space	Espaço de Pontuação
@@ -2065,6 +2073,7 @@
 	Select All Instances	Selecionar Todas as Instâncias
 	Select All Unused	Selecionar Todos os Não Usados
 	Select Anchors	Selecionar Âncoras
+	Select Segments	Selecionar segmentos
 	Select Appearance Item	Selecionar Item de Aparência
 	Select Freeform Point	Selecionar Ponto Livre
 	Select Gradient Stop	Selecionar Parada de Gradiente
@@ -2109,7 +2118,6 @@
 	Set Anchors	Definir Âncoras
 	Set Bounds	Definir Limites
 	Set Current Layer	Definir Camada Atual
-	Set Key Object	Definir Objeto-Chave
 	Set Keyboard Shortcut	Definir Atalho de Teclado
 	Set Mesh Point Color	Definir Cor do Ponto de Malha
 	Set Preference	Definir Preferência
@@ -2559,6 +2567,7 @@
 	Vertical	Vertical
 	Vertical Align Bottom	Alinhar Inferior Verticalmente
 	Vertical Align Center	Alinhar Centro Verticalmente
+	Horizontal & Vertical Align Center	Alinhar Centro Horizontal e Verticalmente
 	Vertical Align Top	Alinhar Superior Verticalmente
 	Vertical Area Type Tool	Ferramenta Texto Vertical de Área
 	Vertical Distribute Space	Distribuir Espaço Verticalmente
@@ -2697,6 +2706,7 @@
 	% of all commits	% de todos os commits
 	Lines +/−	Linhas +/−
 	Drag to move	Arraste para mover
+	Drag to move out of the set	Arraste para tirar do conjunto
 	Drag to float as a toolbar	Arraste para flutuar como barra de ferramentas
 	Put back in the toolbar	Devolver à barra de ferramentas
 	Float Panel	Flutuar Painel
@@ -2716,6 +2726,8 @@
 	Images: link to the file instead of only embedding it.	Imagens: vincular ao arquivo em vez de apenas incorporá-lo.
 	VectorCraft documents: one locked object, updated when the file changes.	Documentos do VectorCraft: um objeto bloqueado, atualizado quando o arquivo muda.
 	A file dialog is open: choose there first	Há uma caixa de diálogo de arquivos aberta: escolha nela primeiro
+	The document was closed while its file dialog was open	O documento foi fechado enquanto sua caixa de diálogo de arquivos estava aberta
+	The dialog was closed before its file dialog answered	O diálogo foi fechado antes que sua caixa de diálogo de arquivos respondesse
 	Shaper	Formador
 	Expand Shaper Group	Expandir Grupo Formador
 	Release Shaper Group	Liberar Grupo Formador
@@ -2754,6 +2766,14 @@
 	Ocean Ripple…	Ondulação oceânica…
 	Rename Data Set	Renomear conjunto de dados
 	Rename Variable	Renomear variável
+# Shared panel docking
+	Activate Panel	Ativar Painel
+	Change Panel Layout	Alterar Layout dos Painéis
+	Close Panel	Fechar Painel
+	Move Panel	Mover Painel
+	Group with	Agrupar com
+	Resize panels	Redimensionar painéis
+	Resize panel window	Redimensionar janela do painel
 
 # Interactive Revolve controls.
 	Lighting	Iluminação
@@ -2789,3 +2809,873 @@ lighting	Light	Luz
 	Spatter…	Respingo…
 	Sprayed Strokes…	Traços Borrifados…
 	Sumi-e…	Sumi-e…
+	Vertical Guide	Guia vertical
+	Horizontal Guide	Guia horizontal
+	All Scripts	Todos os scripts
+	Anchors:	Âncoras:
+	Any Kind	Qualquer tipo
+	Apply	Aplicar
+	Ellipse Properties:	Propriedades da elipse:
+	Invert Pie	Inverter fatia
+	Side Length:	Comprimento do lado:
+	Make Sides Equal	Igualar lados
+	Pie End Angle:	Ângulo final da fatia:
+	Pie Start Angle:	Ângulo inicial da fatia:
+	Center	Centro
+	Above Text	Acima do texto
+	Position Panel Above Text	Posicionar painel acima do texto
+	Connect Selected End Points	Conectar extremidades selecionadas
+	Convert Selected Anchor Points to Corner	Converter pontos de ancoragem selecionados em canto
+	Convert Selected Anchor Points to Smooth	Converter pontos de ancoragem selecionados em suaves
+	Convert:	Converter:
+	Cut Path	Cortar traçado
+	Decorative	Decorativo
+	Default Fill and Stroke (D)	Preenchimento e traço padrão (D)
+	Delete Anchor Points	Excluir pontos de ancoragem
+	Dim Images to:	Esmaecer imagens para:
+	Duplicate Selection	Duplicar seleção
+	Edit Selection	Editar seleção
+	Expand Layers Panel Rows	Expandir linhas do painel Camadas
+	Favorites	Favoritos
+	Fill (X), double-click for the Color Picker	Preenchimento (X), clique duas vezes para o seletor de cores
+	Find Objects	Localizar objetos
+	Flare Tool Options	Opções da ferramenta Reflexo
+	Halo	Halo
+	Rays	Raios
+	Rings	Anéis
+	Diameter:	Diâmetro:
+	Brightness:	Brilho:
+	Growth:	Crescimento:
+	Fuzziness:	Difusão:
+	Number:	Número:
+	Longest:	Mais longo:
+	Path:	Traçado:
+	Largest:	Maior:
+	Direction:	Direção:
+	Symbolism Tools Options	Opções das ferramentas de simbolismo
+	Symbol Set Density:	Densidade do conjunto de símbolos:
+	Flatten Artwork	Achatar arte-final
+	Graphics	Gráficos
+	Highlight Rows	Destacar linhas
+	Highlight Variable	Destacar variável
+	Palette:	Paleta:
+	Limited	Limitada
+	Full Tone	Tom completo
+	Document Library	Biblioteca do documento
+	Library:	Biblioteca:
+	Image Tracing	Vetorização de imagem
+	Tracing Presets	Predefinições de vetorização
+	Japanese	Japonês
+	Keep a link to an image file instead of only embedding it	Manter um link para o arquivo de imagem em vez de apenas incorporá-lo
+	Latin	Latim
+	Layer Options	Opções de camada
+	Layers Panel Options	Opções do painel Camadas
+	Left-to-Right Paragraph Direction	Direção do parágrafo da esquerda para a direita
+	Line-end Punctuation Half Width	Pontuação de fim de linha em meia largura
+	Lock Others	Bloquear outros
+	Merge Selected	Mesclar selecionados
+	Model	Modelo
+	Mojikumi Set	Conjunto Mojikumi
+	Kinsoku Set	Conjunto Kinsoku
+	Hard	Duro
+	Soft	Macio
+	Monospaced	Monoespaçado
+	Move Rows	Mover linhas
+	Calligraphic Brush Options	Opções de pincel caligráfico
+	Bristle Brush Options	Opções de pincel de cerdas
+	Scatter Brush Options	Opções de pincel de dispersão
+	Art Brush Options	Opções de pincel de arte
+	Pattern Brush Options	Opções de pincel de padrão
+	Scatter:	Dispersão:
+	Rotation:	Rotação:
+	Rotation relative to:	Rotação relativa a:
+	Brush Scale Options	Opções de escala do pincel
+	Scale Proportionately	Dimensionar proporcionalmente
+	Stretch to Fit Stroke Length	Esticar para ajustar ao comprimento do traço
+	Stretch Between Guides	Esticar entre guias
+	Start:	Início:
+	End:	Fim:
+	Left to Right	Da esquerda para a direita
+	Right to Left	Da direita para a esquerda
+	Top to Bottom	De cima para baixo
+	Bottom to Top	De baixo para cima
+	Flip:	Inverter:
+	Outer Corner Tile	Ladrilho de canto externo
+	Side Tile	Ladrilho lateral
+	Inner Corner Tile	Ladrilho de canto interno
+	Start Tile	Ladrilho inicial
+	End Tile	Ladrilho final
+	Fit	Ajustar
+	Stretch to fit	Esticar para ajustar
+	Add space to fit	Adicionar espaço para ajustar
+	Approximate path	Aproximar traçado
+	Colorization	Colorização
+	Tints	Matizes
+	Tints and Shades	Matizes e sombras
+	Hue Shift	Deslocamento de matiz
+	Key Color:	Cor-chave:
+	Shape:	Forma:
+	New Layer Options…	Opções de nova camada…
+	No matching fonts	Nenhuma fonte correspondente
+	Create:	Criar:
+	Fills	Preenchimentos
+	Strokes	Traços
+	Options for Selection…	Opções da seleção…
+	Outline Others	Contornar outros
+	Preview All Layers	Visualizar todas as camadas
+	Regular	Regular
+	Release to Layers (Build)	Liberar para camadas (construir)
+	Release to Layers (Sequence)	Liberar para camadas (sequência)
+	Right-to-Left Paragraph Direction	Direção do parágrafo da direita para a esquerda
+	Rounded	Arredondado
+	Row Size:	Tamanho da linha:
+	Sans Serif / Gothic	Sem serifa / Gótico
+	Saved Selection 1	Seleção salva 1
+	Saved Selection 10	Seleção salva 10
+	Saved Selection 11	Seleção salva 11
+	Saved Selection 12	Seleção salva 12
+	Saved Selection 13	Seleção salva 13
+	Saved Selection 14	Seleção salva 14
+	Saved Selection 15	Seleção salva 15
+	Saved Selection 16	Seleção salva 16
+	Saved Selection 17	Seleção salva 17
+	Saved Selection 18	Seleção salva 18
+	Saved Selection 19	Seleção salva 19
+	Saved Selection 2	Seleção salva 2
+	Saved Selection 20	Seleção salva 20
+	Saved Selection 21	Seleção salva 21
+	Saved Selection 22	Seleção salva 22
+	Saved Selection 23	Seleção salva 23
+	Saved Selection 24	Seleção salva 24
+	Saved Selection 25	Seleção salva 25
+	Saved Selection 3	Seleção salva 3
+	Saved Selection 4	Seleção salva 4
+	Saved Selection 5	Seleção salva 5
+	Saved Selection 6	Seleção salva 6
+	Saved Selection 7	Seleção salva 7
+	Saved Selection 8	Seleção salva 8
+	Saved Selection 9	Seleção salva 9
+	Script / Brush	Script / Pincel
+	Search	Pesquisar
+	Select Art	Selecionar arte
+	Serif / Mincho	Com serifa / Mincho
+	Show All Layers	Mostrar todas as camadas
+	Show Layers Only	Mostrar somente camadas
+	Relative	Relativo
+	Absolute	Absoluto
+	View:	Exibição:
+	Tracing Result	Resultado da vetorização
+	Tracing Result with Outlines	Resultado da vetorização com contornos
+	Outlines	Contornos
+	Outlines with Source Image	Contornos com imagem de origem
+	Source Image	Imagem de origem
+	Image Trace View	Exibição de vetorização de imagem
+	Stroke (X), double-click for the Color Picker	Traço (X), clique duas vezes para o seletor de cores
+	Swap Fill and Stroke (Shift+X)	Trocar preenchimento e traço (Shift+X)
+	Add Content	Adicionar conteúdo
+	Click to apply to the selected type	Clique para aplicar ao texto selecionado
+	Create New Library	Criar nova biblioteca
+	Delete the library “{name}”?	Excluir a biblioteca “{name}”?
+	Drag art or swatches here, or use + to add the selection's colors and text styles.	Arraste arte ou amostras para cá, ou use + para adicionar as cores e os estilos de texto da seleção.
+	Its graphics, colors and text styles are deleted from this machine.	Seus gráficos, cores e estilos de texto são excluídos deste computador.
+	Keep graphics, colors and text styles here to use them in any document. Libraries are stored on this machine — no account required.	Mantenha gráficos, cores e estilos de texto aqui para usá-los em qualquer documento. As bibliotecas ficam armazenadas neste computador, sem necessidade de conta.
+	This library is empty	Esta biblioteca está vazia
+	Add to Library	Adicionar à biblioteca
+	Delete Library	Excluir biblioteca
+	Delete Library Item	Excluir item da biblioteca
+	No results	Nenhum resultado
+	No items in this library match “{query}”.	Nenhum item desta biblioteca corresponde a “{query}”.
+	Right-click an item to move it into this group.	Clique com o botão direito em um item para movê-lo para este grupo.
+	New Group	Novo grupo
+	Move to Group	Mover para o grupo
+	Import Library	Importar biblioteca
+	Export Library	Exportar biblioteca
+	New Library Group	Novo grupo de biblioteca
+	Rename Library Group	Renomear grupo de biblioteca
+	Delete Library Group	Excluir grupo de biblioteca
+	Move Library Item to Group	Mover item da biblioteca para o grupo
+	Library	Biblioteca
+	Rename Library	Renomear biblioteca
+	Show Library	Mostrar biblioteca
+	Use Library Item	Usar item da biblioteca
+	Show all open documents	Mostrar todos os documentos abertos
+	Template	Modelo
+	Thumbnails:	Miniaturas:
+	Trace the image with the Default preset	Vetorizar a imagem com a predefinição padrão
+	Unlock All Layers	Desbloquear todas as camadas
+	List Variables	Listar variáveis
+	Bind Variable	Vincular variável
+	List Data Sets	Listar conjuntos de dados
+	Select Data Set	Selecionar conjunto de dados
+	Data Sets	Conjuntos de dados
+	Data Set	Conjunto de dados
+	Kind	Tipo
+	Variable	Variável
+	no document	nenhum documento
+	no data set to edit	nenhum conjunto de dados para editar
+	Select Bound Object	Selecionar objeto vinculado
+	Select All Bound Objects	Selecionar todos os objetos vinculados
+	Multiple objects	Vários objetos
+	New Name	Novo nome
+	no variable to rename	nenhuma variável para renomear
+	no data set to rename	nenhum conjunto de dados para renomear
+	Top-to-Top Leading	Entrelinha de topo a topo
+	Bottom-to-Bottom Leading	Entrelinha de base a base
+	Burasagari	Burasagari
+	Force	Forçar
+	Miter	Ponta
+	Bevel	Chanfro
+axis	Horizontal	Horizontal
+axis	Vertical	Vertical
+axis	Both	Ambos
+	Drag to float the panel group	Arraste para flutuar o grupo de painéis
+	Put back in the dock	Devolver ao dock
+	Drag to float the toolbar	Arraste para flutuar a barra de ferramentas
+	Drag to the window's left edge to dock	Arraste até a borda esquerda da janela para encaixar
+@msg	no library `{id}`	nenhuma biblioteca `{id}`
+@msg	select some type first	selecione algum texto primeiro
+@msg	{_1} has no {_2} style	{_1} não tem o estilo {_2}
+@msg	a layer couldn't be read	não foi possível ler uma camada
+@msg	it has more than one artboard	tem mais de uma prancheta
+@msg	it has no page	não tem página
+@msg	it has too many text objects	tem objetos de texto demais
+@msg	it has too much text	tem texto demais
+@msg	its editing data doesn't say where its artboard is	seus dados de edição não indicam onde fica a prancheta
+@msg	its editing data has no layers	seus dados de edição não têm camadas
+@msg	its editing data is damaged	seus dados de edição estão danificados
+@msg	its editing data is for a different page	seus dados de edição são de outra página
+@msg	its layers use {_1}, which aren't read yet	suas camadas usam {_1}, que ainda não são lidos
+@msg	its page has text, and its layers have no text objects to put it in	sua página tem texto, e suas camadas não têm objetos de texto para recebê-lo
+@msg	its type is to come in as outlines, which only its page has	seu texto deve entrar como contornos, que somente sua página possui
+@msg	the art on them differs from the page's in {_1}% of it	a arte nelas difere da página em {_1}% do conteúdo
+@msg	`to` must be "corner" or "smooth"	`to` deve ser "corner" ou "smooth"
+@msg	BMP files are RGB or grayscale: colorModel rgb or gray	arquivos BMP são RGB ou em tons de cinza: colorModel rgb ou gray
+@msg	Blend colors: select at least three objects with filled colours	Mesclar cores: selecione pelo menos três objetos com preenchimento de cor
+@msg	Combine Slices: the slices have no bounds	Combinar fatias: as fatias não têm limites
+@msg	Convert to Artboards: selection has no area	Converter em pranchetas: a seleção não tem área
+@msg	Convert to Shape: no rectangles or ellipses selected	Converter em forma: nenhum retângulo ou elipse selecionado
+@msg	Copied the CSS of {rules} object(s)	CSS de {rules} objeto(s) copiado
+@msg	Corners edits the corners of a path	Cantos edita os cantos de um traçado
+@msg	Couldn't copy to the system clipboard: {e}	Não foi possível copiar para a área de transferência do sistema: {e}
+@msg	Couldn't open {name}: {e}	Não foi possível abrir {name}: {e}
+@msg	Couldn't place {name}: the document it was dropped on was closed	Não foi possível inserir {name}: o documento em que foi solto foi fechado
+@msg	Couldn't read {name}: {e}	Não foi possível ler {name}: {e}
+@msg	Couldn't save recovery data: {e}	Não foi possível salvar os dados de recuperação: {e}
+@msg	Create Outlines: select text objects	Criar contornos: selecione objetos de texto
+@msg	Create from Guides: the document has no artboard	Criar a partir de guias: o documento não tem prancheta
+@msg	Create from Guides: the guides make more than {MAX_PIECES} slices	Criar a partir de guias: as guias formam mais de {MAX_PIECES} fatias
+@msg	Create from Selection: the selection has no area	Criar a partir da seleção: a seleção não tem área
+@msg	Data Recovery has nowhere to keep copies: set Preferences → File Handling → Data Recovery → Folder (recoveryFolder)	A recuperação de dados não tem onde guardar cópias: defina Preferências → Manipulação de arquivos → Recuperação de dados → Pasta (recoveryFolder)
+@msg	direct-select anchor points to cut at (not the end points of open paths)	selecione diretamente os pontos de ancoragem onde cortar (não as extremidades de traçados abertos)
+@msg	Divide Objects Below: select a path	Dividir objetos abaixo: selecione um traçado
+@msg	Divide Objects Below: select exactly one path	Dividir objetos abaixo: selecione exatamente um traçado
+@msg	Downloaded {_1} file(s)	{_1} arquivo(s) baixado(s)
+@msg	Downloaded {what}	{what} baixado
+@msg	Expand Appearance: the selection has a basic appearance	Expandir aparência: a seleção tem uma aparência básica
+@msg	Expand: no brush strokes selected	Expandir: nenhum traço de pincel selecionado
+@msg	Expand: no gradient fills	Expandir: nenhum preenchimento em gradiente
+@msg	Expand: nothing to expand	Expandir: nada para expandir
+@msg	Exported {count} file(s) to {folder}	{count} arquivo(s) exportado(s) para {folder}
+@msg	Exported {path}	{path} exportado
+@msg	Flatten Transparency: select objects to flatten	Achatar transparência: selecione os objetos a achatar
+@msg	Flatten Transparency: {e}	Achatar transparência: {e}
+@msg	Image Trace: the traced image is missing	Vetorização de imagem: a imagem vetorizada está ausente
+@msg	Imported {what}: {_1}	{what} importado: {_1}
+@msg	Installed plug-in {_1}	Plug-in {_1} instalado
+@msg	Internal error: {msg} (please report this bug)	Erro interno: {msg} (relate este bug)
+@msg	Live Paint Merge: select a Live Paint group and the paths to add	Mesclar Pintura dinâmica: selecione um grupo de Pintura dinâmica e os traçados a adicionar
+@msg	Live Paint: select paths or compound paths	Pintura dinâmica: selecione traçados ou traçados compostos
+@msg	Live Paint: these paths are too degenerate to paint	Pintura dinâmica: estes traçados são degenerados demais para pintar
+@msg	Make Guides: select paths	Criar guias: selecione traçados
+@msg	No saved selections (Select → Save Selection…)	Nenhuma seleção salva (Selecionar → Salvar seleção…)
+@msg	No saved views (View → New View…)	Nenhuma vista salva (Exibir → Nova vista…)
+@msg	Offset Path: select paths	Deslocar traçado: selecione traçados
+@msg	Opened with {_1} note(s): {_2}	Aberto com {_1} observação(ões): {_2}
+@msg	Opened {url}	{url} aberto
+@msg	Outline Stroke: no stroked paths selected	Contornar traço: nenhum traçado com traço selecionado
+@msg	PDF settings are not an object	as configurações de PDF não são um objeto
+@msg	PDF writer error: {0}	Erro do gravador de PDF: {0}
+@msg	Packaged {n} file(s) in {folder}{note}	{n} arquivo(s) empacotado(s) em {folder}{note}
+@msg	Packaged {n} file(s){note}	{n} arquivo(s) empacotado(s){note}
+@msg	Preview in Browser needs the desktop app (the web downloads files instead)	Visualizar no navegador exige o aplicativo para desktop (na web, os arquivos são baixados)
+@msg	Release Guides: no guides	Liberar guias: não há guias
+@msg	Release: no layer to put the rectangle in	Liberar: não há camada para colocar o retângulo
+@msg	Replace Spine: select a blend and a path	Substituir eixo: selecione uma mesclagem e um traçado
+@msg	select two or more objects to distribute	selecione dois ou mais objetos para distribuir
+@msg	select paths or anchor points	selecione traçados ou pontos de ancoragem
+@msg	SVG parse error: {0}	Erro de análise do SVG: {0}
+@msg	Save for Web: the image is empty	Salvar para Web: a imagem está vazia
+@msg	Save writes {_1}, not {_2}: use document.export for other formats	Salvar grava {_1}, não {_2}: use document.export para outros formatos
+@msg	Saved recovery data for {title}	Dados de recuperação de {title} salvos
+@msg	Saved to User Defined: {_1}	Salvo em Definido pelo usuário: {_1}
+@msg	Saved {path}	{path} salvo
+@msg	Select text or click into text with the Type tool to insert glyphs	Selecione texto ou clique em um texto com a ferramenta Texto para inserir glifos
+@msg	Shape Builder: no region under the pointer	Criador de formas: nenhuma região sob o ponteiro
+@msg	Shape Builder: select paths or compound paths	Criador de formas: selecione traçados ou traçados compostos
+@msg	Show All Hidden Attributes: nothing is hidden	Mostrar todos os atributos ocultos: nada está oculto
+@msg	Split Into Grid: select paths large enough for the grid	Dividir em grade: selecione traçados grandes o bastante para a grade
+@msg	Targa files are RGB: colorModel rgb	arquivos Targa são RGB: colorModel rgb
+@msg	Text Wrap: select a wrap object	Quebra de texto: selecione um objeto de quebra
+@msg	`aspect` must be a number (%)	`aspect` deve ser um número (%)
+@msg	`at` must be [x, y]	`at` deve ser [x, y]
+@msg	`color` must be a colour	`color` deve ser uma cor
+@msg	`command` must be a command whose menu item opens a dialog (see ui.menuDialog)	`command` deve ser um comando cujo item de menu abre uma caixa de diálogo (veja ui.menuDialog)
+@msg	`freeform.points` must be an array	`freeform.points` deve ser uma matriz
+@msg	`freeform.lines` must be an array	`freeform.lines` deve ser uma matriz
+@msg	`gradient` must be an object	`gradient` deve ser um objeto
+@msg	`library` is a library id or name (see {list})	`library` é o id ou o nome de uma biblioteca (veja {list})
+@msg	`mode` applies to freeform gradients	`mode` se aplica a gradientes de forma livre
+@msg	`sampleSize` must be 1, 3 or 5	`sampleSize` deve ser 1, 3 ou 5
+@msg	`stops` must be an array	`stops` deve ser uma matriz
+@msg	`svg` must be an object of SVG options (see document.formats)	`svg` deve ser um objeto com opções de SVG (veja document.formats)
+@msg	`{_1}` is no save command	`{_1}` não é um comando de salvar
+@msg	`{area}` is no recovery area name	`{area}` não é o nome de uma área de recuperação
+@msg	`{color}` is not a colour (#rrggbb or a preset name)	`{color}` não é uma cor (#rrggbb ou o nome de uma predefinição)
+@msg	`{id}` has no envelope dialog	`{id}` não tem caixa de diálogo de envelope
+@msg	`{keep}` is not a side of this axis	`{keep}` não é um lado deste eixo
+@msg	`{key}` must be `auto` or a language code such as `en` or `zh-hant`	`{key}` deve ser `auto` ou um código de idioma como `en` ou `zh-hant`
+@msg	`{key}` must be a #rrggbb colour	`{key}` deve ser uma cor #rrggbb
+@msg	`{key}` must be a number	`{key}` deve ser um número
+@msg	`{key}` must be a string	`{key}` deve ser uma string
+@msg	`{key}` must be a whole number	`{key}` deve ser um número inteiro
+@msg	`{key}` must be a whole number between {min} and {max} (got {x})	`{key}` deve ser um número inteiro entre {min} e {max} (recebido {x})
+@msg	`{key}` must be between {min} and {max} (got {x})	`{key}` deve estar entre {min} e {max} (recebido {x})
+@msg	`{key}` must be one of {_1}	`{key}` deve ser um de {_1}
+@msg	`{key}` must be true or false	`{key}` deve ser true ou false
+@msg	`{k}` must be [x, y]	`{k}` deve ser [x, y]
+@msg	`{name}` has no options	`{name}` não tem opções
+@msg	`{name}` is a built-in workspace; choose another name	`{name}` é um espaço de trabalho integrado; escolha outro nome
+@msg	`{name}` is a process colour: tints apply to global and spot colours	`{name}` é uma cor de seleção: os matizes se aplicam a cores globais e especiais
+@msg	`{name}` is no recovery entry name	`{name}` não é o nome de uma entrada de recuperação
+@msg	`{name}` isn't a colour swatch	`{name}` não é uma amostra de cor
+@msg	`{path}` must be a bool or an object of bools	`{path}` deve ser um booleano ou um objeto de booleanos
+@msg	`{s}` is not a colour (#rrggbb or a preset name)	`{s}` não é uma cor (#rrggbb ou o nome de uma predefinição)
+@msg	`{tool}` isn't a Liquify tool	`{tool}` não é uma ferramenta de Liquidificar
+@msg	`{tool}` isn't a freehand tool	`{tool}` não é uma ferramenta de mão livre
+@msg	`{to}` is not an available name	`{to}` não é um nome disponível
+@msg	a PostScript error ({name} in `{op}`)	um erro de PostScript ({name} em `{op}`)
+@msg	a PostScript error ({name} in `{op}`), in {procs}	um erro de PostScript ({name} em `{op}`), em {procs}
+@msg	a PostScript error ({name} in `{op}`: {at})	um erro de PostScript ({name} em `{op}`: {at})
+@msg	a PostScript error ({name} in `{op}`: {at}), in {procs}	um erro de PostScript ({name} em `{op}`: {at}), em {procs}
+@msg	a PostScript error ({name})	um erro de PostScript ({name})
+@msg	a bitmap is empty	um bitmap está vazio
+@msg	a bitmap is too large to read	um bitmap é grande demais para ser lido
+@msg	a colour index is 0 to {_1}, not {n}	um índice de cor vai de 0 a {_1}, não {n}
+@msg	a colour is an index, #rrggbb or a preset name, not {v}	uma cor é um índice, #rrggbb ou o nome de uma predefinição, não {v}
+@msg	a document needs at least one artboard	um documento precisa de pelo menos uma prancheta
+@msg	a document needs at least one layer	um documento precisa de pelo menos uma camada
+@msg	a freeform gradient keeps at least one point	um gradiente de forma livre mantém pelo menos um ponto
+@msg	a gradient needs at least two stops	um gradiente precisa de pelo menos duas paradas
+@msg	a graphic style named `{to}` already exists	já existe um estilo gráfico chamado `{to}`
+@msg	a page is missing	falta uma página
+@msg	a page out of range	uma página fora do intervalo
+@msg	a page tree kid isn't a reference	um filho da árvore de páginas não é uma referência
+@msg	a page tree node has no kids	um nó da árvore de páginas não tem filhos
+@msg	a page's placement is not finite	a posição de uma página não é finita
+@msg	a preset named `{_1}` exists	já existe uma predefinição chamada `{_1}`
+@msg	a slice size must be a positive number of points	o tamanho de uma fatia deve ser um número positivo de pontos
+@msg	a stream runs past the end	um fluxo passa do fim
+@msg	a stream's length is wrong	o comprimento de um fluxo está errado
+@msg	a stream's length isn't a number	o comprimento de um fluxo não é um número
+@msg	add a format to export	adicione um formato para exportar
+@msg	already editing a pattern	já está editando um padrão
+@msg	an object can't be read	não foi possível ler um objeto
+@msg	an object in perspective would leave the edited grid	um objeto em perspectiva sairia da grade editada
+@msg	antiAlias `{id}`: none, art or type	antiAlias `{id}`: none, art ou type
+@msg	artboard {0} does not exist	a prancheta {0} não existe
+@msg	at this scale the drawing is {w} × {h} pt, more than the canvas holds: choose a smaller scale or fit it to the artboard	nesta escala o desenho tem {w} × {h} pt, mais do que a tela comporta: escolha uma escala menor ou ajuste-o à prancheta
+@msg	background {other}: transparent, white, black or a colour such as "#ff8800"	plano de fundo {other}: transparent, white, black ou uma cor como "#ff8800"
+@msg	bad color {v}	cor inválida {v}
+@msg	bad colour `{hex}` (#rrggbb)	cor inválida `{hex}` (#rrggbb)
+@msg	bad page tree	árvore de páginas inválida
+@msg	bad shortcut	atalho inválido
+@msg	bad stream length	comprimento de fluxo inválido
+@msg	bad trailer	trailer inválido
+@msg	balance must be between 0 and 100	o equilíbrio deve estar entre 0 e 100
+@msg	batch step {_1} (`{id}`) failed: {e}	a etapa {_1} do lote (`{id}`) falhou: {e}
+@msg	brightness must be dark|mediumDark|mediumLight|light	brightness deve ser dark|mediumDark|mediumLight|light
+@msg	can't encode the document: {0}	não foi possível codificar o documento: {0}
+@msg	can't parse shortcut `{c}`	não foi possível interpretar o atalho `{c}`
+@msg	can't parse shortcut `{s}` for `{k}`	não foi possível interpretar o atalho `{s}` de `{k}`
+@msg	can't save version {0}: VectorCraft writes versions {MIN_VERSION} to {VERSION}	não foi possível salvar a versão {0}: o VectorCraft grava as versões {MIN_VERSION} a {VERSION}
+@msg	can't write .{ext} images	não é possível gravar imagens .{ext}
+@msg	cannot distort a zero-size bounding box	não é possível distorcer uma caixa delimitadora de tamanho zero
+@msg	cannot read PDF: {0}	não foi possível ler o PDF: {0}
+@msg	cannot split an open path at its end point	não é possível dividir um traçado aberto em sua extremidade
+@msg	closing needs three anchors	fechar exige três âncoras
+@msg	check an asset to export	marque um recurso para exportar
+@msg	choice must be "merge" or "add", not `{choice}`	choice deve ser "merge" ou "add", não `{choice}`
+@msg	choose a direction to divide in	escolha uma direção para dividir
+@msg	choose a folder to export to	escolha uma pasta para exportar
+@msg	choose a location for the package	escolha um local para o pacote
+@msg	clipboard is empty	a área de transferência está vazia
+@msg	colorTable.{what}: `{h}` is not a colour such as "#ff8800"	colorTable.{what}: `{h}` não é uma cor como "#ff8800"
+@msg	colorTable.{what}: at most {MAX_TABLE} colours	colorTable.{what}: no máximo {MAX_TABLE} cores
+@msg	command `{0}` is not available right now: {1}	o comando `{0}` não está disponível agora: {1}
+@msg	compound paths can only contain paths	traçados compostos só podem conter traçados
+@msg	compressed (RLE) bitmaps can't be read yet	bitmaps compactados (RLE) ainda não podem ser lidos
+@msg	damaged	danificado
+@msg	decimals must be {_1}–{_2} (got {_3})	as casas decimais devem estar entre {_1} e {_2} (recebido {_3})
+@msg	divide into 1 to {MAX_PIECES} slices	divida em 1 a {MAX_PIECES} fatias
+@msg	effect {k} is `{_1}`, not `{id}`	o efeito {k} é `{_1}`, não `{id}`
+@msg	empty brush stroke	traço de pincel vazio
+@msg	empty cutter	cortador vazio
+@msg	empty path	traçado vazio
+@msg	file version {0} is newer than this VectorCraft supports ({VERSION})	a versão {0} do arquivo é mais recente do que este VectorCraft suporta ({VERSION})
+@msg	freeform point {i} needs `at` [x, y] and a valid `color`	o ponto {i} de forma livre precisa de `at` [x, y] e de uma `color` válida
+@msg	freeform line {i} must be an array of point indices	a linha {i} de forma livre deve ser uma matriz de índices de pontos
+@msg	give both `start` and `end` [x, y] (or neither)	informe `start` e `end` [x, y] (ou nenhum dos dois)
+@msg	give corners of the path: anchors between two straight sides	informe cantos do traçado: âncoras entre dois lados retos
+@msg	give the path `id` and the width point `index`	informe o `id` do traçado e o `index` do ponto de largura
+@msg	guides are locked	as guias estão bloqueadas
+@msg	image '{key}' has no pixels and was left out	a imagem '{key}' não tem pixels e foi omitida
+@msg	image data `{_1}` is missing	os dados da imagem `{_1}` estão ausentes
+@msg	image would be too large; lower the resolution	a imagem ficaria grande demais; reduza a resolução
+@msg	index must be a number or first, previous, next or last	index deve ser um número ou first, previous, next ou last
+@msg	index must be a number or first, previous, next or last, not `{other}`	index deve ser um número ou first, previous, next ou last, não `{other}`
+@msg	installing from a path is not available on the web; pass the module as `dataBase64`	instalar a partir de um caminho não está disponível na web; passe o módulo como `dataBase64`
+@msg	internal error in `{cmd}`: {msg} (the document was left as it was before; please report this bug)	erro interno em `{cmd}`: {msg} (o documento foi mantido como estava; relate este bug)
+@msg	internal error: {msg} (please report this bug)	erro interno: {msg} (relate este bug)
+@msg	invalid PDF setting: {0}	configuração de PDF inválida: {0}
+@msg	invalid image data for `{0}`	dados de imagem inválidos para `{0}`
+@msg	invalid parameters for `{cmd}`: {msg}	parâmetros inválidos para `{cmd}`: {msg}
+@msg	is not an image VectorCraft reads	não é uma imagem que o VectorCraft lê
+@msg	it uses `{at}`, which VectorCraft's PostScript reader doesn't know	usa `{at}`, que o leitor de PostScript do VectorCraft não conhece
+@msg	it uses `{at}`, which VectorCraft's PostScript reader doesn't know, in {procs}	usa `{at}`, que o leitor de PostScript do VectorCraft não conhece, em {procs}
+@msg	its Windows metafile preview was opened instead, which may simplify the art	a visualização em metarquivo do Windows foi aberta no lugar, o que pode simplificar a arte
+@msg	its preview was placed instead, at screen resolution	a visualização foi inserida no lugar, em resolução de tela
+@msg	join needs open paths	unir exige traçados abertos
+@msg	lang must be one of {_1}	lang deve ser um de {_1}
+@msg	layers can't be wrap objects	camadas não podem ser objetos de quebra
+@msg	missing `folder`	falta `folder`
+@msg	missing `id` (see plugin.list)	falta `id` (veja plugin.list)
+@msg	missing `name`	falta `name`
+@msg	missing `tool`	falta `tool`
+@msg	missing index	falta o índice
+@msg	multiple windows land with M11.5	várias janelas chegam com o M11.5
+@msg	name the file	dê um nome ao arquivo
+@msg	no CSS to copy: select objects with CSS of their own	não há CSS para copiar: selecione objetos que tenham CSS próprio
+@msg	no Live Paint edge near that point	nenhuma aresta de Pintura dinâmica perto desse ponto
+@msg	no Live Paint face at that point	nenhuma face de Pintura dinâmica nesse ponto
+@msg	no PNG encoder	sem codificador de PNG
+@msg	no active document	nenhum documento ativo
+@msg	no active perspective plane	nenhum plano de perspectiva ativo
+@msg	no anchor points selected	nenhum ponto de ancoragem selecionado
+@msg	no app to open files here	nenhum aplicativo para abrir arquivos aqui
+@msg	no artboard	nenhuma prancheta
+@msg	no artboard {i} (0-based; the document has {_1})	nenhuma prancheta {i} (base 0; o documento tem {_1})
+@msg	no artboard {i} (0-based; the document has {count})	nenhuma prancheta {i} (base 0; o documento tem {count})
+@msg	no artboards named	nenhuma prancheta com esse nome
+@msg	no artwork	nenhuma arte-final
+@msg	no blend options	sem opções de mesclagem
+@msg	no bounds	sem limites
+@msg	no brush named `{name}`	nenhum pincel chamado `{name}`
+@msg	no brush selected	nenhum pincel selecionado
+@msg	no catalog	sem catálogo
+@msg	no changes since the last save	nenhuma alteração desde o último salvamento
+@msg	no clock to keep a heartbeat by	sem relógio para manter o sinal de atividade
+@msg	no colour group `{g}`	nenhum grupo de cores `{g}`
+@msg	no cross-reference table	sem tabela de referências cruzadas
+@msg	no current layer	nenhuma camada atual
+@msg	no data	sem dados
+@msg	no dialog open	nenhuma caixa de diálogo aberta
+@msg	no document	nenhum documento
+@msg	no document open	nenhum documento aberto
+@msg	no effect applied yet	nenhum efeito aplicado ainda
+@msg	no effect at index {k}	nenhum efeito no índice {k}
+@msg	no end record	sem registro final
+@msg	no file manager here	nenhum gerenciador de arquivos aqui
+@msg	no file reader	sem leitor de arquivos
+@msg	no file system here	nenhum sistema de arquivos aqui
+@msg	no file writer	sem gravador de arquivos
+@msg	no files to place	nenhum arquivo para inserir
+@msg	no format to export to	nenhum formato para exportar
+@msg	no free recovery area	nenhuma área de recuperação livre
+@msg	no gradient stop or freeform point is selected	nenhuma parada de gradiente ou ponto de forma livre selecionado
+@msg	no graphic style `{name}`	nenhum estilo gráfico `{name}`
+@msg	no graphic style `{n}`	nenhum estilo gráfico `{n}`
+@msg	no interaction in progress	nenhuma interação em andamento
+@msg	no key object	nenhum objeto-chave
+@msg	no library `{key}` (see {list})	nenhuma biblioteca `{key}` (veja {list})
+@msg	no native format	sem formato nativo
+@msg	no pages	sem páginas
+@msg	no pattern `{name}`	nenhum padrão `{name}`
+@msg	no perspective grid preset named `{name}`	nenhuma predefinição de grade de perspectiva chamada `{name}`
+@msg	no plug-in {0} is installed	o plug-in {0} não está instalado
+@msg	no plug-in {id} is installed	o plug-in {id} não está instalado
+@msg	no point {i} (the gradient has {_1})	nenhum ponto {i} (o gradiente tem {_1})
+@msg	no preset editor	sem editor de predefinições
+@msg	no previous transform	nenhuma transformação anterior
+@msg	no print preset named `{base}`	nenhuma predefinição de impressão chamada `{base}`
+@msg	no print preset named `{name}`	nenhuma predefinição de impressão chamada `{name}`
+@msg	no print service	sem serviço de impressão
+@msg	no revert command	sem comando de reverter
+@msg	no saved PDF preset named `{name}` (built-in presets are read-only: start a new one from them)	nenhuma predefinição de PDF salva chamada `{name}` (as predefinições integradas são somente leitura: crie uma nova a partir delas)
+@msg	no saved presets	nenhuma predefinição salva
+@msg	no saved print preset named `{name}` ({DEFAULT_PRESET} is protected: start a new one from it)	nenhuma predefinição de impressão salva chamada `{name}` ({DEFAULT_PRESET} é protegida: crie uma nova a partir dela)
+@msg	no saved profiles	nenhum perfil salvo
+@msg	no saved selections	nenhuma seleção salva
+@msg	no saved themes	nenhum tema salvo
+@msg	no segment {segment} on line {line}	nenhum segmento {segment} na linha {line}
+@msg	no selected slice in the image: select slices, or save all of them	nenhuma fatia selecionada na imagem: selecione fatias ou salve todas
+@msg	no selection bounds	sem limites de seleção
+@msg	no slice selected	nenhuma fatia selecionada
+@msg	no such action	ação inexistente
+@msg	no such anchor	âncora inexistente
+@msg	no such artboard	prancheta inexistente
+@msg	no such document	documento inexistente
+@msg	no such layer or object	camada ou objeto inexistente
+@msg	no such object {0}	objeto inexistente {0}
+@msg	no such perspective grid preset	predefinição de grade de perspectiva inexistente
+@msg	no such recent file	arquivo recente inexistente
+@msg	no such recent font	fonte recente inexistente
+@msg	no such saved selection	seleção salva inexistente
+@msg	no such segment	segmento inexistente
+@msg	no such subpath	subtraçado inexistente
+@msg	no such user library	biblioteca do usuário inexistente
+@msg	no such view	vista inexistente
+@msg	no such width point	ponto de largura inexistente
+@msg	no swatch `{name}`	nenhuma amostra `{name}`
+@msg	no swatch library `{l}` (see swatch.library.list)	nenhuma biblioteca de amostras `{l}` (veja swatch.library.list)
+@msg	no symbol instances selected	nenhuma instância de símbolo selecionada
+@msg	no target object has an opacity mask: select one or give `id`	nenhum objeto de destino tem máscara de opacidade: selecione um ou informe `id`
+@msg	no threaded text selected	nenhum texto encadeado selecionado
+@msg	no user library folder here	nenhuma pasta de biblioteca do usuário aqui
+@msg	no user workspace `{from}`	nenhum espaço de trabalho do usuário `{from}`
+@msg	node {_1} is not text	o nó {_1} não é texto
+@msg	not a DXF drawing	não é um desenho DXF
+@msg	not a VectorCraft file: {0}	não é um arquivo do VectorCraft: {0}
+@msg	not a VectorCraft shortcut set (missing `overrides`)	não é um conjunto de atalhos do VectorCraft (falta `overrides`)
+@msg	not a graphic style library (format `{_1}`)	não é uma biblioteca de estilos gráficos (formato `{_1}`)
+@msg	not a stored central record	não é um registro central armazenado
+@msg	not a valid plug-in module: {0}	não é um módulo de plug-in válido: {0}
+@msg	not an EMF or WMF file	não é um arquivo EMF ou WMF
+@msg	not found	não encontrado
+@msg	not in pattern editing mode	não está no modo de edição de padrão
+@msg	nothing encoded	nada codificado
+@msg	nothing selected	nada selecionado
+@msg	nothing to align	nada para alinhar
+@msg	nothing to distort	nada para distorcer
+@msg	nothing to export: the document has no visible art (or turn on Use Artboards)	nada para exportar: o documento não tem arte visível (ou ative Usar pranchetas)
+@msg	nothing to preview	nada para visualizar
+@msg	nothing to print	nada para imprimir
+@msg	nothing to redo	nada para refazer
+@msg	nothing to save: the document has no visible art	nada para salvar: o documento não tem arte visível
+@msg	nothing to undo	nada para desfazer
+@msg	nothing to warp	nada para deformar
+@msg	nothing to wrap	nada para envolver
+@msg	object {0} cannot have children	o objeto {0} não pode ter filhos
+@msg	object {id} is not a path	o objeto {id} não é um traçado
+@msg	page size {w} × {h}	tamanho da página {w} × {h}
+@msg	page {0} does not exist (the PDF has {1})	a página {0} não existe (o PDF tem {1})
+@msg	paste unavailable	colar indisponível
+@msg	path is already closed	o traçado já está fechado
+@msg	paths contain invalid coordinates	os traçados contêm coordenadas inválidas
+@msg	paths: give at least one file	paths: informe pelo menos um arquivo
+@msg	pattern missing	padrão ausente
+@msg	patterns nested too deeply are filled with mid-grey	padrões aninhados com profundidade excessiva são preenchidos com cinza médio
+@msg	percent must be above 0 and at most 6400, not {p}	a porcentagem deve ser maior que 0 e no máximo 6400, não {p}
+@msg	pick a colour, gradient or pattern to save as a swatch	escolha uma cor, gradiente ou padrão para salvar como amostra
+@msg	plane must be left, right or ground	plane deve ser left, right ou ground
+@msg	plug-in ABI: {0}	ABI do plug-in: {0}
+@msg	plug-in exceeded its {0}	o plug-in excedeu seu limite de {0}
+@msg	plug-in failed: {0}	o plug-in falhou: {0}
+@msg	plug-in manifest: {0}	manifesto do plug-in: {0}
+@msg	plug-in output: {0}	saída do plug-in: {0}
+@msg	plug-in parameters: {0}	parâmetros do plug-in: {0}
+@msg	plug-in trapped: {0}	o plug-in encontrou uma trap: {0}
+@msg	print settings are not an object	as configurações de impressão não são um objeto
+@msg	printing isn't available here	a impressão não está disponível aqui
+@msg	range `{s}` is empty	o intervalo `{s}` está vazio
+@msg	range `{s}`: `{part}` names no number	intervalo `{s}`: `{part}` não indica um número
+@msg	range `{s}`: `{part}` runs backwards	intervalo `{s}`: `{part}` está invertido
+@msg	range `{s}`: `{t}` is not a number from 1 to {count}	intervalo `{s}`: `{t}` não é um número de 1 a {count}
+@msg	recovery copy `{file}`: {e}	cópia de recuperação `{file}`: {e}
+@msg	resolutions must be between 1 and 2400 ppi	as resoluções devem estar entre 1 e 2400 ppi
+@msg	result would exceed the canvas (coordinates out of range)	o resultado excederia a tela (coordenadas fora do intervalo)
+@msg	scale must be a number from {_1} to {_2}, not {_3}	a escala deve ser um número de {_1} a {_2}, não {_3}
+@msg	scale must be a number from {_1} to {_2}, not {s}	a escala deve ser um número de {_1} a {_2}, não {s}
+@msg	select (or target) objects whose appearance isn't basic	selecione (ou direcione) objetos cuja aparência não seja básica
+@msg	select a Live Paint group	selecione um grupo de Pintura dinâmica
+@msg	select a blend	selecione uma mesclagem
+@msg	select a clip group	selecione um grupo de recorte
+@msg	select a gradient mesh	selecione uma malha de gradiente
+@msg	select a linked image: an embedded one has no file	selecione uma imagem vinculada: uma incorporada não tem arquivo
+@msg	select a repeat	selecione uma repetição
+@msg	select a stroke with a variable width	selecione um traço com largura variável
+@msg	select a symbol instance	selecione uma instância de símbolo
+@msg	select an Image Trace object	selecione um objeto de Vetorização de imagem
+@msg	could not decode image: {0}	não foi possível decodificar a imagem: {0}
+@msg	image is empty	a imagem está vazia
+@msg	the image is {width} × {height} pixels, more than Image Trace takes ({max} megapixels)	a imagem tem {width} × {height} pixels, mais do que a Vetorização de imagem aceita ({max} megapixels)
+@msg	this trace would make more than {max} anchor points, more than the document can show smoothly: raise Noise, lower Paths or Colors, or pick a lower-fidelity preset	esta vetorização geraria mais de {max} pontos de ancoragem, mais do que o documento consegue exibir com fluidez: aumente Ruído, reduza Traçados ou Cores, ou escolha uma predefinição de menor fidelidade
+@msg	select an envelope	selecione um envelope
+@msg	select an image	selecione uma imagem
+@msg	select an object in perspective	selecione um objeto em perspectiva
+@msg	select artwork (or a colour group) to recolor	selecione uma arte-final (ou um grupo de cores) para recolorir
+@msg	select at least two objects	selecione pelo menos dois objetos
+@msg	select objects, not layers	selecione objetos, não camadas
+@msg	select one path, or give its `id`	selecione um traçado ou informe seu `id`
+@msg	select paths to join	selecione traçados para unir
+@msg	select the art to repeat	selecione a arte a repetir
+@msg	select the artwork to warp	selecione a arte-final a deformar
+@msg	select the objects to transform in perspective	selecione os objetos a transformar em perspectiva
+@msg	select two or more graphic styles to merge	selecione dois ou mais estilos gráficos para mesclar
+@msg	select type in perspective	selecione texto em perspectiva
+@msg	selection has no bounds	a seleção não tem limites
+@msg	shadings of an unknown type were left out	sombreamentos de tipo desconhecido foram omitidos
+@msg	shadings of more than 4096 patches or triangles were left out	sombreamentos com mais de 4096 retalhos ou triângulos foram omitidos
+@msg	shadings whose functions are of an unknown type are filled with their middle colour	sombreamentos cujas funções são de tipo desconhecido são preenchidos com sua cor intermediária
+@msg	shortcut for `{k}` must be a string	o atalho de `{k}` deve ser uma string
+@msg	stop {i} needs `offset`	a parada {i} precisa de `offset`
+@msg	stop {i} needs a valid `color`	a parada {i} precisa de uma `color` válida
+@msg	stop {i}: `{k}` must be a number	parada {i}: `{k}` deve ser um número
+@msg	the EMF header is damaged	o cabeçalho EMF está danificado
+@msg	the PDF has no pages	o PDF não tem páginas
+@msg	the PDF is no longer loaded	o PDF não está mais carregado
+@msg	the PDF is password-protected: give its password	o PDF é protegido por senha: informe a senha
+@msg	the PDF password is wrong	a senha do PDF está incorreta
+@msg	the Save PDF dialog didn't open	a caixa de diálogo Salvar PDF não abriu
+@msg	the WMF header is damaged	o cabeçalho WMF está danificado
+@msg	the art could not be sampled	não foi possível amostrar a arte
+@msg	the art has no bounds	a arte não tem limites
+@msg	the art is too light for any dots	a arte é clara demais para gerar pontos
+@msg	the artboard to fit must be a positive size up to {_1} pt	a prancheta a ajustar deve ter um tamanho positivo de até {_1} pt
+@msg	the background worker stopped	o processo em segundo plano parou
+@msg	the compressed file unpacks to more than {_1} MB	o arquivo compactado se expande para mais de {_1} MB
+@msg	the document has never been saved	o documento nunca foi salvo
+@msg	the document has no artboard	o documento não tem prancheta
+@msg	the document has no artboards	o documento não tem pranchetas
+@msg	the document has no patterns	o documento não tem padrões
+@msg	the document has no slices	o documento não tem fatias
+@msg	the document has no symbols	o documento não tem símbolos
+@msg	the drawing has no layout `{_1}` (it has {_2})	o desenho não tem o layout `{_1}` (tem {_2})
+@msg	the drawing is no longer loaded	o desenho não está mais carregado
+@msg	the drawing is too large to open	o desenho é grande demais para abrir
+@msg	the export region is empty	a região de exportação está vazia
+@msg	the export region is not finite	a região de exportação não é finita
+@msg	the export returned unreadable data	a exportação retornou dados ilegíveis
+@msg	the export wrote no file	a exportação não gravou nenhum arquivo
+@msg	the file holds only a placeholder page, not its art (it was saved without PDF compatibility): save it again with PDF compatibility on, or as PDF or SVG	o arquivo contém apenas uma página de espaço reservado, não a arte (foi salvo sem compatibilidade com PDF): salve-o novamente com a compatibilidade com PDF ativada, ou como PDF ou SVG
+@msg	the file was read up to an error ({why}): what follows it was left out	o arquivo foi lido até um erro ({why}): o que vem depois foi omitido
+@msg	the file's preview header points outside the file	o cabeçalho de visualização do arquivo aponta para fora do arquivo
+@msg	the image's pixels don't match its size	os pixels da imagem não correspondem ao seu tamanho
+@msg	the layer has no objects to clip by	a camada não tem objetos para recortar
+@msg	the layer or group is locked	a camada ou o grupo está bloqueado
+@msg	the guide is on a hidden or locked layer	a guia está em uma camada oculta ou bloqueada
+@msg	the target layer is locked or hidden	a camada de destino está bloqueada ou oculta
+@msg	the layer to flatten into is hidden	a camada de destino do achatamento está oculta
+@msg	the object already has an opacity mask	o objeto já tem uma máscara de opacidade
+@msg	the object has no geometry	o objeto não tem geometria
+@msg	the object has no opacity mask	o objeto não tem máscara de opacidade
+@msg	the object has no stroke	o objeto não tem traço
+@msg	the object is beyond the plane's horizon	o objeto está além do horizonte do plano
+@msg	the object isn't in perspective	o objeto não está em perspectiva
+@msg	the object isn't on a perspective plane	o objeto não está em um plano de perspectiva
+@msg	the object would cross the horizon of the perspective plane	o objeto cruzaria o horizonte do plano de perspectiva
+@msg	the objects would leave the grid	os objetos sairiam da grade
+@msg	the package came back damaged	o pacote voltou danificado
+@msg	the pointer is beyond the plane's horizon	o ponteiro está além do horizonte do plano
+@msg	the preview image is empty	a imagem de visualização está vazia
+@msg	the print job has no data	o trabalho de impressão não tem dados
+@msg	the scale is not a usable number	a escala não é um número utilizável
+@msg	the selected stroke's profile is already listed as {_1}	o perfil do traço selecionado já está listado como {_1}
+@msg	the selection has no URL (or they differ)	a seleção não tem URL (ou elas diferem)
+@msg	the selection isn't in perspective	a seleção não está em perspectiva
+@msg	the stroke has no weight	o traço não tem espessura
+@msg	the thumbnail image is malformed	a imagem em miniatura está malformada
+@msg	the top object must be a path, compound path or text object to use as a clipping mask	o objeto superior deve ser um traçado, traçado composto ou objeto de texto para ser usado como máscara de recorte
+@msg	the {tool} tool has no options	a ferramenta {tool} não tem opções
+@msg	there are no objects to release	não há objetos para liberar
+@msg	there are no printer settings to open here	não há configurações de impressora para abrir aqui
+@msg	this PostScript file can't be read ({why}): save it as PDF or SVG in the app that made it	este arquivo PostScript não pode ser lido ({why}): salve-o como PDF ou SVG no aplicativo que o criou
+@msg	this file's PostScript couldn't be read ({why}): {what}	não foi possível ler o PostScript deste arquivo ({why}): {what}
+@msg	this format holds one artboard: export several as PDF or with document.exportForScreens	este formato comporta uma prancheta: exporte várias como PDF ou com document.exportForScreens
+@msg	this is a DWG drawing, which can't be read: save it from the CAD app as an ASCII DXF and open that	este é um desenho DWG, que não pode ser lido: salve-o no aplicativo de CAD como DXF ASCII e abra esse arquivo
+@msg	this is a PostScript file (an .ai saved in an older format or without PDF compatibility, or an EPS file), which can't be opened yet: save it as PDF, PDF-compatible .ai or SVG	este é um arquivo PostScript (um .ai salvo em formato mais antigo ou sem compatibilidade com PDF, ou um arquivo EPS), que ainda não pode ser aberto: salve-o como PDF, .ai compatível com PDF ou SVG
+@msg	this is not a PostScript file	este não é um arquivo PostScript
+@msg	tool shortcuts must be a single key (optionally with Shift)	os atalhos de ferramenta devem ser uma única tecla (opcionalmente com Shift)
+@msg	truncated	truncado
+@msg	unknown command `{0}`	comando desconhecido `{0}`
+@msg	unknown effect `{id}`	efeito desconhecido `{id}`
+@msg	unknown format	formato desconhecido
+@msg	unknown format `{f}` (Save writes {_1})	formato desconhecido `{f}` (Salvar grava {_1})
+@msg	unknown freeform mode `{m}` (points, lines)	modo de forma livre desconhecido `{m}` (points, lines)
+@msg	unknown gradient kind `{k}` (linear, radial, freeform)	tipo de gradiente desconhecido `{k}` (linear, radial, freeform)
+@msg	unknown highlight `{h}`	destaque desconhecido `{h}`
+@msg	unknown option `{path}.{k}`	opção desconhecida `{path}.{k}`
+@msg	unknown overprints `{o}` (preserve, simulate or discard)	sobreimpressões desconhecidas `{o}` (preserve, simulate ou discard)
+@msg	unknown panel `{raw}`	painel desconhecido `{raw}`
+@msg	unknown preference `{key}`	preferência desconhecida `{key}`
+@msg	unknown preset (one of {_1})	predefinição desconhecida (uma de {_1})
+@msg	unknown preset `{name}` (high, medium, low or a saved one: see flattener.presets.list)	predefinição desconhecida `{name}` (high, medium, low ou uma salva: veja flattener.presets.list)
+@msg	unknown preset `{name}` (see flattener.presets.list)	predefinição desconhecida `{name}` (veja flattener.presets.list)
+@msg	unknown preset `{name}` (see webExport.presets.list)	predefinição desconhecida `{name}` (veja webExport.presets.list)
+@msg	unknown side `{other}` (left|right|top|bottom)	lado desconhecido `{other}` (left|right|top|bottom)
+@msg	unknown tool `{tool}`	ferramenta desconhecida `{tool}`
+@msg	unknown tool `{t}`	ferramenta desconhecida `{t}`
+@msg	unknown tool or command `{key}`	ferramenta ou comando desconhecido `{key}`
+@msg	unknown workspace (one of {_1})	espaço de trabalho desconhecido (um de {_1})
+@msg	unsupported: {0}	não suportado: {0}
+@msg	version {0} files can't be compressed: only version {COMPRESSED_SINCE} and later open compressed files	arquivos da versão {0} não podem ser compactados: somente a versão {COMPRESSED_SINCE} e posteriores abrem arquivos compactados
+@msg	width and height are at least 1 pixel	largura e altura têm pelo menos 1 pixel
+@msg	workspace name can't be empty	o nome do espaço de trabalho não pode estar vazio
+@msg	{C}: no effect at index {from}	{C}: nenhum efeito no índice {from}
+@msg	{_1} failed: {e}	{_1} falhou: {e}
+@msg	{_1} files can be opened but not written (see document.formats)	arquivos {_1} podem ser abertos, mas não gravados (veja document.formats)
+@msg	{_1} font families available	{_1} famílias de fontes disponíveis
+@msg	{_1} is a live effect (Effect › Plug-ins)	{_1} é um efeito dinâmico (Efeito › Plug-ins)
+@msg	{_1} is already used by {_2}	{_1} já é usado por {_2}
+@msg	{_1} linked file(s) can't be read here: their previews show	{_1} arquivo(s) vinculado(s) não podem ser lidos aqui: suas visualizações são exibidas
+@msg	{_1} linked image(s) changed on disk: Update Links shows the new versions	{_1} imagem(ns) vinculada(s) mudou(aram) no disco: Atualizar links mostra as novas versões
+@msg	{_1}: not saved, so not closed	{_1}: não salvo, portanto não fechado
+@msg	{bpp}-bit bitmaps can't be read	bitmaps de {bpp} bits não podem ser lidos
+@msg	{command} didn't create an object	{command} não criou um objeto
+@msg	{label} produced an empty result	{label} produziu um resultado vazio
+@msg	{label}: lost track of a shape's style	{label}: perdeu o estilo de uma forma
+@msg	{label}: select paths	{label}: selecione traçados
+@msg	{label}: select paths, compound paths, groups or text	{label}: selecione traçados, traçados compostos, grupos ou texto
+@msg	{label}…	{label}…
+@msg	{name}: CRC mismatch	{name}: CRC não confere
+@msg	{name}: no local header	{name}: sem cabeçalho local
+@msg	{name}: no such recovery entry	{name}: entrada de recuperação inexistente
+@msg	{path} can't be found: relink it first	{path} não foi encontrado: revincule-o primeiro
+@msg	{path}: no file system here (pass dataBase64 to open; omit the path to get dataBase64)	{path}: nenhum sistema de arquivos aqui (passe dataBase64 para abrir; omita o caminho para obter dataBase64)
+@msg	{path}: {e}	{path}: {e}
+@msg	{status} ({e})	{status} ({e})
+@msg	Couldn't place {name}: {e}	Não foi possível inserir {name}: {e}
+@msg	Couldn't paste from the clipboard: {e}	Não foi possível colar da área de transferência: {e}
+@msg	Saved {path} with {_1} note(s): {first}	{path} salvo com {_1} observação(ões): {first}
+@msg	Exported {what} with {_1} note(s): {first}	{what} exportado com {_1} observação(ões): {first}
+@msg	Exported {what}	{what} exportado
+@msg	Saved {n} files beside {path}	{n} arquivos salvos ao lado de {path}
+@msg	Saving	Salvando
+@msg	Saving {_1}	Salvando {_1}
+@msg	Exporting {_1}	Exportando {_1}
+@msg	Saving recovery data for {_1}	Salvando dados de recuperação de {_1}
+@msg	Discarded {_1} recovered document(s)	{_1} documento(s) recuperado(s) descartado(s)
+@msg	Restored {_1} recovered document(s): save them to keep them	{_1} documento(s) recuperado(s) restaurado(s): salve-os para mantê-los
+@msg	Embedded {n} image(s); {missing} missing: relink them first	{n} imagem(ns) incorporada(s); {missing} ausente(s): revincule-as primeiro
+@msg	Embedded {n} image(s)	{n} imagem(ns) incorporada(s)
+@msg	Relinked {_1} image(s)	{_1} imagem(ns) revinculada(s)
+@msg	Relinked {n} image(s)	{n} imagem(ns) revinculada(s)
+@msg	Relinked {n} image(s); not in that folder: {_1}	{n} imagem(ns) revinculada(s); fora dessa pasta: {_1}
+@msg	Updated {_1} image(s)	{_1} imagem(ns) atualizada(s)
+@msg	Unembedded to {_1}	Desincorporado para {_1}
+@msg	Reset {_1}	Redefinir {_1}
+@msg	Sent to {_1}	Enviado para {_1}
+@msg	{_1} files	{_1} arquivos
+@msg	The graphics were lost and have been restarted	Os gráficos foram perdidos e reiniciados
+@msg	The graphics processor tried first couldn't show the window, so VectorCraft started again on {summary}	O processador gráfico tentado primeiro não conseguiu exibir a janela, então o VectorCraft reiniciou em {summary}
+@msg	Loading VectorCraft…	Carregando o VectorCraft…
+@msg	VectorCraft failed to start: {e}	Falha ao iniciar o VectorCraft: {e}
+@msg	A browser with WebGPU or WebGL2 is required.	É necessário um navegador com WebGPU ou WebGL2.
+@msg	The graphics were lost and couldn't be restarted.	Os gráficos foram perdidos e não puderam ser reiniciados.
+@msg	Your unsaved changes are kept in this browser: reload the page to get them back.	Suas alterações não salvas ficam neste navegador: recarregue a página para recuperá-las.
+@msg	Reload the page to go on (changes not saved yet may be lost).	Recarregue a página para continuar (alterações ainda não salvas podem ser perdidas).
+@msg	tool (a tool id) is required	tool (um id de ferramenta) é obrigatório
+@msg	{tool} isn't in a toolbar group of several tools	{tool} não está em um grupo de barra de ferramentas com várias ferramentas
+@msg	onto must name a panel floating in another group	onto deve nomear um painel flutuante em outro grupo
+@msg	below and above must name a panel floating in another group	below e above devem nomear um painel flutuante em outro grupo
+@msg	give only one of onto, below and above	informe apenas um entre onto, below e above
+@msg	column must be true or a number from 1	column deve ser true ou um número a partir de 1
+@msg	x and y must both be numbers	x e y devem ser números
+@msg	"{0}" is not a colour: write it as #rrggbb	"{0}" não é uma cor: escreva-a como #rrggbb
+@msg	this isn't a flat-colour logo ({_1}% of its solid areas match a few flat colours), so Flat Logo mode would turn its gradients into patches: use Color mode instead	este não é um logotipo de cores chapadas ({_1}% de suas áreas sólidas correspondem a poucas cores chapadas), então o modo Logotipo plano transformaria seus gradientes em manchas: use o modo Cor
+@msg	`{what}` closes nothing	`{what}` não fecha nada
+@msg	`{what}` closes something it didn't open	`{what}` fecha algo que não abriu
+@msg	a path has too many points	um traçado tem pontos demais
+@msg	it ends inside a layer	termina dentro de uma camada
+@msg	it has art outside its layers	tem arte fora de suas camadas
+@msg	it has more than {MAX_NODES} objects	tem mais de {MAX_NODES} objetos
+@msg	it has no layers	não tem camadas
+@msg	it has too many values in a row	tem valores demais em sequência
+@msg	it has {_1}, which VectorCraft doesn't read from it yet	tem {_1}, que o VectorCraft ainda não lê desse arquivo
+@msg	its objects are nested too deeply	seus objetos estão aninhados com profundidade excessiva
+@msg	its section ending with `%{end}` doesn't end	sua seção que termina com `%{end}` não termina
+@msg	objects with several fills or strokes, effects or brushes came in as their drawn look ({_1}): their appearance isn't editable yet	objetos com vários preenchimentos ou traços, efeitos ou pincéis entraram com a aparência desenhada ({_1}): sua aparência ainda não é editável
+@msg	gradient “{name}” isn't defined in the file: a plain colour stands in for it	o gradiente “{name}” não está definido no arquivo: uma cor sólida o substitui
+@msg	an image VectorCraft can't read was left out	uma imagem que o VectorCraft não consegue ler foi omitida
+@msg	an image whose data is cut short was left out	uma imagem com dados incompletos foi omitida
+@msg	its editing data doesn't say where its art is	seus dados de edição não indicam onde está a arte
+@msg	this file was saved without PDF compatibility, and its editing data can't be read ({why})	este arquivo foi salvo sem compatibilidade com PDF e seus dados de edição não podem ser lidos ({why})
+@msg	No fonts are missing in this document	Nenhuma fonte está ausente neste documento
+@msg	VectorCraft doesn't search other apps' or the system's folders: {path}	O VectorCraft não pesquisa pastas de outros aplicativos nem do sistema: {path}
+@msg	VectorCraft doesn't search the Shared or Public folder in Users: {path}	O VectorCraft não pesquisa a pasta Compartilhado ou Público em Usuários: {path}
+@msg	{path} is not a folder	{path} não é uma pasta
+@msg	the search couldn't start: try again in a moment	não foi possível iniciar a pesquisa: tente novamente em instantes
+@msg	searching a folder isn't available on the web	pesquisar em uma pasta não está disponível na web
+@msg	every search thread stopped on an internal error (please report this bug)	todos os processos de pesquisa pararam por um erro interno (relate este bug)
+@msg	VectorCraft's Fonts folder isn't set here: the desktop app and vectorcraft-cli set it	A pasta Fontes do VectorCraft não está definida aqui: o aplicativo para desktop e o vectorcraft-cli a definem
+@msg	choose the font files to add	escolha os arquivos de fonte a adicionar
+@msg	{n} font file(s) are now in {folder}	{n} arquivo(s) de fonte agora está(ão) em {folder}
+@msg	{n} font file(s) are now in {folder}; {failed} couldn't be added: {reason}	{n} arquivo(s) de fonte agora está(ão) em {folder}; {failed} não pôde(puderam) ser adicionado(s): {reason}
+@msg	{n} font(s) aren't available here: their text shows in another font	{n} fonte(s) não está(ão) disponível(is) aqui: o texto delas aparece em outra fonte
+@msg	not a file	não é um arquivo
+@msg	not a font file	não é um arquivo de fonte
+@msg	that document is no longer open	esse documento não está mais aberto
+@msg	larger than 256 MB	maior que 256 MB
+@msg	the files come to more than 1 GB: add fewer at a time	os arquivos somam mais de 1 GB: adicione menos por vez
+@msg	every numbered name for it is taken in the Fonts folder	todos os nomes numerados para ele já estão em uso na pasta Fontes
+	Artboard	Prancheta
+@msg	`id` is the step reference {r}, which only `run` and `command_batch` resolve	`id` é a referência de etapa {r}, que somente `run` e `command_batch` resolvem
+@msg	`ids` must be an array of object ids, not {v}	`ids` deve ser uma matriz de ids de objeto, não {v}
+@msg	`corners` must be an array of anchor indices, not {v}	`corners` deve ser uma matriz de índices de âncora, não {v}
+@msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: o resultado da etapa {i} não tem esse valor (escreva $$ para um $ literal)
+@msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: não há etapa {i} antes desta (as etapas contam a partir de 0; escreva $$ para um $ literal)
+@msg	object ids are non-negative integers, not {v}	os ids de objeto são inteiros não negativos, não {v}
+@msg	automation filesystem access is not granted: read authority is absent: {path}	o acesso da automação ao sistema de arquivos não foi concedido: falta autorização de leitura: {path}
+@msg	automation filesystem access is not granted: write authority is absent: {path}	o acesso da automação ao sistema de arquivos não foi concedido: falta autorização de gravação: {path}
+@msg	automation path rejected: outside the read root {root}: {path}	caminho da automação rejeitado: fora da raiz de leitura {root}: {path}
+@msg	automation path rejected: outside the write root {root}: {path}	caminho da automação rejeitado: fora da raiz de gravação {root}: {path}
+@msg	automation path rejected: path is empty	caminho da automação rejeitado: o caminho está vazio
+@msg	automation path rejected: a link that leads nowhere: {path}	caminho da automação rejeitado: um link que não leva a lugar nenhum: {path}
+@msg	automation path rejected: cannot resolve {path}: {e}	caminho da automação rejeitado: não foi possível resolver {path}: {e}
+@msg	automation path rejected: parent traversal below a folder that doesn't exist: {path}	caminho da automação rejeitado: travessia para o diretório pai abaixo de uma pasta que não existe: {path}
+@msg	automation path rejected: reserved device names are not allowed: {path}	caminho da automação rejeitado: nomes de dispositivo reservados não são permitidos: {path}
+@msg	Multichannel PSD files can't be read: save it in RGB, CMYK or Grayscale mode	Arquivos PSD multicanal não podem ser lidos: salve-o no modo RGB, CMYK ou Tons de cinza
+@msg	not a PSD file	não é um arquivo PSD
+@msg	the PSD file has an unknown colour mode ({m})	o arquivo PSD tem um modo de cor desconhecido ({m})
+@msg	the PSD file's image data uses an unknown compression ({m})	os dados de imagem do arquivo PSD usam uma compactação desconhecida ({m})
+@msg	the PSD image is too large to read ({_1} × {_2} pixels)	a imagem PSD é grande demais para ser lida ({_1} × {_2} pixels)
+@msg	zipped 32-bit PSD image data with prediction can't be read	dados de imagem PSD de 32 bits compactados em zip com previsão não podem ser lidos
+@msg	{depth}-bit PSD files in this colour mode can't be read	arquivos PSD de {depth} bits neste modo de cor não podem ser lidos
+@msg	the PSD file is cut short	o arquivo PSD está incompleto
+@msg	the PSD file's header is damaged	o cabeçalho do arquivo PSD está danificado
+@msg	the PSD file's image data can't be read: {e}	os dados de imagem do arquivo PSD não podem ser lidos: {e}
+@msg	Imported library {name}	Biblioteca {name} importada
+	Define a variable first	Defina uma variável primeiro
+	Text	Texto
+	Visibility	Visibilidade
+@msg	Invalid panel layout; restored the default dock	Layout de painéis inválido; o dock padrão foi restaurado
+@msg	action is required	action é obrigatório
+@msg	anchor must name a registered panel	anchor deve nomear um painel registrado
+@msg	before must name a panel	before deve nomear um painel
+@msg	docking action contains an unknown panel or an excessive split path	a ação de encaixe contém um painel desconhecido ou um caminho de divisão excessivo
+@msg	group must be true or false	group deve ser true ou false
+@msg	move requires a destination panel	mover exige um painel de destino
+@msg	move requires an existing destination panel	mover exige um painel de destino existente
+@msg	onto must name a floating panel	onto deve nomear um painel flutuante
+@msg	panel group is empty	o grupo de painéis está vazio
+@msg	panel must name a registered panel	panel deve nomear um painel registrado
+@msg	saved panel layout is invalid; reset the workspace first	o layout de painéis salvo é inválido; redefina o espaço de trabalho primeiro
+@msg	zone must be a string	zone deve ser uma string
+@msg	zone must be tab, center, left, right, top or bottom	zone deve ser tab, center, left, right, top ou bottom
+@msg	{key} must be a finite coordinate	{key} deve ser uma coordenada finita
+@msg	x and y must be provided together	x e y devem ser informados juntos
+@msg	invalid restored panel group	grupo de painéis restaurado inválido
+	Move Guide to Layer	Mover guia para a camada
+@msg	invalid native panel set	conjunto de painéis nativos inválido
+@msg	missing panel layout	layout de painéis ausente
+@msg	unsupported native docking operation	operação de encaixe nativa não suportada
+	Ruler Origin	Origem das réguas
+	Reset Ruler Origin	Redefinir origem das réguas
+	Artistic	Artístico
+	Film Grain…	Granulação de filme…
+	Grain	Grão
+	Highlight Area	Área de realces
+@msg	the compressed file unpacks to more than VectorCraft reads ({_1} MB of document, {_2} MB per image)	o arquivo compactado se expande para mais do que o VectorCraft lê ({_1} MB de documento, {_2} MB por imagem)
+@msg	the document is too large to save compressed ({0}): save it with Use Compression off	o documento é grande demais para ser salvo compactado ({0}): salve-o com Usar Compressão desativado
+@msg	the file stopped being read (please report this bug)	a leitura do arquivo foi interrompida (informe este erro)
+	Concentric Dividers:	Divisórias concêntricas:
+	Radial Dividers:	Divisórias radiais:

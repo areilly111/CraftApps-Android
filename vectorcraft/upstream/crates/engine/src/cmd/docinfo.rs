@@ -290,7 +290,7 @@ fn info(s: &mut Session, p: &Value) -> Result<Value> {
                     spot.insert(name.clone());
                 }
             }
-            if n.mask.is_some() {
+            if n.extras().mask.is_some() {
                 *counts.entry("opacityMasks").or_default() += 1;
             }
             if !n.appearance.effects.is_empty() {

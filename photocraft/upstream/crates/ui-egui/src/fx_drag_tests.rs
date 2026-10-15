@@ -84,3 +84,55 @@ fn dragging_effects_onto_a_layer_moves_them_and_alt_copies() {
     // The drag moved effects, not the layer: `b` is still above `a`.
     assert!(row(&h, b).row.top() < row(&h, a).row.top());
 }
+
+/// The Layers panel footer's Delete button.
+fn trash_button(h: &Harness<'_, PhotocraftApp>) -> Pos2 {
+    h.query_all_by_role(Role::Button).find(|n| n.accesskit_node().label().as_deref() == Some("Delete layer")).unwrap().rect().center()
+}
+
+/// #3102: an effect row dropped on the footer's Delete button deletes that effect, the "Effects"
+/// row all of them; the layer stays.
+#[test]
+fn dropping_effects_on_the_trash_deletes_them() {
+    let (mut h, a, _) = harness();
+    let layers = h.state().session.active().unwrap().doc.layers.len();
+    let steps = h.state().session.active().unwrap().history.past_len();
+    let from = effect_row(&h, a, "Drop Shadow").center();
+    let trash = trash_button(&h);
+    drag(&mut h, from, trash, Modifiers::NONE);
+    assert_eq!(effects(&h, a), ["Color Overlay"]);
+    assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1, "one history step");
+    let from = effect_row(&h, a, "Effects").center();
+    let trash = trash_button(&h);
+    drag(&mut h, from, trash, Modifiers::NONE);
+    assert!(effects(&h, a).is_empty());
+    assert_eq!(h.state().session.active().unwrap().doc.layers.len(), layers, "no layer was deleted");
+}
+
+/// #2846: right-clicking an effect row opens Photoshop's layer style menu for that layer; Create
+/// Layer turns its effects into layers of their own.
+#[test]
+fn right_clicking_an_effect_row_offers_create_layer_for_that_layer() {
+    let (mut h, a, b) = harness();
+    assert_eq!(h.state().session.active().unwrap().active_layer, Some(b), "`b` is active, not the clicked layer");
+    let at = effect_row(&h, a, "Color Overlay").center();
+    h.hover_at(at);
+    h.run_steps(1);
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton { pos: at, button: PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+    }
+    h.run_steps(3);
+    for label in ["Blending Options…", "Copy Layer Style", "Paste Layer Style", "Clear Layer Style", "Global Light…", "Hide All Effects", "Scale Effects…"]
+    {
+        h.get_by_label(label);
+    }
+    h.get_by_label("Create Layer").click();
+    h.run_steps(4);
+    let st = h.state().session.active().unwrap();
+    assert_eq!(st.active_layer, Some(a), "the menu acts on the right-clicked layer");
+    assert!(effects(&h, a).is_empty(), "the effects became layers");
+    let names: Vec<&str> = st.doc.layers.iter().map(|l| l.name.as_str()).collect();
+    assert!(names.contains(&"a's Drop Shadow") && names.contains(&"a's Color Overlay"), "{names:?}");
+    assert!(h.query_by_label("Create Layer").is_none(), "the menu closed");
+}

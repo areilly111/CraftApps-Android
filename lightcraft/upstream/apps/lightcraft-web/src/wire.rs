@@ -36,6 +36,8 @@ pub struct WireJob {
     pub raw: bool,
     #[serde(default)]
     pub relative_wb: bool,
+    #[serde(default)]
+    pub legacy_relative_wb: bool,
     pub as_shot_temp: f64,
     pub as_shot_tint: f64,
     pub lens: Option<EmbeddedLens>,
@@ -74,6 +76,7 @@ impl WireJob {
             max_edge,
             raw: job.info.raw,
             relative_wb: job.info.relative_wb,
+            legacy_relative_wb: job.info.legacy_relative_wb,
             as_shot_temp: job.info.as_shot_temp,
             as_shot_tint: job.info.as_shot_tint,
             lens: job.info.lens,
@@ -97,6 +100,7 @@ impl WireJob {
             as_shot_tint: self.as_shot_tint,
             lens: self.lens,
             relative_wb: self.relative_wb,
+            legacy_relative_wb: self.legacy_relative_wb,
             ..Default::default()
         }
     }
@@ -184,13 +188,18 @@ impl WorkerCore {
             }
         };
         let info = src.info_or(job.info());
-        Ok(match &job.stages {
+        let mut rendered = match &job.stages {
             Some(view) => {
                 let st = self.stages.entry(view.clone()).or_default().clone();
                 lightcraft_engine::pipeline::render_cached(&src.image, &info, &job.settings, &job.request(), &st)
             }
             None => lightcraft_engine::pipeline::render(&src.image, &info, &job.settings, &job.request()),
-        })
+        };
+        // an HDR edit's histogram shows its HDR range (as on native)
+        if let Some(h) = lightcraft_engine::pipeline::hdr_histogram(&src.image, &info, &job.settings, &job.request()) {
+            rendered.histogram = h;
+        }
+        Ok(rendered)
     }
 }
 
@@ -332,10 +341,45 @@ impl CacheWatch {
     }
 }
 
+/// Hands out the positions that render workers will have in the main thread's worker list.
+/// A worker that fails to start gets no position, so the position a callback captures stays the
+/// index of its own worker in that list (#229).
+#[derive(Debug, Default)]
+pub struct WorkerSlots {
+    next: usize,
+}
+
+impl WorkerSlots {
+    /// The position the worker being started will have, if it comes up.
+    pub fn peek(&self) -> usize {
+        self.next
+    }
+
+    /// The worker at [`Self::peek`] came up and was added to the list.
+    pub fn commit(&mut self) {
+        self.next += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lightcraft_engine::Session;
+
+    // Issue #229: a failed worker attempt must not shift the positions of the workers after it
+    #[test]
+    fn a_failed_worker_attempt_leaves_no_gap_in_the_slots() {
+        let mut slots = WorkerSlots::default();
+        let mut taken = Vec::new();
+        for attempt_ok in [false, true, true, true] {
+            let i = slots.peek();
+            if attempt_ok {
+                taken.push(i);
+                slots.commit();
+            }
+        }
+        assert_eq!(taken, vec![0, 1, 2]);
+    }
 
     #[test]
     fn clearing_index_changes_disk_namespace_and_survives_restart() {
@@ -421,6 +465,7 @@ mod tests {
             max_edge: 512,
             raw: false,
             relative_wb: false,
+            legacy_relative_wb: false,
             as_shot_temp: 6500.0,
             as_shot_tint: 0.0,
             lens: None,

@@ -21,7 +21,10 @@ compile_error!("windows7 requires --target x86_64-win7-windows-msvc; the ordinar
 #[cfg(all(target_vendor = "win7", not(feature = "windows7")))]
 compile_error!("the win7 target requires --no-default-features --features windows7");
 
+mod automation_args;
 mod clipboard;
+#[cfg(feature = "wgpu")]
+mod compositor_gpu;
 mod control_server;
 #[cfg(feature = "wgpu")]
 mod gpu;
@@ -31,6 +34,8 @@ mod mac_fonts;
 #[cfg(target_os = "macos")]
 mod mac_menu;
 #[cfg(target_os = "macos")]
+mod mac_save_format;
+#[cfg(target_os = "macos")]
 mod mac_window;
 #[cfg(target_os = "macos")]
 mod open_documents;
@@ -39,6 +44,7 @@ mod printing;
 #[cfg(all(windows, not(target_vendor = "win7")))]
 mod system_fonts;
 mod window;
+mod xwayland;
 
 use vectorcraft_engine::Session;
 use vectorcraft_engine::cmd::fileio;
@@ -80,8 +86,9 @@ impl eframe::App for App {
             self.app.titlebar_inset = inset.unwrap_or(mac_window::DEFAULT_INSET);
         }
         file_access::unconfined(|| self.app.ui(ui));
+        // Not while a file dialog's sheet has the keyboard: its name field's composition would go.
         #[cfg(target_os = "macos")]
-        if self.app.take_ime_discard() {
+        if !self.app.file_dialog_open() && self.app.take_ime_discard() {
             discard_marked_text();
         }
     }
@@ -114,8 +121,16 @@ impl App {
             vectorcraft_ui_egui::background::wait_all(&mut self.app);
             return;
         }
+        // Files from the Finder and the Dock wait while a file dialog is open: what asked for it runs
+        // again on its document when it answers.
         #[cfg(target_os = "macos")]
-        open_files(&mut self.app, open_documents::take());
+        if !self.app.file_dialog_open() {
+            // Files from the Finder and the Dock wait while a file dialog is open: what asked for it runs
+            // again on its document when it answers.
+            if !self.app.file_dialog_open() {
+                open_files(&mut self.app, open_documents::take());
+            }
+        }
         self.app.logic(ctx);
         window::track(ctx, &mut self.app.ui.window);
         if self.app.ui.status == "quit" {
@@ -189,7 +204,42 @@ fn read_prefs() -> Option<vectorcraft_ui_egui::UiState> {
         return None;
     }
     let bytes = prefs_path().and_then(|p| std::fs::read(p).ok()).or_else(|| legacy_prefs_path().and_then(|p| std::fs::read(p).ok()))?;
-    serde_json::from_slice(&bytes).ok()
+    decode_saved_prefs(&bytes)
+}
+
+/// Recover only optional persisted docking metadata. Runtime UiState and command decoding
+/// remains strict, and an unreadable workspace layout cannot discard unrelated preferences.
+fn decode_saved_prefs(bytes: &[u8]) -> Option<vectorcraft_ui_egui::UiState> {
+    use serde_json::{Map, Value, json};
+
+    fn recover(object: &mut Map<String, Value>, hidden_key: &str) {
+        if let Some(layout) = object.get("docking")
+            && serde_json::from_value::<vectorcraft_ui_egui::UiState>(json!({"docking": layout})).is_err()
+        {
+            object.remove("docking");
+        }
+        if let Some(hidden) = object.get_mut(hidden_key) {
+            if let Value::Object(entries) = hidden {
+                entries.retain(|panel, location| {
+                    serde_json::from_value::<vectorcraft_ui_egui::UiState>(json!({"docking_hidden": {panel: location}})).is_ok()
+                });
+            } else {
+                object.remove(hidden_key);
+            }
+        }
+    }
+
+    let mut value: Value = serde_json::from_slice(bytes).ok()?;
+    let object = value.as_object_mut()?;
+    recover(object, "docking_hidden");
+    if let Some(Value::Array(workspaces)) = object.get_mut("custom_workspaces") {
+        for workspace in workspaces {
+            if let Some(object) = workspace.as_object_mut() {
+                recover(object, "dockingHidden");
+            }
+        }
+    }
+    serde_json::from_value(value).ok()
 }
 
 fn load_prefs(app: &mut VectorcraftApp, saved: Option<vectorcraft_ui_egui::UiState>) {
@@ -220,46 +270,104 @@ fn save_prefs(app: &VectorcraftApp) {
 /// The window file dialogs belong to.
 type Parent = Option<std::sync::Arc<winit::window::Window>>;
 
-/// A native file dialog for `request` over `parent` (Windows and Linux, where the portal then
-/// shows it over the window and keeps it in front; macOS shows them as before).
-fn file_dialog(request: &PickRequest, parent: &Parent) -> rfd::FileDialog {
-    let d = match parent {
-        Some(w) if !cfg!(target_os = "macos") => rfd::FileDialog::new().set_parent(&**w),
-        _ => rfd::FileDialog::new(),
-    };
+/// What rfd's blocking and asynchronous file dialogs are both set up with.
+trait DialogSettings: Sized {
+    fn parent(self, window: &winit::window::Window) -> Self;
+    fn title(self, title: &str) -> Self;
+    fn filter(self, name: &str, exts: &[&str]) -> Self;
+    fn folder(self, folder: &str) -> Self;
+    fn file_name(self, name: &str) -> Self;
+}
+
+macro_rules! dialog_settings {
+    ($($dialog:ty),*) => {$(
+        impl DialogSettings for $dialog {
+            fn parent(self, window: &winit::window::Window) -> Self {
+                self.set_parent(window)
+            }
+            fn title(self, title: &str) -> Self {
+                self.set_title(title)
+            }
+            fn filter(self, name: &str, exts: &[&str]) -> Self {
+                self.add_filter(name, exts)
+            }
+            fn folder(self, folder: &str) -> Self {
+                self.set_directory(folder)
+            }
+            fn file_name(self, name: &str) -> Self {
+                self.set_file_name(name)
+            }
+        }
+    )*};
+}
+
+dialog_settings!(rfd::FileDialog, rfd::AsyncFileDialog);
+
+/// `d` set up for `request`: its title, file types, folder and suggested name.
+fn dialog_for<D: DialogSettings>(d: D, request: &PickRequest) -> D {
     let pick = match request {
         PickRequest::Open(pick) | PickRequest::Save(pick) => pick,
-        PickRequest::OpenMany => return fileio::place_filters().fold(d.set_title("Place"), |d, (name, exts)| d.add_filter(name, exts)),
+        PickRequest::OpenMany => {
+            return fileio::place_filters().fold(d.title(vectorcraft_ui_egui::i18n::t("Place")), |d, (name, exts)| {
+                d.filter(vectorcraft_ui_egui::i18n::tr_ctx(vectorcraft_ui_egui::i18n::current(), "file-filter", name), exts)
+            });
+        }
         PickRequest::Folder => return d,
     };
-    let d = pick.filters.iter().fold(d, |d, (name, exts)| d.add_filter(*name, exts));
+    let d = pick
+        .filters
+        .iter()
+        .fold(d, |d, (name, exts)| d.filter(vectorcraft_ui_egui::i18n::tr_ctx(vectorcraft_ui_egui::i18n::current(), "file-filter", name), exts));
     let d = match &pick.folder {
-        Some(folder) => d.set_directory(folder),
+        Some(folder) => d.folder(folder),
         None => d,
     };
-    if pick.name.is_empty() { d } else { d.set_file_name(&pick.name) }
+    if pick.name.is_empty() { d } else { d.file_name(&pick.name) }
+}
+
+/// A native file dialog for `request` over `parent` (on Linux the portal then shows it over the
+/// window and keeps it in front).
+#[cfg(not(target_os = "macos"))]
+fn file_dialog(request: &PickRequest, parent: &Parent) -> rfd::FileDialog {
+    match parent {
+        Some(w) => dialog_for(rfd::FileDialog::new().parent(w), request),
+        None => dialog_for(rfd::FileDialog::new(), request),
+    }
+}
+
+/// Before `request`'s dialog shows: a save dialog's folder (the Templates folder) may not exist yet.
+fn make_folder(request: &PickRequest) {
+    if let PickRequest::Save(FilePick { folder: Some(folder), .. }) = request {
+        let _ = std::fs::create_dir_all(folder);
+    }
 }
 
 /// Show `dialog` for `request` (on the calling thread, until it closes) → the paths picked.
+#[cfg(not(target_os = "macos"))]
 fn show_dialog(dialog: rfd::FileDialog, request: &PickRequest) -> Vec<String> {
+    make_folder(request);
     let paths = match request {
         PickRequest::Open(_) => dialog.pick_file().into_iter().collect(),
         PickRequest::OpenMany => dialog.pick_files().unwrap_or_default(),
-        PickRequest::Save(pick) => {
-            // The Templates folder may not exist yet.
-            if let Some(folder) = &pick.folder {
-                let _ = std::fs::create_dir_all(folder);
-            }
-            dialog.save_file().into_iter().collect()
-        }
+        PickRequest::Save(_) => dialog.save_file().into_iter().collect(),
         PickRequest::Folder => dialog.pick_folder().into_iter().collect(),
     };
     paths.into_iter().map(|p| p.to_string_lossy().to_string()).collect()
 }
 
 /// Show the dialog for `request` over `parent` now → the paths picked.
+#[cfg(not(target_os = "macos"))]
 fn pick_now(request: PickRequest, parent: &Parent) -> Vec<String> {
     show_dialog(file_dialog(&request, parent), &request)
+}
+
+/// macOS shows no dialog in line: its modal loop would run inside winit's event handler, and an
+/// event winit held back meanwhile aborts the app (#867). Dialogs are sheets there ([`start_pick`]);
+/// one asked for any other way (a bug: outside a command, a dialog's OK or a button) picks nothing.
+#[cfg(target_os = "macos")]
+fn pick_now(request: PickRequest, _parent: &Parent) -> Vec<String> {
+    log::error!("no file dialog shown for {request:?}: macOS shows them as sheets, from commands, dialogs' OK and buttons only");
+    Vec::new()
 }
 
 /// File → Show in Folder: select `path` in Finder / Explorer, or open its folder elsewhere.
@@ -297,38 +405,106 @@ fn write_file(path: &str, bytes: &[u8]) -> Result<(), String> {
     fileio::write_atomic(std::path::Path::new(path), bytes).map_err(|e| e.to_string())
 }
 
-/// Linux and macOS: show the dialog for `request` over `parent` on a thread of its own, answering
-/// on the receiver. Shown on the UI thread, nothing would answer the compositor meanwhile on Linux,
-/// which then offers to kill the window as not responding (#592); on macOS the panel ran modally
-/// inside the window's event handler, and resizing it delivered window events to that handler
-/// again, which crashed the app (#867). From another thread, rfd runs the panel on the main thread
-/// from the run loop, outside the handler.
-fn start_pick(request: PickRequest, parent: &Parent) -> Option<std::sync::mpsc::Receiver<Vec<String>>> {
+/// Linux: show the dialog for `request` over `parent` on a thread of its own, answering on the
+/// receiver. Shown on the UI thread, nothing would answer the compositor meanwhile, which then
+/// offers to kill the window as not responding (#592).
+#[cfg(not(target_os = "macos"))]
+fn start_pick(request: PickRequest, parent: &Parent, ui: &egui::Context) -> Option<std::sync::mpsc::Receiver<Vec<String>>> {
     let dialog = file_dialog(&request, parent);
     let (tx, rx) = std::sync::mpsc::channel();
+    let ui = ui.clone();
     std::thread::Builder::new()
         .name("file-dialog".into())
         .spawn(move || {
             // The app gone meanwhile has no use for the answer.
             let _ = tx.send(show_dialog(dialog, &request));
+            ui.request_repaint();
         })
         .ok()?;
     Some(rx)
 }
 
-fn services(parent: Parent) -> Services {
+/// The paths a dialog shown as a sheet picks, once it closes.
+#[cfg(target_os = "macos")]
+type SheetAnswer = std::pin::Pin<Box<dyn std::future::Future<Output = Vec<String>> + Send>>;
+
+/// macOS: show the dialog for `request` as a sheet on `parent`'s window, answering on the receiver
+/// (#867). Shown in line, the panel ran AppKit's modal event loop inside winit's event handler: an
+/// event winit had held back meanwhile (one came as a resize of the panel ended) then re-entered
+/// the handler, and winit's panic there, inside an AppKit callback, aborted the app. The sheet
+/// returns at once and the window keeps running; a thread of its own waits for the answer.
+#[cfg(target_os = "macos")]
+fn start_pick(request: PickRequest, parent: &Parent, ui: &egui::Context) -> Option<std::sync::mpsc::Receiver<Vec<String>>> {
+    use winit::raw_window_handle::HasWindowHandle as _;
+    // rfd runs the panel modally after all unless it has the running app's window to hold the
+    // sheet (and from another thread it can't reach the window): no dialog then (`pick_now`).
+    let mtm = objc2::MainThreadMarker::new();
+    let running = mtm.is_some_and(|mtm| objc2_app_kit::NSApplication::sharedApplication(mtm).isRunning());
+    let Some(window) = parent.as_ref().filter(|w| running && w.window_handle().is_ok()) else {
+        log::error!("no window to show the file dialog on (main thread: {}, running: {running})", mtm.is_some());
+        return None;
+    };
+    // The thread first, so the answer of a sheet once shown always has somewhere to go.
+    let (sheet_tx, sheet_rx) = std::sync::mpsc::channel::<SheetAnswer>();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ui = ui.clone();
+    std::thread::Builder::new()
+        .name("file-dialog".into())
+        .spawn(move || {
+            if let Ok(answer) = sheet_rx.recv() {
+                // The app gone meanwhile has no use for the answer.
+                let _ = tx.send(pollster::block_on(answer));
+                ui.request_repaint();
+            }
+        })
+        .ok()?;
+    make_folder(&request);
+    // rfd builds the panel and begins the sheet here, on the main thread (as it must).
+    let dialog = dialog_for(rfd::AsyncFileDialog::new().parent(window), &request);
+    let path = |f: &rfd::FileHandle| f.path().to_string_lossy().to_string();
+    let answer: SheetAnswer = match request {
+        PickRequest::Open(_) => {
+            let picked = dialog.pick_file();
+            Box::pin(async move { picked.await.iter().map(path).collect() })
+        }
+        PickRequest::OpenMany => {
+            let picked = dialog.pick_files();
+            Box::pin(async move { picked.await.unwrap_or_default().iter().map(path).collect() })
+        }
+        PickRequest::Save(pick) => {
+            let picked = dialog.save_file();
+            mac_save_format::attach(window, &pick);
+            Box::pin(async move { picked.await.iter().map(path).collect() })
+        }
+        PickRequest::Folder => {
+            let picked = dialog.pick_folder();
+            Box::pin(async move { picked.await.iter().map(path).collect() })
+        }
+    };
+    // The thread can't be gone: it waits for this. If it were, its receiver answers as cancelled.
+    let _ = sheet_tx.send(answer);
+    Some(rx)
+}
+
+/// The host's services; `ui` is woken when a file dialog answers.
+fn services(parent: Parent, ui: egui::Context) -> Services {
     let (p1, p2, p3, p4, p5) = (parent.clone(), parent.clone(), parent.clone(), parent.clone(), parent);
     Services {
         pick_open: Some(Box::new(move |pick: &FilePick| pick_now(PickRequest::Open(pick.clone()), &p1).into_iter().next())),
         pick_open_multi: Some(Box::new(move || pick_now(PickRequest::OpenMany, &p2))),
         pick_save: Some(Box::new(move |pick: &FilePick| pick_now(PickRequest::Save(pick.clone()), &p3).into_iter().next())),
-        // Windows dialogs run the window's events while they are open; Linux's don't, and macOS
-        // ones re-enter the window's event handler (#867).
-        start_pick: cfg!(unix).then(|| Box::new(move |request: PickRequest| start_pick(request, &p5)) as vectorcraft_ui_egui::picks::StartPick),
+        // Linux shows dialogs on a thread of their own (#592), macOS as sheets (#867); Windows
+        // dialogs run the window's events while they are open.
+        start_pick: cfg!(unix).then(|| Box::new(move |request: PickRequest| start_pick(request, &p5, &ui)) as vectorcraft_ui_egui::picks::StartPick),
+        dialogs_are_sheets: cfg!(target_os = "macos"),
         read: Some(Box::new(|p: &str| std::fs::read(p).map_err(|e| e.to_string()))),
         write: Some(Box::new(write_file)),
         // Background Save and Export write from a worker thread.
         write_shared: Some(std::sync::Arc::new(write_file)),
+        // Native saves stream into the file as they are encoded.
+        stream_shared: Some(std::sync::Arc::new(|p: &str, fill: &mut dyn FnMut(&mut dyn std::io::Write) -> std::io::Result<()>| {
+            fileio::write_file_with(p, fill).map_err(|e| e.to_string())
+        })),
         // Every format Copy offers and Paste reads (menu-bar Paste never sees egui's Paste event).
         system_clipboard: Some(clipboard::system_clipboard()),
         // Linux checks whether Paste has something to take on a background thread: an X11 clipboard
@@ -427,7 +603,36 @@ fn native_options(custom_titlebar: bool) -> eframe::NativeOptions {
 }
 
 fn main() -> std::process::ExitCode {
-    // First, so every start-up warning is recorded (`logging`).
+    // Validate roots before logging, font scans, preferences or the window: a missing value
+    // must not clear an environment root and start the control channel without confinement.
+    let mut control_port: Option<u16> = std::env::var("VECTORCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
+    let root_env = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
+    let mut roots_args =
+        automation_args::AutomationArgs::new(root_env("VECTORCRAFT_AUTOMATION_READ_ROOT"), root_env("VECTORCRAFT_AUTOMATION_WRITE_ROOT"));
+    let mut files = Vec::new();
+    let mut in_window_menus = std::env::var_os("VECTORCRAFT_IN_WINDOW_MENUS").is_some_and(|v| !v.is_empty() && v != "0");
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        match roots_args.consume(&a, &mut args) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("vectorcraft: {e}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+        match a.as_str() {
+            "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
+            "--in-window-menus" => in_window_menus = true,
+            "--version" => {
+                println!("vectorcraft {}", env!("CARGO_PKG_VERSION"));
+                return std::process::ExitCode::SUCCESS;
+            }
+            _ => files.push(a),
+        }
+    }
+    let automation_args::AutomationArgs { read_root, write_root, .. } = roots_args;
+    // Before desktop services, so every start-up warning is recorded (`logging`).
     let logger = logging::install();
     vectorcraft_ui_egui::i18n::detect_system_lang_in_background();
     // Before the first font scan (the app's start): the fonts font services load (#579).
@@ -437,28 +642,6 @@ fn main() -> std::process::ExitCode {
     mac_fonts::install();
     // VectorCraft's own Fonts folder, which text.addFontFiles copies fonts into.
     prefs_dir::install_fonts();
-    let mut control_port: Option<u16> = std::env::var("VECTORCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
-    let root_env = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(std::path::PathBuf::from);
-    let mut read_root = root_env("VECTORCRAFT_AUTOMATION_READ_ROOT");
-    let mut write_root = root_env("VECTORCRAFT_AUTOMATION_WRITE_ROOT");
-    let mut files = Vec::new();
-    let mut in_window_menus = std::env::var_os("VECTORCRAFT_IN_WINDOW_MENUS").is_some_and(|v| !v.is_empty() && v != "0");
-    let mut args = std::env::args().skip(1);
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
-            "--automation-read-root" => read_root = args.next().map(std::path::PathBuf::from),
-            "--automation-write-root" => write_root = args.next().map(std::path::PathBuf::from),
-            _ if a.starts_with("--automation-read-root=") => read_root = a.split_once('=').map(|(_, d)| d.into()),
-            _ if a.starts_with("--automation-write-root=") => write_root = a.split_once('=').map(|(_, d)| d.into()),
-            "--in-window-menus" => in_window_menus = true,
-            "--version" => {
-                println!("vectorcraft {}", env!("CARGO_PKG_VERSION"));
-                return std::process::ExitCode::SUCCESS;
-            }
-            _ => files.push(a),
-        }
-    }
     // The log file lives in the settings directory, next to the preferences; opened after the
     // arguments, so `--version` leaves no file behind. Records logged until now are written to it
     // first. Runs without preferences (agents' test runs) log to standard error only, so they
@@ -503,6 +686,9 @@ fn main() -> std::process::ExitCode {
     // every black-window report.
     #[cfg(feature = "wgpu")]
     let displays = gpu::preferred_displays(gpu_pref, power_env);
+    // Under Wayland, the GPU the compositor draws with comes even before those (src/compositor_gpu.rs).
+    #[cfg(feature = "wgpu")]
+    let compositor = gpu::preferred_compositor(gpu_pref, power_env);
     #[cfg(feature = "wgpu")]
     let chosen_gpu = !gpu::automatic(gpu_pref, power_env);
     #[cfg(feature = "wgpu")]
@@ -516,6 +702,25 @@ fn main() -> std::process::ExitCode {
     let startup = std::sync::Arc::new(gpu::Startup::default());
     let custom_titlebar = custom_titlebar(saved.as_ref());
     let options = native_options(custom_titlebar);
+    // winit picks Wayland whenever `WAYLAND_DISPLAY` is set; Preferences › Performance › Linux
+    // Display Server › X11 opens the window through XWayland instead, where file drops work (#1151).
+    #[cfg(target_os = "linux")]
+    let options = {
+        let mut options = options;
+        let pref = saved.as_ref().and_then(|ui| ui.engine_prefs.get("linuxDisplayServer")).and_then(serde_json::Value::as_str);
+        if xwayland::wanted(pref, |name| std::env::var_os(name)) {
+            if xwayland::x11_libraries_found() {
+                log::info!("opening the window through XWayland (Preferences › Performance › Linux Display Server)");
+                use winit::platform::x11::EventLoopBuilderExtX11 as _;
+                options.event_loop_builder = Some(Box::new(|builder| {
+                    builder.with_x11();
+                }));
+            } else {
+                log::warn!("Linux Display Server is X11, but the X11 libraries aren't all installed: opening the window on Wayland");
+            }
+        }
+        options
+    };
     #[cfg(feature = "wgpu")]
     let options = {
         let mut options = options;
@@ -524,13 +729,18 @@ fn main() -> std::process::ExitCode {
         options.wgpu_options.surface = eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY;
         // Only adapters that can show the window, in the order `gpu` gives (#306, #502).
         if let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup {
-            create.native_adapter_selector = Some(gpu::selector(power, displays, startup.clone()));
+            create.native_adapter_selector = Some(gpu::selector(power, displays, compositor, startup.clone()));
             // Nothing draws or dispatches indirectly, so wgpu's check of indirect arguments only
             // costs a compute shader at start-up, one some drivers can't compile (OCLP-patched
             // Metal on an Iris Pro, #651). `WGPU_VALIDATION_INDIRECT_CALL=1` turns it back on.
             create.instance_descriptor.flags =
                 (eframe::wgpu::InstanceFlags::from_build_config() - eframe::wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL).with_env();
             create.instance_descriptor.backends = gpu::backends(create.instance_descriptor.backends, std::env::var_os("WGPU_BACKEND").is_some());
+            // DX12 shaders compile with FXC, part of Windows: wgpu's default loads whichever
+            // dxcompiler.dll the search path finds, and one without its dxil.dll fails every shader,
+            // losing the device before the first frame (#1194). `WGPU_DX12_COMPILER` picks another.
+            create.instance_descriptor.backend_options.dx12.shader_compiler =
+                eframe::wgpu::Dx12Compiler::from_env().unwrap_or(eframe::wgpu::Dx12Compiler::Fxc);
         }
         options
     };
@@ -549,7 +759,7 @@ fn main() -> std::process::ExitCode {
             "VectorCraft",
             options,
             Box::new(move |cc| {
-                let mut app = VectorcraftApp::new(Session::new(), services(cc.winit_window().cloned()));
+                let mut app = VectorcraftApp::new(Session::new(), services(cc.winit_window().cloned(), cc.egui_ctx.clone()));
                 load_prefs(&mut app, saved);
                 // Fit the window to its monitor, or put it back where it was (still hidden).
                 if let Some(w) = cc.winit_window() {
@@ -647,6 +857,51 @@ mod tests {
 
     fn ui_state_with_prefs(engine_prefs: serde_json::Value) -> vectorcraft_ui_egui::UiState {
         vectorcraft_ui_egui::UiState { engine_prefs, ..Default::default() }
+    }
+
+    #[test]
+    fn unreadable_saved_docking_keeps_preferences_and_every_workspace() {
+        use serde_json::json;
+        let mut app = VectorcraftApp::new(vectorcraft_engine::Session::new(), Default::default());
+        app.run("window.panel.float", json!({"panel":"layers"})).unwrap();
+        app.ui.toolbar = false;
+        app.ui.engine_prefs = json!({"interfaceLanguage":"fr", "uiBrightness":"light"});
+        app.ui.custom_workspaces =
+            vec![vectorcraft_ui_egui::workspaces::capture(&app.ui, "Future"), vectorcraft_ui_egui::workspaces::capture(&app.ui, "Valid")];
+        let original = serde_json::to_value(&app.ui).unwrap();
+        let valid_location = original["docking_hidden"]["layers"].clone();
+        assert!(valid_location.is_object());
+        for invalid_layout in [json!({"root":{"FutureNode":{}},"floating":[]}), json!(false)] {
+            for invalid_hidden in [json!({"layers":{"placement":{"FuturePlacement":{}}},"swatches":valid_location}), json!(["malformed"])] {
+                let mut raw = original.clone();
+                raw["docking"] = invalid_layout.clone();
+                raw["docking_hidden"] = invalid_hidden.clone();
+                raw["custom_workspaces"][0]["docking"] = invalid_layout.clone();
+                raw["custom_workspaces"][0]["dockingHidden"] = invalid_hidden.clone();
+                assert!(serde_json::from_value::<vectorcraft_ui_egui::UiState>(raw.clone()).is_err(), "runtime serde stays strict");
+                let loaded = decode_saved_prefs(&serde_json::to_vec(&raw).unwrap()).unwrap();
+                assert_eq!(loaded.engine_prefs, app.ui.engine_prefs);
+                assert!(!loaded.toolbar);
+                assert!(loaded.docking.is_none());
+                assert!(!loaded.docking_hidden.contains_key("layers"));
+                if invalid_hidden.is_object() {
+                    assert_eq!(serde_json::to_value(loaded.docking_hidden.get("swatches")).unwrap(), valid_location);
+                } else {
+                    assert!(loaded.docking_hidden.is_empty());
+                }
+                assert_eq!(loaded.custom_workspaces.len(), 2);
+                assert_eq!(loaded.custom_workspaces[0].name, "Future");
+                assert!(loaded.custom_workspaces[0].docking.is_none());
+                assert!(!loaded.custom_workspaces[0].docking_hidden.contains_key("layers"));
+                assert_eq!(serde_json::to_value(&loaded.custom_workspaces[1]).unwrap(), original["custom_workspaces"][1]);
+            }
+        }
+        let roundtrip = decode_saved_prefs(&serde_json::to_vec(&original).unwrap()).unwrap();
+        assert_eq!(serde_json::to_value(roundtrip).unwrap(), original);
+        assert!(
+            decode_saved_prefs(&serde_json::to_vec(&json!({"toolbar":"invalid"})).unwrap()).is_none(),
+            "unrelated fields retain normal strict parsing"
+        );
     }
 
     #[test]

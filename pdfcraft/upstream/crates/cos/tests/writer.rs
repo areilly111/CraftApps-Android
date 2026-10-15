@@ -135,6 +135,116 @@ fn full_saves_are_allocated_at_their_exact_size() {
     }
 }
 
+/// A one-page classic-table file with no `/ID`, the case that used to append `xref` and then
+/// `trailer` with no subsection (#1339).
+fn classic_table() -> Vec<u8> {
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R >>",
+        "<< /Length 0 >>\nstream\n\nendstream",
+    ];
+    let mut bytes = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+        offsets.push(bytes.len());
+        bytes.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = bytes.len();
+    bytes.extend_from_slice(b"xref\n0 5\n0000000000 65535 f \n");
+    for offset in offsets {
+        bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    bytes.extend_from_slice(format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes());
+    bytes
+}
+
+fn qpdf_check(bytes: &[u8]) -> Option<std::process::Output> {
+    let Ok(version) = std::process::Command::new("qpdf").arg("--version").output() else {
+        return None;
+    };
+    assert!(version.status.success());
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("pdfcraft-xref-{}-{n}.pdf", std::process::id()));
+    std::fs::write(&path, bytes).unwrap();
+    let check = std::process::Command::new("qpdf").arg("--check").arg(&path).output().unwrap();
+    let _ = std::fs::remove_file(&path);
+    Some(check)
+}
+
+fn page(doc: &Document) -> Dict {
+    let root = doc.resolve(doc.trailer().get(b"Root").unwrap());
+    let pages = doc.resolve(root.as_dict().unwrap().get(b"Pages").unwrap());
+    let kids = pages.as_dict().unwrap().get(b"Kids").unwrap().as_array().unwrap();
+    doc.resolve(kids.first().unwrap()).as_dict().cloned().unwrap()
+}
+
+fn assert_qpdf_clean(bytes: &[u8]) {
+    let Some(check) = qpdf_check(bytes) else {
+        eprintln!("qpdf not installed: skipped");
+        return;
+    };
+    let report = format!("{}{}", String::from_utf8_lossy(&check.stdout), String::from_utf8_lossy(&check.stderr));
+    assert!(check.status.success() && !report.contains("WARNING"), "{report}");
+}
+
+#[test]
+fn unchanged_incremental_save_of_a_classic_table_is_a_valid_xref() {
+    let input = classic_table();
+    let doc = Document::open(Arc::new(input.clone())).unwrap();
+    assert!(!doc.is_modified());
+    assert!(doc.repair_log().is_empty());
+    assert_eq!(doc.revisions().len(), 1);
+    assert!(!doc.revisions()[0].is_stream);
+
+    let unchanged = write_incremental(&doc, &SaveOptions::default()).unwrap();
+    assert!(unchanged.starts_with(&input));
+    let appended = &unchanged[input.len()..];
+    assert!(appended.windows(8).any(|w| w == b"xref\n0 0"), "a section with no entries still needs a subsection");
+    assert!(!appended.windows(13).any(|w| w == b"xref\ntrailer"));
+
+    let back = Document::open(Arc::new(unchanged.clone())).unwrap();
+    assert!(back.repair_log().is_empty(), "{:?}", back.repair_log());
+    assert_eq!(back.revisions().len(), 2);
+    assert_eq!(page(&back).name(b"Type"), Some(b"Page".as_slice()));
+    assert!(back.trailer().get(b"ID").is_some(), "a file without an identifier still receives one");
+    assert_eq!(hayro_pages(&unchanged), 1);
+    assert_qpdf_clean(&unchanged);
+
+    let mut edited = doc.clone();
+    edited.update_dict(ObjRef::new(3, 0), |d| d.set(b"Rotate".to_vec(), Object::Int(90))).unwrap();
+    let edited = write_incremental(&edited, &SaveOptions::default()).unwrap();
+    let edited_back = Document::open(Arc::new(edited.clone())).unwrap();
+    assert!(edited_back.repair_log().is_empty(), "{:?}", edited_back.repair_log());
+    assert_eq!(edited_back.get(ObjRef::new(3, 0)).as_dict().unwrap().int(b"Rotate"), Some(90));
+    assert_qpdf_clean(&edited);
+
+    let stamped = write_incremental(&doc, &SaveOptions { mod_date: Some("D:20260101000000Z".into()), ..SaveOptions::default() }).unwrap();
+    let stamped_back = Document::open(Arc::new(stamped.clone())).unwrap();
+    assert!(stamped_back.repair_log().is_empty(), "{:?}", stamped_back.repair_log());
+    let info = stamped_back.resolve(stamped_back.trailer().get(b"Info").unwrap());
+    assert_eq!(
+        info.as_dict().unwrap().get(b"ModDate").and_then(|d| d.as_string()).map(|s| s.bytes.as_slice()),
+        Some(b"D:20260101000000Z".as_slice())
+    );
+    assert_qpdf_clean(&stamped);
+}
+
+#[test]
+fn incremental_save_keeps_a_trailer_only_edit() {
+    let input = classic_table();
+    let mut doc = Document::open(Arc::new(input)).unwrap();
+    assert!(!doc.is_modified());
+    doc.trailer_mut().set(b"Custom".to_vec(), Object::String(pdfcraft_cos::PdfString::literal(b"keep me".to_vec())));
+    let saved = write_incremental(&doc, &SaveOptions::default()).unwrap();
+    let back = Document::open(Arc::new(saved.clone())).unwrap();
+    assert!(back.repair_log().is_empty(), "{:?}", back.repair_log());
+    assert_eq!(back.trailer().get(b"Custom").and_then(|o| o.as_string()).map(|s| s.bytes.as_slice()), Some(b"keep me".as_slice()));
+    assert_eq!(hayro_pages(&saved), 1);
+    assert_qpdf_clean(&saved);
+}
+
 #[test]
 fn qpdf_accepts_object_stream_output() {
     let Ok(out) = std::process::Command::new("qpdf").arg("--version").output() else {

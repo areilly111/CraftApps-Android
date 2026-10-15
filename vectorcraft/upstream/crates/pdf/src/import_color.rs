@@ -389,12 +389,16 @@ fn alt_model(o: &Object<'_>) -> Option<Alt> {
         Object::Array(a) => {
             let mut it = a.flex_iter();
             match it.next::<Name<'_>>()?.as_str() {
-                "ICCBased" => match it.next::<Stream<'_>>()?.dict().get::<u8>(b"N")? {
-                    1 => Some(Alt::Gray),
-                    3 => Some(Alt::Rgb),
-                    4 => Some(Alt::Cmyk),
-                    _ => None,
-                },
+                "ICCBased" => {
+                    let profile = it.next::<Stream<'_>>()?;
+                    match profile.dict().get::<u8>(b"N")? {
+                        1 => Some(Alt::Gray),
+                        3 if lab_profile(&profile) => Some(Alt::Lab),
+                        3 => Some(Alt::Rgb),
+                        4 => Some(Alt::Cmyk),
+                        _ => None,
+                    }
+                }
                 "Lab" => Some(Alt::Lab),
                 "CalRGB" => Some(Alt::Rgb),
                 "CalGray" => Some(Alt::Gray),
@@ -404,6 +408,27 @@ fn alt_model(o: &Object<'_>) -> Option<Alt> {
         }
         _ => None,
     }
+}
+
+/// Is the ICC profile of an `ICCBased` space a Lab one (its alternate space `Lab`, else its header's
+/// data colour space `Lab `)? Spot colours defined in Lab come with such a profile as their
+/// alternate space (#1032), and their tint transforms give Lab values.
+fn lab_profile(profile: &Stream<'_>) -> bool {
+    use std::io::Read;
+    if let Some(Object::Array(a)) = profile.dict().get::<Object<'_>>(b"Alternate") {
+        return a.flex_iter().next::<Name<'_>>().is_some_and(|n| n.as_str() == "Lab");
+    }
+    // The header's first 20 bytes, without decoding the rest of the profile.
+    let raw = profile.raw_data();
+    let mut head = vec![];
+    match profile.filters().as_slice() {
+        [] => head.extend(raw.iter().take(20)),
+        [hayro_syntax::Filter::FlateDecode] => {
+            let _ = flate2::read::ZlibDecoder::new(&*raw).take(20).read_to_end(&mut head); // a damaged profile reads as not Lab
+        }
+        _ => return false,
+    }
+    head.get(16..20) == Some(b"Lab ")
 }
 
 /// An alternate-space colour (the tint transform's output) as a VectorCraft colour.

@@ -166,7 +166,7 @@ fn expand_and_release_keep_what_the_blend_carries() {
     s.edit("mask", |d, _| {
         let art = Node::path(d.alloc_id(), vectorcraft_geom::shapes::rectangle(Rect::new(0.0, 0.0, 50.0, 10.0)), Default::default());
         let mask = vectorcraft_doc::OpacityMask::new(art, false);
-        d.node_mut(g).unwrap().mask = Some(Box::new(mask));
+        d.node_mut(g).unwrap().extras_mut().mask = Some(Box::new(mask));
         Ok(())
     })
     .unwrap();
@@ -176,14 +176,14 @@ fn expand_and_release_keep_what_the_blend_carries() {
     let e = node(&s, g);
     assert!(matches!(e.kind, NodeKind::Group { .. }));
     assert_eq!((e.name.as_deref(), e.opacity, e.isolate, e.knockout), (Some("Fade"), before.opacity, true, Knockout::On));
-    assert_eq!(e.mask, before.mask);
+    assert_eq!(e.extras().mask, before.extras().mask);
     s.execute("edit.undo", &json!({})).unwrap();
     s.execute("select.set", &json!({"ids": [g.0]})).unwrap();
     let r = s.execute("object.blend.release", &json!({})).unwrap();
     let grp = NodeId(r["groups"][0].as_u64().unwrap());
     let n = node(&s, grp);
     assert_eq!((n.name.as_deref(), n.opacity, n.isolate), (Some("Fade"), before.opacity, true));
-    assert_eq!(n.mask, before.mask);
+    assert_eq!(n.extras().mask, before.extras().mask);
     assert_eq!(n.children().unwrap().len(), 3, "spine and keys inside");
 }
 

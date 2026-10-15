@@ -26,17 +26,21 @@
 //! again.
 //!
 //! Each copy is two entries: `<area>/<file>.vectorcraft` (the native document, written as a save
-//! writes it) and `<area>/<file>.json` (its title, original path and format, and when it was
-//! written). The store is a folder on the desktop ([`FolderStore`]: the `recoveryFolder`
+//! writes it, without its images) and `<area>/<file>.json` (its title, original path and format,
+//! when it was written, and its images). The images are entries of their own, `<area>/img-…blob`,
+//! named by their content and shared by the area's copies: a copy written again writes only the
+//! images that changed, and the images no copy names any more go. Copies written before images
+//! were kept apart (the images in the document entry) still restore. The store is a folder on the desktop ([`FolderStore`]: the `recoveryFolder`
 //! preference, else the folder the app sets), browser storage on the web, or any
 //! [`RecoveryStore`] the host installs (tests use [`MemoryStore`]).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, Weak};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use vectorcraft_doc::Document;
+use vectorcraft_doc::{Document, ImageBlob};
 
 use super::fileio::{self, SAVE_FORMATS, SaveJob, SaveMode, SavePlan};
 use super::*;
@@ -50,6 +54,8 @@ pub const COMPLEX_OBJECTS: usize = 20_000;
 const DOC_EXT: &str = ".vectorcraft";
 /// The extension of a copy's details entry.
 const META_EXT: &str = ".json";
+/// The extension of an image entry (see [`blob_name`]).
+const BLOB_EXT: &str = ".blob";
 /// The heartbeat entry of an area in a store without locks: when its app last said it runs (Unix
 /// seconds, as text).
 const BEAT: &str = "heartbeat";
@@ -527,6 +533,73 @@ struct Meta {
     /// (see [`crate::DocState::import_losses`]): a restored copy still refuses to replace it.
     imported_from: Option<String>,
     import_losses: Vec<String>,
+    /// The document's images by key, in entries of the area (none in copies written before
+    /// images were kept apart: the document entry holds them).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    images: BTreeMap<String, ImageRef>,
+}
+
+/// One of a copy's images: its entry in the copy's area.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct ImageRef {
+    mime: String,
+    /// The entry's name in the area ([`blob_name`]).
+    blob: String,
+    /// A linked image's preview, as a save writes it ([`ImageBlob::proxy`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    proxy: bool,
+}
+
+/// Writes of image entries and their sweeping ([`sweep`]) take turns, in this app (the background
+/// worker and the UI thread), so an image is never swept between being written and named.
+static WRITES: Mutex<()> = Mutex::new(());
+
+/// Image bytes and the name of their entry ([`blob_name`]).
+type Named = (Weak<Vec<u8>>, String);
+
+/// The entry names of image bytes already hashed ([`blob_name`]), so an image is hashed once,
+/// not at every interval. Bytes behind a live `Weak` never change (`Arc::make_mut` copies them).
+static NAMES: Mutex<Vec<Named>> = Mutex::new(Vec::new());
+
+/// The name of the entry holding `bytes`: from their content (128 bits of hash and the length), so
+/// identical images share one entry and one written before isn't written again.
+fn blob_name(bytes: &Arc<Vec<u8>>) -> String {
+    let mut names = NAMES.lock().unwrap_or_else(|e| e.into_inner());
+    names.retain(|(w, _)| w.strong_count() > 0);
+    if let Some((_, name)) = names.iter().find(|(w, _)| std::ptr::eq(w.as_ptr(), Arc::as_ptr(bytes))) {
+        return name.clone();
+    }
+    let hash = |seed: u8| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        seed.hash(&mut h);
+        bytes.as_slice().hash(&mut h);
+        h.finish()
+    };
+    let name = format!("img-{:016x}{:016x}-{}{BLOB_EXT}", hash(1), hash(2), bytes.len());
+    names.push((Arc::downgrade(bytes), name.clone()));
+    name
+}
+
+/// The MIME type of a linked image's preview (JPEG or PNG), as a save names it.
+fn proxy_mime(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0xff, 0xd8]) { "image/jpeg" } else { vectorcraft_doc::links::PROXY_MIME }
+}
+
+/// Remove the image entries of `area` no copy's details name any more. Best effort: an entry left
+/// behind goes at the next sweep, or with the area.
+fn sweep(store: &dyn RecoveryStore, area: &str) {
+    let Ok(names) = store.list() else { return };
+    let in_area = |n: &&String| n.split_once('/').is_some_and(|(a, _)| a == area);
+    let mut named = BTreeSet::new();
+    for meta in names.iter().filter(in_area).filter_map(|n| n.strip_suffix(META_EXT)) {
+        named.extend(read_meta(store, meta).images.into_values().map(|r| r.blob));
+    }
+    for n in names.iter().filter(in_area).filter(|n| n.ends_with(BLOB_EXT)) {
+        if n.split_once('/').is_some_and(|(_, b)| !named.contains(b)) {
+            let _ = store.remove(n);
+        }
+    }
 }
 
 fn read_meta(store: &dyn RecoveryStore, file: &str) -> Meta {
@@ -548,14 +621,56 @@ pub struct RecoveryJob {
 }
 
 impl RecoveryJob {
-    /// Encode the snapshot and store it with its details → `{file, title, bytes}`.
+    /// Encode the snapshot and store it with its details and the images the area doesn't have
+    /// yet → `{file, title, bytes (the document's), imageBytes (images written now)}`.
     pub fn write(&self, store: &dyn RecoveryStore) -> std::result::Result<Value, String> {
-        let enc = self.save.encode().map_err(|e| e.to_string())?;
+        let doc = self.save.doc();
+        // A linked image keeps its preview, as a save writes it.
+        let linked = doc.linked_only_images();
+        let mut lean = Document::clone(doc);
+        let blobs = std::mem::take(&mut lean.images);
+        let enc = self.save.encode_doc(&lean).map_err(|e| e.to_string())?;
         let bytes = enc.files.first().map(|f| f.1.as_slice()).ok_or("nothing encoded")?;
-        let meta = serde_json::to_vec_pretty(&self.meta).map_err(|e| e.to_string())?;
+        let mut meta = self.meta.clone();
+        let mut images = vec![];
+        for (key, b) in &blobs {
+            let (mime, data, proxy) = match b.proxy.as_ref().filter(|_| linked.contains(key)) {
+                Some(p) => (proxy_mime(p), p, true),
+                None => (b.mime.as_str(), &b.bytes, false),
+            };
+            let blob = blob_name(data);
+            meta.images.insert(key.clone(), ImageRef { mime: mime.into(), blob: blob.clone(), proxy });
+            images.push((blob, data));
+        }
+        let meta_bytes = serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?;
+        let area = self.file.split_once('/').map_or("", |(a, _)| a);
+        let _turn = WRITES.lock().unwrap_or_else(|e| e.into_inner());
+        let have: BTreeSet<String> = if images.is_empty() { BTreeSet::new() } else { store.list()?.into_iter().collect() };
+        let mut image_bytes = 0;
+        for (blob, data) in images {
+            let name = format!("{area}/{blob}");
+            if !have.contains(&name) {
+                store.write(&name, data)?;
+                image_bytes += data.len();
+            }
+        }
+        let meta_name = format!("{}{META_EXT}", self.file);
+        // The details name the images, so a crash between writing the document and its details
+        // would pair the new document with the old copy's images: when the new document has
+        // images the old details don't name, they name both until the new document is in.
+        let old = read_meta(store, &self.file).images;
+        if meta.images.iter().any(|(k, r)| old.get(k).is_none_or(|o| o.blob != r.blob)) {
+            let mut both = meta.clone();
+            for (k, r) in old {
+                both.images.entry(k).or_insert(r);
+            }
+            store.write(&meta_name, &serde_json::to_vec_pretty(&both).map_err(|e| e.to_string())?)?;
+        }
         store.write(&format!("{}{DOC_EXT}", self.file), bytes)?;
-        store.write(&format!("{}{META_EXT}", self.file), &meta)?;
-        Ok(json!({ "file": self.file, "title": self.title, "bytes": bytes.len() }))
+        store.write(&meta_name, &meta_bytes)?;
+        // Images this copy no longer shows, nor any other.
+        sweep(store, area);
+        Ok(json!({ "file": self.file, "title": self.title, "bytes": bytes.len(), "imageBytes": image_bytes }))
     }
 
     /// Once stored: the document (if still open) remembers the copy, so it isn't written again
@@ -662,6 +777,8 @@ pub fn jobs(s: &mut Session, store: &Arc<dyn RecoveryStore>) -> Result<(Vec<Reco
             saved,
             imported_from: st.imported_from.clone(),
             import_losses: st.import_losses.clone(),
+            // Filled in as the copy is written.
+            images: BTreeMap::new(),
         };
         out.push(RecoveryJob { uid: st.uid, file, title, meta, save });
     }
@@ -829,7 +946,24 @@ fn restore_one(s: &mut Session, store: &Arc<dyn RecoveryStore>, file: &str) -> R
     let bytes = store.read(&format!("{file}{DOC_EXT}")).map_err(EngineError::Other)?;
     let meta_bytes = store.read(&format!("{file}{META_EXT}")).unwrap_or_default();
     let meta: Meta = serde_json::from_slice(&meta_bytes).unwrap_or_default();
-    let (mut doc, _, warnings) = fileio::native_file(&bytes).map_err(|e| EngineError::Other(format!("recovery copy `{file}`: {e}")))?;
+    let (mut doc, _, mut warnings) = fileio::native_file(&bytes).map_err(|e| EngineError::Other(format!("recovery copy `{file}`: {e}")))?;
+    // The images, from the entries of the copy's area.
+    let from = file.split_once('/').map_or("", |(a, _)| a);
+    let mut blobs = vec![];
+    for (key, r) in &meta.images {
+        match store.read(&format!("{from}/{}", r.blob)) {
+            Ok(data) => {
+                let mut blob = ImageBlob::new(r.mime.clone(), data);
+                // Until the linked file is read, the preview stands in for it.
+                if r.proxy {
+                    blob.proxy = Some(blob.bytes.clone());
+                }
+                blobs.push((r.blob.clone(), blob.bytes.clone()));
+                doc.images.insert(key.clone(), blob);
+            }
+            Err(e) => warnings.push(format!("the image “{key}” of the recovered document couldn't be read: {e}")),
+        }
+    }
     let area = claim(s, store)?;
     let mut taken: Vec<String> = copies_in(&store.list().map_err(EngineError::Other)?).into_iter().map(|(_, f)| f).collect();
     taken.extend(open_copies(s));
@@ -838,8 +972,15 @@ fn restore_one(s: &mut Session, store: &Arc<dyn RecoveryStore>, file: &str) -> R
         f if taken.contains(&f) => fresh_name(&area, stem, &taken),
         f => f,
     };
-    store.write(&format!("{mine}{DOC_EXT}"), &bytes).map_err(EngineError::Other)?;
-    store.write(&format!("{mine}{META_EXT}"), &meta_bytes).map_err(EngineError::Other)?;
+    {
+        let _turn = WRITES.lock().unwrap_or_else(|e| e.into_inner());
+        for (blob, data) in &blobs {
+            store.write(&format!("{area}/{blob}"), data).map_err(EngineError::Other)?;
+        }
+        store.write(&format!("{mine}{DOC_EXT}"), &bytes).map_err(EngineError::Other)?;
+        store.write(&format!("{mine}{META_EXT}"), &meta_bytes).map_err(EngineError::Other)?;
+    }
+    // The copy's images in its old area go with the area, once no copy is left there.
     store.remove(&format!("{file}{DOC_EXT}")).map_err(EngineError::Other)?;
     store.remove(&format!("{file}{META_EXT}")).map_err(EngineError::Other)?;
     if doc.title.is_empty() {
@@ -901,7 +1042,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Save Recovery Data",
             [],
             None,
-            "{} write a recovery copy of every modified document changed since its last copy, in this app's own area of the store (the app does this every autosaveInterval minutes while autosaveRecovery is on; documents of more than 20000 objects are skipped while recoveryOffForComplex is on). A copy goes when its document is saved, reverted or closed → {saved: [{file, title, bytes}], skipped: [{title, reason}], location} (location: the recovery folder, or browser storage on the web)",
+            "{} write a recovery copy of every modified document changed since its last copy, in this app's own area of the store (the app does this every autosaveInterval minutes while autosaveRecovery is on; documents of more than 20000 objects are skipped while recoveryOffForComplex is on). Images are stored apart, each once while unchanged. A copy goes when its document is saved, reverted or closed → {saved: [{file, title, bytes, imageBytes (images written this time)}], skipped: [{title, reason}], location} (location: the recovery folder, or browser storage on the web)",
             has_store,
             save
         ),

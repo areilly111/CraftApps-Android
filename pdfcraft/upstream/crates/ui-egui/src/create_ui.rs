@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use crate::PdfCraftApp;
+use crate::widgets;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ResolutionChoice {
@@ -24,10 +25,10 @@ pub(crate) fn image_import_body(ui: &mut egui::Ui, app: &mut PdfCraftApp) -> (bo
     let Some(draft) = app.image_import.as_mut() else { return (false, true) };
     ui.label(crate::i18n::fmt(tl!("Selected image files: {count}"), &[("count", &draft.images.len().to_string())]));
     ui.add_space(8.0);
-    ui.radio_value(&mut draft.choice, ResolutionChoice::Image, tl!("Use image resolution"));
+    widgets::radio_value(ui, &mut draft.choice, ResolutionChoice::Image, tl!("Use image resolution"));
     ui.label(tl!("Use each image's embedded DPI; use 72 DPI when it is absent."));
-    ui.radio_value(&mut draft.choice, ResolutionChoice::Default72, tl!("Use 72 DPI (one point per pixel)"));
-    ui.radio_value(&mut draft.choice, ResolutionChoice::Custom, tl!("Use custom DPI"));
+    widgets::radio_value(ui, &mut draft.choice, ResolutionChoice::Default72, tl!("Use 72 DPI (one point per pixel)"));
+    widgets::radio_value(ui, &mut draft.choice, ResolutionChoice::Custom, tl!("Use custom DPI"));
     ui.add_enabled(draft.choice == ResolutionChoice::Custom, egui::DragValue::new(&mut draft.dpi).range(1.0..=1200.0).suffix(" DPI"));
     ui.label(tl!("DPI sets the printed page size without resampling the image."));
     ui.add_space(12.0);
@@ -56,7 +57,7 @@ pub enum Clip {
 }
 
 /// An image on the system clipboard, or else its text.
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 fn read_clipboard() -> Option<Clip> {
     let mut cb = arboard::Clipboard::new().ok()?;
     if let Ok(img) = cb.get_image() {
@@ -99,6 +100,8 @@ impl PdfCraftApp {
     fn open_created_bytes(&mut self, name: &str, created: Result<Arc<Vec<u8>>, String>) -> Result<(), String> {
         let bytes = created?;
         let id = self.session.open_new(name, bytes).map_err(|e| e.to_string())?;
+        // The reading-colours preference is app-wide: the newly created document starts with it.
+        self.session.set_reading_colors(id, self.reading_colors);
         let info = &self.session.get(id).ok_or("the new document could not be opened")?.info;
         self.views.push(crate::DocView::new(id, info, self.view_defaults));
         self.active = Some(self.views.len() - 1);
@@ -108,9 +111,9 @@ impl PdfCraftApp {
     /// Create ▸ Clipboard: a new document from the image (one page, its size) or the text on
     /// the clipboard, as Acrobat does.
     pub(crate) fn create_from_clipboard(&mut self) {
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(not(target_arch = "wasm32"))]
         let clip = read_clipboard();
-        #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+        #[cfg(target_arch = "wasm32")]
         let clip: Option<Clip> = None;
         match clip {
             Some(c) => {
@@ -146,7 +149,7 @@ impl PdfCraftApp {
     pub(crate) fn create_from_images_dialog(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let dialog = crate::pickers::FileDialog::new()
+            let dialog = rfd::AsyncFileDialog::new()
                 .add_filter(tl!("Images"), &["png", "jpg", "jpeg", "tif", "tiff", "gif", "bmp", "jp2", "j2k", "jpx"])
                 .set_title(tl!("Choose images"));
             self.ask(crate::pickers::Ask::Files(dialog), None, |app, files| {
@@ -269,14 +272,14 @@ impl PdfCraftApp {
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let write = move |app: &mut Self, path: String| match app.write_picked_file(&path, &bytes) {
+            let write = move |app: &mut Self, path: String| match crate::editing::write_atomically(&path, &bytes) {
                 Ok(()) => saved(app, path),
                 Err(e) => app.notify_fmt("Couldn't write {path}: {e}", &[("path", &path), ("e", &e.to_string())]),
             };
             match self.save_override.clone() {
                 Some(p) => write(self, p),
                 None => {
-                    let dialog = crate::pickers::FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(&name);
+                    let dialog = rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(&name);
                     self.ask_one(crate::pickers::Ask::Save(dialog), None, move |app, p| write(app, p.to_string_lossy().into_owned()));
                 }
             }

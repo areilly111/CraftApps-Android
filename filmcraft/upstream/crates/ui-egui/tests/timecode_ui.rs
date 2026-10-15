@@ -174,3 +174,37 @@ fn the_program_and_source_timecodes_move_their_own_playheads() {
     assert_eq!(d.source_frame(), parse_timecode("100", d.source_rate(), false, 0).unwrap(), "1 s at the clip's own rate");
     assert_eq!(d.harness.state().session.playhead(), program);
 }
+
+#[test]
+fn compact_floating_monitor_timecodes_keep_drag_typing_escape_and_caret_routing() {
+    for scale in [1.0, 2.0] {
+        let mut d = Driver::demo();
+        d.harness.ctx.set_pixels_per_point(scale);
+        d.frames(4);
+        for (panel, x) in [("Source", 70), ("Program", 360)] {
+            d.ok("engine.execute", json!({"command": "window.floatPanel", "params": {"panel": panel, "rect": [x, 100, 250, 360]}}));
+        }
+        let project = d.harness.state().session.project.clone();
+        d.set_frame(30);
+        d.drag_by("program.timecode", 20.0);
+        assert_eq!(d.frame(), 50);
+        let program = d.harness.state().session.playhead();
+        let source = d.source_frame();
+        d.drag_by("source.timecode", 20.0);
+        assert_eq!(d.source_frame(), source + 20);
+        assert_eq!(d.harness.state().session.playhead(), program);
+        d.type_into("program.timecode", "1000", "Escape");
+        assert_eq!(d.harness.state().session.playhead(), program);
+        d.type_into("source.timecode", "100", "Enter");
+        assert_eq!(d.source_frame(), parse_timecode("100", d.source_rate(), false, 0).unwrap());
+        assert_eq!(d.harness.state().session.playhead(), program);
+        d.ok("ui.click", json!({"id": "program.timecode"}));
+        d.ok("ui.key", json!({"key": "Left"}));
+        assert_eq!(d.harness.state().session.playhead(), program, "caret arrows must not seek");
+        d.ok("ui.key", json!({"key": "Escape"}));
+        d.type_into("program.timecode", "200", "Enter");
+        let s = &d.harness.state().session;
+        assert_eq!(d.frame(), parse_timecode("200", s.sequence_rate(), s.active_sequence().unwrap().settings.drop_frame, 0).unwrap());
+        assert!(std::sync::Arc::ptr_eq(&project, &s.project));
+    }
+}

@@ -43,7 +43,7 @@ pub fn margin(layer: &Layer) -> i32 {
             Effect::DropShadow(s) | Effect::InnerShadow(s) => s.distance + s.size,
             Effect::OuterGlow(g) | Effect::InnerGlow(g) => g.size,
             Effect::Stroke(s) => s.size,
-            Effect::Satin(s) => s.distance + s.size,
+            Effect::Satin(s) => satin_distance(s) + s.size,
             Effect::BevelEmboss(b) => b.size + b.soften,
             _ => 0.0,
         };
@@ -167,33 +167,161 @@ fn edt(inside: &[bool], w: usize, h: usize) -> Vec<f32> {
     edt_nearest(inside, w, h).0
 }
 
-/// [`edt`] plus the index of the nearest `inside` pixel.
-fn edt_nearest(inside: &[bool], w: usize, h: usize) -> (Vec<f32>, Vec<usize>) {
+/// Maps with fewer pixels (or other units of work) than this are not worth spawning threads for.
+const PAR_MIN: usize = 1 << 16;
+
+/// Most threads one pass uses (as for the blurs, [`rows_par`]).
+const PAR_THREADS: usize = 16;
+
+#[cfg(test)]
+thread_local! {
+    /// Test hook: the thread count [`par_threads`] gives on this thread, whatever the work.
+    static THREADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// How many threads a pass over `work` pixels (or similar units) uses.
+fn par_threads(work: usize) -> usize {
+    #[cfg(test)]
+    if let Some(n) = THREADS.with(std::cell::Cell::get) {
+        return n;
+    }
+    if cfg!(target_arch = "wasm32") || work < PAR_MIN { 1 } else { std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, PAR_THREADS) }
+}
+
+/// Runs `f(scratch, u, a_u, b_u)` for every unit `u` of two slices: unit `u` of `a` is
+/// `a[u * unit_a..][..unit_a]` (the last may be shorter), the same of `b` with `unit_b`, which is 0
+/// when there is no second slice. `work` says how big the whole pass is ([`par_threads`]). Groups of
+/// units go to scoped OS threads, each with a scratch value from `init`; not to rayon, as for
+/// [`rows_par`]: maps are built from inside rayon tiles, where a waiting worker steals other tiles.
+/// A unit is computed from its own arguments alone, so the result does not depend on the threads.
+fn par_units<S, A: Send, B: Send>(
+    work: usize,
+    a: &mut [A],
+    unit_a: usize,
+    b: &mut [B],
+    unit_b: usize,
+    init: impl Fn() -> S + Sync,
+    f: impl Fn(&mut S, usize, &mut [A], &mut [B]) + Sync,
+) {
+    if unit_a == 0 {
+        return;
+    }
+    let units = a.len().div_ceil(unit_a);
+    let threads = par_threads(work).min(units);
+    if threads <= 1 {
+        run_units(&mut init(), 0, a, unit_a, b, unit_b, &f);
+        return;
+    }
+    // Many more groups than threads, so that a heavy one (an edge-rich stretch) does not hold the rest up.
+    let group = units.div_ceil(threads * 8).max(1);
+    let mut groups = Vec::new();
+    let (mut rest_a, mut rest_b, mut first) = (a, b, 0usize);
+    while !rest_a.is_empty() {
+        let (ga, na) = rest_a.split_at_mut((group * unit_a).min(rest_a.len()));
+        let (gb, nb) = rest_b.split_at_mut((group * unit_b).min(rest_b.len()));
+        groups.push((first, ga, gb));
+        (rest_a, rest_b, first) = (na, nb, first + group);
+    }
+    let queue = std::sync::Mutex::new(groups.into_iter());
+    let worker = || {
+        let mut scratch = init();
+        loop {
+            let next = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).next();
+            let Some((first, ga, gb)) = next else { break };
+            run_units(&mut scratch, first, ga, unit_a, gb, unit_b, &f);
+        }
+    };
+    std::thread::scope(|sc| {
+        // A thread that cannot be spawned leaves its share to the others.
+        for _ in 1..threads {
+            let _ = std::thread::Builder::new().spawn_scoped(sc, worker);
+        }
+        worker();
+    });
+}
+
+fn run_units<S, A, B>(scratch: &mut S, first: usize, a: &mut [A], unit_a: usize, b: &mut [B], unit_b: usize, f: &impl Fn(&mut S, usize, &mut [A], &mut [B])) {
+    for (k, ua) in a.chunks_mut(unit_a).enumerate() {
+        let ub = b.get_mut(k * unit_b..((k + 1) * unit_b).min(b.len())).unwrap_or(&mut []);
+        f(scratch, first + k, ua, ub);
+    }
+}
+
+/// A `w × h` buffer of `fill`, then filled row by row through `f(y, row)`.
+fn par_fill<T: Clone + Send>(w: usize, h: usize, fill: T, f: impl Fn(usize, &mut [T]) + Sync) -> Vec<T> {
+    let mut out = vec![fill; w.saturating_mul(h)];
+    par_units(out.len(), &mut out, w.max(1), &mut [] as &mut [()], 0, || (), |_, y, row, _| f(y, row));
+    out
+}
+
+/// Working buffers of the 1D distance transform, for lines of up to `n` pixels.
+struct Dt1Scratch {
+    f: Vec<f32>,
+    o: Vec<f32>,
+    v: Vec<usize>,
+    z: Vec<f32>,
+    near: Vec<usize>,
+}
+
+impl Dt1Scratch {
+    fn new(n: usize) -> Self {
+        Dt1Scratch { f: vec![0.0; n], o: vec![0.0; n], v: vec![0; n], z: vec![0.0; n + 1], near: vec![0; n] }
+    }
+}
+
+/// [`edt`] plus the index of the nearest `inside` pixel (as `u32`: a map past 2³² pixels has no
+/// nearest pixel to give, and every distance is then "far").
+///
+/// Both passes run line by line in parallel: the columns, then the rows. The columns' results are
+/// kept column by column (`gc[x * h + y]`) so that each thread writes its own stretch of them.
+fn edt_nearest(inside: &[bool], w: usize, h: usize) -> (Vec<f32>, Vec<u32>) {
     const INF: f32 = 1e20;
-    let mut g: Vec<f32> = inside.iter().map(|&b| if b { 0.0 } else { INF }).collect();
-    let mut near_row = vec![0usize; w * h];
-    let mut nearest = vec![0usize; w * h];
+    let total = w.saturating_mul(h);
+    if total != inside.len() || total > u32::MAX as usize {
+        return (vec![INF; inside.len()], vec![0; inside.len()]);
+    }
     let n = w.max(h);
-    let (mut f, mut o, mut v, mut z, mut nr) = (vec![0.0; n], vec![0.0; n], vec![0usize; n], vec![0.0f32; n + 1], vec![0usize; n]);
-    for x in 0..w {
-        for y in 0..h {
-            f[y] = g[y * w + x];
-        }
-        dt1(&f[..h], &mut o[..h], &mut v, &mut z, &mut nr[..h]);
-        for y in 0..h {
-            g[y * w + x] = o[y];
-            near_row[y * w + x] = nr[y];
-        }
-    }
-    for y in 0..h {
-        f[..w].copy_from_slice(&g[y * w..(y + 1) * w]);
-        dt1(&f[..w], &mut o[..w], &mut v, &mut z, &mut nr[..w]);
-        for x in 0..w {
-            g[y * w + x] = o[x].sqrt();
-            let px = nr[x];
-            nearest[y * w + x] = near_row[y * w + px] * w + px;
-        }
-    }
+    let mut gc = vec![0.0f32; total];
+    let mut nc = vec![0u32; total];
+    par_units(
+        total,
+        &mut gc,
+        h.max(1),
+        &mut nc,
+        h.max(1),
+        || Dt1Scratch::new(n),
+        |t, x, g, near| {
+            for (y, f) in t.f[..h].iter_mut().enumerate() {
+                *f = if inside[y * w + x] { 0.0 } else { INF };
+            }
+            dt1(&t.f[..h], &mut t.o[..h], &mut t.v, &mut t.z, &mut t.near[..h]);
+            g.copy_from_slice(&t.o[..h]);
+            for (d, &p) in near.iter_mut().zip(&t.near[..h]) {
+                *d = p as u32;
+            }
+        },
+    );
+    let mut g = vec![0.0f32; total];
+    let mut nearest = vec![0u32; total];
+    par_units(
+        total,
+        &mut g,
+        w.max(1),
+        &mut nearest,
+        w.max(1),
+        || Dt1Scratch::new(n),
+        |t, y, out, near| {
+            for (x, f) in t.f[..w].iter_mut().enumerate() {
+                *f = gc[x * h + y];
+            }
+            dt1(&t.f[..w], &mut t.o[..w], &mut t.v, &mut t.z, &mut t.near[..w]);
+            for (x, (d, ne)) in out.iter_mut().zip(near.iter_mut()).enumerate() {
+                *d = t.o[x].sqrt();
+                let px = t.near[x];
+                *ne = (nc[px * h + y] as usize * w + px) as u32;
+            }
+        },
+    );
     (g, nearest)
 }
 
@@ -274,9 +402,23 @@ fn dist_outside_by(s: &Map, m: Metric) -> Vec<f32> {
         let (d, _) = chamfer_from(start, s.w, s.h);
         return d.iter().zip(&s.v).map(|(d, &a)| if a > INSIDE_EPS { -0.5 } else { d - 0.5 }).collect();
     }
-    let inside: Vec<bool> = s.v.iter().map(|&a| a > INSIDE_EPS).collect();
+    let inside = covered(s, |a| a > INSIDE_EPS);
     let (d, near) = edt_nearest(&inside, s.w, s.h);
-    (0..d.len()).map(|i| if inside[i] { -0.5 } else { d[i] - 0.5 + (1.0 - s.v[near[i]].min(1.0)) }).collect()
+    par_fill(s.w, s.h, 0.0f32, |y, row| {
+        for (x, out) in row.iter_mut().enumerate() {
+            let i = y * s.w + x;
+            *out = if inside[i] { -0.5 } else { d[i] - 0.5 + (1.0 - s.v[near[i] as usize].min(1.0)) };
+        }
+    })
+}
+
+/// Which pixels of `s` satisfy `test`, row by row in parallel.
+fn covered(s: &Map, test: impl Fn(f32) -> bool + Sync) -> Vec<bool> {
+    par_fill(s.w, s.h, false, |y, row| {
+        for (e, &a) in row.iter_mut().zip(s.v.get(y * s.w..).unwrap_or_default()) {
+            *e = test(a);
+        }
+    })
 }
 
 /// Distance from each pixel centre inside the shape to the shape's edge
@@ -306,9 +448,14 @@ fn dist_inside_by(s: &Map, m: Metric) -> Vec<f32> {
         let (d, _) = chamfer_from(start, s.w, s.h);
         return d.iter().zip(&s.v).map(|(d, &a)| if a <= INSIDE_EPS { -0.5 } else { d - 0.5 }).collect();
     }
-    let outside: Vec<bool> = s.v.iter().map(|&a| a <= INSIDE_EPS).collect();
+    let outside = covered(s, |a| a <= INSIDE_EPS);
     let (d, _) = edt_nearest(&outside, s.w, s.h);
-    d.iter().zip(&outside).map(|(d, o)| if *o { -0.5 } else { d - 0.5 }).collect()
+    par_fill(s.w, s.h, 0.0f32, |y, row| {
+        for (x, out) in row.iter_mut().enumerate() {
+            let i = y * s.w + x;
+            *out = if outside[i] { -0.5 } else { d[i] - 0.5 };
+        }
+    })
 }
 
 /// Alpha relative to the 3×3 neighbourhood maximum: separates edge coverage
@@ -441,9 +588,9 @@ impl SharpEdges {
 /// the coverage gradient gives). Sharp pixels are partly covered and touch both an empty and a full
 /// pixel; hard edges and soft ramps have none and keep the `alpha - 1/2` of [`dist_outside`].
 ///
-/// An edge pixel is covered and has an empty neighbour, so a row by row pass over which pixels are
-/// covered finds the few candidates without computing [`local_coverage`] of the whole map; the
-/// coverage is then worked out where it is needed, by the same formula.
+/// An edge pixel is covered and has an empty neighbour, so a pass over which pixels are covered finds
+/// the few candidates without computing [`local_coverage`] of the whole map; the coverage is then
+/// worked out where it is needed, by the same formula. Rows are independent and go in parallel.
 fn sharp_edges(s: &Map) -> SharpEdges {
     let (w, h) = (s.w, s.h);
     if w == 0 || h == 0 || s.v.len() != w * h || s.v.len() >= u32::MAX as usize {
@@ -466,56 +613,64 @@ fn sharp_edges(s: &Map) -> SharpEdges {
     };
     // The coverage with the map's border repeated, for the gradient.
     let cov_clamped = |x: i64, y: i64| cov_at(x.max(0).min(wi - 1), y.max(0).min(hi - 1));
-    // Rows of "not empty" with a covered margin of one pixel on each side (off the map counts as covered:
-    // only a neighbour on the map can be empty).
-    let solid_row = |y: i64| -> Vec<bool> {
-        let mut row = vec![true; w + 2];
-        if (0..hi).contains(&y) {
-            for (x, &a) in s.v[y as usize * w..(y as usize + 1) * w].iter().enumerate() {
-                row[x + 1] = a.is_nan() || a > INSIDE_EPS;
-            }
+    // Whether a pixel is not empty. Off the map counts as covered: only a neighbour on the map can be empty.
+    let solid = |x: i64, y: i64| -> bool {
+        if x < 0 || y < 0 || x >= wi || y >= hi {
+            return true;
         }
-        row
+        let a = s.v[y as usize * w + x as usize];
+        a.is_nan() || a > INSIDE_EPS
     };
-    let mut slot = vec![0u32; w * h];
-    let mut pixels: Vec<EdgePixel> = Vec::new();
-    let (mut above, mut here, mut below) = (solid_row(-1), solid_row(0), solid_row(1));
-    let mut candidate = vec![false; w];
-    for y in 0..hi {
-        for x in 0..w {
-            candidate[x] = here[x + 1] && !(above[x] & above[x + 1] & above[x + 2] & here[x] & here[x + 2] & below[x] & below[x + 1] & below[x + 2]);
-        }
-        for x in 0..wi {
-            if !candidate[x as usize] {
-                continue;
-            }
-            let i = (y * wi + x) as usize;
-            let c = cov_at(x, y);
-            if s.v[i] <= INSIDE_EPS || c >= 1.0 - INSIDE_EPS {
-                continue;
-            }
-            let (mut empty, mut full) = (false, false);
-            for (dx, dy) in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy))) {
-                let (nx, ny) = (x + dx, y + dy);
-                if (dx, dy) == (0, 0) || nx < 0 || ny < 0 || nx >= wi || ny >= hi {
+    let mut rows: Vec<Vec<EdgePixel>> = vec![Vec::new(); h];
+    par_units(
+        w * h,
+        &mut rows,
+        1,
+        &mut [] as &mut [()],
+        0,
+        || (),
+        |_, y, row, _| {
+            let Some(row) = row.first_mut() else { return };
+            let y = y as i64;
+            for x in 0..wi {
+                if !solid(x, y) || (-1..=1).all(|dy| (-1..=1).all(|dx| solid(x + dx, y + dy))) {
                     continue;
                 }
-                empty |= s.get(nx, ny) <= INSIDE_EPS;
-                full |= cov_at(nx, ny) >= 1.0 - INSIDE_EPS;
+                let i = (y * wi + x) as usize;
+                let c = cov_at(x, y);
+                if s.v[i] <= INSIDE_EPS || c >= 1.0 - INSIDE_EPS {
+                    continue;
+                }
+                let (mut empty, mut full) = (false, false);
+                for (dx, dy) in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy))) {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if (dx, dy) == (0, 0) || nx < 0 || ny < 0 || nx >= wi || ny >= hi {
+                        continue;
+                    }
+                    empty |= s.get(nx, ny) <= INSIDE_EPS;
+                    full |= cov_at(nx, ny) >= 1.0 - INSIDE_EPS;
+                }
+                if !(empty && full) {
+                    continue;
+                }
+                let at = &cov_clamped;
+                let gx = (at(x + 1, y - 1) + 2.0 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2.0 * at(x - 1, y) + at(x - 1, y + 1));
+                let gy = (at(x - 1, y + 1) + 2.0 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2.0 * at(x, y - 1) + at(x + 1, y - 1));
+                let len = gx.hypot(gy);
+                let (normal, n) = if len.is_finite() && len > 1e-6 { ([gx / len, gy / len], [gx / len, gy / len]) } else { ([0.0, 0.0], [1.0, 0.0]) };
+                row.push(EdgePixel { at: i as u32, cov: c, edge: SharpEdge { offset: edge_offset(n, c), normal } });
             }
-            if !(empty && full) {
-                continue;
-            }
-            let at = &cov_clamped;
-            let gx = (at(x + 1, y - 1) + 2.0 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2.0 * at(x - 1, y) + at(x - 1, y + 1));
-            let gy = (at(x - 1, y + 1) + 2.0 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2.0 * at(x, y - 1) + at(x + 1, y - 1));
-            let len = gx.hypot(gy);
-            let (normal, n) = if len.is_finite() && len > 1e-6 { ([gx / len, gy / len], [gx / len, gy / len]) } else { ([0.0, 0.0], [1.0, 0.0]) };
-            pixels.push(EdgePixel { at: i as u32, cov: c, edge: SharpEdge { offset: edge_offset(n, c), normal } });
-            slot[i] = pixels.len() as u32;
+        },
+    );
+    let mut pixels: Vec<EdgePixel> = Vec::with_capacity(rows.iter().map(Vec::len).sum());
+    for row in rows {
+        pixels.extend(row);
+    }
+    let mut slot = vec![0u32; w * h];
+    for (k, p) in pixels.iter().enumerate() {
+        if let Some(s) = slot.get_mut(p.at as usize) {
+            *s = k as u32 + 1;
         }
-        above = std::mem::replace(&mut here, std::mem::take(&mut below));
-        below = solid_row(y + 2);
     }
     refine_edge_normals(&mut pixels, &slot, w, h);
     SharpEdges { w, h, slot, pixels }
@@ -537,9 +692,10 @@ fn refine_edge_normals(pixels: &mut [EdgePixel], slot: &[u32], w: usize, h: usiz
         .map(|p| [(p.at as i64 % wi) as f32 - p.edge.offset * p.edge.normal[0], (p.at as i64 / wi) as f32 - p.edge.offset * p.edge.normal[1]])
         .collect();
     let before: Vec<SharpEdge> = pixels.iter().map(|p| p.edge).collect();
-    let mut near: Vec<[f32; 2]> = Vec::new();
-    for (k, pixel) in pixels.iter_mut().enumerate() {
-        let e = before[k];
+    // Every pixel reads the unrefined edges around it and writes its own, so they go in parallel.
+    let work = pixels.len().saturating_mul(32);
+    par_units(work, pixels, 1, &mut [] as &mut [()], 0, Vec::<[f32; 2]>::new, |near, k, pixel, _| {
+        let (Some(pixel), Some(&e)) = (pixel.first_mut(), before.get(k)) else { return };
         let (x, y) = (pixel.at as i64 % wi, pixel.at as i64 / wi);
         let (mut n, mut sum) = (0.0f32, [0.0f32; 2]);
         near.clear();
@@ -557,11 +713,11 @@ fn refine_edge_normals(pixels: &mut [EdgePixel], slot: &[u32], w: usize, h: usiz
             }
         }
         if near.len() < 3 {
-            continue;
+            return;
         }
         let mean = [sum[0] / n, sum[1] / n];
         let (mut sxx, mut sxy, mut syy) = (0.0f32, 0.0f32, 0.0f32);
-        for p in &near {
+        for p in near.iter() {
             let (dx, dy) = (p[0] - mean[0], p[1] - mean[1]);
             sxx += dx * dx;
             sxy += dx * dy;
@@ -572,7 +728,7 @@ fn refine_edge_normals(pixels: &mut [EdgePixel], slot: &[u32], w: usize, h: usiz
         let root = (0.25 * (sxx - syy) * (sxx - syy) + sxy * sxy).sqrt();
         let (along, across) = (((half + root) / n).max(0.0).sqrt(), ((half - root) / n).max(0.0).sqrt());
         if !(along > EDGE_LINE_MIN_SPREAD && across < EDGE_LINE_MAX_OFF) {
-            continue;
+            return;
         }
         let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
         let mut normal = [-angle.sin(), angle.cos()];
@@ -581,7 +737,7 @@ fn refine_edge_normals(pixels: &mut [EdgePixel], slot: &[u32], w: usize, h: usiz
         }
         pixel.edge.normal = normal;
         pixel.edge.offset = edge_offset(normal, pixel.cov);
-    }
+    });
 }
 
 /// The edge points around a pixel must spread at least this far (px, standard deviation) along
@@ -623,58 +779,66 @@ fn edge_distance(sharp: &SharpEdges, p: [usize; 2], q: [usize; 2], inside: bool)
 /// it caps the result where an edge lies exactly on a pixel boundary and has no sharp pixel; a mask
 /// without sharp pixels gives exactly [`dist_inside`]. Values past `reach` pixels are not refined.
 fn bevel_dist_inside(s: &Map, sharp: &SharpEdges, reach: f32) -> Vec<f32> {
-    let empty: Vec<bool> = s.v.iter().map(|&a| a <= INSIDE_EPS).collect();
+    let empty = covered(s, |a| a <= INSIDE_EPS);
     let (d, near) = edt_nearest(&empty, s.w, s.h);
-    (0..d.len())
-        .map(|i| {
-            if empty[i] {
-                return -0.5;
-            }
-            if let Some(e) = sharp.get(i) {
-                return e.offset;
-            }
-            let plain = d[i] - 0.5;
-            if d[i] > reach + EDGE_MARGIN || sharp.is_empty() {
-                return plain;
-            }
-            // The sharp pixel next to the nearest empty one that is nearest to this pixel.
-            let (px, py) = ((i % s.w) as i64, (i / s.w) as i64);
-            let (ox, oy) = ((near[i] % s.w) as i64, (near[i] / s.w) as i64);
-            let q = (-1..=1)
-                .flat_map(|dy| (-1..=1).map(move |dx| (ox + dx, oy + dy)))
-                .filter(|&(x, y)| x >= 0 && y >= 0 && sharp.has(x as usize, y as usize))
-                .min_by_key(|&(x, y)| (x - px) * (x - px) + (y - py) * (y - py));
-            match q.and_then(|(x, y)| edge_distance(sharp, [px as usize, py as usize], [x as usize, y as usize], true)) {
-                Some(refined) => refined.min(plain),
-                None => plain,
-            }
-        })
-        .collect()
+    let at = |x: usize, y: usize| -> f32 {
+        let i = y * s.w + x;
+        if empty[i] {
+            return -0.5;
+        }
+        if let Some(e) = sharp.get(i) {
+            return e.offset;
+        }
+        let plain = d[i] - 0.5;
+        if d[i] > reach + EDGE_MARGIN || sharp.is_empty() {
+            return plain;
+        }
+        // The sharp pixel next to the nearest empty one that is nearest to this pixel.
+        let (px, py) = (x as i64, y as i64);
+        let (ox, oy) = ((near[i] as usize % s.w) as i64, (near[i] as usize / s.w) as i64);
+        let q = (-1..=1)
+            .flat_map(|dy| (-1..=1).map(move |dx| (ox + dx, oy + dy)))
+            .filter(|&(x, y)| x >= 0 && y >= 0 && sharp.has(x as usize, y as usize))
+            .min_by_key(|&(x, y)| (x - px) * (x - px) + (y - py) * (y - py));
+        match q.and_then(|(x, y)| edge_distance(sharp, [px as usize, py as usize], [x as usize, y as usize], true)) {
+            Some(refined) => refined.min(plain),
+            None => plain,
+        }
+    };
+    par_fill(s.w, s.h, 0.0f32, |y, row| {
+        for (x, out) in row.iter_mut().enumerate() {
+            *out = at(x, y);
+        }
+    })
 }
 
 /// [`dist_outside`] for chiselled bevels, with sharp edge pixels placed as in [`bevel_dist_inside`].
 fn bevel_dist_outside(s: &Map, sharp: &SharpEdges, reach: f32) -> Vec<f32> {
-    let inside: Vec<bool> = s.v.iter().map(|&a| a > INSIDE_EPS).collect();
+    let inside = covered(s, |a| a > INSIDE_EPS);
     let (d, near) = edt_nearest(&inside, s.w, s.h);
-    (0..d.len())
-        .map(|i| {
-            if let Some(e) = sharp.get(i) {
-                return -e.offset;
-            }
-            if inside[i] {
-                return -0.5;
-            }
-            let q = near[i];
-            let Some(e) = sharp.get(q) else { return d[i] - (s.v[q].min(1.0) - 0.5) };
-            let (p, qp) = ([i % s.w, i / s.w], [q % s.w, q / s.w]);
-            let measured = if d[i] <= reach + EDGE_MARGIN {
-                edge_distance(sharp, p, qp, false)
-            } else {
-                e.distance(p[0] as f32 - qp[0] as f32, p[1] as f32 - qp[1] as f32, false)
-            };
-            measured.unwrap_or(d[i] - e.offset)
-        })
-        .collect()
+    let at = |x: usize, y: usize| -> f32 {
+        let i = y * s.w + x;
+        if let Some(e) = sharp.get(i) {
+            return -e.offset;
+        }
+        if inside[i] {
+            return -0.5;
+        }
+        let q = near[i] as usize;
+        let Some(e) = sharp.get(q) else { return d[i] - (s.v[q].min(1.0) - 0.5) };
+        let (p, qp) = ([x, y], [q % s.w, q / s.w]);
+        let measured = if d[i] <= reach + EDGE_MARGIN {
+            edge_distance(sharp, p, qp, false)
+        } else {
+            e.distance(p[0] as f32 - qp[0] as f32, p[1] as f32 - qp[1] as f32, false)
+        };
+        measured.unwrap_or(d[i] - e.offset)
+    };
+    par_fill(s.w, s.h, 0.0f32, |y, row| {
+        for (x, out) in row.iter_mut().enumerate() {
+            *out = at(x, y);
+        }
+    })
 }
 
 /// Pixels past the reach that are still refined, so the value is right where the ramp ends.
@@ -714,8 +878,18 @@ fn dilate(s: &Map, r: f32) -> Map {
 fn contour_lut(c: &Contour) -> Option<Vec<f32>> {
     match c {
         Contour::Linear => None,
-        Contour::Custom { points, .. } => Some(crate::adjust::curve_lut(points)),
+        Contour::Custom { points, corners, .. } => Some(crate::adjust::contour_curve_lut(points, corners)),
     }
+}
+
+/// Satin's coverage transfer: the contour read from its far end, `|c(1 − v) − c(1)|`. Measured in
+/// Photoshop 27.11: Cone and Cone − Inverted Satins are identical, and a Gaussian Satin runs under
+/// the diagonal (0.36 at 0.5) while the same Gaussian on a glow or gloss runs over it (0.65).
+/// `None` = identity.
+pub fn satin_lut(c: &Contour) -> Option<Vec<f32>> {
+    let lut = contour_lut(c)?;
+    let end = lut.last().copied().unwrap_or(1.0);
+    Some(lut.iter().rev().map(|v| (v - end).abs()).collect())
 }
 
 /// Interpolated lookup in a 0..=1 table (as the GPU's `lut()`).
@@ -749,6 +923,16 @@ pub fn ranged_lut(contour: &Contour, range: f32) -> Option<Vec<f32>> {
             })
             .collect(),
     )
+}
+
+/// The bevel Contour element's height transfer: the contour alone. Unlike a glow's, its Range is
+/// not a `v / range` stretch: that flattened a Linear contour at the default 50 % to a bevel half
+/// as wide as Photoshop's (a real 18 px smooth inner bevel at 136 % depth: top-edge highlight gone
+/// 15 px in, Photoshop's still 0.19 at 16 px), and dropping it lowers the bad pixels of every
+/// contour oracle (bevel-inner-contour-ramp-peak 25.9 → 21.8 %, -double-ring-aa-r70 25.2 → 21.0 %,
+/// bevel-pillow-chisel-hard-gloss-and-contour 11.4 → 7.2 %). What Range does instead is still open.
+pub fn bevel_contour_lut(c: &photocraft_doc::BevelContour) -> Vec<f32> {
+    contour_lut(&c.contour).unwrap_or_else(|| (0..4096).map(|k| k as f32 / 4095.0).collect())
 }
 
 fn apply_lut(m: Map, l: Option<Vec<f32>>) -> Map {
@@ -940,27 +1124,24 @@ fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool, origin:
 }
 
 fn glow_map(shape: &Map, g: &Glow, inner: bool, origin: (i32, i32)) -> Map {
-    let src = if inner {
-        match g.source {
-            GlowSource::Edge => shape.clone().map(|a| 1.0 - a),
-            GlowSource::Center => shape.clone(),
-        }
-    } else {
-        shape.clone()
-    };
+    // An inner glow is built from the edge inwards; a centre-source glow is its inverse, taken
+    // after the contour and Range (Photoshop 27.11, measured: the centre glow is exactly
+    // 1 − the edge glow, for both techniques).
+    let src = if inner { shape.clone().map(|a| 1.0 - a) } else { shape.clone() };
     let mut m = match g.technique {
         GlowTechnique::Precise => {
-            // An inner glow, from either source, measures from the edge inwards; a centre glow is
-            // the inverse below (the distance outside is ≤ 0 everywhere inside, #966).
+            // Coverage falls linearly from 0.5 at the edge to 0 at `size + 1` px (centre to
+            // centre), solid within the spread / choke: after the default 50 % Range that is
+            // Photoshop's 1 − D / (size + 1) beyond the solid part (measured: outer and inner,
+            // sizes 10 and 20, spread 0 and 40 %, choke 0 and 30 %: within 1 level; other Range
+            // values are unmeasured). The distances here are 0.5 px short of centre to centre.
             let d = if inner { dist_inside(shape) } else { dist_outside(&src) };
             let solid = g.size * g.spread;
-            let soft = (g.size - solid).max(1e-3);
+            let soft = (g.size + 1.0 - solid).max(1e-3);
             let mut m = Map::new(shape.w, shape.h, 0.0);
             for (o, d) in m.v.iter_mut().zip(d) {
-                *o = if d <= solid { 1.0 } else { (1.0 - (d - solid) / soft).clamp(0.0, 1.0) };
-            }
-            if inner && g.source == GlowSource::Center {
-                m = m.map(|v| 1.0 - v);
+                let d = d + 0.5;
+                *o = if d <= solid { 1.0 } else { 0.5 * (1.0 - (d - solid) / soft).clamp(0.0, 1.0) };
             }
             m
         }
@@ -968,16 +1149,13 @@ fn glow_map(shape: &Map, g: &Glow, inner: bool, origin: (i32, i32)) -> Map {
             let (r, bw) = spread_split(g.size, g.spread);
             let mut m = dilate(&src, r);
             blur(&mut m, bw);
-            if inner && g.source == GlowSource::Center {
-                // Brightest in the middle: coverage from the distance to the edge.
-                let mut e = dilate(&shape.clone().map(|a| 1.0 - a), r);
-                blur(&mut e, bw);
-                m = e.map(|v| 1.0 - v);
-            }
             m
         }
     };
     m = apply_lut(m, glow_lut(g));
+    if inner && g.source == GlowSource::Center {
+        m = m.map(|v| 1.0 - v);
+    }
     noise(&mut m, g.noise, origin.0, origin.1);
     if inner {
         for (v, a) in m.v.iter_mut().zip(&shape.v) {
@@ -1287,7 +1465,9 @@ pub fn bevel_geom(b: &Bevel) -> BevelGeom {
     BevelGeom {
         paint,
         width,
-        depth: b.depth * if smooth { width } else { size } * sign,
+        // A bevel rises `depth × width / 2` px: Smooth with a slope falling from `depth` at the
+        // edge (the tent), a chisel with the constant slope of its ramp (see `bevel_chisel_h`).
+        depth: b.depth * if smooth { width } else { size / 2.0 } * sign,
         pillow: b.style == BevelStyle::PillowEmboss,
         chisel_soft: if b.technique == BevelTechnique::ChiselSoft { (size / 4.0).max(1.0) } else { 0.0 },
     }
@@ -1308,17 +1488,20 @@ fn bevel_height(shape: &Map, b: &Bevel, g: &BevelGeom, tex: &TextureCtx, pattern
         let sharp = sharp_edges(shape);
         let (din, dout) = (bevel_dist_inside(shape, &sharp, size), bevel_dist_outside(shape, &sharp, size));
         let mut h = Map::new(shape.w, shape.h, 0.0);
+        let soft = g.chisel_soft > 0.0;
         for i in 0..h.v.len() {
-            h.v[i] = bevel_chisel_h(g.paint, size, din[i], dout[i]);
+            h.v[i] = bevel_chisel_h(g.paint, size, din[i], dout[i], soft);
         }
-        if g.chisel_soft > 0.0 {
+        // Inner and outer Chisel Soft are not blurred in Photoshop (their facets equal Chisel
+        // Hard's across a straight edge); emboss styles keep the blur until measured.
+        if soft && g.paint == BevelPaint::Both {
             tent(&mut h, g.chisel_soft);
         }
         h
     };
-    // Contour element: the height profile through the contour over its range.
+    // Contour element: the height profile through the contour.
     if let Some(c) = &b.contour {
-        h = apply_lut(h, Some(ranged_lut(&c.contour, c.range).unwrap_or_else(|| (0..4096).map(|k| k as f32 / 4095.0).collect())));
+        h = apply_lut(h, Some(bevel_contour_lut(c)));
     }
     // Texture element: the pattern's luminance as extra height, scaled so a full-contrast step
     // at 100 % depth slopes like the bevel at its depth.
@@ -1353,17 +1536,46 @@ pub struct TextureCtx<'a> {
 }
 
 /// Chiselled height from the inside / outside distances (keep in sync with `fs_mbevelh`).
-pub fn bevel_chisel_h(paint: BevelPaint, size: f32, din: f32, dout: f32) -> f32 {
+///
+/// Photoshop 27.11, measured across straight edges (sizes 10 and 20, depth 100 and 300): a chisel
+/// facet has the constant slope `depth × size / (2 (size + 1))`, i.e. one height step of
+/// `1 / (size + 1)` per pixel at the `depth × size / 2` scale of [`bevel_geom`]. Inner Hard's ramp
+/// runs from half a pixel beyond the edge to `size + ½` (the facet is flat right up to the edge
+/// pixel); Inner Soft starts a pixel further out, so its edge pixel is steeper; Outer Hard ends a
+/// pixel further out. All within 1 level of Photoshop on those profiles.
+pub fn bevel_chisel_h(paint: BevelPaint, size: f32, din: f32, dout: f32, soft: bool) -> f32 {
+    let ramp = size + 1.0;
     match paint {
-        BevelPaint::Outer => 1.0 - (dout / size).clamp(0.0, 1.0),
-        BevelPaint::Both => {
-            if din > 0.0 {
-                0.5 + 0.5 * (din / (size / 2.0)).clamp(0.0, 1.0)
+        BevelPaint::Outer if !soft => {
+            let top = (size + 2.0) / ramp;
+            if dout > 0.0 { ((size + 1.5 - dout) / ramp).clamp(0.0, top) } else { top }
+        }
+        // Outer Soft: Outer Hard's ramp a pixel shorter, with a steeper edge pixel.
+        BevelPaint::Outer => {
+            if dout > 0.0 {
+                1.0 - ((dout + 0.5) / ramp).clamp(0.0, 1.0)
             } else {
-                0.5 - 0.5 * (dout / (size / 2.0)).clamp(0.0, 1.0)
+                (size + 2.0) / ramp
             }
         }
-        BevelPaint::Inner => (din / size).clamp(0.0, 1.0),
+        BevelPaint::Both => {
+            let half = size / 2.0 + 0.5;
+            if din > 0.0 { 0.5 + 0.5 * (din / half).clamp(0.0, 1.0) } else { 0.5 - 0.5 * (dout / half).clamp(0.0, 1.0) }
+        }
+        BevelPaint::Inner if soft => {
+            if din > 0.0 {
+                ((din + 1.5) / ramp).clamp(0.0, (size + 2.0) / ramp)
+            } else {
+                0.0
+            }
+        }
+        BevelPaint::Inner => {
+            if din > 0.0 {
+                ((din + 0.5) / ramp).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        }
     }
 }
 
@@ -1381,7 +1593,9 @@ fn bevel_maps(shape: &Map, b: &Bevel, light: &GlobalLight, tex: &TextureCtx, pat
     // past the blur's reach (a raised 4-neighbour: it still slopes; psd-tools layer_effects'
     // emboss shadow runs one row past it), outer bevels don't (Photoshop oracle
     // bevel-outer-smooth).
-    let reach_past = g.paint == BevelPaint::Both;
+    // Outer chisel bevels too: the pixel where their ramp reaches zero still slopes (Photoshop
+    // 27.11 shades it, half strength, at `size + 1½` px out).
+    let reach_past = g.paint == BevelPaint::Both || (g.paint == BevelPaint::Outer && b.technique != BevelTechnique::Smooth);
     let on_bevel = |x: i64, y: i64| {
         hmap.get(x, y) > BEVEL_H_EPS || (reach_past && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dy)| hmap.get(x + dx, y + dy) > BEVEL_H_EPS))
     };
@@ -1485,8 +1699,14 @@ impl FxMaps {
     }
 }
 
+/// The distance the two satin copies are offset by. Photoshop draws Distance 0 as 1 px (an
+/// edge band of 2/size, measured in Photoshop 27.11), not as two copies cancelling out.
+pub fn satin_distance(s: &photocraft_doc::effects::Satin) -> f32 {
+    s.distance.max(1.0)
+}
+
 fn satin_map(shape: &Map, s: &photocraft_doc::effects::Satin) -> Map {
-    let (dx, dy) = offset(s.angle, s.distance);
+    let (dx, dy) = offset(s.angle, satin_distance(s));
     let mut a = shape.shifted(dx, dy, 0.0);
     let mut b = shape.shifted(-dx, -dy, 0.0);
     // Two box passes of the satin size (fitted: 0.2 % mean error on psd-tools layer_effects).
@@ -1496,7 +1716,7 @@ fn satin_map(shape: &Map, s: &photocraft_doc::effects::Satin) -> Map {
     if s.invert {
         m = m.map(|v| 1.0 - v);
     }
-    let mut m = apply_contour(m, &s.contour);
+    let mut m = apply_lut(m, satin_lut(&s.contour));
     for (v, a) in m.v.iter_mut().zip(&shape.v) {
         *v *= a;
     }
@@ -1968,6 +2188,22 @@ pub fn distance_field(kind: FieldKind, alpha: Vec<f32>, w: usize, h: usize, reac
 mod tests {
     use super::*;
 
+    /// Runs `f` with every parallel pass on this thread using `n` threads (1 = in order), whatever its size.
+    fn with_threads<R>(n: usize, f: impl FnOnce() -> R) -> R {
+        struct Restore(Option<usize>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                THREADS.with(|t| t.set(self.0));
+            }
+        }
+        let _restore = Restore(THREADS.with(|t| t.replace(Some(n))));
+        f()
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
     #[test]
     fn edt_is_exact() {
         let (w, h) = (7, 5);
@@ -2148,6 +2384,40 @@ mod tests {
         // Nothing outside the shape; the ramp reaches about `size` inside.
         assert_eq!(at(&maps[0], 20, 8), 0.0);
         assert!(at(&maps[0], 20, 15) < 0.05);
+    }
+
+    /// Photoshop 27.11, measured across a straight edge (size 10, depth 100 %, light from the top
+    /// at 30°): a chisel facet has the slope `depth × size / (2 (size + 1))`, flat right up to the
+    /// edge pixel for Inner Hard; Inner Soft's edge pixel is half as steep again; Outer Hard
+    /// still shades, partly, the pixel where its ramp reaches zero `size + 1½` px out.
+    #[test]
+    fn chisel_facets_match_photoshop() {
+        let amount = |g: f32| {
+            let (se, ce) = 30f32.to_radians().sin_cos();
+            ((g * ce + se) / (1.0 + g * g).sqrt() - se) / (1.0 - se)
+        };
+        let n = 80;
+        let shape = square(n, 20, 60);
+        let maps = |style, technique| {
+            let mut b = bevel_of(style, technique);
+            b.size = 10.0;
+            bevel_maps(&shape, &b, &GlobalLight::default(), &no_tex(), &PreparedPatterns::new(&[], PREPARED_PATTERN_BYTES)).0
+        };
+        let at = |m: &Map, y: usize| m.v[y * n + 40];
+        let facet = amount(10.0 / 22.0);
+        let hard = maps(BevelStyle::InnerBevel, BevelTechnique::ChiselHard);
+        for y in 20..30 {
+            assert!((at(&hard[0], y) - facet).abs() < 0.01, "inner hard facet at row {y}: {} vs {facet}", at(&hard[0], y));
+        }
+        assert!(at(&hard[0], 30) > 0.05 && at(&hard[0], 30) < facet, "one partial pixel at the end");
+        let soft = maps(BevelStyle::InnerBevel, BevelTechnique::ChiselSoft);
+        assert!((at(&soft[0], 20) - amount(1.5 * 10.0 / 22.0)).abs() < 0.01, "steeper edge pixel: {}", at(&soft[0], 20));
+        assert!((at(&soft[0], 24) - facet).abs() < 0.01, "then Chisel Hard's facet");
+        let outer = maps(BevelStyle::OuterBevel, BevelTechnique::ChiselHard);
+        // Below the shape (rows 60..): shadow facet through 10½ px, partial at 11½.
+        assert!((at(&outer[1], 70) - at(&outer[1], 61)).abs() < 1e-4);
+        assert!(at(&outer[1], 71) > 0.05 && at(&outer[1], 71) < at(&outer[1], 70));
+        assert_eq!(at(&outer[1], 72), 0.0);
     }
 
     #[test]
@@ -2443,6 +2713,126 @@ mod tests {
         let _ = (bevel_dist_inside(&m, &sharp_edges(&m), 4.0), bevel_dist_outside(&m, &sharp_edges(&m), 4.0));
     }
 
+    #[test]
+    fn par_units_visits_every_unit_once_with_its_own_slices() {
+        // Lengths that leave a short last unit, no second slice, units of different sizes, and nothing at all.
+        let cases: [(usize, usize, usize, usize); 8] =
+            [(0, 3, 0, 0), (1, 1, 1, 1), (10, 3, 0, 0), (64, 8, 64, 8), (65, 8, 13, 1), (200, 1, 200, 1), (7, 7, 14, 2), (9, 4, 0, 5)];
+        for (la, ua, lb, ub) in cases {
+            for threads in [1, 2, 3, 8, 64] {
+                let (mut a, mut b) = (vec![0u32; la], vec![0u32; lb]);
+                let calls = std::sync::atomic::AtomicUsize::new(0);
+                with_threads(threads, || {
+                    par_units(
+                        la,
+                        &mut a,
+                        ua,
+                        &mut b,
+                        ub,
+                        || (),
+                        |_, u, sa, sb| {
+                            calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            assert!(sa.len() <= ua && sb.len() <= ub);
+                            for (k, v) in sa.iter_mut().enumerate() {
+                                *v = (u * ua + k) as u32 + 1;
+                            }
+                            for (k, v) in sb.iter_mut().enumerate() {
+                                *v = (u * ub + k) as u32 + 1;
+                            }
+                        },
+                    );
+                });
+                assert_eq!(calls.into_inner(), la.div_ceil(ua), "{la} {ua} {lb} {ub} on {threads}");
+                assert!(a.iter().enumerate().all(|(i, &v)| v == i as u32 + 1), "a: {la} {ua} {lb} {ub} on {threads}");
+                // `b` is written for the units that exist in `a` and no further.
+                let written = (la.div_ceil(ua) * ub).min(lb);
+                assert!(b.iter().enumerate().all(|(i, &v)| v == if i < written { i as u32 + 1 } else { 0 }), "b: {la} {ua} {lb} {ub} on {threads}");
+            }
+        }
+        // A unit size of 0 does nothing.
+        let mut a = vec![1u8; 4];
+        par_units(4, &mut a, 0, &mut [] as &mut [()], 0, || (), |_, _, _, _| panic!("no units"));
+    }
+
+    #[test]
+    fn nearest_distances_do_not_depend_on_the_threads() {
+        // Sizes that do not divide into the thread groups, lines of 1 pixel, and a noisy map where
+        // many pixels are equally far from two seeds (the nearest one must resolve the same way).
+        for (w, h) in [(37usize, 23usize), (1, 40), (40, 1), (2, 2), (101, 3), (64, 64)] {
+            let mut seed = 7u32;
+            let inside: Vec<bool> = (0..w * h)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    (seed >> 24).is_multiple_of(11)
+                })
+                .collect();
+            let (d1, n1) = with_threads(1, || edt_nearest(&inside, w, h));
+            for threads in [2, 3, 8] {
+                let (d, n) = with_threads(threads, || edt_nearest(&inside, w, h));
+                assert_eq!((bits(&d), n), (bits(&d1), n1.clone()), "{w}x{h} on {threads} threads");
+            }
+            // And the nearest pixel is a seed at exactly that distance.
+            for (i, (&d, &q)) in d1.iter().zip(&n1).enumerate() {
+                if inside.iter().any(|&b| b) {
+                    let (dx, dy) = ((i % w) as f32 - (q as usize % w) as f32, (i / w) as f32 - (q as usize / w) as f32);
+                    assert!(inside[q as usize] && (dx.hypot(dy) - d).abs() < 1e-3, "{w}x{h} at {i}: {d} vs seed {q}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nearest_distances_survive_degenerate_sizes() {
+        // The slice does not match the size, or there is nothing: no panic, and a result per input pixel.
+        for (len, w, h) in [(0usize, 0usize, 0usize), (0, 5, 0), (0, 0, 5), (6, 2, 2), (6, 4, 2), (1, 0, 1)] {
+            let (d, n) = edt_nearest(&vec![true; len], w, h);
+            assert_eq!((d.len(), n.len()), (len, len), "{len} px as {w}x{h}");
+        }
+    }
+
+    #[test]
+    fn chisel_fields_do_not_depend_on_the_threads() {
+        // Edge pixels at every angle, curves, patchy opacity and an edge along the border, on sizes that
+        // leave short last groups; one thread (in order) is the reference.
+        let mut maps = vec![
+            aa_disc(97, 83, 30.0),
+            aa_round_rect(131, 77, 9.0, 11.0, 120.0, 66.0, 14.0),
+            aa_bar(120, 120, 33.0, 100.0, 30.0),
+            aa_bar(90, 130, 60.0, 150.0, 25.0),
+        ];
+        let mut patchy = aa_disc(101, 101, 40.0);
+        for (i, v) in patchy.v.iter_mut().enumerate() {
+            if (i % 101 / 13 + i / 101 / 17) % 5 == 0 {
+                *v *= 0.6;
+            }
+        }
+        maps.push(patchy);
+        maps.push(aa_bar(64, 64, 40.0, 220.0, 30.0));
+        for (k, m) in maps.iter().enumerate() {
+            for reach in [3.0f32, 12.0] {
+                let one = with_threads(1, || (sharp_edges(m), distance_field_of(m, reach)));
+                for threads in [2, 5, 16] {
+                    let many = with_threads(threads, || (sharp_edges(m), distance_field_of(m, reach)));
+                    assert_eq!(one.0.slot, many.0.slot, "map {k} sharp slots on {threads} threads");
+                    let edges = |s: &SharpEdges| {
+                        s.pixels.iter().map(|p| (p.at, p.cov.to_bits(), p.edge.offset.to_bits(), p.edge.normal.map(f32::to_bits))).collect::<Vec<_>>()
+                    };
+                    assert_eq!(edges(&one.0), edges(&many.0), "map {k} sharp edges on {threads} threads");
+                    for (a, b) in one.1.iter().zip(&many.1) {
+                        assert_eq!(bits(a), bits(b), "map {k}, reach {reach} on {threads} threads");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The four fields that use the distance transform, of `m`.
+    fn distance_field_of(m: &Map, reach: f32) -> Vec<Vec<f32>> {
+        [FieldKind::Inside, FieldKind::Outside, FieldKind::BevelInside, FieldKind::BevelOutside]
+            .map(|k| distance_field(k, m.v.clone(), m.w, m.h, reach))
+            .to_vec()
+    }
+
     fn aa_disc(w: usize, h: usize, r: f32) -> Map {
         let mut m = Map::new(w, h, 0.0);
         const N: usize = 16;
@@ -2500,6 +2890,16 @@ mod tests {
     }
 
     #[test]
+    fn linear_bevel_contour_leaves_the_height_alone_at_any_range() {
+        for range in [0.5, 0.7, 1.0] {
+            let lut = bevel_contour_lut(&photocraft_doc::BevelContour { contour: Contour::Linear, range, anti_alias: false });
+            for v in [0.0f32, 0.25, 0.5, 0.75, 1.0] {
+                assert!((lut_at(&lut, v) - v).abs() < 1e-3, "range {range}: {v} -> {}", lut_at(&lut, v));
+            }
+        }
+    }
+
+    #[test]
     fn bevel_contour_and_texture_shape_the_height() {
         let shape = square(40, 6, 34);
         let l = GlobalLight::default();
@@ -2512,7 +2912,11 @@ mod tests {
             photocraft_doc::adjust::CurvePoint { input: 0.5, output: 1.0 },
             photocraft_doc::adjust::CurvePoint { input: 1.0, output: 0.0 },
         ];
-        c.contour = Some(photocraft_doc::BevelContour { contour: Contour::Custom { name: "fold".into(), points: fold }, range: 1.0, anti_alias: false });
+        c.contour = Some(photocraft_doc::BevelContour {
+            contour: Contour::Custom { name: "fold".into(), points: fold, corners: vec![] },
+            range: 1.0,
+            anti_alias: false,
+        });
         let (b, _) = bevel_maps(&shape, &c, &l, &no_tex(), &PreparedPatterns::new(&[], PREPARED_PATTERN_BYTES));
         let diff: f32 = a[1].v.iter().zip(&b[1].v).map(|(x, y)| (x - y).abs()).sum();
         assert!(diff > 5.0, "{diff}");
@@ -2559,6 +2963,51 @@ mod tests {
         assert!(glow_lut(&g).is_none());
     }
 
+    /// Photoshop 27.11, measured on a 128 px square (Normal, black, 100 %, Range 50 %): a precise
+    /// glow's coverage across the edge, and a centre-source inner glow as 1 − the edge glow.
+    #[test]
+    fn glows_match_photoshop() {
+        let glow = |technique, size: f32, spread: f32, source| Glow {
+            common: photocraft_doc::FxCommon::new(BlendMode::Normal, 1.0),
+            paint: FxPaint::Color(photocraft_color::Color::BLACK),
+            technique,
+            spread,
+            size,
+            contour: Contour::Linear,
+            anti_alias: false,
+            range: 0.5,
+            jitter: 0.0,
+            noise: 0.0,
+            source,
+        };
+        let n = 60;
+        let mut shape = Map::new(n, n, 0.0);
+        for y in 20..40 {
+            for x in 20..40 {
+                shape.v[y * n + x] = 1.0;
+            }
+        }
+        let at = |m: &Map, x: usize| m.v[30 * n + x];
+        // Outer, precise, size 10: Photoshop's black glow over white reads 47, 93, 140, 186, 232
+        // at 2, 4, 6, 8 and 10 px out from the edge pixel (alpha 1 − D / 11).
+        let m = glow_map(&shape, &glow(GlowTechnique::Precise, 10.0, 0.0, GlowSource::Edge), false, (0, 0));
+        for (d, ps) in [(2, 47.0f32), (4, 93.0), (6, 140.0), (8, 186.0), (10, 232.0)] {
+            let got = 255.0 * (1.0 - at(&m, 20 - d));
+            assert!((got - ps).abs() <= 1.5, "outer precise at {d} px: {got} vs Photoshop {ps}");
+        }
+        // Spread 40 %: solid for the first 4 px.
+        let m = glow_map(&shape, &glow(GlowTechnique::Precise, 10.0, 0.4, GlowSource::Edge), false, (0, 0));
+        assert!((at(&m, 16) - 1.0).abs() < 1e-6 && at(&m, 14) < 1.0);
+        // Centre source = 1 − edge, for both techniques.
+        for t in [GlowTechnique::Precise, GlowTechnique::Softer] {
+            let e = glow_map(&shape, &glow(t, 6.0, 0.0, GlowSource::Edge), true, (0, 0));
+            let c = glow_map(&shape, &glow(t, 6.0, 0.0, GlowSource::Center), true, (0, 0));
+            for x in 20..40 {
+                assert!((at(&c, x) - (1.0 - at(&e, x))).abs() < 1e-5, "{t:?} at {x}");
+            }
+        }
+    }
+
     #[test]
     fn offsets_follow_light() {
         let (dx, dy) = offset(120.0, 10.0);
@@ -2573,6 +3022,28 @@ mod tests {
             }
         }
         m
+    }
+
+    #[test]
+    fn satin_at_distance_zero_matches_photoshop() {
+        // Photoshop 27.11, Satin black 100 %, angle 90°, Linear contour, distance 0, size 5 over a
+        // #808080 square: the rows from the top edge read 82, 102, 123, 128.
+        let s = photocraft_doc::effects::Satin {
+            common: photocraft_doc::FxCommon::new(BlendMode::Normal, 1.0),
+            color: photocraft_color::Color::BLACK,
+            angle: 90.0,
+            distance: 0.0,
+            size: 5.0,
+            contour: Contour::Linear,
+            anti_alias: false,
+            invert: false,
+        };
+        let m = satin_map(&square_shape(60), &s);
+        for (row, gray) in [(5, 82.0), (7, 102.0), (9, 123.0), (11, 128.0), (30, 128.0)] {
+            let want = 1.0 - gray / 128.0;
+            let got = m.v[row * 60 + 30];
+            assert!((got - want).abs() < 0.02, "row {row}: {got} vs {want}");
+        }
     }
 
     fn shadow(noise: f32, origin: (i32, i32)) -> Map {

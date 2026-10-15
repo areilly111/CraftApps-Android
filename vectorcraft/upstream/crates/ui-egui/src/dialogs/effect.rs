@@ -138,6 +138,8 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
         Some(plugin) => form::schema_fields(ui, d, &plugin.manifest().params),
         None if vectorcraft_effects::is_adjustment(&id) => adjust_fields(ui, d),
         None if id == TRANSFORM => transform_fields(ui, d, app.session.general_unit()),
+        None if id == ZIG_ZAG => zig_zag_fields(ui, d, app.session.general_unit()),
+        None if id == "artistic.filmGrain" => film_grain_fields(ui, d),
         None => {
             let doc = vectorcraft_effects::effect_info(&id).map(|e| e.params).unwrap_or_default();
             let unit = app.session.general_unit();
@@ -157,6 +159,27 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
         let _ = app.session.cancel_interaction();
     }
     false
+}
+
+/// Film Grain's bounded, whole-number controls, in the same order as its parameter docs.
+pub(crate) const FILM_GRAIN_FIELDS: [(&str, &str, f64); 3] =
+    [("grain", "Grain", 20.0), ("highlightArea", "Highlight Area", 20.0), ("intensity", "Intensity", 10.0)];
+
+fn film_grain_fields(ui: &mut egui::Ui, d: &mut Dialog) -> bool {
+    let before = d.fields.clone();
+    // Use one column wide enough for this language's longest label, keeping every rail aligned.
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let text = Tokens::get(ui.ctx()).text;
+    let label_w = FILM_GRAIN_FIELDS
+        .iter()
+        .map(|(_, label, _)| ui.painter().layout_no_wrap(tl!(label).to_string(), font.clone(), text).size().x)
+        .fold(form::SLIDER_LABEL, f32::max)
+        .ceil()
+        + 4.0;
+    for (key, label, max) in FILM_GRAIN_FIELDS {
+        form::slider_w(ui, d, (key, label, label_w), 0.0..=max, "", &grey_rail);
+    }
+    before != d.fields
 }
 
 /// The parameters of the effect dialogs that pick one of some values, as (label, value).
@@ -309,6 +332,55 @@ fn transform_fields(ui: &mut egui::Ui, d: &mut Dialog, unit: vectorcraft_doc::Un
             });
             transform_each::reflect_options(ui, d);
         });
+    });
+    values_changed(d)
+}
+
+/// The Zig Zag effect (Effect › Distort & Transform › Zig Zag…).
+const ZIG_ZAG: &str = "distort.zigZag";
+
+/// Zig Zag's dialog (#1133): Size and Ridges per segment as sliders with their fields, Relative or
+/// Absolute and the Points as radio buttons. Returns whether the values differ from those last
+/// previewed.
+fn zig_zag_fields(ui: &mut egui::Ui, d: &mut Dialog, unit: vectorcraft_doc::Unit) -> bool {
+    const LABEL_W: f32 = 124.0;
+    const FIELD_W: f32 = 70.0;
+    let rail = Tokens::get(ui.ctx()).input_border;
+    let track = move |_| rail;
+    let relative = d.bool("relative");
+    widgets::subheader(ui, tl!("Options"));
+    // Size is a share of the object's size (Relative) or a distance (Absolute).
+    widgets::label_row(ui, tl!("Size:"), LABEL_W, |ui| {
+        form::slider_rail(ui, d, "size", 0.0..=100.0, &track);
+        if !relative {
+            form::length(ui, d, "size", unit, FIELD_W);
+        } else if let Some(n) = widgets::range_field(ui, ("zz", "size"), d.f64("size", 10.0), 0.0..=100.0, "%", 0, FIELD_W) {
+            d.fields.insert("size".into(), json!(n));
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(LABEL_W + ui.spacing().item_spacing.x);
+        for (label, on) in [(tl!("Relative"), true), (tl!("Absolute"), false)] {
+            if widgets::radio(ui, label, relative == on, true) {
+                d.fields.insert("relative".into(), json!(on));
+            }
+        }
+    });
+    widgets::label_row(ui, tl!("Ridges per segment:"), LABEL_W, |ui| {
+        form::slider_rail(ui, d, "ridges", 0.0..=100.0, &track);
+        if let Some(n) = widgets::range_field(ui, ("zz", "ridges"), d.f64("ridges", 4.0), 0.0..=100.0, "", 0, FIELD_W) {
+            d.fields.insert("ridges".into(), json!(n));
+        }
+    });
+    ui.add_space(4.0);
+    widgets::subheader(ui, crate::i18n::tr_ctx(crate::i18n::current(), "effect", "Points"));
+    let points = d.str("points");
+    ui.horizontal(|ui| {
+        for (label, value) in choices(ZIG_ZAG, "points").unwrap_or_default() {
+            if widgets::radio(ui, crate::i18n::tr_ctx(crate::i18n::current(), "effect", label), points == *value, true) {
+                d.fields.insert("points".into(), json!(value));
+            }
+        }
     });
     values_changed(d)
 }

@@ -9,7 +9,6 @@
 //! grown by half a device pixel along its edges so neighbours overlap and no antialiasing seams
 //! show.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use vectorcraft_doc::live::{GradientMesh, MeshQuad};
@@ -18,28 +17,30 @@ use vectorcraft_geom::{BezPath, Vec2};
 use vello_cpu::RenderContext;
 use vello_cpu::peniko;
 
+use crate::lru::{self, FrameCache};
 use crate::{Frame, Renderer};
 
 type Expanded = Arc<Vec<Arc<Node>>>;
-type MeshEntry = (Arc<Node>, Arc<Vec<MeshQuad>>, u64);
+type Quads = Arc<Vec<MeshQuad>>;
 
-/// Per-renderer cache of evaluated live objects.
-#[derive(Default)]
+/// Per-renderer cache of evaluated live objects: (live node, its evaluation, [`resources_key`]),
+/// and (mesh node, its quads) per node and subdivision level.
 pub(crate) struct LiveCache {
-    expanded: HashMap<usize, (Arc<Node>, Expanded, u64, u64)>,
-    meshes: HashMap<(usize, usize), MeshEntry>,
-    stamp: u64,
+    expanded: FrameCache<usize, (Arc<Node>, Expanded, u64)>,
+    meshes: FrameCache<(usize, usize), (Arc<Node>, Quads)>,
+}
+
+impl Default for LiveCache {
+    fn default() -> Self {
+        Self { expanded: FrameCache::new(lru::LIVE_BUDGET, 256), meshes: FrameCache::new(lru::MESH_BUDGET, 256) }
+    }
 }
 
 impl LiveCache {
-    fn tick(&mut self, stamp: u64) {
-        self.stamp = stamp;
-        if self.expanded.len() > 256 {
-            self.expanded.retain(|_, e| stamp - e.2 <= 3);
-        }
-        if self.meshes.len() > 256 {
-            self.meshes.retain(|_, e| stamp - e.2 <= 3);
-        }
+    /// End of frame `stamp` (see [`FrameCache::sweep`]).
+    pub(crate) fn sweep(&mut self, stamp: u64) {
+        self.expanded.sweep(stamp);
+        self.meshes.sweep(stamp);
     }
 }
 
@@ -84,11 +85,10 @@ impl Renderer {
         let key = Arc::as_ptr(a) as usize;
         let resources = resources_key(doc, a);
         if cache
-            && let Some(e) = self.live.expanded.get_mut(&key)
+            && let Some(e) = self.live.expanded.get(&key, self.stamp)
             && Arc::ptr_eq(&e.0, a)
-            && e.3 == resources
+            && e.2 == resources
         {
-            e.2 = self.live.stamp;
             return e.1.clone();
         }
         let v: Expanded = match crate::effects::pathfinder_children(a, crate::effects::text_outliner()) {
@@ -96,7 +96,8 @@ impl Renderer {
             None => Arc::new(crate::effects::expand_live(Some(doc), a).into_iter().map(Arc::new).collect()),
         };
         if cache {
-            self.live.expanded.insert(key, (a.clone(), v.clone(), self.live.stamp, resources));
+            let bytes = size_of::<Expanded>() + v.iter().map(|n| lru::node_bytes(n)).sum::<usize>();
+            self.live.expanded.insert(key, (a.clone(), v.clone(), resources), bytes, self.stamp);
         }
         v
     }
@@ -104,23 +105,21 @@ impl Renderer {
     fn mesh_quads(&mut self, a: &Arc<Node>, m: &GradientMesh, level: usize, cache: bool) -> Arc<Vec<MeshQuad>> {
         let key = (Arc::as_ptr(a) as usize, level);
         if cache
-            && let Some(e) = self.live.meshes.get_mut(&key)
+            && let Some(e) = self.live.meshes.get(&key, self.stamp)
             && Arc::ptr_eq(&e.0, a)
         {
-            e.2 = self.live.stamp;
             return e.1.clone();
         }
         let q = Arc::new(m.quads(level));
         if cache {
-            self.live.meshes.insert(key, (a.clone(), q.clone(), self.live.stamp));
+            let bytes = q.len() * size_of::<MeshQuad>();
+            self.live.meshes.insert(key, (a.clone(), q.clone()), bytes, self.stamp);
         }
         q
     }
 
     /// Draw a live node reached through the tree walk (handles its transparency group).
     pub(crate) fn draw_live(&mut self, ctx: &mut RenderContext, f: &Frame, a: &Arc<Node>) {
-        let stamp = self.stamp;
-        self.live.tick(stamp);
         let opacity = self.opacity_of(a);
         // A knockout blend's steps knock each other out, as in the exports (opaque ones can't show it).
         let knockout = !f.opts.outline

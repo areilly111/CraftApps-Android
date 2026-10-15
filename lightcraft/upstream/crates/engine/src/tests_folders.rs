@@ -564,3 +564,124 @@ fn a_label_comes_off_a_folder_whose_photos_are_gone() {
     assert_eq!(s.catalog.folder_record("/pics/trip"), None);
     assert!(s.execute("folder.label", &json!({"path": "/pics/trip", "label": "red"})).is_err(), "but a new one needs photos");
 }
+
+// ---- folder.create and photo.moveToFolder (issue #765)
+
+/// A library photo of the real file `path` (written with `body`); returns its id.
+fn add_file(s: &mut Session, path: &str, body: &str) -> lightcraft_catalog::PhotoId {
+    std::fs::write(path, body).unwrap();
+    let id = s.catalog.alloc_photo_id();
+    let name = std::path::Path::new(path).file_name().unwrap().to_string_lossy().to_string();
+    let p = Photo::new(id, Source::File { path: path.into() }, &name, "JPEG", 60, 40, "2026-01-01T10:00:00");
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    id
+}
+
+fn file_of(s: &Session, id: lightcraft_catalog::PhotoId) -> String {
+    match &s.catalog.photo(id).unwrap().source {
+        Source::File { path } => path.clone(),
+        _ => panic!("not a file"),
+    }
+}
+
+#[test]
+fn a_folder_is_created_on_disk_and_undo_removes_it() {
+    let dir = Scratch::new("create");
+    let mut s = Session::new();
+    let r = s.execute("folder.create", &json!({"parent": dir.path(""), "name": "picks"})).unwrap();
+    assert_eq!(r["path"], dir.path("picks"));
+    assert!(dir.0.join("picks").is_dir());
+    assert!(s.execute("folder.create", &json!({"parent": dir.path(""), "name": "picks"})).unwrap_err().to_string().contains("already exists"));
+    assert!(s.execute("folder.create", &json!({"parent": dir.path(""), "name": "../x"})).is_err(), "one name, no slashes");
+    assert!(s.execute("folder.create", &json!({"parent": dir.path("nope"), "name": "x"})).unwrap_err().to_string().contains("not a folder"));
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(!dir.0.join("picks").exists(), "undo removes it");
+    s.execute("edit.redo", &json!({})).unwrap();
+    assert!(dir.0.join("picks").is_dir(), "redo makes it again");
+    std::fs::write(dir.0.join("picks/note.txt"), "x").unwrap();
+    assert!(s.execute("edit.undo", &json!({})).is_err(), "a folder with something in it is never removed");
+    assert!(dir.0.join("picks/note.txt").is_file());
+}
+
+#[test]
+fn photos_move_to_another_folder_with_their_sidecars_and_back_on_undo() {
+    let dir = Scratch::new("move-photos");
+    std::fs::create_dir_all(dir.0.join("in")).unwrap();
+    std::fs::create_dir_all(dir.0.join("out")).unwrap();
+    let mut s = Session::new();
+    let a = add_file(&mut s, &dir.path("in/a.jpg"), "A");
+    std::fs::write(dir.path("in/a.xmp"), "<x/>").unwrap();
+    let b = add_file(&mut s, &dir.path("in/b.jpg"), "B");
+    // a virtual copy shares its master's file and goes along
+    let vc = s.catalog.alloc_photo_id();
+    let p = Photo::new(vc, Source::File { path: dir.path("in/a.jpg") }, "a.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let r = s.execute("photo.moveToFolder", &json!({"ids": [a.0, b.0], "folder": dir.path("out")})).unwrap();
+    assert_eq!(r["moved"], 2);
+    assert_eq!(std::fs::read_to_string(dir.path("out/a.jpg")).unwrap(), "A");
+    assert!(dir.0.join("out/a.xmp").is_file(), "the sidecar goes along");
+    assert!(!dir.0.join("in/a.jpg").exists() && !dir.0.join("in/a.xmp").exists());
+    assert_eq!(file_of(&s, a), dir.path("out/a.jpg"));
+    assert_eq!(file_of(&s, b), dir.path("out/b.jpg"));
+    assert_eq!(file_of(&s, vc), dir.path("out/a.jpg"), "the virtual copy follows");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(file_of(&s, a), dir.path("in/a.jpg"));
+    assert_eq!(file_of(&s, vc), dir.path("in/a.jpg"));
+    assert!(dir.0.join("in/a.jpg").is_file() && dir.0.join("in/a.xmp").is_file() && dir.0.join("in/b.jpg").is_file());
+    assert!(!dir.0.join("out/a.jpg").exists());
+    s.execute("edit.redo", &json!({})).unwrap();
+    assert!(dir.0.join("out/b.jpg").is_file());
+    assert_eq!(file_of(&s, b), dir.path("out/b.jpg"));
+}
+
+#[test]
+fn a_name_taken_in_the_destination_refuses_the_move_and_overwrites_nothing() {
+    let dir = Scratch::new("move-clash");
+    std::fs::create_dir_all(dir.0.join("in")).unwrap();
+    std::fs::create_dir_all(dir.0.join("out")).unwrap();
+    let mut s = Session::new();
+    let a = add_file(&mut s, &dir.path("in/a.jpg"), "A");
+    let b = add_file(&mut s, &dir.path("in/b.jpg"), "B");
+    std::fs::write(dir.path("out/b.jpg"), "OTHER").unwrap();
+    let e = s.execute("photo.moveToFolder", &json!({"ids": [a.0, b.0], "folder": dir.path("out")})).unwrap_err().to_string();
+    assert!(e.contains("b.jpg already in") && e.contains("nothing was moved"), "{e}");
+    assert_eq!(std::fs::read_to_string(dir.path("out/b.jpg")).unwrap(), "OTHER");
+    assert!(dir.0.join("in/a.jpg").is_file() && !dir.0.join("out/a.jpg").exists(), "all or nothing");
+    assert_eq!(file_of(&s, a), dir.path("in/a.jpg"));
+}
+
+#[test]
+fn moving_to_a_missing_folder_or_a_missing_original_is_refused() {
+    let dir = Scratch::new("move-missing");
+    std::fs::create_dir_all(dir.0.join("in")).unwrap();
+    let mut s = Session::new();
+    let a = add_file(&mut s, &dir.path("in/a.jpg"), "A");
+    let e = s.execute("photo.moveToFolder", &json!({"ids": [a.0], "folder": dir.path("nope")})).unwrap_err().to_string();
+    assert!(e.contains("not a folder"), "{e}");
+    std::fs::create_dir_all(dir.0.join("out")).unwrap();
+    std::fs::remove_file(dir.path("in/a.jpg")).unwrap();
+    let e = s.execute("photo.moveToFolder", &json!({"ids": [a.0], "folder": dir.path("out")})).unwrap_err().to_string();
+    assert!(e.contains("missing or offline"), "{e}");
+    assert_eq!(file_of(&s, a), dir.path("in/a.jpg"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_destination_without_write_permission_reports_an_error_and_keeps_everything() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = Scratch::new("move-perm");
+    std::fs::create_dir_all(dir.0.join("in")).unwrap();
+    std::fs::create_dir_all(dir.0.join("ro")).unwrap();
+    let mut s = Session::new();
+    let a = add_file(&mut s, &dir.path("in/a.jpg"), "A");
+    std::fs::set_permissions(dir.0.join("ro"), std::fs::Permissions::from_mode(0o555)).unwrap();
+    // running as root ignores permissions: nothing to check there
+    let root = std::fs::write(dir.0.join("ro/probe"), "x").is_ok();
+    if !root {
+        assert!(s.execute("photo.moveToFolder", &json!({"ids": [a.0], "folder": dir.path("ro")})).is_err());
+        assert!(dir.0.join("in/a.jpg").is_file());
+        assert_eq!(file_of(&s, a), dir.path("in/a.jpg"));
+        assert!(s.execute("folder.create", &json!({"parent": dir.path("ro"), "name": "x"})).is_err());
+    }
+    std::fs::set_permissions(dir.0.join("ro"), std::fs::Permissions::from_mode(0o755)).unwrap();
+}

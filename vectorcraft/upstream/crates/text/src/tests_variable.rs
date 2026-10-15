@@ -246,3 +246,37 @@ fn segoe_ui_variable_lists_its_instances() {
         assert!(w(&bold) > w(&light), "{} vs {}", w(&bold), w(&light));
     }
 }
+
+/// #1258: a variable font's full name identifies the default face, not a named weight.
+#[test]
+fn a_variable_full_name_names_its_default_face() {
+    let bytes = font();
+    let source = skrifa::FontRef::new(&bytes).unwrap();
+    let names = name_table(&[
+        (1, FAMILY),
+        (2, "Regular"),
+        (4, "Varitest Default Face"),
+        (6, "VaritestSans-Regular"),
+        (256, "Weight"),
+        (257, "Normal"),
+        (258, "SemiBold"),
+        (259, "Bold"),
+        (261, "BOLD"),
+    ])
+    .unwrap();
+    let mut builder = write_fonts::FontBuilder::new();
+    builder.add_raw(write_fonts::types::Tag::new(b"name"), names);
+    for record in source.table_directory.table_records() {
+        let tag = write_fonts::types::Tag::new(&record.tag().to_be_bytes());
+        if !builder.contains(tag) {
+            builder.add_raw(tag, source.table_data(record.tag()).unwrap().as_bytes());
+        }
+    }
+    let db = FontDb::with_font_dirs(vec![]);
+    assert_eq!(db.add_font(builder.build()), 3);
+    let (face, matched) = db.resolve("Varitest Default Face", "Bold").unwrap();
+    assert_eq!((face.family.as_str(), face.style.as_str(), matched), (FAMILY, "Regular", FontMatch::Exact));
+    assert!(face.variations().is_empty());
+    let bold = db.resolve("VaritestSans-Bold", "Regular").unwrap().0;
+    assert_eq!(bold.variations(), [(*b"wght", 700.0)]);
+}

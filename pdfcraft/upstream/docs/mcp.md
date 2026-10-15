@@ -4,6 +4,10 @@ Start explicitly with `pdfcraft-cli mcp [--root DIR] [--compact]`. The server us
 stdin/stdout, opens no port, and stops on EOF. `--root` confines all reads and writes, including
 commands invoked through the common tools. Logs stay on stderr.
 
+Supply `--root` at most once, followed by a nonempty directory path. Missing operands,
+repeated roots and another long option in place of the directory are refused before any
+script is read or server is started. Prefix a directory name beginning with `--` with `./`.
+
 | Tool | Arguments |
 |---|---|
 | `command_list` | `doc?`, `filter?`, `enabled_only?`; returns `{commands: [...]}` with mapped tool schemas |

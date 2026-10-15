@@ -19,7 +19,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
 
-use lightcraft_catalog::{MediaKind, Photo, PhotoId, Source};
+use lightcraft_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use lightcraft_develop::DevelopSettings;
 use lightcraft_pipeline::{Quality, RenderRequest, Rendered, SourceInfo, StageCache};
 use lightcraft_preview::{Hash128, Hasher128, Lru, PreviewCache};
@@ -62,7 +62,7 @@ impl SettingsHashes {
 }
 
 /// Bump when the pipeline's output changes, to invalidate cached thumbnails.
-pub const RENDER_CACHE_VERSION: u64 = 42;
+pub const RENDER_CACHE_VERSION: u64 = 61;
 
 /// Thumbnails render at one of these long edges (so window/cell size changes reuse the cache).
 pub const THUMB_SIZES: [usize; 4] = [128, 256, 384, 512];
@@ -309,8 +309,11 @@ pub struct MediaCache {
     thumbs: Lru<PhotoId, DecodedSource>,
     /// Decoded preview-level sources with their last use ([`lightcraft_preview::next_tick`]).
     previews: Vec<(PhotoId, DecodedSource, u64)>,
-    /// The last full-resolution original (exports; one at a time: ~300 MB at 24 MP).
-    full: Option<(PhotoId, DecodedSource, u64)>,
+    /// The last full-resolution originals (exports, zoomed views; ~300 MB each at 24 MP), with
+    /// their last use. Normally one; see [`Self::set_full_capacity`].
+    full: Vec<(PhotoId, DecodedSource, u64)>,
+    /// How many full-resolution originals to keep (LRU, at least one).
+    full_capacity: usize,
     /// How many previews to keep (LRU).
     pub preview_capacity: usize,
     /// Bytes all decoded sources and rendered previews in memory may take together (the cache
@@ -386,7 +389,8 @@ impl Default for MediaCache {
             settings_hashes: SettingsHashes::default(),
             thumbs: Lru::new(THUMB_SOURCE_BYTES.min(budget)),
             previews: Vec::new(),
-            full: None,
+            full: Vec::new(),
+            full_capacity: 1,
             preview_capacity: 0,
             budget,
             file_loader: None,
@@ -431,7 +435,23 @@ impl MediaCache {
         self.settings_hashes = SettingsHashes::default();
         self.thumbs = Lru::new(THUMB_SOURCE_BYTES.min(self.budget));
         self.previews.clear();
-        self.full = None;
+        self.full.clear();
+    }
+
+    /// How many full-resolution originals to keep at once (at least one). Compare and Reference
+    /// views zoomed to 1:1 cut windows from two photos' originals: with room for one, every window
+    /// render of one side would evict the other side's original and decode its own again. Lowering
+    /// it drops the least recently used originals at once.
+    pub fn set_full_capacity(&mut self, n: usize) {
+        self.full_capacity = n.max(1);
+        self.trim_full();
+    }
+
+    fn trim_full(&mut self) {
+        while self.full.len() > self.full_capacity {
+            let oldest = self.full.iter().enumerate().min_by_key(|(_, e)| e.2).map(|(i, _)| i).unwrap_or(0);
+            self.full.remove(oldest);
+        }
     }
 
     /// Bytes the caches may hold together.
@@ -463,14 +483,14 @@ impl MediaCache {
             let candidates = [
                 self.thumbs.oldest_tick().map(|t| (t, 0)),
                 self.previews.iter().filter(|e| Some(e.2) != newest_preview).map(|e| e.2).min().map(|t| (t, 1)),
-                self.full.as_ref().map(|e| (e.2, 2)),
+                self.full.iter().map(|e| e.2).min().map(|t| (t, 2)),
                 self.rendered.oldest_tick().map(|t| (t, 3)),
             ];
             let Some((tick, which)) = candidates.into_iter().flatten().min() else { break };
             let freed = match which {
                 0 => self.thumbs.pop_oldest(),
                 1 => self.previews.iter().position(|e| e.2 == tick).map(|i| self.previews.remove(i).1.bytes()),
-                2 => self.full.take().map(|e| e.1.bytes()),
+                2 => self.full.iter().position(|e| e.2 == tick).map(|i| self.full.remove(i).1.bytes()),
                 _ => self.rendered.evict_oldest(),
             };
             match freed {
@@ -491,7 +511,7 @@ impl MediaCache {
                 e.2 = lightcraft_preview::next_tick();
                 e.1.clone()
             }),
-            SourceLevel::Full => self.full.as_mut().filter(|e| e.0 == id).map(|e| {
+            SourceLevel::Full => self.full.iter_mut().find(|e| e.0 == id).map(|e| {
                 e.2 = lightcraft_preview::next_tick();
                 e.1.clone()
             }),
@@ -534,7 +554,11 @@ impl MediaCache {
                     self.previews.remove(oldest);
                 }
             }
-            SourceLevel::Full => self.full = Some((id, img, tick)),
+            SourceLevel::Full => {
+                self.full.retain(|e| e.0 != id);
+                self.full.push((id, img, tick));
+                self.trim_full();
+            }
         }
         self.enforce_budget();
     }
@@ -543,9 +567,7 @@ impl MediaCache {
     pub fn forget(&mut self, id: PhotoId) {
         self.thumbs.remove(&id);
         self.previews.retain(|e| e.0 != id);
-        if self.full.as_ref().is_some_and(|e| e.0 == id) {
-            self.full = None;
-        }
+        self.full.retain(|e| e.0 != id);
     }
 
     /// (decoded thumbnail sources, bytes).
@@ -558,7 +580,7 @@ impl MediaCache {
         match level {
             SourceLevel::Thumb => self.thumbs.contains(&id),
             SourceLevel::Preview => self.previews.iter().any(|e| e.0 == id),
-            SourceLevel::Full => self.full.as_ref().is_some_and(|e| e.0 == id),
+            SourceLevel::Full => self.full.iter().any(|e| e.0 == id),
         }
     }
 
@@ -566,7 +588,7 @@ impl MediaCache {
     pub fn usage(&self) -> (crate::memory::Usage, crate::memory::Usage, crate::memory::Usage) {
         use crate::memory::Usage;
         let previews = Usage::new(self.previews.len(), self.previews.iter().map(|e| e.1.bytes()).sum());
-        let full = self.full.as_ref().map(|e| Usage::new(1, e.1.bytes())).unwrap_or_default();
+        let full = Usage::new(self.full.len(), self.full.iter().map(|e| e.1.bytes()).sum());
         (Usage::new(self.thumbs.len(), self.thumbs.cost()), previews, full)
     }
 
@@ -613,7 +635,9 @@ impl MediaCache {
         // be offline is tried first and its smart preview is the render worker's fallback.
         #[cfg(not(target_arch = "wasm32"))]
         if let (Source::File { path }, Some(dir)) = (&p.source, &self.smart_dir) {
-            let sp = dir.join(crate::smart::file_name(p));
+            let sharded = crate::smart::sharded_file_path(dir, p);
+            let legacy = dir.join(crate::smart::file_name(p));
+            let sp = if self.availability.exists(&sharded.to_string_lossy()) == Some(true) { sharded } else { legacy };
             // (a proxy cut short fails to load, like the offline original; the worker's fallback
             // in `SourceRef::load` only uses a proxy that passes `smart::is_valid`)
             if self.availability.is_offline(path) && self.availability.exists(&sp.to_string_lossy()) == Some(true) {
@@ -685,6 +709,9 @@ pub struct RenderResult {
     pub level: SourceLevel,
     pub key: u64,
     pub rendered: Result<Rendered, String>,
+    /// Set when this job's render was tried on the GPU and fell back to the CPU: why
+    /// ([`lightcraft_gpu::Fallback::Failed`]). The result is the CPU render either way.
+    pub gpu_fallback: Option<String>,
     /// A source that was loaded by this job (to be inserted into the cache).
     pub loaded: Option<DecodedSource>,
     /// Set for a [`QuickJob`]'s stand-in: where the image came from.
@@ -733,6 +760,28 @@ impl RenderJob {
         self
     }
 
+    /// Render with some colour grading wheels (shadows, midtones, highlights) switched off for
+    /// viewing (the wheel eyes in the Edit panel). The photo's settings are untouched; the result
+    /// gets its own key and is never cached as the photo's preview or thumbnail.
+    pub fn with_hidden_grading(mut self, hidden: [bool; 3]) -> Self {
+        if !hidden.iter().any(|h| *h) {
+            return self;
+        }
+        let mut s = (*self.settings).clone();
+        let g = &mut s.grading;
+        for (off, wheel) in hidden.into_iter().zip([&mut g.shadows, &mut g.midtones, &mut g.highlights]) {
+            if off {
+                *wheel = lightcraft_develop::Wheel::default();
+            }
+        }
+        let bits = hidden.iter().enumerate().fold(0u64, |b, (i, h)| b | ((*h as u64) << i));
+        self.key ^= s.hash64() ^ self.settings.hash64() ^ bits.wrapping_mul(0xd6e8_feb8_6659_fd93);
+        self.settings = Arc::new(s);
+        self.cache = None;
+        self.view_cache = None;
+        self
+    }
+
     /// Reuse `stages` across this view's renders.
     pub fn with_stages(mut self, stages: Arc<StageCache>) -> Self {
         self.stages = Some(stages);
@@ -767,6 +816,7 @@ impl RenderJob {
                 level: self.level,
                 key: self.key,
                 rendered: Ok(Rendered { image, histogram, deep: None }),
+                gpu_fallback: None,
                 loaded: None,
                 quick: None,
                 display: None,
@@ -788,7 +838,7 @@ impl RenderJob {
                 // Thumbnails (many small jobs side by side) stay on the CPU; views and exports use
                 // the GPU when there is one.
                 let gpu = self.cache.is_none();
-                let mut rendered = develop(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu);
+                let (mut rendered, gpu_fallback) = develop_reporting(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu);
                 // for a display profile: the image goes to the display's values, the histogram
                 // and the cached view preview stay sRGB
                 let mut srgb = None;
@@ -796,7 +846,8 @@ impl RenderJob {
                     (Some(d), Some(_)) => {
                         let keep = self.view_cache.is_some() && self.request.quality == Quality::Full;
                         let (s, h) = crate::display::finish_render(&mut rendered.image, d, keep);
-                        if let Some(h) = h {
+                        // (an HDR edit's HDR histogram stays)
+                        if let Some(h) = h.filter(|_| rendered.histogram.hdr.is_none()) {
                             rendered.histogram = h;
                         }
                         srgb = s;
@@ -820,6 +871,7 @@ impl RenderJob {
                     level: self.level,
                     key: self.key,
                     rendered: Ok(rendered),
+                    gpu_fallback,
                     loaded: (!was_loaded).then_some(source),
                     quick: None,
                     display,
@@ -832,6 +884,7 @@ impl RenderJob {
                 level: self.level,
                 key: self.key,
                 rendered: Err(e),
+                gpu_fallback: None,
                 loaded: None,
                 quick: None,
                 display: None,
@@ -844,19 +897,55 @@ impl RenderJob {
 /// the CPU, reusing `stages` either way. Both produce the same image within 1–3 LSB (see
 /// `docs/gpu-pipeline.md`); `LIGHTCRAFT_GPU=0` or [`lightcraft_gpu::set_enabled`] forces the CPU.
 pub fn develop(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, stages: Option<&StageCache>, gpu: bool) -> Rendered {
+    develop_reporting(src, info, s, req, stages, gpu).0
+}
+
+/// [`develop`], also saying why the render fell back from the GPU to the CPU when it did (`None`:
+/// it rendered on the GPU, or the GPU was not tried). The reason is this render's own, not the
+/// process-wide [`lightcraft_gpu::last_fallback`].
+pub fn develop_reporting(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    gpu: bool,
+) -> (Rendered, Option<String>) {
+    let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu);
+    // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
+    if let Some(h) = lightcraft_pipeline::hdr_histogram(src, info, s, req) {
+        rendered.histogram = h;
+    }
+    (rendered, fallback)
+}
+
+fn develop_image(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    gpu: bool,
+) -> (Rendered, Option<String>) {
     // LUT profiles have no GPU stage: they render on the CPU
-    if gpu
+    let fallback = if gpu
         && !lightcraft_pipeline::lut::is_lut_profile(&s.profile.id)
         && !s.masks.iter().any(|m| m.visible && m.refine > 0.0)
         && req.proof.is_none()
-        && let Some(r) = lightcraft_gpu::render(src, info, s, req, stages)
     {
-        return r;
-    }
-    match stages {
+        match lightcraft_gpu::try_render(src, info, s, req, stages) {
+            Ok(r) => return (r, None),
+            Err(lightcraft_gpu::Fallback::Failed(why)) => Some(why),
+            Err(lightcraft_gpu::Fallback::NotTried) => None,
+        }
+    } else {
+        None
+    };
+    let rendered = match stages {
         Some(st) => lightcraft_pipeline::render_cached(src, info, s, req, st),
         None => lightcraft_pipeline::render(src, info, s, req),
-    }
+    };
+    (rendered, fallback)
 }
 
 /// Where a [`QuickJob`]'s stand-in image came from.
@@ -897,6 +986,7 @@ impl QuickJob {
             level: SourceLevel::Thumb,
             key,
             rendered,
+            gpu_fallback: None,
             loaded: None,
             quick,
             display: None,
@@ -940,8 +1030,18 @@ pub fn source_info(p: &Photo) -> SourceInfo {
     // A raw shown from its embedded preview is a rendered (display-referred) JPEG: relative white
     // balance and the display tone curve, like any other rendered file.
     if p.develops_raw() {
-        let (temp, tint) = if p.relative_wb() { (6500.0, 0.0) } else { p.as_shot_wb.unwrap_or((5500.0, 0.0)) };
-        SourceInfo { raw: true, as_shot_temp: temp, as_shot_tint: tint, lens: p.embedded_lens, relative_wb: p.relative_wb(), ..Default::default() }
+        let relative = p.relative_wb();
+        let (temp, tint) = if relative { (6500.0, 0.0) } else { p.as_shot_wb.unwrap_or((5500.0, 0.0)) };
+        SourceInfo {
+            raw: true,
+            as_shot_temp: temp,
+            as_shot_tint: tint,
+            lens: p.embedded_lens,
+            relative_wb: relative,
+            // (a fitted-look raw edited in Kelvin: its camera's matrices give the scale, see `files::WbScaleOf`)
+            legacy_relative_wb: p.fitted_look() && !relative,
+            ..Default::default()
+        }
     } else {
         SourceInfo::default()
     }
@@ -1212,6 +1312,23 @@ impl crate::Session {
         }
     }
 
+    /// Whether `p`'s thumbnail can be the camera's own JPEG, so a frontend can skip the sensor
+    /// decode behind it.
+    ///
+    /// The grid shows this JPEG first in any case ([`QuickJob`]: "grid thumbnails of unedited raws
+    /// likewise start from the embedded preview"), and then paid for a render of the raw to replace
+    /// it. That render decodes the whole sensor — 50 of a 56 MB Fuji RAF's bytes — for a 512 px
+    /// thumbnail the 4 416 × 2 944 embedded JPEG already covers, and on a share at 1.2 MB/s it is
+    /// 45 s a photo: a 149-photo folder spent 8.3 GB of traffic on thumbnails, and the queue behind
+    /// it delayed the render the user was waiting for.
+    ///
+    /// Only unedited raws answer `true`: any edit must be rendered, and `has_import_look` is what
+    /// says the photo still looks the way it did at import. A photo the user edits re-renders
+    /// through the ordinary path, because its thumbnail key (settings hash) changes.
+    pub fn embedded_thumb_is_final(&self, p: &Photo) -> bool {
+        self.embedded_of(p).is_some()
+    }
+
     /// The camera's embedded preview of a raw file, for the face scan. Faces are read from the unedited picture, so the
     /// photo's edits do not matter, and the camera's own JPEG (oriented, display-ready) costs a fraction of decoding the
     /// raw. `None` for anything else, and where the host installed no loader.
@@ -1254,12 +1371,35 @@ impl crate::Session {
         })
     }
 
-    /// Accept a finished job's loaded source into the cache.
+    /// Accept a finished job's loaded source into the cache. What the decode learnt about the file that the catalog
+    /// has wrong is corrected too ([`Self::learn_as_shot_wb`]).
     pub fn accept(&mut self, r: &RenderResult) {
         if let Some(src) = &r.loaded
             && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&content_key(p)).finish() == key))
         {
+            if let Some(info) = &src.info {
+                self.learn_as_shot_wb(r.photo, info);
+            }
             self.media.insert_source(r.photo, r.level, src.clone());
+        }
+    }
+
+    /// Record the as-shot white balance a decode of photo `id`'s file read (`info`) when the catalog has another:
+    /// a raw imported before its camera's matrices gave it a Kelvin scale keeps 6500 / 0 (the relative scale's
+    /// reference) until its file is next decoded (issue #730). Bookkeeping, not an undo step; the look does not
+    /// change (the pipeline reads the stored settings against the real as-shot white either way), only what As Shot
+    /// says and what a smart preview renders with. Only for raws edited in Kelvin.
+    fn learn_as_shot_wb(&mut self, id: PhotoId, info: &SourceInfo) {
+        let Some(p) = self.catalog.photo(id) else { return };
+        if !(info.raw && !info.relative_wb && p.develops_raw() && !p.relative_wb()) {
+            return;
+        }
+        let read = (info.as_shot_temp, info.as_shot_tint);
+        if !(read.0.is_finite() && read.1.is_finite()) || p.as_shot_wb == Some(read) {
+            return;
+        }
+        if let Err(e) = self.apply_system(Op::SetAsShotWb { id, wb: Some(read) }) {
+            log::warn!("photo {}: as-shot white balance not recorded: {e}", id.0);
         }
     }
 
@@ -1322,6 +1462,9 @@ impl crate::Session {
         let p = self.catalog.photo(id).ok_or("no such photo")?.clone();
         let r = self.media.source_ref(&p, level).load_source()?;
         let image = r.image.clone();
+        if let Some(info) = &r.info {
+            self.learn_as_shot_wb(id, info);
+        }
         self.media.insert_source(id, level, r);
         Ok(image)
     }
@@ -1356,7 +1499,6 @@ pub type FileProbe = Arc<dyn Fn(&str) -> Result<ProbeInfo, String> + Send + Sync
 #[cfg(test)]
 mod thumbnail_hash_tests {
     use super::*;
-    use lightcraft_catalog::Op;
 
     fn session() -> crate::Session {
         let mut s = crate::Session::new();
@@ -1467,6 +1609,23 @@ mod tests {
     }
 
     #[test]
+    fn hidden_grading_wheels_render_neutral_without_touching_the_photo() {
+        let mut s = crate::Session::with_demo();
+        let id = s.active().unwrap();
+        s.execute("develop.set", &serde_json::json!({"values": {"grading.shadows.sat": 60, "grading.highlights.sat": 40}})).unwrap();
+        let job = s.loupe_job(id, 64, 64, true).unwrap();
+        let same = job.clone().with_hidden_grading([false; 3]);
+        assert_eq!(same.key, job.key, "nothing hidden: the job is unchanged");
+        assert!(same.view_cache.is_some());
+        let hidden = job.clone().with_hidden_grading([true, false, false]);
+        assert_eq!(hidden.settings.grading.shadows.sat, 0.0);
+        assert_eq!(hidden.settings.grading.highlights.sat, 40.0);
+        assert_ne!(hidden.key, job.key, "a hidden wheel gets its own result key");
+        assert!(hidden.view_cache.is_none() && hidden.cache.is_none(), "never cached as the photo's preview");
+        assert_eq!(s.catalog.photo(id).unwrap().develop.grading.shadows.sat, 60.0, "the edit is untouched");
+    }
+
+    #[test]
     fn decoder_info_survives_render_jobs_cache_and_eviction() {
         let tone = lightcraft_pipeline::tone::CameraTone::new(std::array::from_fn(|i| {
             let x = 0.01 * (i + 1) as f32;
@@ -1504,6 +1663,81 @@ mod tests {
         assert!(s.media.get_source(id, r.level).is_none());
     }
 
+    /// Issue #730: an ILCE-7M3 ARW from an older catalog (white balance relative to the as-shot look, 6500 / 0 as
+    /// its as-shot white, a Custom value on that scale) renders pixel for pixel as it did once the camera's matrices
+    /// give it a Kelvin scale; the decode teaches the catalog the real as-shot white (bookkeeping, not an undo step),
+    /// and the panel then reads As Shot in Kelvin while the stored settings keep their look.
+    #[test]
+    fn old_relative_white_balance_on_a_kelvin_camera_keeps_its_look_and_learns_the_as_shot_white() {
+        use lightcraft_develop::{WbMode, WbScale};
+        let mut s = crate::Session::new();
+        let id = s.catalog.alloc_photo_id();
+        let mut p = Photo::new(id, Source::File { path: "/photos/DSC00001.ARW".into() }, "DSC00001.ARW", "ARW", 64, 64, "2026-01-01T00:00:00");
+        p.kind = MediaKind::Raw;
+        p.meta.camera = "SONY ILCE-7M3".into();
+        p.as_shot_wb = Some((6500.0, 0.0));
+        let mut d = lightcraft_develop::DevelopSettings::for_raw(6500.0, 0.0);
+        (d.wb.mode, d.wb.temp, d.wb.tint) = (WbMode::Custom, 5800.0, 3.0);
+        assert_eq!(d.wb.scale, WbScale::Legacy);
+        p.develop = Arc::new(d.clone());
+        s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        s.selection.ids = vec![id];
+        s.selection.active = Some(id);
+        // the catalog's view of the source before the file is read: Kelvin scale, as-shot white not yet known
+        let header = s.source_info(id);
+        assert!(header.raw && !header.relative_wb && header.legacy_relative_wb);
+        assert_eq!((header.as_shot_temp, header.as_shot_tint), (6500.0, 0.0));
+        // the decode: what `files::load_bytes` reports for this camera (the as-shot white through its matrices)
+        let decoded = SourceInfo { raw: true, legacy_relative_wb: true, as_shot_temp: 4986.0, as_shot_tint: -2.0, ..Default::default() };
+        let mut pixels = Rgb32f::new(64, 64);
+        for (i, px) in pixels.data.iter_mut().enumerate() {
+            let v = (i % 64) as f32 / 64.0;
+            *px = [0.05 + 0.6 * v, 0.04 + 0.4 * v, 0.03 + 0.3 * v];
+        }
+        let mut job = s.render_job(id, 64, 64, false, true).unwrap();
+        let (loaded_info, loaded_pixels) = (decoded.clone(), pixels.clone());
+        job.source = SourceRef::File {
+            path: "/photos/DSC00001.ARW".into(),
+            max_edge: 64,
+            loader: Some(Arc::new(move |_, _| Ok((loaded_pixels.clone(), loaded_info.clone())))),
+            fallback: None,
+            denoise: None,
+        };
+        let undo_before = s.undo.len();
+        let request = job.request;
+        let r = job.run();
+        let new = r.rendered.as_ref().unwrap().image.data.clone();
+        // the old pipeline: the same settings against the relative-scale source facts of an older build
+        let old_info = SourceInfo { raw: true, relative_wb: true, as_shot_temp: 6500.0, as_shot_tint: 0.0, ..Default::default() };
+        let old = lightcraft_pipeline::render(&pixels, &old_info, &d, &request).image.data;
+        assert_eq!(new, old, "the look of an existing edit changed");
+        assert_ne!(
+            new,
+            lightcraft_pipeline::render(&pixels, &decoded, &lightcraft_develop::DevelopSettings::for_raw(4986.0, -2.0), &request).image.data
+        );
+        // accepting the result records the as-shot white, journaled but not undoable, and the settings are untouched
+        s.accept(&r);
+        let p = s.catalog.photo(id).unwrap();
+        assert_eq!(p.as_shot_wb, Some((4986.0, -2.0)));
+        assert_eq!(*p.develop, d);
+        assert_eq!(s.undo.len(), undo_before);
+        assert!(s.pending_log.iter().any(|op| matches!(op, Op::SetAsShotWb { id: i, wb: Some((4986.0, -2.0)) } if *i == id)));
+        assert!(!p.is_edited() || p.develop.wb.mode == WbMode::Custom);
+        // the panel reads the white balance in effect in Kelvin: the value the relative edit renders as
+        let info = s.source_info(id);
+        assert_eq!((info.as_shot_temp, info.as_shot_tint), (4986.0, -2.0));
+        let shown = lightcraft_pipeline::local::effective_wb(&info, &d);
+        assert_eq!(shown, lightcraft_pipeline::local::legacy_to_kelvin(5800.0, 3.0, (4986.0, -2.0)));
+        assert!(shown.0 < 4986.0 && shown.0 > 4000.0, "{shown:?}");
+        // accepting again changes nothing more
+        let log = s.pending_log.len();
+        s.accept(&r);
+        assert_eq!(s.pending_log.len(), log);
+        // a catalog-only (proxy) render of the same settings before the decode gave the same pixels too
+        let proxy = lightcraft_pipeline::render(&pixels, &header, &d, &request).image.data;
+        assert_eq!(proxy, old, "a smart preview of an existing edit changed");
+    }
+
     #[test]
     fn budget_evicts_least_recently_used_across_caches() {
         let img = |w: usize| Arc::new(Rgb32f::new(w, w));
@@ -1527,6 +1761,36 @@ mod tests {
         assert_eq!(m.usage().1.count, 1);
         assert_eq!(m.usage().0.count, 0);
         assert_eq!(m.rendered.mem_usage().0, 0);
+    }
+
+    // Given Compare zoomed to 1:1 (two photos' originals), both stay decoded; back to one view,
+    // the least recently used goes, and the budget still evicts them like any source
+    #[test]
+    fn full_size_originals_are_kept_up_to_the_capacity() {
+        let img = |w: usize| Arc::new(Rgb32f::new(w, w));
+        let mut m = MediaCache::default();
+        let mb = 1 << 20;
+        m.set_budget(100 * mb);
+        m.insert(PhotoId(1), SourceLevel::Full, img(1000));
+        m.insert(PhotoId(2), SourceLevel::Full, img(1000));
+        assert!(!m.has_source(PhotoId(1), SourceLevel::Full), "one original by default");
+        m.set_full_capacity(2);
+        m.insert(PhotoId(1), SourceLevel::Full, img(1000));
+        assert!(m.has_source(PhotoId(1), SourceLevel::Full) && m.has_source(PhotoId(2), SourceLevel::Full));
+        assert_eq!(m.usage().2.count, 2);
+        // re-inserting a held photo replaces it instead of taking a second place
+        m.insert(PhotoId(2), SourceLevel::Full, img(1000));
+        assert_eq!(m.usage().2.count, 2);
+        // 1 is the least recently used now
+        m.set_full_capacity(1);
+        assert!(!m.has_source(PhotoId(1), SourceLevel::Full) && m.has_source(PhotoId(2), SourceLevel::Full));
+        m.set_full_capacity(0);
+        assert_eq!(m.usage().2.count, 1, "never less than one");
+        m.set_full_capacity(2);
+        m.insert(PhotoId(3), SourceLevel::Full, img(1000));
+        m.set_budget(15 * mb);
+        assert_eq!(m.usage().2.count, 1, "the budget evicts the older original");
+        assert!(m.has_source(PhotoId(3), SourceLevel::Full));
     }
 
     #[test]

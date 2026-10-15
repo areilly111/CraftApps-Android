@@ -28,6 +28,24 @@ fn format(app: &mut VectorcraftApp, p: Value) {
     para_cmd(app, "text.setFormat", p);
 }
 
+/// The alignment shortcuts' commands (Cmd+Shift+L, C, R, J and F, as in page layout apps) and the
+/// `justify` each sets ([`align`]).
+pub const ALIGN_COMMANDS: [(&str, &str); 5] = [
+    ("type.alignLeft", "left"),
+    ("type.alignCenter", "center"),
+    ("type.alignRight", "right"),
+    ("type.justifyLeft", "justifyLeft"),
+    ("type.justifyAll", "justifyAll"),
+];
+
+/// Align the paragraphs of the selected type, or those the Type tool's selection touches, as
+/// `justify` (an [`ALIGN_COMMANDS`] alignment, #1111).
+pub(crate) fn align(app: &mut VectorcraftApp, justify: &str) -> Result<Value, String> {
+    text_style(app).ok_or("select some type first")?;
+    para_cmd(app, "text.setStyle", json!({ "justify": justify }));
+    Ok(Value::Null)
+}
+
 fn para_cmd(app: &mut VectorcraftApp, cmd: &str, mut p: Value) {
     if let Some((id, a, b)) = super::character::text_editing(app) {
         super::character::end_typing(app);
@@ -42,9 +60,11 @@ fn para_cmd(app: &mut VectorcraftApp, cmd: &str, mut p: Value) {
 /// right to left: its Paragraph Direction, else from its first strong character?
 fn resolved_rtl(app: &VectorcraftApp, para: &ParaStyle) -> bool {
     let editing = super::character::text_editing(app);
-    let selected = super::first_selected(app);
-    let node = editing.and_then(|(id, _, _)| app.session.active().and_then(|d| d.doc.node(id))).or(selected.as_ref());
-    let Some(NodeKind::Text(t)) = node.map(|n| &n.kind) else { return para.direction == Some(ParaDirection::RightToLeft) };
+    let text = editing.and_then(|(id, _, _)| match app.session.active().and_then(|d| d.doc.node(id)).map(|n| &n.kind) {
+        Some(NodeKind::Text(t)) => Some(t.as_ref()),
+        _ => None,
+    });
+    let Some(t) = text.or_else(|| super::character::first_selected_text(app)) else { return para.direction == Some(ParaDirection::RightToLeft) };
     let plain = t.plain_text();
     let paragraph = vectorcraft_text::edit::paragraph_at(&plain, editing.map_or(0, |(_, a, _)| a));
     vectorcraft_text::paragraph_is_rtl(plain.get(paragraph).unwrap_or_default(), para.direction)
@@ -246,6 +266,8 @@ mod tests {
             shown_alignment(para.justify, resolved_rtl(app, &para))
         };
         assert_eq!(shown(&app), Justify::Right);
+        app.session.execute("object.group", &json!({})).unwrap();
+        assert_eq!(shown(&app), Justify::Right, "group controls resolve the same text descendant's direction");
         app.session.execute("text.setStyle", &json!({"justify": "left"})).unwrap();
         assert_eq!(shown(&app), Justify::Left);
         app.session.execute("text.setStyle", &json!({"justify": "auto"})).unwrap();

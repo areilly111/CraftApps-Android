@@ -346,3 +346,32 @@ fn bad_place_params_are_errors() {
     assert_eq!(s.tool_id(), "selection", "a failed queue leaves the tool alone");
     assert!(top_children(&s).is_empty());
 }
+
+/// An SVG placed with `crop: "crop"` given is framed and clipped by its viewBox, as a PDF by its
+/// page, so art drawn on a shared canvas keeps its place and scale; by default (and with
+/// "bounding") it is fitted by its art's bounds (#788).
+#[test]
+fn an_svg_placed_with_crop_is_framed_by_its_viewbox() {
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><path d="M200 300 L600 300 L600 800 L200 800 Z"/></svg>"#;
+    let path_bounds = |s: &Session, id: &Value| {
+        let mut b = None;
+        node(s, id).walk(&mut |n| {
+            if let NodeKind::Path { clipping: false, .. } = n.kind {
+                b = n.visual_bounds();
+            }
+        });
+        b.unwrap()
+    };
+    let near = |a: Rect, b: Rect| [a.x0 - b.x0, a.y0 - b.y0, a.x1 - b.x1, a.y1 - b.y1].iter().all(|d| d.abs() < 1e-6);
+    let mut s = session();
+    let r = place(&mut s, "glyph.svg", svg, json!({"rect": [100, 100, 200, 200], "crop": "crop"}));
+    assert_eq!((r["width"].as_f64(), r["height"].as_f64()), (Some(200.0), Some(200.0)), "{r}");
+    let id = &r["ids"][0];
+    assert!(near(path_bounds(&s, id), Rect::new(140.0, 160.0, 220.0, 260.0)), "{:?}", path_bounds(&s, id));
+    assert!(matches!(node(&s, id).kind, NodeKind::Group { clip: true, .. }), "clipped to the viewBox");
+    for extra in [json!({"rect": [100, 100, 200, 200]}), json!({"rect": [100, 100, 200, 200], "crop": "bounding"})] {
+        let mut s = session();
+        let r = place(&mut s, "glyph.svg", svg, extra);
+        assert!(near(path_bounds(&s, &r["ids"][0]), Rect::new(120.0, 100.0, 280.0, 300.0)), "{r}");
+    }
+}

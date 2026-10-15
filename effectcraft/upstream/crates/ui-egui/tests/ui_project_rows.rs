@@ -127,16 +127,21 @@ fn footage_context_menu_interprets_the_footage() {
         }
         h.run_steps(2);
     };
+    // The menu's Interpret Footage entry, not the panel's footer button of the same name.
+    let menu_entry = |h: &Harness<'_, EffectcraftApp>| {
+        let footer = center(h, "project.interpret");
+        h.query_all_by_label_contains("Interpret Footage").find(|n| !n.rect().contains(footer)).map(|n| n.rect())
+    };
     let at = center(&h, &format!("project.item.{}.name", solid.0));
     right_click(&mut h, at);
     assert_eq!(h.state().session.state.project_selection, vec![solid]);
-    assert!(h.query_by_label_contains("Interpret Footage").is_none(), "a solid isn't footage");
+    assert!(menu_entry(&h).is_none(), "a solid isn't footage");
     h.input_mut().events.push(Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
     h.run_steps(2);
     let at = center(&h, &format!("project.item.{}.name", clip.0));
     right_click(&mut h, at);
     assert_eq!(h.state().session.state.project_selection, vec![clip], "right-click selects the item");
-    let sub = h.query_by_label_contains("Interpret Footage").expect("Interpret Footage in the menu").rect();
+    let sub = menu_entry(&h).expect("Interpret Footage in the menu");
     h.input_mut().events.push(Event::PointerMoved(sub.center()));
     h.run_steps(3);
     let main = h.query_by_label_contains("Main...").expect("Interpret Footage ▸ Main...").rect();

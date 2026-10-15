@@ -49,6 +49,7 @@ pub mod timeline_captions;
 pub mod timeline_hit;
 pub mod timeline_volume;
 pub mod tools;
+pub mod transform_handles;
 pub mod transition_controls;
 pub mod trim_monitor;
 pub mod tts;
@@ -178,6 +179,13 @@ pub fn dragged_project_item(ui: &egui::Ui) -> Option<ItemId> {
         _ => None,
     }
 }
+/// The items a drag from the Project panel carries: the whole selection when the dragged item is
+/// one of several selected, otherwise just the dragged item.
+pub fn dragged_selection(app: &FilmcraftApp, item: ItemId) -> Vec<ItemId> {
+    let sel = &app.session.state.project_selection;
+    // the selection can hold bins beside items (one id space): only items can be placed
+    if sel.len() > 1 && sel.contains(&item) { sel.iter().copied().filter(|i| app.session.project.item(*i).is_some()).collect() } else { vec![item] }
+}
 pub fn dragged_effect(ui: &egui::Ui) -> Option<String> {
     match payload(ui) {
         Some(DragPayload::Effect(e)) => Some(e),
@@ -188,13 +196,39 @@ pub fn clear_drag(ui: &egui::Ui) {
     ui.ctx().data_mut(|d| d.insert_temp::<Option<DragPayloadBox>>(payload_id(), None));
 }
 
-/// Draw the drag ghost near the pointer and clear the payload after release.
+fn cancelled_id() -> egui::Id {
+    egui::Id::new("filmcraft-drag-cancelled")
+}
+
+/// Abandon the drag in progress (Escape, #580): nothing is dropped, and nothing restarts it until
+/// the button comes up.
+pub fn cancel_drag(ui: &egui::Ui) {
+    clear_drag(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(cancelled_id(), true));
+}
+
+/// Whether the press in progress had its drag cancelled with Escape.
+pub fn drag_cancelled(ui: &egui::Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(cancelled_id())).unwrap_or(false)
+}
+
+/// Draw the drag ghost near the pointer and clear the payload after release. Escape cancels it.
 pub fn drag_ghost(app: &FilmcraftApp, ui: &egui::Ui) {
+    if !ui.ctx().input(|i| i.pointer.any_down()) {
+        ui.ctx().data_mut(|d| d.remove::<bool>(cancelled_id()));
+    }
     let Some(pl) = payload(ui) else { return };
     let ctx = ui.ctx();
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        cancel_drag(ui);
+        return;
+    }
     if let Some(p) = ctx.pointer_hover_pos() {
         let label = match &pl {
-            DragPayload::Item(i) => app.session.project.item(*i).map(|x| x.name.clone()).unwrap_or_default(),
+            DragPayload::Item(i) => match dragged_selection(app, *i).len() {
+                1 => app.session.project.item(*i).map(|x| x.name.clone()).unwrap_or_default(),
+                n => format!("{n} items"),
+            },
             DragPayload::Bin(b) => app.session.project.root.find_bin(filmcraft_project::BinId(*b)).map(|x| x.name.clone()).unwrap_or_default(),
             DragPayload::Source(s) => {
                 let name = app.session.project.item(s.item).map(|i| i.name.as_str()).unwrap_or("Source");
@@ -246,68 +280,79 @@ pub fn panel_menu_popup(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     let mut close = false;
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(190.0);
-            // the Timeline's tabs are its open sequences: Close Panel closes the active one and
-            // keeps the panel (Premiere's wording and behaviour)
-            if p == PanelKind::Timeline && app.session.state.active_sequence.is_some() {
-                let r = ui.button(tl!("Close Panel"));
-                app.auto.add("panel.menu.Timeline.close", r.rect, "Close Panel");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.close", serde_json::json!({}));
-                    close = true;
-                }
-                let r = ui.add_enabled(app.session.state.open_sequences.len() > 1, egui::Button::new(tl!("Close Other Timeline Panels")));
-                app.auto.add("panel.menu.Timeline.closeOthers", r.rect, "Close Other Timeline Panels");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.closeOthers", serde_json::json!({}));
-                    close = true;
-                }
-            } else if ui.button(tl!("Close Panel")).clicked() {
-                app.ui.dock.close(p);
-                close = true;
-            }
-            // the same frame state as ` / Shift+`: the dock tree is kept, so Restore brings it back
-            let maximized = app.ui.keys.maximized.is_some_and(|q| app.ui.dock.contains(q));
-            let r = ui.button(if maximized { tl!("Restore Frame") } else { tl!("Maximize Frame") });
-            app.auto.add(&format!("panel.menu.{}.maximize", p.id()), r.rect, if maximized { "Restore Frame" } else { "Maximize Frame" });
-            if r.clicked() {
-                keyboard::toggle_maximize(app, p);
-                close = true;
-            }
-            if ui.button(tl!("Restore Workspace")).clicked() {
-                let w = app.ui.workspace.clone();
-                app.set_workspace(&w);
-                close = true;
-            }
-            if p == PanelKind::Timeline {
-                ui.separator();
-                let r = ui.add_enabled(app.session.state.active_sequence.is_some(), egui::Button::new(tl!("Reveal Sequence in Project")));
-                app.auto.add("panel.menu.Timeline.revealSequence", r.rect, "Reveal Sequence in Project");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.revealInProject", serde_json::json!({}));
-                    close = true;
-                }
-                ui.checkbox(&mut app.ui.timeline.show_thumbnails, tl!("Video Thumbnails"));
-                ui.checkbox(&mut app.ui.timeline.show_waveforms, tl!("Audio Waveforms"));
-            }
-            if p == PanelKind::Project {
-                ui.separator();
-                close |= project::panel_menu(app, ui);
-            }
-            if p == PanelKind::MediaBrowser {
-                ui.separator();
-                close |= media_browser::panel_menu(app, ui);
-            }
-            if p == PanelKind::Source {
-                ui.separator();
-                close |= monitor::source_panel_menu(app, ui);
-            }
+            let scroll =
+                egui::ScrollArea::vertical().id_salt("panel-menu-scroll").max_height((ui.ctx().content_rect().height() - 16.0).max(0.0)).show(ui, |ui| {
+                    ui.set_min_width(190.0);
+                    // the Timeline's tabs are its open sequences: Close Panel closes the active one and
+                    // keeps the panel (Premiere's wording and behaviour)
+                    if p == PanelKind::Timeline && app.session.state.active_sequence.is_some() {
+                        let r = ui.button(tl!("Close Panel"));
+                        app.auto.add("panel.menu.Timeline.close", r.rect, "Close Panel");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.close", serde_json::json!({}));
+                            close = true;
+                        }
+                        let r = ui.add_enabled(app.session.state.open_sequences.len() > 1, egui::Button::new(tl!("Close Other Timeline Panels")));
+                        app.auto.add("panel.menu.Timeline.closeOthers", r.rect, "Close Other Timeline Panels");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.closeOthers", serde_json::json!({}));
+                            close = true;
+                        }
+                    } else if ui.button(tl!("Close Panel")).clicked() {
+                        let _ = crate::menus::invoke(app, ui.ctx(), "window.closePanel", serde_json::json!({"panel": p.id()}));
+                        close = true;
+                    }
+                    let undock = ui.button(tl!("Undock Panel"));
+                    app.auto.add_response(&format!("panel.menu.{}.undock", p.id()), &undock, "Undock Panel");
+                    if undock.clicked() {
+                        let _ = crate::menus::invoke(app, ui.ctx(), "window.floatPanel", serde_json::json!({"panel": p.id()}));
+                        close = true;
+                    }
+                    let maximized = app.ui.keys.maximized.is_some_and(|q| app.ui.dock.contains(q) || app.ui.floating.iter().any(|g| g.panels.contains(&q)));
+                    let r = ui.button(if maximized { tl!("Restore Frame") } else { tl!("Maximize Frame") });
+                    app.auto.add(&format!("panel.menu.{}.maximize", p.id()), r.rect, if maximized { "Restore Frame" } else { "Maximize Frame" });
+                    if r.clicked() {
+                        keyboard::toggle_maximize(app, p);
+                        close = true;
+                    }
+                    if ui.button(tl!("Restore Workspace")).clicked() {
+                        let w = app.ui.workspace.clone();
+                        app.set_workspace(&w);
+                        close = true;
+                    }
+                    if p == PanelKind::Timeline {
+                        ui.separator();
+                        let r = ui.add_enabled(app.session.state.active_sequence.is_some(), egui::Button::new(tl!("Reveal Sequence in Project")));
+                        app.auto.add("panel.menu.Timeline.revealSequence", r.rect, "Reveal Sequence in Project");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.revealInProject", serde_json::json!({}));
+                            close = true;
+                        }
+                        ui.checkbox(&mut app.ui.timeline.show_thumbnails, tl!("Video Thumbnails"));
+                        ui.checkbox(&mut app.ui.timeline.show_waveforms, tl!("Audio Waveforms"));
+                    }
+                    if p == PanelKind::Project {
+                        ui.separator();
+                        close |= project::panel_menu(app, ui);
+                    }
+                    if p == PanelKind::MediaBrowser {
+                        ui.separator();
+                        close |= media_browser::panel_menu(app, ui);
+                    }
+                    if p == PanelKind::Source {
+                        ui.separator();
+                        close |= monitor::source_panel_menu(app, ui);
+                    }
+                });
+            app.auto.add("panel.menu.scroll", scroll.inner_rect, "Panel menu");
         });
     });
     // A click elsewhere or Escape closes the menu. The click that opened it is over the tab, not
     // the menu, and must not close it again in the same frame.
     let fresh = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("panel-menu-opened"))) == Some(ui.ctx().cumulative_frame_nr());
-    if close || (!fresh && area.response.clicked_elsewhere()) || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if close || (!fresh && area.response.clicked_elsewhere()) || crate::widgets::escape_closes(ui.ctx()) {
         ui.ctx().data_mut(|d| d.remove::<(PanelKind, egui::Pos2)>(id));
     }
 }
+
+pub(crate) mod transcript_cache;

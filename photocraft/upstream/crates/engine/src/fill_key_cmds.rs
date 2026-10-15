@@ -1,5 +1,6 @@
 //! Photoshop's fill keys (#249): ⌥⌫ fills the selection (or the whole layer) with the foreground
-//! colour, ⌘⌫ with the background colour, and with ⇧ added they preserve transparency. Photoshop
+//! colour, ⌘⌫ with the background colour, and with ⇧ added they preserve transparency. ⌘⌥⌫ fills
+//! from history: the History Brush's source state (the oldest state still held). Photoshop
 //! has no menu item for them; here they are ordinary commands with default shortcuts, so they
 //! appear in Edit › Keyboard Shortcuts (Tools) and can be rebound, recorded and driven by agents.
 //!
@@ -12,9 +13,9 @@ use crate::commands::CommandSpec;
 use crate::{EngineError, Result, Session};
 
 /// The fill-key command ids (routed to the Channels panel target like `edit.fill`).
-pub const IDS: [&str; 4] = ["edit.fillForeground", "edit.fillBackground", "edit.fillForegroundPreserve", "edit.fillBackgroundPreserve"];
+pub const IDS: [&str; 5] = ["edit.fillForeground", "edit.fillBackground", "edit.fillForegroundPreserve", "edit.fillBackgroundPreserve", "edit.fillHistory"];
 
-const PARAMS: &str = r##"{"layer":id?,"target":"pixels"|{"channel":i}|"quickMask"?}"##;
+const PARAMS: &str = r##"{"layer":id?,"target":"pixels"|"mask"|"quickMask"|{"channel":i}?}"##;
 
 fn enabled(s: &Session) -> std::result::Result<(), String> {
     let edit_fill = crate::commands::find("edit.fill").ok_or_else(|| "Fill is unavailable".to_string())?;
@@ -35,6 +36,22 @@ fn fill(s: &mut Session, p: &Value, cmd: &str, background: bool, preserve: bool)
     let c = if background { s.tools.background } else { s.tools.foreground };
     q.insert("color".into(), json!([c[0], c[1], c[2], 1.0]));
     q.insert("preserveTransparency".into(), json!(preserve));
+    let edit_fill = crate::commands::find("edit.fill").ok_or_else(|| EngineError::Other("Fill is unavailable".into()))?;
+    (edit_fill.run)(s, &Value::Object(q))
+}
+
+/// ⌘⌥⌫: `edit.fill` from history, the History Brush's source unless `state` names another.
+fn fill_history(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "edit.fillHistory";
+    let mut q: Map<String, Value> = match p {
+        Value::Object(m) => m.clone(),
+        Value::Null => Map::new(),
+        _ => return Err(EngineError::BadParams { cmd: CMD.into(), msg: "expected an object".into() }),
+    };
+    for k in ["color", "contents", "pattern"] {
+        q.remove(k);
+    }
+    q.insert("contents".into(), json!("history"));
     let edit_fill = crate::commands::find("edit.fill").ok_or_else(|| EngineError::Other("Fill is unavailable".into()))?;
     (edit_fill.run)(s, &Value::Object(q))
 }
@@ -79,6 +96,16 @@ pub fn specs() -> Vec<CommandSpec> {
             params: PARAMS,
             enabled,
             run: |s, p| fill(s, p, "edit.fillBackgroundPreserve", true, true),
+            journal: true,
+        },
+        CommandSpec {
+            id: "edit.fillHistory",
+            label: "Fill from History",
+            menu: &[],
+            shortcut: Some("Cmd+Alt+Backspace"),
+            params: r##"{"state":n? (default: the History Brush's source, the oldest state still held),"layer":id?,"target":"pixels"|"mask"|"quickMask"|{"channel":i}?,"preserveTransparency":bool?}"##,
+            enabled,
+            run: fill_history,
             journal: true,
         },
     ]
@@ -131,6 +158,27 @@ mod tests {
             assert!(r.abs() < 1e-3 && g.abs() < 1e-3 && (b - 1.0).abs() < 1e-3 && (a - 1.0).abs() < 1e-3, "{depth}-bit: {:?}", px(&s, 1, 1));
             assert_eq!(px(&s, 6, 1)[3], 0.0, "{depth}-bit");
         }
+    }
+
+    #[test]
+    fn fill_from_history_restores_the_history_brush_source_in_the_selection() {
+        let mut s = session();
+        assert_eq!(crate::commands::find("edit.fillHistory").and_then(|c| c.shortcut), Some("Cmd+Alt+Backspace"));
+        s.execute("edit.fillForeground", json!({})).unwrap();
+        s.execute("select.rect", json!({"x": 0, "y": 0, "width": 4, "height": 6})).unwrap();
+        s.execute("edit.fillHistory", json!({})).unwrap();
+        // The oldest state (the new, transparent layer) comes back inside the selection only.
+        assert_eq!(px(&s, 1, 1)[3], 0.0);
+        assert_eq!(px(&s, 6, 1), [1.0, 0.0, 0.0, 1.0]);
+        // A named state, and refused ones change nothing.
+        s.execute("select.deselect", json!({})).unwrap();
+        let steps = s.active().unwrap().history.past_len();
+        for bad in [json!({"state": 99}), json!({"state": "x"}), json!(7)] {
+            assert!(s.execute("edit.fillHistory", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(s.active().unwrap().history.past_len(), steps);
+        s.execute("edit.fillHistory", json!({"state": 1})).unwrap();
+        assert_eq!(px(&s, 1, 1), [1.0, 0.0, 0.0, 1.0], "state 1 is after the foreground fill");
     }
 
     #[test]

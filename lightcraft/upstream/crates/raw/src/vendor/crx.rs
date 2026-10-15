@@ -10,9 +10,12 @@
 //!
 //! Current support: version 0x100 lossless Bayer RAW and horizontal-tile C-RAW,
 //! plus version 0x200 single-tile 14-bit C-RAW with adaptive QP quantization
-//! (including odd-height QP maps, as on the EOS R7).
+//! (including odd-height QP maps, as on the EOS R7, and odd-height Bayer planes, as on the EOS R5 Mark II).
 //! Both ff01/ff02/ff03 and ff11/ff12/ff13 marker families are supported.
 //! Six full M50/R100/R8 sensor fixtures match an external decoder sample for sample.
+//! The QP map's first-symbol literal and its escape (the T.87 limited-length layout) were found
+//! on EOS R5 Mark II maps, whose larger QP steps need them; every map of 33,665 R5 Mark II files
+//! decodes to the exact end of its entropy stream with them.
 //! Unverified coding variants return explicit unsupported errors.
 
 use super::crx_wavelet::{self, Band as WaveletBand, TileEdges};
@@ -25,6 +28,8 @@ const MAX_TILES: usize = 1024;
 const MAX_HEADER_BYTES: usize = 1 << 20;
 const MAX_CRX_SAMPLES: usize = 200_000_000;
 const MAX_CRX_EDGE: u32 = 65_536;
+/// Unary QP-map prefix length that announces an 8-bit escaped symbol.
+const QP_ESCAPE_ZEROS: u32 = 23;
 const RUN_EXPONENT: [u8; 32] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 fn corrupt(reason: &str) -> RawError {
@@ -66,6 +71,15 @@ struct Tile {
     height: usize,
     planes: Vec<Plane>,
     qp: Option<Range<usize>>,
+}
+
+/// The byte ranges of a CRX sample (relative to its start) that [`validate`] reads: the tile, plane
+/// and band headers, and each tile's quantization map. `sample` must hold its first
+/// `config.header_size` bytes; the rest is only measured.
+pub(crate) fn header_ranges(sample: &[u8], config: &Cr3Compression) -> Result<Vec<Range<usize>>> {
+    let tiles = layout(sample, config)?;
+    let header = 0..config.header_size as usize;
+    Ok(std::iter::once(header).chain(tiles.into_iter().filter_map(|t| t.qp)).collect())
 }
 
 /// Decode to full sensor-order CFA samples, including masked borders.
@@ -330,8 +344,10 @@ fn tile_qp(sample: &[u8], tile: &Tile) -> Result<Option<QpMap>> {
 
 fn quant_step(value: u8) -> Result<i32> {
     // Measured independently with an external decoder after modifying only the
-    // quantValue field: all forty values 4..43 follow this integer sequence.
-    if !(4..=43).contains(&value) {
+    // quantValue field: all forty values 4..43 follow this integer sequence. Value 44 (QP 168)
+    // continues it (step 102); it was checked against a measured step of about 100 on an EOS R50
+    // C-RAW file. Nothing above 44 has been seen, so it stays rejected.
+    if !(4..=44).contains(&value) {
         return Err(RawError::Unsupported(format!("Canon CRX quantization value {value}")));
     }
     let scale = [40i32, 45, 51, 57, 64, 72].get(usize::from(value % 6)).copied().ok_or_else(|| corrupt("quantization table index"))?;
@@ -528,13 +544,17 @@ impl Bits<'_> {
     }
 
     fn qp_rice(&mut self, k: u32) -> Result<u32> {
+        // Limited-length code (the ITU-T T.87 layout for a 32-bit limit and 8-bit symbols):
+        // a quotient of 23 or more is sent as 23 zeros, the terminating 1 and the symbol in 8 bits.
         let mut zeros = 0;
-        while zeros < 16 && self.take(1)? == 0 {
+        while self.take(1)? == 0 {
             zeros += 1;
+            if zeros > QP_ESCAPE_ZEROS {
+                return Err(corrupt("QP Rice escape prefix exceeds 23 bits"));
+            }
         }
-        if zeros == 16 {
-            // QP escape has no unary terminating 1 before the 16-bit literal.
-            self.take(16)
+        if zeros == QP_ESCAPE_ZEROS {
+            self.take(8)
         } else if k <= 20 {
             Ok((zeros << k) | self.take(k)?)
         } else {
@@ -752,9 +772,10 @@ fn qp_map(src: &[u8], width: usize, height: usize) -> Result<QpMap> {
             let above = *previous.get(x).ok_or_else(|| corrupt("above QP outside row"))?;
             let corner = if x == 0 { above } else { *previous.get(x - 1).ok_or_else(|| corrupt("corner QP outside row"))? };
             let right = previous.get(x + 1).copied().unwrap_or(above);
-            let symbol = bits.qp_rice(k)?;
+            // The map opens with its first symbol as a 32-bit literal; every later one is Rice coded.
+            let symbol = if x == 0 && y == 0 { (bits.take(16)? << 16) | bits.take(16)? } else { bits.qp_rice(k)? };
             let value = median(left, above, corner).checked_add(signed(symbol)).ok_or_else(|| corrupt("QP prediction overflow"))?;
-            if !(131..=167).contains(&value) {
+            if !(131..=168).contains(&value) {
                 return Err(RawError::Unsupported(format!("Canon CRX adaptive QP value {value}")));
             }
             *current.get_mut(x).ok_or_else(|| corrupt("QP outside row"))? = value;
@@ -968,11 +989,11 @@ mod tests {
 
     #[test]
     fn measured_quantization_and_allocation_limits() {
-        for (quant, expected) in [(4, 1), (9, 1), (10, 2), (16, 4), (22, 8), (26, 12), (32, 25), (36, 40), (41, 72), (42, 80), (43, 90)] {
+        for (quant, expected) in [(4, 1), (9, 1), (10, 2), (16, 4), (22, 8), (26, 12), (32, 25), (36, 40), (41, 72), (42, 80), (43, 90), (44, 102)] {
             assert_eq!(quant_step(quant).unwrap(), expected);
         }
         assert!(matches!(quant_step(3), Err(RawError::Unsupported(_))));
-        assert!(matches!(quant_step(44), Err(RawError::Unsupported(_))));
+        assert!(matches!(quant_step(45), Err(RawError::Unsupported(_))));
         for (width, height) in [(20_000, 20_000), (65_538, 2), (2, 65_538)] {
             let mut config = coding();
             config.width = width;
@@ -984,9 +1005,16 @@ mod tests {
 
     #[test]
     fn qp_escape_and_average_precede_the_quantization_table() {
-        let mut bits = Bits { src: &[0, 0, 1, 0x2c], at: 0 };
-        assert_eq!(bits.qp_rice(0).unwrap(), 300);
+        // 23 zeros, the terminating 1, then the symbol in 8 bits.
+        let mut bits = Bits { src: &[0, 0, 1, 0x18], at: 0 };
+        assert_eq!(bits.qp_rice(0).unwrap(), 24);
         assert_eq!(bits.at, 32);
+        // 22 zeros are an ordinary Rice prefix.
+        let mut bits = Bits { src: &[0, 0, 2, 0], at: 0 };
+        assert_eq!(bits.qp_rice(0).unwrap(), 22);
+        assert_eq!(bits.at, 23);
+        assert!(Bits { src: &[0, 0, 0, 0x80, 0], at: 0 }.qp_rice(0).is_err());
+        // The map's first symbol is a 32-bit literal (300 = QP 150 from prediction 0).
         let map = qp_map(&[0, 0, 1, 0x2c, 0x94], 1, 4).unwrap();
         assert_eq!(map.data, [150; 4]);
         assert!(qp_map(&[0, 0, 1, 0x2c, 0x95], 1, 4).is_err());
@@ -1001,6 +1029,23 @@ mod tests {
         assert_eq!(adaptive_step(&low, 4, 0, 0, 0, 1).unwrap(), 1);
         assert_eq!(adaptive_step(&low, 0, 0, 0, 0, 0).unwrap(), 1);
         assert!(matches!(qp_map(&[0, 0, 1, 4, 0x94], 1, 4), Err(RawError::Unsupported(_))));
+    }
+
+    #[test]
+    fn qp_168_is_accepted_and_169_is_not() {
+        assert_eq!(qp_map(&[0, 0, 1, 0x50, 0x94], 1, 4).unwrap().data, [168; 4]);
+        assert!(matches!(qp_map(&[0, 0, 1, 0x52, 0x94], 1, 4), Err(RawError::Unsupported(_))));
+    }
+
+    #[test]
+    fn long_qp_prefixes_and_escapes_as_on_the_eos_r5_mark_ii() {
+        // EOS R5 Mark II maps (QP 150–162) jump by up to 12 where k is 0: an 18-zero prefix that an
+        // escape after 16 zeros misread, then a real escape (23 zeros, 1, symbol 23 = −12).
+        let src = [0x00, 0x00, 0x01, 0x2c, 0x90, 0x00, 0x01, 0x90, 0x00, 0x00, 0x08, 0xb8];
+        assert_eq!(qp_map(&src, 7, 1).unwrap().data, [150, 150, 150, 159, 159, 159, 147]);
+        for end in 0..src.len() {
+            assert!(qp_map(&src[..end], 7, 1).is_err());
+        }
     }
 
     #[test]

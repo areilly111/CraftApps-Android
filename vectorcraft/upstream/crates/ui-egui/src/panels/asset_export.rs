@@ -68,10 +68,10 @@ pub(crate) fn paint_thumb(ui: &Ui, st: &DocState, a: &ExportAsset, r: Rect) {
     let tex = CACHE.with(|c| c.borrow().get(&key).cloned()).or_else(|| {
         let art: Vec<&Node> = ids().iter().filter_map(|id| st.doc.node(*id)).collect();
         let img = RENDERER.with(|rr| match art.as_slice() {
-            [one] => rr.borrow_mut().render_node_thumbnail(&st.doc, one, px, None),
+            [one] => rr.borrow_mut().render_node_thumbnail_with(&st.doc, one, px, None, &super::layers::thumb_options()),
             many => {
                 let group = Node::group(NodeId(0), many.iter().map(|n| Arc::new((*n).clone())).collect());
-                rr.borrow_mut().render_node_thumbnail(&st.doc, &group, px, None)
+                rr.borrow_mut().render_node_thumbnail_with(&st.doc, &group, px, None, &super::layers::thumb_options())
             }
         })?;
         let color = egui::ColorImage::from_rgba_premultiplied([img.width as usize, img.height as usize], &img.pixels);

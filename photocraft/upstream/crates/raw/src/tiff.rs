@@ -36,6 +36,10 @@ pub(crate) mod tag {
     pub const EXIF_IFD: u16 = 34665;
     pub const EXIF_CFA_PATTERN: u16 = 41730;
     pub const MAKER_NOTE: u16 = 37500;
+    pub const COLOR_SPACE: u16 = 40961;
+    pub const INTEROP_IFD: u16 = 40965;
+    /// In the Interoperability IFD.
+    pub const INTEROP_INDEX: u16 = 1;
     pub const DNG_VERSION: u16 = 50706;
     pub const UNIQUE_CAMERA_MODEL: u16 = 50708;
     pub const CFA_PLANE_COLOR: u16 = 50710;

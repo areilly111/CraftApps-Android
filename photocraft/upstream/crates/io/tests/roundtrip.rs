@@ -115,6 +115,7 @@ fn text_shape_smart_raw_blocks_survive() {
     let mut smart = Layer::new(
         "Smart",
         LayerContent::Smart(SmartObject {
+            contents_id: SmartContentsId::fresh(),
             source: SmartSource::Linked { path: String::new() },
             transform: photocraft_geom::Affine::IDENTITY,
             smart_filters: vec![],
@@ -304,7 +305,10 @@ fn psd_raw_resources_and_global_blocks_preserved() {
     d.metadata.psd_global_blocks.push((*b"8BIM", *b"Patt", std::sync::Arc::new(vec![7; 6])));
     d.metadata.psd_global_blocks.push((*b"8B64", *b"lnk2", std::sync::Arc::new(vec![1, 2])));
     let back = roundtrip(&d);
-    assert_eq!(back.metadata, d.metadata);
+    // A PSD holds no `8B64` blocks (Photoshop refuses the file): a kept PSB block is written as `8BIM`.
+    let mut expected = d.metadata.clone();
+    expected.psd_global_blocks[1].0 = *b"8BIM";
+    assert_eq!(back.metadata, expected);
 }
 
 #[test]

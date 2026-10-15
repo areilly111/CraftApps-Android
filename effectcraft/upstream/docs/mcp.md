@@ -3,6 +3,19 @@
 Run `effectcraft-cli mcp` for a headless session, or `effectcraft-cli mcp --bridge 9877`
 to use the desktop app's control channel. Existing ports are unchanged.
 
+## Confining file access
+
+`--automation-read-root DIR` and `--automation-write-root DIR` (each repeatable, as in
+PhotoCraft) confine what the agent can reach: files are read only under a read or write root and
+written only under a write root; with no write root nothing is written. Every engine command
+(`execute_command`, `command_run`, each `batch` step) is checked before it runs: its file
+parameters must be absolute paths inside the roots (symbolic links resolved, no `..`), and so must
+any other absolute path in its parameters. Save, Increment and Save and rendering the Render
+Queue are checked against the files they write (the open project's, the queued outputs). Scripts
+(`run_script`, `file.runScript`…), Execute File, Reveal in Finder, `$N` references to file paths
+in a batch, and the bridge's UI-driving tools (`ui_click`, `ui_key`, `ui_type`, `ui_drag`,
+`ui_set`, `script_ui`, `control`) are refused while confined. Without the flags nothing changes.
+
 The server provides the same core conventions as FilmCraft #28:
 
 | Tool | Arguments | Result |

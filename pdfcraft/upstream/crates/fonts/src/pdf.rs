@@ -55,8 +55,13 @@ pub struct Metrics {
     /// font name and, when present, `/FontDescriptor` flags/weight/angle.
     pub bold: bool,
     pub italic: bool,
+    /// Whether this font draws Indic text in visual order (pre-base vowel signs before their
+    /// consonant): a known legacy Indic font whose Unicode mapping is Indic. See [`legacy_indic_font`].
+    pub visual_order: bool,
     /// Bytes per code for writing new text (1 for simple fonts, else the codespace length).
     code_len: usize,
+    /// Valid single-character explicit mappings, preindexed once for large full CJK fonts.
+    explicit_reverse: HashMap<char, u32>,
 }
 
 fn nums(doc: &Document, o: Option<&Object>) -> Vec<f64> {
@@ -67,6 +72,120 @@ fn nums(doc: &Document, o: Option<&Object>) -> Vec<f64> {
 
 fn dict(doc: &Document, o: Option<&Object>) -> Option<Dict> {
     o.and_then(|o| doc.resolve(o).as_dict().cloned())
+}
+
+/// Whether `base_font` (subset tag allowed) names a legacy Indic font family that is laid out in
+/// visual order (Kruti Dev, DevLys, Chanakya, Shusha, Shivaji, Walkman, Akruti, APS-DV, DV-TT…).
+fn legacy_indic_font(base_font: &str) -> bool {
+    let name =
+        base_font.split_once('+').filter(|(tag, _)| tag.len() == 6 && tag.bytes().all(|b| b.is_ascii_uppercase())).map_or(base_font, |(_, n)| n);
+    let name = name.to_ascii_lowercase();
+    ["kruti", "devlys", "chanakya", "shusha", "shivaji", "walkman", "akruti"].iter().any(|n| name.contains(n))
+        || ["aps-", "dv-"].iter().any(|p| name.starts_with(p))
+}
+
+/// A source PDF's sfnt program for an in-memory editor. Never a bundled font or an export
+/// fallback. Type 1/Type 3 programs cannot be consumed by an sfnt text renderer.
+pub fn embedded_sfnt(doc: &Document, font: &Dict) -> Option<Vec<u8>> {
+    use skrifa::{MetadataProvider as _, raw::TableProvider as _};
+    let descendant = dict(doc, font.get(b"DescendantFonts").and_then(|o| doc.resolve(o).as_array().and_then(|a| a.first()).cloned()).as_ref());
+    let descriptor = dict(doc, descendant.as_ref().unwrap_or(font).get(b"FontDescriptor"))?;
+    for key in [b"FontFile2".as_slice(), b"FontFile3".as_slice()] {
+        let Some(object) = descriptor.get(key) else { continue };
+        let object = doc.resolve(object);
+        let Object::Stream(stream) = object.as_ref() else { continue };
+        let Ok(mut bytes) = stream.decoded_within(16 << 20) else { continue };
+        let Ok(face) = skrifa::FontRef::from_index(&bytes, 0) else { continue };
+        if face.metrics(skrifa::instance::Size::unscaled(), skrifa::instance::LocationRef::default()).units_per_em == 0 {
+            continue;
+        }
+        if face.charmap().mappings().next().is_some() {
+            return Some(bytes);
+        }
+        // Some PDF generators keep a Mac format-6 code→glyph cmap. egui accepts Unicode
+        // format-4/12 cmaps. Combine the PDF's Unicode meanings with the source glyph IDs;
+        // only this in-memory copy gets a new cmap, never the working PDF or a font asset.
+        let Ok(cmap) = face.cmap() else { continue };
+        let metrics = Metrics::from_dict(doc, font);
+        if metrics.composite {
+            continue;
+        }
+        let mut mappings = std::collections::BTreeMap::new();
+        for code in 0..=255 {
+            let Some(text) = metrics.unicode.text(code) else { continue };
+            let Some(ch) = only_char(&text) else { continue };
+            let Some(glyph) = cmap.map_codepoint(code).or_else(|| cmap.map_codepoint(code + 0xf000)) else { continue };
+            let glyph = glyph.to_u32();
+            if glyph > 0 {
+                mappings.entry(u32::from(ch)).or_insert(glyph);
+            }
+        }
+        if !mappings.is_empty()
+            && append_editor_cmap(&mut bytes, &mappings).is_some()
+            && skrifa::FontRef::new(&bytes).is_ok_and(|font| font.charmap().mappings().next().is_some())
+        {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+/// Replace an existing cmap directory entry with a bounded Unicode format-12 table.
+/// Checked ranges prevent damaged sfnt offsets from indexing outside the source program.
+fn append_editor_cmap(bytes: &mut Vec<u8>, mappings: &std::collections::BTreeMap<u32, u32>) -> Option<()> {
+    if mappings.len() > 65536 {
+        return None;
+    }
+    let count = u16::from_be_bytes(bytes.get(4..6)?.try_into().ok()?) as usize;
+    if count > 256 {
+        return None;
+    }
+    let mut entry = None;
+    let mut head = None;
+    for i in 0..count {
+        let at = 12 + i * 16;
+        let record = bytes.get(at..at + 16)?;
+        if record.get(..4)? == b"cmap" {
+            entry = Some(at);
+        }
+        if record.get(..4)? == b"head" {
+            head = Some(u32::from_be_bytes(record.get(8..12)?.try_into().ok()?) as usize);
+        }
+    }
+    let entry = entry?;
+    let mut cmap = Vec::with_capacity(28 + mappings.len() * 12);
+    cmap.extend_from_slice(&[0, 0, 0, 1, 0, 3, 0, 10, 0, 0, 0, 12, 0, 12, 0, 0]);
+    cmap.extend_from_slice(&(16_u32 + u32::try_from(mappings.len()).ok()? * 12).to_be_bytes());
+    cmap.extend_from_slice(&0_u32.to_be_bytes());
+    cmap.extend_from_slice(&u32::try_from(mappings.len()).ok()?.to_be_bytes());
+    for (&ch, &gid) in mappings {
+        cmap.extend_from_slice(&ch.to_be_bytes());
+        cmap.extend_from_slice(&ch.to_be_bytes());
+        cmap.extend_from_slice(&gid.to_be_bytes());
+    }
+    while !bytes.len().is_multiple_of(4) {
+        bytes.push(0);
+    }
+    let offset = u32::try_from(bytes.len()).ok()?;
+    let checksum = |data: &[u8]| {
+        data.chunks(4).fold(0_u32, |sum, c| {
+            let mut word = [0; 4];
+            for (a, b) in word.iter_mut().zip(c) {
+                *a = *b;
+            }
+            sum.wrapping_add(u32::from_be_bytes(word))
+        })
+    };
+    bytes.get_mut(entry + 4..entry + 8)?.copy_from_slice(&checksum(&cmap).to_be_bytes());
+    bytes.get_mut(entry + 8..entry + 12)?.copy_from_slice(&offset.to_be_bytes());
+    bytes.get_mut(entry + 12..entry + 16)?.copy_from_slice(&u32::try_from(cmap.len()).ok()?.to_be_bytes());
+    bytes.extend_from_slice(&cmap);
+    if let Some(head) = head {
+        bytes.get_mut(head.checked_add(8)?..head.checked_add(12)?)?.fill(0);
+        let adjustment = 0xb1b0afba_u32.wrapping_sub(checksum(bytes));
+        bytes.get_mut(head + 8..head + 12)?.copy_from_slice(&adjustment.to_be_bytes());
+    }
+    Some(())
 }
 
 fn descriptor_flags(doc: &Document, descriptor: &Dict) -> u32 {
@@ -417,7 +536,9 @@ impl Metrics {
             subset: false,
             bold: false,
             italic: false,
+            visual_order: false,
             code_len: 1,
+            explicit_reverse: (32..127u8).map(|c| (char::from(c), u32::from(c))).collect(),
         }
     }
 
@@ -444,6 +565,23 @@ impl Metrics {
             Codes::Ranges(r) => r.last().map_or(2, |x| x.0),
         };
         m.unicode = unicode_map(doc, font, m.composite);
+        let mut reverse = HashMap::new();
+        for (&code, text) in m.unicode.explicit.iter().map(|(c, (_, t))| (c, t)).chain(m.unicode.encoding.iter()) {
+            if let Some(ch) = only_char(text)
+                && m.shows(code, ch)
+            {
+                keep(&mut reverse, ch, code);
+            }
+        }
+        m.explicit_reverse = reverse;
+        // Only a font known to be laid out in visual order counts: a missing GSUB proves nothing
+        // (bare CFF and subset fonts often drop it), and the font program is never decoded here.
+        if legacy_indic_font(&m.base_font) {
+            let indic = |c: char| matches!(u32::from(c), 0x0900..=0x0D7F);
+            m.visual_order = m.unicode.explicit.values().any(|(_, t)| t.chars().any(indic))
+                || m.unicode.encoding.values().any(|t| t.chars().any(indic))
+                || m.unicode.ranges.iter().any(|r| r.units.iter().any(|&u| matches!(u, 0x0900..=0x0D7F)));
+        }
         m
     }
 
@@ -482,8 +620,10 @@ impl Metrics {
                     match w.get(i + 1).map(|o| doc.resolve(o)) {
                         Some(a) if a.as_array().is_some() => {
                             for (k, x) in a.as_array().into_iter().flatten().enumerate() {
+                                // A run past the last CID ends there: wrapping would give CID 0 its width.
+                                let Some(cid) = u32::try_from(k).ok().and_then(|k| c0.checked_add(k)) else { break };
                                 if let Some(v) = doc.resolve(x).as_f64() {
-                                    m.cid_widths.insert(c0 + k as u32, v);
+                                    m.cid_widths.insert(cid, v);
                                 }
                             }
                             i += 2;
@@ -640,20 +780,9 @@ impl Metrics {
         // checked one by one; each range is asked for the wanted characters it can show.
         let wanted: HashSet<char> = text.chars().collect();
         let mut reverse: HashMap<char, u32> = HashMap::new();
-        for (&code, (_, t)) in &self.unicode.explicit {
-            if let Some(c) = only_char(t)
-                && wanted.contains(&c)
-                && self.shows(code, c)
-            {
-                keep(&mut reverse, c, code);
-            }
-        }
-        for (&code, t) in &self.unicode.encoding {
-            if let Some(c) = only_char(t)
-                && wanted.contains(&c)
-                && self.shows(code, c)
-            {
-                keep(&mut reverse, c, code);
+        for &ch in &wanted {
+            if let Some(&code) = self.explicit_reverse.get(&ch) {
+                keep(&mut reverse, ch, code);
             }
         }
         for range in &self.unicode.ranges {
@@ -965,6 +1094,61 @@ mod tests {
         d
     }
 
+    #[test]
+    fn embedded_editor_fonts_are_validated_without_installing_or_exporting() {
+        use pdfcraft_cos::Stream;
+        let mut doc = Document::new_empty();
+        let bytes = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+        let program = doc.add(Object::Stream(Stream::flate(Dict::new(), bytes)));
+        let mut descriptor = Dict::new();
+        descriptor.set(b"FontFile2".to_vec(), Object::Ref(program));
+        let simple = font(&mut doc, vec![("FontDescriptor", Object::Dict(descriptor.clone()))]);
+        assert_eq!(embedded_sfnt(&doc, &simple).unwrap(), bytes);
+        let composite = font(&mut doc, vec![("DescendantFonts", Object::Array(vec![Object::Dict(simple.clone())]))]);
+        assert_eq!(embedded_sfnt(&doc, &composite).unwrap(), bytes);
+        let broken = doc.add(Object::Stream(Stream::flate(Dict::new(), b"broken font")));
+        descriptor.set(b"FontFile2".to_vec(), Object::Ref(broken));
+        let broken = font(&mut doc, vec![("FontDescriptor", Object::Dict(descriptor))]);
+        assert!(embedded_sfnt(&doc, &broken).is_none());
+        assert!(embedded_sfnt(&doc, &Dict::new()).is_none());
+    }
+
+    #[test]
+    fn mac_subset_cmap_uses_pdf_unicode_without_changing_source_program() {
+        use skrifa::{MetadataProvider as _, raw::TableProvider as _};
+        let original = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
+        let face = skrifa::FontRef::new(original).unwrap();
+        let expected = face.charmap().map('Ω').unwrap();
+        let mut subset = original.to_vec();
+        let count = u16::from_be_bytes(subset[4..6].try_into().unwrap()) as usize;
+        let entry = (0..count).map(|i| 12 + i * 16).find(|i| &subset[*i..*i + 4] == b"cmap").unwrap();
+        let mut cmap = vec![0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 12];
+        cmap.extend_from_slice(&[0, 6, 0, 12, 0, 0, 0, 65, 0, 1]);
+        cmap.extend_from_slice(&u16::try_from(expected.to_u32()).unwrap().to_be_bytes());
+        let offset = subset.len() as u32;
+        subset[entry + 8..entry + 12].copy_from_slice(&offset.to_be_bytes());
+        subset[entry + 12..entry + 16].copy_from_slice(&(cmap.len() as u32).to_be_bytes());
+        subset.extend_from_slice(&cmap);
+        let face = skrifa::FontRef::new(&subset).unwrap();
+        assert!(!face.charmap().has_map(), "egui cannot directly use Mac format 6");
+        assert_eq!(face.cmap().unwrap().map_codepoint(65_u32), Some(expected));
+        let mut doc = Document::new_empty();
+        let program = doc.add(Object::Stream(Stream::flate(Dict::new(), &subset)));
+        let mut descriptor = Dict::new();
+        descriptor.set(b"FontFile2".to_vec(), Object::Ref(program));
+        let unicode = doc.add(Object::Stream(Stream::flate(Dict::new(), b"1 beginbfchar <41> <03A9> endbfchar")));
+        let source = font(&mut doc, vec![("FontDescriptor", Object::Dict(descriptor)), ("ToUnicode", Object::Ref(unicode))]);
+        let editor = embedded_sfnt(&doc, &source).unwrap();
+        let face = skrifa::FontRef::new(&editor).unwrap();
+        assert_eq!(face.charmap().map('Ω'), Some(expected), "Unicode selects the original glyph");
+        let Object::Stream(source) = doc.resolve(&Object::Ref(program)).as_ref().clone() else {
+            panic!("source stream");
+        };
+        assert_eq!(source.decoded().unwrap(), subset, "only an in-memory editor copy is adapted");
+        let mut broken = vec![0; 16];
+        assert!(append_editor_cmap(&mut broken, &std::collections::BTreeMap::from([(65, 1)])).is_none());
+    }
+
     fn metrics_with_flags(flags: Option<Object>) -> Metrics {
         let mut doc = Document::new_empty();
         let mut descriptor = Dict::new();
@@ -1093,6 +1277,31 @@ mod tests {
         assert_eq!(m.decode(&[0, 0x24, 0, 0x25, 0, 3, 0, 0x30, 0, 0x31, 0, 0x10]), "AB Hié");
         assert_eq!(m.encode("Hi A").as_deref(), Some(&[0, 0x30, 0, 0x31, 0, 3, 0, 0x24][..]));
         assert_eq!(m.encode("Z"), None);
+    }
+
+    /// A `/W` run that starts at the last CID stops there instead of overflowing onto CID 0.
+    #[test]
+    fn composite_width_run_past_the_last_cid_is_dropped() {
+        let widths = |first: i64| {
+            let mut doc = Document::new_empty();
+            let mut desc = Dict::new();
+            desc.set(b"Subtype".to_vec(), Object::name("CIDFontType2"));
+            desc.set(b"DW".to_vec(), Object::Int(1000));
+            desc.set(b"W".to_vec(), Object::Array(vec![Object::Int(first), Object::Array(vec![Object::Int(100), Object::Int(200)])]));
+            let f = font(
+                &mut doc,
+                vec![
+                    ("Subtype", Object::name("Type0")),
+                    ("Encoding", Object::name("Identity-H")),
+                    ("DescendantFonts", Object::Array(vec![Object::Dict(desc)])),
+                ],
+            );
+            Metrics::from_dict(&doc, &f)
+        };
+        let ordinary = widths(0);
+        assert_eq!((ordinary.width(0), ordinary.width(1)), (0.1, 0.2));
+        let last = widths(i64::from(u32::MAX));
+        assert_eq!((last.width(0), last.width(u32::MAX)), (1.0, 0.1));
     }
 
     #[test]

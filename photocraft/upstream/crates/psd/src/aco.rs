@@ -181,7 +181,7 @@ pub fn write(swatches: &[AcoSwatch]) -> Result<Vec<u8>> {
                 out.put_u16(x);
             }
             if version == 2 {
-                let units: Vec<u16> = s.name.encode_utf16().take(MAX_NAME_UNITS).collect();
+                let units = crate::io::utf16_units(&s.name, MAX_NAME_UNITS);
                 // The length counts the terminating null.
                 out.put_u32(units.len() as u32 + 1);
                 for u in units {

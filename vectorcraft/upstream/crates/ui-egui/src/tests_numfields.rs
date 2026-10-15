@@ -1,5 +1,6 @@
 //! Numeric fields: math typed before the unit suffix, and the whole text (unit included) selected
-//! on focus or double-click so typing replaces it.
+//! on keyboard focus, a released focus click or double-click so typing replaces it; a drag
+//! keeps the pressed character as its selection anchor.
 
 use std::cell::Cell;
 
@@ -47,6 +48,12 @@ impl Field {
         let at = self.rect.get().center();
         let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
         std::iter::once(Event::PointerMoved(at)).chain((0..count).flat_map(|_| [button(true), button(false)])).collect()
+    }
+
+    fn text_point(&self, text: &str, index: usize, margin: f32) -> Pos2 {
+        let galley = self.ctx.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), egui::FontId::proportional(12.5), egui::Color32::BLACK));
+        let x = galley.pos_from_cursor(egui::text::CCursor::new(index)).left();
+        Pos2::new(self.rect.get().left() + margin + x + 0.1, self.rect.get().center().y)
     }
 
     /// The selected character range of the field's text.
@@ -290,5 +297,78 @@ fn the_wheel_scrolls_the_panel_unless_over_the_focused_field() {
         } else {
             assert!(stepped.is_none() && offset.get() > 0.0, "{stepped:?} {}", offset.get());
         }
+    }
+}
+
+fn numeric_fixture(ui: &mut egui::Ui, mode: usize) -> Option<f64> {
+    match mode {
+        0 => widgets::num_field(ui, "f", Some(123456.0), Unit::Pixels, 100.0),
+        1 => widgets::num_field(ui, "f", Some(123456.0), Unit::Points, 100.0),
+        2 => widgets::plain_field(ui, "f", 123456.0, "°", 0, 100.0),
+        _ => widgets::opt_field(ui, "f", Some(123456.0), Unit::Pixels, 100.0).flatten(),
+    }
+}
+
+fn field_text(mode: usize) -> &'static str {
+    ["123456 px", "123456 pt", "123456°", "123456"][mode]
+}
+
+fn pointer_button(at: Pos2, pressed: bool) -> Event {
+    Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE }
+}
+
+#[test]
+fn numeric_drag_keeps_its_press_position_with_or_without_prior_focus() {
+    for mode in 0..4 {
+        for focused in [false, true] {
+            for (start, end) in [(1, 4), (4, 1)] {
+                let mut f = Field::new();
+                let draw = |ui: &mut egui::Ui| numeric_fixture(ui, mode);
+                f.frame(vec![], &draw);
+                if focused {
+                    f.frame(f.click(1), &draw);
+                    f.frame(vec![], &draw);
+                    f.time += 1.0;
+                }
+                let margin = if mode == 3 { 5.0 } else { 7.0 };
+                let at = f.text_point(field_text(mode), start, margin);
+                let to = f.text_point(field_text(mode), end, margin);
+                f.frame(vec![Event::PointerMoved(at), pointer_button(at, true)], &draw);
+                assert_eq!(f.selection(), Some((start, start)), "mode {mode}, prior focus {focused}");
+                f.frame(vec![], &draw); // Holding still must leave the press position alone.
+                f.frame(vec![Event::PointerMoved(to)], &draw);
+                f.frame(vec![pointer_button(to, false)], &draw);
+                assert_eq!(f.selection(), Some((1, 4)), "mode {mode}, {start}->{end}, prior focus {focused}");
+                f.frame(vec![Event::Text("7".into())], &draw);
+                assert_eq!(f.frame(vec![enter()], &draw), Some(1756.0), "replace only the dragged text");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_new_numeric_click_selects_all_on_release_without_moving_its_press_caret() {
+    let mut f = Field::new();
+    f.num(vec![]);
+    let at = f.rect.get().center();
+    f.num(vec![Event::PointerMoved(at), pointer_button(at, true)]);
+    assert!(f.selection().is_some_and(|(a, b)| a == b), "a hold can still start a text drag");
+    f.num(vec![]);
+    assert!(f.selection().is_some_and(|(a, b)| a == b));
+    f.num(vec![pointer_button(at, false)]);
+    assert_eq!(f.selection(), Some((0, "100 px".len())));
+    f.num(vec![Event::Text("7".into())]);
+    assert_eq!(f.num(vec![enter()]), Some(7.0));
+}
+
+#[test]
+fn keyboard_focus_keeps_selecting_the_entire_numeric_field() {
+    for mode in 0..4 {
+        let mut f = Field::new();
+        let draw = |ui: &mut egui::Ui| numeric_fixture(ui, mode);
+        f.frame(vec![], &draw);
+        f.frame(vec![key(Key::Tab, Modifiers::NONE)], &draw);
+        f.frame(vec![], &draw);
+        assert_eq!(f.selection(), Some((0, field_text(mode).chars().count())), "mode {mode}");
     }
 }

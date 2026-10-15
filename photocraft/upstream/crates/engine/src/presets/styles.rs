@@ -191,13 +191,9 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         let mode = doc.mode;
         let effects: Vec<_> = effects.iter().cloned().map(|e| e.in_mode(mode)).collect();
         for id in &ids {
-            let l = doc.layer_mut(*id).ok_or(EngineError::NoLayer(*id))?;
             // Styles can't sit on the Background: Photoshop turns it into a normal layer first.
-            if l.name == "Background" && l.locks.transparency && l.locks.position && matches!(l.content, photocraft_doc::LayerContent::Raster(_)) {
-                l.name = "Layer 0".into();
-                l.locks.transparency = false;
-                l.locks.position = false;
-            }
+            crate::extra_cmds::background_to_layer(doc, *id);
+            let l = doc.layer_mut(*id).ok_or(EngineError::NoLayer(*id))?;
             if add {
                 l.effects.items.extend(effects.iter().cloned());
             } else {

@@ -419,7 +419,10 @@ pub(crate) fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
                     && let Some((press, grabs)) = ctx.data(|dd| dd.get_temp::<HandleDrag>(handle_drag_id()))
                 {
                     ctx.data_mut(|dd| dd.insert_temp(drag_id, true));
-                    let (dt, dv) = (tm.t(pt.x) - tm.t(press.x), vmap(pt.y) - vmap(press.y));
+                    // Shift keeps the handle on the time or the value axis, whichever moved more (as for keys).
+                    let (time_ok, value_ok) = shift_axes(ui.input(|i| i.modifiers.shift), pt.x - press.x, pt.y - press.y);
+                    let dt = if time_ok { tm.t(pt.x) - tm.t(press.x) } else { 0.0 };
+                    let dv = if value_ok { vmap(pt.y) - vmap(press.y) } else { 0.0 };
                     let merge = format!("ghandle-{uid}-{}", k.idx);
                     for g in &grabs {
                         actions.push(("keys.setEase".into(), g.ease(g.end.0 + dt, g.end.1 + dv, speed, &merge)));
@@ -470,7 +473,7 @@ pub(crate) fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
             {
                 ctx.data_mut(|dd| dd.insert_temp(drag_id, true));
                 let (dx, dy) = (pt.x - g.press.x, pt.y - g.press.y);
-                let (time_ok, value_ok) = if mods.shift { (dx.abs() >= dy.abs(), dy.abs() > dx.abs()) } else { (true, true) };
+                let (time_ok, value_ok) = shift_axes(mods.shift, dx, dy);
                 // Graph Editor ▸ Snap: to the current time and other keys.
                 let others: Vec<f64> = all_key_times.iter().filter(|(u, i, _)| !(*u == uid && *i == k.idx)).map(|x| x.2).collect();
                 let t = if time_ok { super::graph_tools::snap_time(app, tm, (g.t + (tm.t(pt.x) - tm.t(g.press.x))).max(0.0), &others) } else { g.t };
@@ -702,4 +705,22 @@ type HandleDrag = (Pos2, Vec<HandleGrab>);
 
 fn handle_drag_id() -> egui::Id {
     egui::Id::new("graph-handle-drag")
+}
+
+/// Which axes a drag may move on (time, value): both, or with Shift only the one the pointer moved more along.
+fn shift_axes(shift: bool, dx: f32, dy: f32) -> (bool, bool) {
+    if shift { (dx.abs() >= dy.abs(), dy.abs() > dx.abs()) } else { (true, true) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shift_axes;
+
+    #[test]
+    fn shift_locks_drag_to_dominant_axis() {
+        assert_eq!(shift_axes(false, 10.0, 3.0), (true, true));
+        assert_eq!(shift_axes(true, 10.0, -3.0), (true, false));
+        assert_eq!(shift_axes(true, 2.0, -9.0), (false, true));
+        assert_eq!(shift_axes(true, 5.0, 5.0), (true, false));
+    }
 }

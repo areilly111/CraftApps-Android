@@ -264,17 +264,22 @@ impl Gpu {
         }
     }
 
-    /// Run work in a native thread-local out-of-memory scope. A failed result is discarded
-    /// and cached allocations are released; callers can retry with a fresh CPU renderer.
+    /// Run work in native thread-local out-of-memory and internal-error scopes. A failed
+    /// result is discarded and cached allocations are released; callers can retry with a fresh
+    /// CPU renderer. Some drivers report a failed allocation as an internal error rather than
+    /// out-of-memory (Adreno's `ERROR_INITIALIZATION_FAILED`, #591), so both count.
     /// Browser callers use the host/owned-device failure bridge and bounded readbacks instead
     /// of blocking their event loop on an error-scope future.
     pub fn within_memory<T>(&self, f: impl FnOnce() -> T) -> Result<T, String> {
         self.ctx.check_health()?;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let scope = self.ctx.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let oom = self.ctx.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let internal = self.ctx.device.push_error_scope(wgpu::ErrorFilter::Internal);
             let out = f();
-            match pollster::block_on(scope.pop()) {
+            let internal = pollster::block_on(internal.pop());
+            let oom = pollster::block_on(oom.pop());
+            match internal.or(oom) {
                 Some(e) => {
                     self.ctx.clear_uploads();
                     Err(e.to_string())

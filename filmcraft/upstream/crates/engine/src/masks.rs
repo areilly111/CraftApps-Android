@@ -38,7 +38,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         spec(
             "masks.add",
             "Create Mask",
-            r#"{"clip":id?,"effect":index|id?="opacity","shape":"ellipse"|"polygon"|"bezier","path":[[x,y]…]|{vertices}?,"center":[x,y]?,"size":[w,h]?}"#,
+            r#"{"clip":id?,"effect":index|id?="opacity","shape":"ellipse"|"polygon"|"rectangle"|"bezier","path":[[x,y]…]|{vertices}?,"center":[x,y]?,"size":[w,h]?,"cornerRadius":px?}"#,
             add,
         ),
         spec("masks.remove", "Delete Mask", r#"{"clip":id?,"effect":index|id?,"mask":n?}"#, remove),
@@ -64,6 +64,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             track,
         ),
         spec("masks.toggleVertexSmooth", "Convert Mask Vertex", r#"{"clip":id?,"effect":index|id?,"mask":n?,"vertex":n}"#, toggle_smooth),
+        spec("masks.roundCorners", "Round Mask Corners", r#"{"clip":id?,"effect":index|id?,"mask":n?,"radius":px,"vertices":[n]?}"#, round_corners),
         CommandSpec {
             id: "masks.select",
             label: "Select Mask",
@@ -90,9 +91,12 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
 /// A mask path from JSON: the serialized [`MaskPath`] object, an array of vertices
 /// (`{"p":[x,y],"in":[x,y]?,"out":[x,y]?}`), or an array of `[x, y]` / `{"x","y"}` points.
 pub fn path_from_json(v: &Value) -> Option<MaskPath> {
-    if let Ok(p) = serde_json::from_value::<MaskPath>(v.clone()) {
-        return Some(p);
-    }
+    // The vertex forms first: serde also accepts `{"p","in","out"}` vertices (the `masks.list` /
+    // `masks.add` form) but silently drops the unknown `in` / `out` tangents.
+    vertex_path(v).or_else(|| serde_json::from_value::<MaskPath>(v.clone()).ok())
+}
+
+fn vertex_path(v: &Value) -> Option<MaskPath> {
     let arr = v.as_array().or_else(|| v.get("vertices").and_then(Value::as_array))?;
     let closed = v.get("closed").and_then(Value::as_bool).unwrap_or(true);
     let mut vertices = Vec::new();
@@ -212,7 +216,12 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         None => match shape.as_str() {
             "ellipse" => MaskPath::ellipse(center, size * 0.5),
             "polygon" | "rectangle" | "rect" | "4-point" => {
-                MaskPath::rect(center.x - size.x / 2.0, center.y - size.y / 2.0, center.x + size.x / 2.0, center.y + size.y / 2.0)
+                let (x0, y0, x1, y1) = (center.x - size.x / 2.0, center.y - size.y / 2.0, center.x + size.x / 2.0, center.y + size.y / 2.0);
+                match f64_p(p, "cornerRadius") {
+                    Some(r) if !r.is_finite() || r < 0.0 => return Err(bad("masks.add", "`cornerRadius` is pixels ≥ 0")),
+                    Some(r) => MaskPath::rounded_rect(x0, y0, x1, y1, r),
+                    None => MaskPath::rect(x0, y0, x1, y1),
+                }
             }
             _ => return Err(bad("masks.add", "a bezier mask needs `path` (pen points)")),
         },
@@ -238,6 +247,7 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         e.masks.push(Mask::new(name.clone(), path));
         let mi = e.masks.len() - 1;
         st.selected_mask = Some(MaskSel { clip, effect: ei, mask: mi });
+        st.selected_effect = None;
         Ok((ei, mi, name))
     })?;
     Ok(json!({"clip": clip.0, "effect": ei, "mask": mi, "name": name}))
@@ -454,6 +464,40 @@ fn toggle_smooth(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Round the mask's sharp corners (Premiere 26's rounded rectangle masks): every corner between
+/// two straight edges (or only the listed `vertices`) becomes a circular fillet of `radius`
+/// pixels, shrunk to fit half of each edge. The same corners are rounded in every Mask Path
+/// keyframe so an animated path keeps interpolating. Returns how many corners were rounded.
+fn round_corners(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "masks.roundCorners";
+    let radius = f64_p(p, "radius").filter(|r| r.is_finite() && *r > 0.0).ok_or_else(|| bad(ID, "need `radius` (pixels, > 0)"))?;
+    let only: Option<Vec<usize>> = match p.get("vertices") {
+        None | Some(Value::Null) => None,
+        Some(v) => {
+            let list = v.as_array().ok_or_else(|| bad(ID, "`vertices` is a list of vertex indices"))?;
+            let mut out = list
+                .iter()
+                .map(|i| i.as_u64().and_then(|i| usize::try_from(i).ok()).ok_or_else(|| bad(ID, "`vertices` is a list of vertex indices")))
+                .collect::<Result<Vec<_>>>()?;
+            out.sort_unstable();
+            out.dedup();
+            Some(out)
+        }
+    };
+    let rounded = edit_mask(s, p, "Round Mask Corners", move |m, t| {
+        let mut corners = m.path_at(t).roundable_corners();
+        if let Some(only) = &only {
+            corners.retain(|i| only.binary_search(i).is_ok());
+        }
+        if corners.is_empty() {
+            return Err(bad(ID, "no sharp corner between straight edges to round"));
+        }
+        drop_all(m, t, |path| *path = path.with_rounded_corners(radius, &corners));
+        Ok(corners.len())
+    })?;
+    Ok(json!({"corners": rounded}))
+}
+
 fn select(s: &mut Session, p: &Value) -> Result<Value> {
     if bool_p(p, "none") == Some(true) || p.is_null() || p.as_object().is_some_and(|o| o.is_empty()) {
         s.state.selected_mask = None;
@@ -468,6 +512,7 @@ fn select(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("masks.select", format!("no mask {mi}")));
     }
     s.state.selected_mask = Some(MaskSel { clip, effect: ei, mask: mi });
+    s.state.selected_effect = None;
     Ok(Value::Null)
 }
 

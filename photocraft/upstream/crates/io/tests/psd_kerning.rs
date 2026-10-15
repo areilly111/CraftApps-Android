@@ -101,6 +101,25 @@ fn optical_kerning_round_trips_through_psd() {
     }
 }
 
+/// #3514: a fresh document of ordinary Metrics type writes no document `Txt2` block — Photoshop
+/// never writes its empty `<< /0 << >> >>` stub, and readers such as Photopea reject it — while an
+/// Optical layer still does, because its mode lives only in `Txt2`.
+#[test]
+fn fresh_metrics_text_writes_no_txt2_block() {
+    use photocraft_doc::text::Kerning;
+    let saves_txt2 = |kerning: Kerning| {
+        let t = layer("AV", &[(2, kerning, 0.0)]);
+        let mut doc = Document::new("k", photocraft_geom::Size::new(64, 32), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+        let mut r = t.clone();
+        photocraft_text::TextEngine::new().render_layer(&mut r, doc.resolution_dpi, doc.pixel_format());
+        doc.layers.push(Layer::new("t", LayerContent::Text(r)));
+        let bytes = photocraft_io::export(&doc, "k.psd", &Default::default()).unwrap().bytes;
+        photocraft_psd::PsdFile::from_bytes(&bytes).unwrap().global_blocks.iter().any(|b| &b.key == b"Txt2")
+    };
+    assert!(!saves_txt2(Kerning::Metrics), "a plain Metrics layer must not write the empty Txt2 stub");
+    assert!(saves_txt2(Kerning::Optical), "Optical lives only in Txt2");
+}
+
 /// Two imported layers can name the same Txt2 object; export must update the second
 /// preserved TySh pointer so each layer restores its own automatic kerning mode.
 #[test]

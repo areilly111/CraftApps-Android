@@ -73,17 +73,31 @@ hosts, tests) waits for its running jobs the same way (`JobPool::shutdown`, `cra
 
 **Crash sentinel.** The desktop app writes `gpu-init.marker` into its settings folder (next to
 `ui.json`: `%APPDATA%\LightCraft`, `~/Library/Application Support/LightCraft`,
-`~/.config/lightcraft`) just before the compute device is created and removes it as soon as creation
-returns, successfully or not. If the marker is still there at the next launch, the process died inside
+`~/.config/lightcraft`) just before the compute device is created and its kernels are compiled (and, on the first
+AI denoise, before that network's kernels are) and removes it as soon as that returns, successfully or
+not (issue #250: Apple's Metal compiler, `MTLCompilerService`, aborting on a kernel on an older Intel
+Mac). A kernel the driver refuses without crashing is caught by wgpu error scopes: the log says why
+(`gpu: rendering on the CPU: …`) and renders stay on the CPU. `LIGHTCRAFT_GPU=0` (or Settings ▸
+uncheck *Use the GPU for rendering*) forces the CPU path from the start. If the marker is still there at the next launch, the process died inside
 the driver: LightCraft starts with GPU rendering off (the preference is saved unchecked), removes the
 marker and says so in a notice. Checking *Use the GPU for rendering* again tries the GPU once more
 (and re-arms the sentinel). Not with `LIGHTCRAFT_NO_PREFS` (tests, scripts), and not in a `--memory` session,
 which writes nothing: it neither arms the sentinel nor removes a marker it finds (it still starts with GPU
 rendering off when one is there, and the next ordinary launch reports and clears it). Killing the app during
 the ~0.3 s of device creation, or two instances starting at the same moment, can trip it falsely —
-harmless: rendering is then on the CPU until the box is checked again. The sentinel only covers the
-compute device; a crash while the window's renderer starts is avoided by the backend defaults above
+harmless: rendering is then on the CPU until the box is checked again. The sentinel covers the compute
+device and every kernel build; a crash while the window's renderer starts is avoided by the backend defaults above
 or worked around with `LIGHTCRAFT_GPU_BACKEND`.
+
+**The window's renderer and its fallback (Windows).** Before the window opens, each renderer is probed in
+order: DX12, Vulkan, GL, then eframe's OpenGL renderer (glow). A probe creates a device and builds egui's
+pipeline inside wgpu error scopes, so a driver that cannot compile egui's shaders ("The parameter is
+incorrect. (0x80070057)" in `egui_pipeline`) is logged and skipped instead of killing the app. The renderer
+that worked is remembered in the settings folder (`window-renderer`); a start that dies before the window is up
+leaves `window-init.marker`, and the next start (relaunched automatically, at most 4 times) tries that
+renderer last. `LIGHTCRAFT_GPU_BACKEND=dx12 | vulkan | gl | glow` (or `WGPU_BACKEND`) forces one; DX12 stays
+first because a broken Vulkan driver can crash the process uncatchably (#136). Compute keeps its own
+device and falls back to the CPU as before.
 
 **Troubleshooting a crash at startup (Windows).** Start LightCraft from a `.cmd` file or a terminal
 with `set LIGHTCRAFT_GPU_BACKEND=dx12` (the default since #136), or `=off` to keep the GPU out of
@@ -190,10 +204,19 @@ redone on the CPU and why, e.g. `"6000×4000: the GPU returned an incomplete ima
 24000000 pixels unwritten); the GPU is not used again"`). The same in `app.gpu` (`reason`,
 `lastFallback`), Help ▸ System Info and Settings ▸ Performance. `LIGHTCRAFT_PROFILE=1` prints the
 fallback with the stage timings; `RUST_LOG=warn` logs it.
+`perf.gpuFallback` is one value for the whole process, overwritten by the latest render on any
+thread. A render's *own* reason comes from `lightcraft_gpu::try_render` (`Err(Fallback::Failed(why))`;
+`Fallback::NotTried` when the GPU was not used at all), which `lightcraft_engine::media::develop_reporting`
+passes on as `RenderResult::gpu_fallback`; an export carries it as `Exported::gpu_fallback`, and
+each file of an `app.export` batch result has `gpuFallback` when its render fell back (issue #675).
 **Reproducing a smaller GPU:** `LIGHTCRAFT_GPU_LIMITS=webgpu` (or `downlevel`) creates the device
 with 128 MiB storage bindings / 256 MiB buffers, `LIGHTCRAFT_GPU_LIMITS=<n>` with n MiB / 2n MiB.
 Tests inject failures with `lightcraft_gpu::inject_fault` (`crates/gpu/tests/fallback.rs`,
-`export_falls_back_to_the_cpu_when_gpu_work_is_lost`).
+`export_falls_back_to_the_cpu_when_gpu_work_is_lost`). The fault is thread-local, and so are its
+consequences: a simulated fatal failure stops GPU use on the injecting thread only (`available()`
+false, `unavailable_reason()` set there), until `reset_failures()`, which undoes nothing else — a
+real failure still stops the whole process. Such a test asserts on its own render's reason, not on
+`last_fallback()`, so it can run beside other tests rendering on the GPU (issue #675).
 
 ## Correctness: CPU oracle and equivalence tests
 `crates/gpu/tests/equivalence.rs` renders the same settings on both and compares 8-bit sRGB:
@@ -256,7 +279,9 @@ A view's stages keep an uploaded source only up to 96 MB (a Preview-level source
   `/usr/bin/time -l lightcraft-cli snapshot <files> --script steps.jsonl -o out.png` → "maximum
   resident set size" and "peak memory footprint". Run it several times: the high-water mark is
   noisy (allocator caching, scheduling). On Apple silicon GPU buffers count in the footprint.
-- Imports read raw headers only (`lightcraft_raw::probe_info`): no pixel data is decompressed.
+- Imports read raw headers only (`lightcraft_raw::probe_info`): no pixel data is decompressed,
+  except the first rows a few vendor formats need for facts their headers lack (Nikon NEF: the
+  first 128 rows for the masked trailing columns, issue #708).
 - One budget (`memory::budget`, default min(25 % of RAM, 1.5 GiB); `LIGHTCRAFT_MEMORY_MB` or
   `app.memoryBudget {mb}`): half for the engine caches (decoded thumbnail / preview / full
   sources and rendered previews, evicted least recently used *across* them; the photo on screen

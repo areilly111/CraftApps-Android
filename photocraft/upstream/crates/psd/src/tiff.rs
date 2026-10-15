@@ -155,10 +155,12 @@ impl ImageSourceData {
         let version = self.version;
         let mut blocks = Vec::with_capacity(self.global_blocks.len() + 2);
         if let Some(info) = &self.layer_info {
-            let mut info = info.clone();
-            info.pad_to(version, 4)?;
+            // Pad to 4 without cloning the layers (and all their pixel data) just to set `padding`.
+            let pad = info.pad_len(version, 4)?;
             let mut data = Vec::new();
-            info.write_body(&mut data, version)?;
+            data.try_reserve(info.channel_data_len().saturating_add(pad)).map_err(|_| PsdError::LimitExceeded("not enough memory for the layer data"))?;
+            info.write_unpadded(&mut data, version)?;
+            data.resize(data.len() + pad, 0);
             blocks.push(padded_block(self.layer_info_key, data));
         }
         if let Some(m) = &self.global_layer_mask {
@@ -173,7 +175,7 @@ impl ImageSourceData {
             blocks.push(b);
         }
         let mut body = Vec::new();
-        write_blocks(&mut body, &blocks, version)?;
+        write_blocks(&mut body, &blocks, version, 2)?;
         body.put(&self.trailing);
         let (body, warnings) =
             if order.is_little() { transcode::transcode_blocks(&body, version, ByteOrder::Big, ByteOrder::Little)? } else { (body, Vec::new()) };

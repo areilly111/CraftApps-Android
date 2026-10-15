@@ -363,7 +363,7 @@ pub fn rule_date(s: &str) -> Result<String, Issue> {
             _ => false,
         }
     };
-    if !shaped(&s) && !(s.get(..19).is_some_and(shaped) && s.get(19..).is_some_and(tail_ok)) {
+    if !(shaped(&s) || s.get(..19).is_some_and(shaped) && s.get(19..).is_some_and(tail_ok)) {
         return Err(Issue::NeedsDate);
     }
     let part = |a: usize, b: usize| s.get(a..b).and_then(|t| t.parse::<u32>().ok());

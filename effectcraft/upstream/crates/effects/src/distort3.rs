@@ -330,9 +330,12 @@ fn cc_slant(ctx: &EffectCtx, mut b: Buf) -> Buf {
 // ---------------------------------------------------------------- CC Smear
 
 fn cc_smear(ctx: &EffectCtx, mut b: Buf) -> Buf {
+    let reach = ctx.params.f("reach") / 100.0;
+    if !ctx.adjustment {
+        b.pad(cc_smear_pad(ctx, [b.img.width, b.img.height], b.offset, b.scale));
+    }
     let from = b.to_px(ctx.params.v2("from"));
     let to = b.to_px(ctx.params.v2("to"));
-    let reach = ctx.params.f("reach") / 100.0;
     let radius = (ctx.params.f("radius") * b.scale).max(0.5);
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let l2 = dx * dx + dy * dy;
@@ -349,6 +352,21 @@ fn cc_smear(ctx: &EffectCtx, mut b: Buf) -> Buf {
         Some((x - dx * k, y - dy * k))
     });
     b
+}
+
+/// The transparent pixels to add on every side of a buffer `size` pixels big (with `offset` and
+/// `scale`) for CC Smear: it moves pixels by up to Reach × From→To, and they may move out to the
+/// layer bounds. A text or shape layer's buffer ends at its content while its bounds are
+/// comp-sized, so the smear was cut off at the content's box (#659).
+pub fn cc_smear_pad(ctx: &EffectCtx, size: [u32; 2], offset: [f64; 2], scale: f64) -> u32 {
+    let reach = ctx.params.f("reach") / 100.0;
+    let (from, to) = (ctx.params.v2("from"), ctx.params.v2("to"));
+    let len = ((to[0] - from[0]).powi(2) + (to[1] - from[1]).powi(2)).sqrt() * scale;
+    let moved = (reach.abs() * len).ceil();
+    if !moved.is_finite() || moved <= 0.0 {
+        return 0;
+    }
+    (moved.min(4096.0) as u32).min(crate::util::layer_cover_pad(ctx, size, offset, scale))
 }
 
 // ---------------------------------------------------------------- CC Split / CC Split 2
@@ -1107,6 +1125,43 @@ mod tests {
             assert!(a.img.data.iter().all(|p| p.iter().all(|v| v.is_finite())), "{id}");
             assert!(a.img.width != im.width || a.img.height != im.height || maxd(&a.img, &im) > 1e-3, "{id} did nothing");
         }
+    }
+
+    /// A text layer's buffer: 20 × 10 opaque pixels at (90, 45)–(110, 55) of its comp-sized
+    /// (200 × 100) layer bounds, after `id` with `set`.
+    fn on_text(id: &str, set: &[(&str, Value)]) -> Buf {
+        let s = crate::find(id).unwrap();
+        let mut params = Params { values: s.params.iter().map(|p| (p.id.to_string(), p.default.clone())).collect() };
+        for (k, v) in set {
+            assert!(params.values.contains_key(*k), "{id}: {k}");
+            params.values.insert(k.to_string(), v.clone());
+        }
+        let mut im = Image::new(20, 10);
+        im.data.iter_mut().for_each(|p| *p = [1.0; 4]);
+        let ctx = EffectCtx { params: &params, time: 0.0, layer_size: [200.0, 100.0], seed: 1, adjustment: false, env: Default::default() };
+        crate::apply(s, &ctx, Buf { img: im, offset: [-90.0, -45.0], scale: 1.0 })
+    }
+
+    /// Alpha at layer point `p` (0 outside the buffer).
+    fn alpha_at(b: &Buf, p: [f64; 2]) -> f32 {
+        let (x, y) = b.to_px(p);
+        b.img.get(x.floor() as i64, y.floor() as i64)[3]
+    }
+
+    /// #659: CC Smear and CC Tiler on a text layer reach past the text's box to the layer bounds
+    /// (comp-sized, as in After Effects), not cut off where the glyphs end.
+    #[test]
+    fn effects_on_text_reach_past_its_box() {
+        let smear = on_text("ec.distort.ccsmear", &[("from", pt(100.0, 50.0)), ("to", pt(140.0, 50.0)), ("reach", num(100.0)), ("radius", num(30.0))]);
+        assert!(alpha_at(&smear, [130.0, 50.0]) > 0.9, "the smear is cut off at the text's box");
+        assert!(smear.img.width < 200, "it grows only as far as pixels move");
+        let tiles = on_text("ec.distort.cctiler", &[("scale", num(50.0)), ("center", pt(100.0, 50.0))]);
+        assert!(alpha_at(&tiles, [100.0, 50.0]) > 0.9);
+        assert!(alpha_at(&tiles, [2.0, 50.0]) > 0.9, "tiles fill the layer bounds");
+        assert!(alpha_at(&tiles, [50.0, 50.0]) < 0.1);
+        // A footage layer's buffer is its bounds already: no change.
+        let o = run("ec.distort.ccsmear", &[], img(40, 30), &[]);
+        assert_eq!((o.img.width, o.img.height, o.offset), (40, 30, [0.0, 0.0]));
     }
 
     #[test]

@@ -1,6 +1,114 @@
 # What's new in LightCraft
 
+## 2026-10-11
+
+### JPEG XL export
+- Export as JPEG XL (issue #247): Format ▸ JPEG XL in the Export dialog, `format: "jxl"` for agents and the CLI
+  (`render in.raw -o out.jxl`). Quality as for JPEG, or Lossless; Effort (Fast / Normal) trades time for a
+  smaller file; Progressive files show a coarse version first. 8- or 16-bit, sRGB, Display P3 or Rec. 2020 (lossless
+  files also Adobe RGB and ProPhoto), metadata as for JPEG. With HDR output, photos edited in HDR are written as
+  16-bit Rec. 2020 PQ. Not in the web version yet.
+- Lossy JPEG XL files in Display P3 or Rec. 2020 now open in their real colours; saturated colours used to come in
+  noticeably duller.
+
+### Open Library knows a Lightroom catalog
+- Choosing a Lightroom Classic catalog folder in File → Open Library… (or one of its `Previews.lrdata` /
+  `.lrcat-data` folders, or the `.lrcat`) no longer makes an empty LightCraft library inside it (issue #891). The
+  library open now stays, and LightCraft says "This is a Lightroom catalog, not a LightCraft library" and offers
+  **Import Lightroom Catalog…** with that catalog, or Cancel. `lightcraft-cli --library` refuses those folders too.
+
+### Canon EOS R5 Mark II
+- Canon EOS R5 Mark II C-RAW files that opened as "preview only" (more than half of them, depending on the
+  scene) now develop from their sensor data with every editing tool, like the camera's other raws. Photos
+  imported earlier switch over with Photo ▸ Reload from Disk.
+
+### Switching libraries
+- File ▸ New Library… asks for a name, then where to put it, and opens the new library (issue #902).
+- File ▸ Open Recent Library lists the last 8 libraries; ones that are gone (moved, drive disconnected) are greyed
+  out. Clear Recent Libraries empties the list.
+- The open library's name shows under My Photos at the top of the left panel and in the window title.
+- `lightcraft-cli --library` given a library's own file (`catalog.snap`) opens its folder instead of failing with
+  "File exists".
+- Agents use `app.newLibrary {path, name}`, `app.recentLibraries` and `app.clearRecentLibraries`.
+
+### Edit in PhotoCraft
+- Right-click a photo ▸ Edit In ▸ Edit in PhotoCraft (or Photo ▸ Edit In, ⇧⌘E) renders a copy with your edits, stacks it
+  with the original and opens it in PhotoCraft. LightCraft finds PhotoCraft where its installer put it (Windows,
+  macOS, Linux packages, AppImage, Flatpak), and says so if it isn't installed, before making a copy.
+- The copy is a 16-bit PSD by default, which PhotoCraft saves straight back to with File ▸ Save; when you come back to
+  LightCraft the copy shows what you saved.
+- Settings ▸ General ▸ External Editing: the format (PSD or TIFF), colour space and bit depth for PhotoCraft and for
+  the other editor (Edit in Other Editor, now ⌥⌘E), and where PhotoCraft is if you use a portable copy.
+- Export can write PSD too (flat, 8- or 16-bit).
+
+### Reliability
+- Upgrading from a Windows installer older than 0.6 (such as 0.5.0) keeps LightCraft in the folder it was installed
+  in, instead of moving it back to Program Files (issue #399). If that folder has been deleted since, the upgrade
+  installs to Program Files.
+
 ## 2026-10-10
+
+### Dialogs fit the window
+- A dialog taller than the window no longer runs off it (issue #781): on a 1366×768 screen the Export dialog's title
+  and its Cancel / OK buttons were off screen, so it couldn't be confirmed. Now its options scroll and the title and
+  buttons stay visible. Long lists in dialogs (What's New, All Metadata, Keyboard Shortcuts) get shorter to fit.
+  Dialogs that fit look as before.
+
+### Previews match exports on Mac screens
+- On macOS, photos are shown through the profile of the screen the window is on while no monitor profile is chosen in
+  Settings ▸ Display (issue #787). On P3 screens previews used to look more saturated than the exported files in
+  Preview or Photos. Moving the window to another screen is followed; **Use Screen Profile** goes back to it after
+  choosing a profile file.
+
+### Sidebar sections
+- Arrange the left sidebar your way: drag Albums, Local, By Date, Folders or Keywords by its header to move it (a line
+  shows where it will go), or right-click a header for Move Up / Move Down.
+- Hide the sections you don't use: View ▸ Sidebar Sections, or right-click a header ▸ Hide This Section. Right-click
+  the My Photos title to bring one back, or choose Reset Sidebar Sections. The arrangement is remembered.
+- In a long section, the header stays at the top of the sidebar while you scroll through its rows, so you always see
+  which section you are in and can fold it from there.
+- Sections are easier to tell apart: a hairline between them, the fold chevron in the same column as the rows'
+  triangles, a highlight under the pointer. A folded section shows how many rows it holds, counts of 0 are fainter,
+  and a section with nothing in it says so instead of disappearing.
+- Recently Deleted is listed with All Photos, Recently Added and Picks under My Photos.
+- Keywords has a + in its header, like Albums: Create Keyword Tag without opening the Keyword List.
+- Agents: `view.sidebarSection`, `view.sidebarMoveSection`, `view.sidebarReset`; `ui.set` takes `sidebar`.
+
+### Kelvin white balance for raws whose camera has colour matrices
+- Raws from the 52 camera models whose colour matrices LightCraft has measured (Sony ILCE-7M3, ILCE-7M4, ILCE-7RM3,
+  Nikon D850, Canon EOS 5D Mark III and others) now show white balance in Kelvin, as a DNG does and as Lightroom
+  does: As Shot reads the file's white (an ILCE-7M3 sample: 4268 K / +7), the Temp slider runs 2000–50000 K and the
+  Daylight, Cloudy, Shade, Tungsten, Fluorescent and Flash presets set real temperatures (issue #730). The matrices
+  only convert between the camera's multipliers and Kelvin; the colour look is what it was.
+- Nothing already edited changes: a Custom white balance set on the old relative scale renders pixel for pixel as
+  before, and becomes the Kelvin value with the same look the next time it is edited. A photo imported earlier shows
+  its real As Shot temperature once the file is opened (or Reload reads it).
+- Lightroom's `crs:Temperature` for these raws is read as the Kelvin it is (sidecars, Lightroom catalogs, presets);
+  raws of other cameras keep the as-shot shift of issue #510. The two Kelvin scales come from different matrices and
+  differ by about 7–10 % on the ILCE-7M3; which one is off is still open.
+
+### Fujifilm lens corrections
+- Fujifilm RAFs from 59 camera models now get the lens correction the camera stores in the file: distortion (with the
+  camera's own zoom to fill the frame) and vignetting, as with Panasonic and Sony files. The Optics profile controls
+  adjust or switch them off, and DNG export keeps them. Lateral chromatic aberration data is not applied: our
+  demosaic already lines the colour planes up. Details and measurements: `docs/fuji-lens-corrections.md`.
+
+### Appearance
+- Settings ▸ Interface ▸ Appearance Mode: Sync with System, Dark Mode or Light Mode, above a light
+  and a dark theme card, each previewing its theme (dark: Charcoal, the look so far, or Midnight;
+  light: Silver or Paper). New and existing installs stay dark; following the system is opt-in.
+- The top bar's appearance button cycles Auto, Light, Dark (a monitor, sun or moon), and View ▸
+  Appearance lists the modes and themes. On Linux, Auto follows the desktop portal's colour scheme
+  as it changes, without polling.
+
+### Add to Apple Photos (macOS)
+- The Export dialog has **Add to Apple Photos**, with an optional album. The files are exported to your folder as
+  usual and then added to Photos, into a top-level album of that name (made when it's missing). The toast says how
+  many Photos added, or why it added none. Export with Previous and export presets repeat it.
+- The first time, macOS asks whether LightCraft may control Photos. Photos may ask about duplicates; files it skips
+  show as a partial import.
+- Agents: `app.export {addToPhotos, photosAlbum}`, `export.addToPhotos {paths}` for files already on disk, and
+  `export.photosImports`. See [Add to Apple Photos](apple-photos.md).
 
 ### Activity stack
 - Long-running tasks show in one place, top left under the top bar, as in Lightroom Classic (issue #345): imports and
@@ -11,7 +119,38 @@
 - Quitting while a task that can be stopped is running asks first ("Quit Anyway" stops it).
 - Agents list and stop tasks with `activity.list` and `activity.cancel`; `ui.inspect` reports them as `activity`.
 
+### Importing a deleted photo again
+- Importing a file whose photo is in Recently Deleted brings the photo back, with its edits, rating and albums
+  (issue #706; before, the import skipped it as "already in the library" while the grid showed it deleted). The
+  import review checks such files, marks them "Will be restored" and counts them as "in Recently Deleted"; the
+  choice next to that (Restore them / Import as new / Leave them) now starts on Restore. Files dropped on the window
+  restore the photo too and say "Restored 1 photo from Recently Deleted". A deleted photo whose file was moved is
+  relinked to the file it is imported from. Browsing a folder in Local, Auto Import and a Lightroom catalog import
+  never restore anything. Agents: `library.import` → `onDeleted` defaults to `restore` (`skip` keeps the old
+  behaviour, `fresh` imports a clean copy and deletes the old record).
+
+### Formats
+- File extensions match whatever their letter case: `IMG_0001.JPG` and `DSC_0002.NEF` as Nikon writes them, `.Jpg`
+  after a rename, an `.XMP` sidecar. Adding photos or a folder, Browse Folder (Local), drag-and-drop, the CLI and the
+  sidecar lookup always did; the Add Photos dialog on Linux did not until 0.5.0 (GTK and the desktop portal match
+  `*.jpg` case-sensitively, so `.JPG` and `.NEF` files were hidden — issues #342 and #705).
+
+### Reliability
+- Closing a library releases its lock explicitly (issue #680). On Linux and macOS the lock used to go with the file
+  handle, and a program being started by another thread at that moment held a copy of the handle until it was fully
+  launched, so reopening the library straight away could be refused with "This library is already open in another
+  LightCraft program" although nothing had it open. Nothing in the shipped app is known to hit the window today; it
+  made a lock test flaky, and the fix closes the window for good.
+
 ## 2026-10-09
+
+### HDR PNG export
+- With **HDR output** on, a photo edited in HDR can now be exported as a **16-bit PNG** with the PQ curve in Rec. 2020,
+  like the HDR AVIF: the same brightness, with SDR white at 203 cd/m², and content light levels recorded.
+- The colour is described by the PNG `cICP` chunk, not an ICC profile. HDR-aware viewers (current Chromium-based
+  browsers, for example) show it in HDR; **viewers that don't read `cICP` show the PQ values as if they were sRGB**,
+  so the picture looks flat and washed out there. That's how PQ PNG works, not a broken file: for a picture that
+  looks right everywhere, export a JPEG with HDR output on (an SDR image plus a gain map).
 
 ### Smart album rules
 - The rule editor's field menu is grouped: Rating, Pick Flag, Color Label and Any Searchable Text at the top, then
@@ -97,6 +236,10 @@
   Selected Settings). Ctrl+V only reaches LightCraft while the system clipboard holds text; otherwise use Edit ▸ Paste Edit
   Settings.
 
+### Dialogs
+- System Info, All Metadata and What's New end with one Close button, like About, instead of Cancel and OK
+  (issue #782).
+
 ### Synchronize Folder
 - Right-click a folder (or a disk other than the startup disk) in the sidebar's Folders section ▸ Synchronize
   Folder…. The folder and the folders inside it are scanned in the background for photos added on disk, photos whose
@@ -120,6 +263,13 @@
   colours are right on wide-gamut and calibrated displays instead of oversaturated. The Detail view renders straight
   into the display's own gamut; thumbnails and other previews are converted to it. Histograms, the preview caches
   and exports don't change. Agents use `app.displayProfile`. See [display profiles](display-profiles.md).
+
+### Highlights and Shadows (process 2)
+- Highlights and Shadows keep the fine detail of the tones they move (issue #632): pulling Highlights down on a bright
+  sky no longer flattens the twigs, lines and texture in it, and lifting Shadows keeps the texture of dark areas, much
+  as Exposure would; the edges between bright and dark regions stay as sharp as before. This is rendering process 2:
+  new photos (and Reset) get it, photos you already edited keep their look until you choose Photo ▸ Update to Current
+  Process. See [process versions](process-versions.md).
 
 ### Masking
 - Drag anywhere inside the selected radial gradient's ellipse to move it, including rotated
@@ -161,6 +311,8 @@
 - Shortcuts are editable: Help ▸ Keyboard Shortcuts (⌘/) lists every command with a search box; click a shortcut and
   press the new keys (Esc cancels), × removes it, ↺ restores the original, Reset All undoes every change. A key that
   belonged to another command moves to the new one. Menus show the new keys; agents use `app.setShortcut`.
+- Return presses OK in Choose Edit Settings to Copy (⇧⌘C) and Paste Selected Settings (⇧⌘V), and Esc cancels them
+  (issue #735).
 
 ### Formats
 - HEIC / HEIF photos (iPhone and Mac) open now: the optional `lightcraft-heif` crate (heic-rs, pure Rust) behind
@@ -281,6 +433,11 @@
   show no dialogs and take `INSTALLFOLDER=...`.
 - If the desktop app can't open its window (for example when no graphics device can be used), it now says so in a
   message box that names the log file, instead of quitting without a trace (issue #260).
+- On Linux and FreeBSD, file dialogs (Import Photos…, Open Library, Export, presets, keyword lists…) are children of
+  the LightCraft window. The xdg-desktop-portal picker used to open as a separate top-level window on Wayland
+  ("Failed to associate portal window with parent window" in the portal's log): tiling compositors put it beside the
+  app, and with LightCraft fullscreen it was hidden altogether, so Import Photos… looked like a hang until the
+  dialog was found and closed.
 - On macOS, single-key shortcuts that appear in the menu bar now work: E, C, H, M, ⇧P, I, K, D, ratings 0–5,
   labels 6–9, P / U and the rest did nothing, because macOS only passes ⌘ / ⌃ combinations and function keys
   to the menu bar and the app ignored those keys, assuming the menu bar would handle them. Keys outside the menus

@@ -192,4 +192,29 @@ mod tests {
         // Ring 16·20 − 8·12 = 224, plus the bar outside it (10·4) and inside its hole (6·4).
         assert!((area - (224.0 + 40.0 + 24.0)).abs() < 1e-6, "{area}");
     }
+
+    #[test]
+    fn miter_offset_finishes_where_the_sweep_used_to_loop() {
+        // Issue #1028: with linesweeper 0.4 the sweep over this miter offset never finished and
+        // its memory grew without bound, freezing the app. A synthetic outline (found by search)
+        // with the same failure as the reported glyph; the exact coordinates matter.
+        const OUTLINE: &str = "M74.359137297823,82.83738194552835 L88.097432485874,103.04979803227248 \
+            L67.06936731196308,105.95779886823588 L53.29382873396223,98.53943925153727 \
+            L29.684713319694094,94.17996020306241 L41.65480824807079,75.639672165115 \
+            Q47.491034578751446,52.12555333014565 46.157302824282816,55.67193079127421 \
+            Q69.08365151786553,53.9608681393331 68.37499772324333,51.17242466680129 \
+            Q74.4136309339628,75.13284223919301 71.3309887459222,73.69128869058812 Z";
+        let path = PathData::from_bezpath(&BezPath::from_svg(OUTLINE).unwrap());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let input = path.clone();
+        std::thread::spawn(move || tx.send(offset_path(&input, 1.8350459854022054, Join::Miter, 4.0)));
+        let Ok(out) = rx.recv_timeout(std::time::Duration::from_secs(30)) else {
+            // the stuck sweep keeps allocating on its thread: end the test binary now
+            eprintln!("Offset Path didn't finish in 30 s (issue #1028)");
+            std::process::exit(101);
+        };
+        let (before, after) = (crate::area(&path, FillRule::NonZero), crate::area(&out, FillRule::NonZero));
+        assert_eq!(out.subpaths.len(), 1);
+        assert!(after > before, "{before} → {after}");
+    }
 }

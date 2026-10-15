@@ -204,6 +204,48 @@ fn rotated_text_and_composite_fonts() {
 }
 
 #[test]
+fn vertical_writing_text_under_a_mark_fails_closed() {
+    // A Type0 font laid out vertically (Identity-V / CMap WMode 1) cannot have its glyphs placed
+    // under a mark by the horizontal interpreter, so Apply Redactions must fail rather than ship
+    // the text under the box. The horizontal control (Identity-H) is redacted normally.
+    let make = |encoding: &str| -> Document {
+        let t0 = format!(
+            "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /{encoding} /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /DW 1000 /W [1 [500 500] 3 4 250] >>] >>"
+        )
+        .into_bytes();
+        let src = b"BT /F2 10 Tf 0 1 -1 0 100 50 Tm <0001000200030004> Tj ET";
+        let mut doc = one_page(src, "", vec![]);
+        let font_ref = doc.add(Object::Dict(Dict::new()));
+        let parsed = {
+            let mut lx = pdfcraft_cos::Lexer::new(&t0, 0);
+            lx.object().unwrap()
+        };
+        doc.set(font_ref, parsed);
+        let page = pdfcraft_model::pages(&doc)[0].obj;
+        doc.update_dict(page, |d| {
+            let mut res = d.get(b"Resources").and_then(Object::as_dict).cloned().unwrap();
+            let mut fonts = res.get(b"Font").and_then(Object::as_dict).cloned().unwrap();
+            fonts.set(b"F2".to_vec(), Object::Ref(font_ref));
+            res.set(b"Font".to_vec(), Object::Dict(fonts));
+            d.set(b"Resources".to_vec(), Object::Dict(res));
+        })
+        .unwrap();
+        doc
+    };
+
+    // Identity-V: apply must refuse rather than report success with the text still in the file.
+    let mut vdoc = make("Identity-V");
+    mark(&mut vdoc, 0, &[[85.0, 55.5, 105.0, 61.0]], "");
+    assert_eq!(apply(&mut vdoc, None), Err(RedactError::VerticalText(1)), "vertical text under a mark must not silently pass");
+
+    // Identity-H control: the same glyphs and mark are redacted normally.
+    let mut hdoc = make("Identity-H");
+    mark(&mut hdoc, 0, &[[85.0, 55.5, 105.0, 61.0]], "");
+    let r = apply(&mut hdoc, None).unwrap();
+    assert_eq!(r.glyphs, 2, "the horizontal control is redacted: {r:?}");
+}
+
+#[test]
 fn images_are_removed_or_have_their_pixels_cleared() {
     // Image 1 is fully covered; image 2 (4×1 gray, all white) is half covered.
     let img = stream("/Type /XObject /Subtype /Image /Width 4 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8", &[255, 255, 255, 255]);
@@ -260,6 +302,94 @@ fn shared_form_xobjects_are_copied_not_changed() {
     assert_eq!(content(&doc, 1), "/Fm Do", "page 2 shares the stream and the form: untouched");
     assert_eq!(under(&mut doc, 1, &[[0.0, 90.0, 300.0, 120.0]]), 6);
     assert_eq!(under(&mut doc, 0, &[[0.0, 90.0, 300.0, 120.0]]), 0);
+}
+
+#[test]
+fn redacted_images_and_forms_do_not_survive_a_full_rewrite_save() {
+    // Page 1 draws a fully covered image, a partly covered image and a form XObject whose text
+    // is under the mark. After Apply Redactions and the forced full rewrite, none of their secret
+    // bytes may stay in the saved file, while an unrelated image drawn only on page 2 survives.
+    let im1 = b"REDIMGONECOVERED"; // 16 bytes, one gray row
+    let impart = b"REDIMGPARTSECRETPUBPARTBOTTOMROW"; // 16-byte secret top row + 16-byte bottom row
+    let imkeep = b"PUBIMGKEEPSURVIVE"; // 17 bytes, used only on page 2
+    let objs: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R 10 0 R] /Count 2 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 7 0 R /ImPart 8 0 R /FmSecret 9 0 R >> >> >>".to_vec(),
+        stream("", b"q 50 0 0 50 20 230 cm /Im1 Do Q q 50 0 0 100 100 180 cm /ImPart Do Q /FmSecret Do"),
+        FONT.replace("95 0 R", "6 0 R").into_bytes(),
+        widths(),
+        stream("/Type /XObject /Subtype /Image /Width 16 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8", im1),
+        stream("/Type /XObject /Subtype /Image /Width 16 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8", impart),
+        stream(
+            "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /Font << /F1 5 0 R >> >>",
+            b"BT /F1 10 Tf 20 230 Td (REDFORMSECRETTEXT) Tj ET",
+        ),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 11 0 R /Resources << /XObject << /ImKeep 12 0 R >> >> >>".to_vec(),
+        stream("", b"q 50 0 0 50 20 20 cm /ImKeep Do Q"),
+        stream("/Type /XObject /Subtype /Image /Width 17 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8", imkeep),
+    ];
+    let mut doc = pdf(objs);
+    mark(&mut doc, 0, &[[0.0, 200.0, 300.0, 300.0]], "");
+    let r = apply(&mut doc, None).unwrap();
+    assert!(r.images_removed >= 1 && r.forms_rewritten >= 1, "{r:?}");
+
+    // The full rewrite that redaction forces must not carry the removed content forward.
+    let bytes = write_full(&doc, &SaveOptions::default()).unwrap();
+    let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(!has(b"REDIMGONECOVERED"), "covered image samples survived the save");
+    assert!(!has(b"REDIMGPARTSECRET"), "partly covered image's secret row survived the save");
+    assert!(!has(b"REDFORMSECRETTEXT"), "the form's redacted text survived the save");
+
+    // The unrelated image drawn only on page 2 stays referenced and intact.
+    let saved = Document::open(Arc::new(bytes)).unwrap();
+    let keep = pdfcraft_model::pages(&saved).swap_remove(1);
+    let res = saved.resolve(keep.dict.get(b"Resources").unwrap()).as_dict().cloned().unwrap();
+    let xo = saved.resolve(res.get(b"XObject").unwrap()).as_dict().cloned().unwrap();
+    let kref = xo.get(b"ImKeep").and_then(Object::as_ref).expect("ImKeep still referenced");
+    let Object::Stream(s) = &*saved.get(kref) else { panic!("ImKeep is a stream") };
+    assert_eq!(s.decoded().unwrap(), imkeep, "the unrelated image survives intact");
+}
+
+#[test]
+fn redacting_an_xfa_field_drops_the_xfa_packet_so_its_value_cannot_survive() {
+    // A static AcroForm+XFA form whose field value lives both in the widget /V and in the XFA
+    // datasets packet (Designer-style /XFA array). Redacting the widget must delete the field and
+    // stop the form being XFA, so neither the saved file nor a later relayout keeps the value.
+    let objs: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R /NeedsRendering true /AcroForm 7 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [8 0 R] >>".to_vec(),
+        stream("", b"BT ET"),
+        FONT.replace("95 0 R", "6 0 R").into_bytes(),
+        widths(),
+        b"<< /Fields [8 0 R] /XFA 9 0 R /PCXfaLayout << /Pages 1 /Fields 1 >> >>".to_vec(),
+        b"<< /Type /Annot /Subtype /Widget /FT /Tx /T (ssn) /V (SSN-987-65-4321) /Rect [72 200 272 220] /P 3 0 R >>".to_vec(),
+        b"[(datasets) 10 0 R (template) 11 0 R]".to_vec(),
+        stream(
+            "",
+            b"<xfa:datasets xmlns:xfa=\"http://www.xfa.org/schema/xfa-data/1.0/\"><xfa:data><ssn>SSN-987-65-4321</ssn></xfa:data></xfa:datasets>",
+        ),
+        stream(
+            "",
+            b"<template xmlns=\"http://www.xfa.org/schema/xfa-template/3.3/\"><subform name=\"form1\"><field name=\"ssn\"/></subform></template>",
+        ),
+    ];
+    let mut doc = pdf(objs);
+    assert_eq!(pdfcraft_forms::fields(&doc).len(), 1, "the XFA-bound field is present before");
+    mark(&mut doc, 0, &[[72.0, 200.0, 272.0, 220.0]], "");
+    let r = apply(&mut doc, None).unwrap();
+    assert!(r.fields >= 1 && r.xfa_removed, "{r:?}");
+
+    let bytes = write_full(&doc, &SaveOptions::default()).unwrap();
+    assert!(!bytes.windows(15).any(|w| w == b"SSN-987-65-4321"), "the redacted value survived in the datasets packet");
+
+    let saved = Document::open(Arc::new(bytes)).unwrap();
+    let cat = saved.get(saved.root().unwrap()).as_dict().cloned().unwrap();
+    let acro = saved.resolve(cat.get(b"AcroForm").unwrap()).as_dict().cloned().unwrap();
+    assert!(acro.get(b"XFA").is_none(), "/XFA is gone from the saved AcroForm");
+    assert!(acro.get(b"PCXfaLayout").is_none(), "the cached layout mark is cleared");
+    assert!(cat.get(b"NeedsRendering").is_none(), "/NeedsRendering is cleared");
 }
 
 #[test]
@@ -403,6 +533,33 @@ fn hidden_information_is_counted_and_removed() {
     assert!(shown, "the field's value stays visible as page content");
 }
 
+/// Issue #1325: removing comments keeps the annotations that are not comments: the multimedia
+/// and print-production ones (Watermark, PrinterMark, TrapNet, Screen, Movie, RichMedia, 3D).
+#[test]
+fn removing_comments_keeps_annotations_that_are_not_comments() {
+    use crate::sanitize::{Hidden, remove_hidden, scan};
+    let kept = ["Link", "Watermark", "PrinterMark", "TrapNet", "Screen", "Movie", "RichMedia", "3D"];
+    let annots: Vec<String> = (0..=kept.len()).map(|i| format!("{} 0 R", i + 4)).collect();
+    let mut objs = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << >> /Annots [{}] >>", annots.join(" ")).into_bytes(),
+        b"<< /Type /Annot /Subtype /Square /Rect [10 10 50 50] >>".to_vec(),
+    ];
+    objs.extend(kept.iter().map(|s| format!("<< /Type /Annot /Subtype /{s} /Rect [60 60 90 90] >>").into_bytes()));
+    let mut doc = pdf(objs);
+    let counts: std::collections::HashMap<Hidden, usize> = scan(&doc).into_iter().collect();
+    assert_eq!(counts[&Hidden::Comments], 1, "only the Square");
+    assert_eq!(remove_hidden(&mut doc, &[Hidden::Comments]).unwrap(), [(Hidden::Comments, 1)]);
+    let doc = reopen(&doc);
+    let p = pdfcraft_model::pages(&doc).swap_remove(0);
+    let left: Vec<String> = annots_of(&doc, &p.dict)
+        .iter()
+        .filter_map(|a| doc.resolve(a).as_dict().and_then(|d| d.name(b"Subtype")).map(|s| String::from_utf8_lossy(s).into_owned()))
+        .collect();
+    assert_eq!(left, kept);
+}
+
 #[test]
 fn overlay_text_takes_its_font_size_colour_alignment_and_repeats() {
     let mut doc = one_page(b"BT /F1 12 Tf 20 250 Td (Secret salary figures) Tj ET", "", Vec::new());
@@ -428,6 +585,39 @@ fn overlay_text_takes_its_font_size_colour_alignment_and_repeats() {
         .and_then(|r| r.get(b"Font").and_then(|f| doc.resolve(f).as_dict().cloned()))
         .unwrap();
     assert!(fonts.contains(b"PCCour") && !fonts.contains(b"PCTimes"));
+}
+
+/// Overlay text the standard fonts can't draw: refused when it is marked, and for a mark another
+/// program made, refused when it is applied, before anything is redacted, rather than burnt into
+/// the page as `?`.
+#[test]
+fn overlay_text_the_standard_fonts_cannot_draw_is_refused() {
+    let mut doc = one_page(b"BT /F1 12 Tf 20 250 Td (Secret salary figures) Tj ET", "", Vec::new());
+    let look = pdfcraft_annot::OverlayLook::default();
+    let mark = |overlay: &str| Shape::Redact { quads: vec![rect_quad([10.0, 200.0, 290.0, 270.0])], overlay: overlay.into(), look };
+    let add = |doc: &mut Document, shape: Shape| {
+        let style = Style::default_for(&shape);
+        add_annotation(doc, &NewAnnotation { page: 0, shape, style, contents: String::new(), author: "T".into() }, &Meta::default())
+    };
+    let err = add(&mut doc, mark("机密")).unwrap_err().to_string();
+    assert!(err.contains("\"机\" (U+673A)") && err.contains("overlay text"), "{err}");
+    assert!(marks(&doc).is_empty());
+    // A mark whose overlay text was written by another program.
+    add(&mut doc, mark("REDACTED")).unwrap();
+    let obj = marks(&doc)[0].obj;
+    doc.update_dict(obj, |d| d.set(b"OverlayText".to_vec(), pdfcraft_cos::PdfString::text("机密"))).unwrap();
+    let before = content(&doc, 0);
+    let err = apply(&mut doc, None).unwrap_err();
+    assert!(
+        matches!(&err, RedactError::Undrawable(m) if m.contains("page 1") && m.contains("U+673A") && m.contains("nothing was redacted")),
+        "{err:?}"
+    );
+    assert_eq!(content(&doc, 0), before, "nothing was redacted");
+    assert_eq!(marks(&doc).len(), 1, "the mark is still there");
+    // Cleared, it applies.
+    doc.update_dict(obj, |d| d.set(b"OverlayText".to_vec(), pdfcraft_cos::PdfString::text(""))).unwrap();
+    apply(&mut doc, None).unwrap();
+    assert!(!content(&reopen(&doc), 0).contains("Secret"));
 }
 
 #[test]
@@ -467,4 +657,72 @@ fn tags_lose_what_redaction_removed() {
     let public = doc.get(pdfcraft_cos::ObjRef::new(10, 0)).as_dict().cloned().unwrap();
     assert_eq!(public.get(b"K").and_then(Object::as_int), Some(1));
     assert!(public.get(b"ActualText").is_some(), "untouched content keeps its tags");
+}
+
+fn assert_no_secret(doc: &Document, secret: &[u8]) {
+    let saved = reopen(doc);
+    for (r, object) in saved.scan_objects() {
+        let mut bytes = Vec::new();
+        pdfcraft_cos::serialize(&object, &mut bytes);
+        assert!(!bytes.windows(secret.len()).any(|w| w == secret), "secret remains in object {r:?}");
+        if let Object::Stream(s) = &*object {
+            let data = s.decoded().unwrap();
+            assert!(!data.windows(secret.len()).any(|w| w == secret), "secret remains in stream {r:?}");
+        }
+    }
+}
+
+#[test]
+fn named_mcids_and_indirect_content_references_lose_descriptions() {
+    let mut doc = one_page(
+        b"/P /P0 BDC BT /F1 10 Tf 10 200 Td (SECRET) Tj ET EMC /P <</MCID 1>> BDC BT /F1 10 Tf 10 100 Td (Public) Tj ET EMC",
+        "/Properties << /P0 7 0 R >>",
+        vec![
+            b"<< /MCID 0 >>".to_vec(),
+            b"<< /Type /StructTreeRoot /K 9 0 R >>".to_vec(),
+            b"<< /S /Document /P 8 0 R /K [10 0 R 11 0 R] >>".to_vec(),
+            b"<< /S /P /P 9 0 R /Pg 3 0 R /ActualText (LEAK_TAG) /K 12 0 R >>".to_vec(),
+            b"<< /S /P /P 9 0 R /Pg 3 0 R /ActualText (Public) /K 1 >>".to_vec(),
+            b"<< /Type /MCR /Pg 3 0 R /MCID 0 >>".to_vec(),
+        ],
+    );
+    doc.update_dict(doc.root().unwrap(), |d| d.set(b"StructTreeRoot".to_vec(), Object::Ref(ObjRef::new(8, 0)))).unwrap();
+    mark(&mut doc, 0, &[[5.0, 195.0, 60.0, 212.0]], "");
+    assert_eq!(apply(&mut doc, None).unwrap().tags, 1);
+    assert_no_secret(&doc, b"LEAK_");
+    assert!(!doc.get(ObjRef::new(10, 0)).as_dict().unwrap().contains(b"K"));
+    assert_eq!(doc.get(ObjRef::new(11, 0)).as_dict().unwrap().get(b"ActualText").unwrap().as_string().unwrap().to_text(), "Public");
+}
+
+#[test]
+fn form_tags_are_cleaned_and_surviving_references_point_at_the_copy() {
+    let mut doc = one_page(
+        b"/Fm Do",
+        "/XObject << /Fm 7 0 R >>",
+        vec![
+            stream(
+                "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /StructParents 0 /Resources << /Font << /F1 5 0 R >> /Properties << /P0 << /MCID 0 >> >> >>",
+                b"/P /P0 BDC BT /F1 10 Tf 10 200 Td (SECRET) Tj ET EMC /P <</MCID 1>> BDC BT /F1 10 Tf 10 100 Td (Public) Tj ET EMC",
+            ),
+            b"<< /Type /StructTreeRoot /K 9 0 R /ParentTree 14 0 R >>".to_vec(),
+            b"<< /S /Document /P 8 0 R /K [10 0 R 11 0 R] >>".to_vec(),
+            b"<< /S /P /P 9 0 R /Pg 3 0 R /ActualText (LEAK_FORM_TAG) /K 12 0 R >>".to_vec(),
+            b"<< /S /P /P 9 0 R /Pg 3 0 R /ActualText (Public) /K 13 0 R >>".to_vec(),
+            b"<< /Type /MCR /Pg 3 0 R /Stm 7 0 R /MCID 0 >>".to_vec(),
+            b"<< /Type /MCR /Pg 3 0 R /Stm 7 0 R /StmOwn 7 0 R /MCID 1 >>".to_vec(),
+            b"<< /Nums [0 [10 0 R 11 0 R]] >>".to_vec(),
+        ],
+    );
+    doc.update_dict(doc.root().unwrap(), |d| d.set(b"StructTreeRoot".to_vec(), Object::Ref(ObjRef::new(8, 0)))).unwrap();
+    mark(&mut doc, 0, &[[5.0, 195.0, 60.0, 212.0]], "");
+    apply(&mut doc, None).unwrap();
+    assert_no_secret(&doc, b"LEAK_");
+    assert_no_secret(&doc, b"SECRET");
+    assert!(!doc.get(ObjRef::new(10, 0)).as_dict().unwrap().contains(b"K"));
+    let reference = doc.get(ObjRef::new(13, 0)).as_dict().unwrap().get(b"Stm").unwrap().as_ref().unwrap();
+    assert_ne!(reference, ObjRef::new(7, 0));
+    assert_eq!(doc.get(ObjRef::new(13, 0)).as_dict().unwrap().get(b"StmOwn").unwrap().as_ref(), Some(reference));
+    let Object::Stream(s) = &*doc.get(reference) else { panic!() };
+    assert!(String::from_utf8(s.decoded().unwrap()).unwrap().contains("Public"));
+    assert!(doc.get(ObjRef::new(11, 0)).as_dict().unwrap().contains(b"ActualText"));
 }

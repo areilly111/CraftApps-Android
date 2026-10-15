@@ -35,11 +35,13 @@ pub mod highlight;
 #[cfg(feature = "jxl")]
 mod jxl;
 pub mod ljpeg;
+pub(crate) mod llvc;
 pub mod opcodes;
 mod preview;
 pub mod profile;
 mod saturation;
 pub mod semantic;
+pub mod sparse;
 pub mod spectral;
 mod tiffraw;
 mod unpack;
@@ -52,7 +54,10 @@ pub use lightcraft_geom::Orientation;
 pub use lightcraft_meta::Metadata;
 pub use lightcraft_raster::Rgb32f;
 pub use opcodes::{Opcode, OpcodeLists};
-pub use preview::{PreviewColorSpace, embedded_preview, embedded_preview_color_space, embedded_preview_dynamic_range_optimized};
+pub use preview::{
+    PREVIEW_PREFIX, PreviewColorSpace, PreviewRange, bounded_preview, embedded_preview, embedded_preview_color_space,
+    embedded_preview_dynamic_range_optimized, embedded_preview_from_range,
+};
 pub use semantic::{SemanticMask, semantic_masks};
 
 use lightcraft_color::Xy;
@@ -103,6 +108,8 @@ pub enum RawFormat {
     /// full-resolution CFA image with black/white levels, a default crop and `AsShotNeutral`):
     /// Hasselblad 3FR and FFF. Read by the DNG reader.
     CfaTiff,
+    /// Kodak DCS520C TIFF: a two-component lossless JPEG CFA sub-IFD with a response curve (`vendor::kodak`).
+    KodakDcs,
     /// Another TIFF-based raw (3FR, IIQ, ERF, KDC, DCR, MOS, …).
     OtherTiff,
 }
@@ -123,6 +130,7 @@ impl RawFormat {
                 | RawFormat::Pef
                 | RawFormat::CfaTiff
                 | RawFormat::Srw
+                | RawFormat::KodakDcs
         )
     }
 }
@@ -167,13 +175,21 @@ pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
     let pentax_raw = has_cfa || t.exif().is_some_and(|e| e.contains(vendor::EXIF_CFA_PATTERN));
     // Samsung's raw IFD uses private compressions 32769..=32773 (`vendor::srw`), 32773 being PackBits elsewhere
     let samsung_raw = has_cfa || t.all_ifds().iter().any(|i| i.u16(lightcraft_tiff::tags::COMPRESSION).is_some_and(|c| (32769..=32773).contains(&c)));
+    // Sony raws without a CFA IFD (#702): SRF (DSC-F828), whose IFD0 looks like RGB but holds 14-bit samples (12 or
+    // 14 count: raw sensor depths; the raw is in Sony's SRF blocks), and the DSLR-A100, whose IFD0 is an old-style
+    // JPEG thumbnail (compression 6, which today's TIFF writers don't produce) and whose `SubIFDs` tag addresses its
+    // raw data. A camera-authored or exported TIFF has 8- or 16-bit samples, and its SubIFDs hold ordinary images
+    let model = t.find(lightcraft_tiff::tags::MODEL).and_then(|e| e.value.as_str()).unwrap_or_default().trim().to_ascii_uppercase();
+    let sony_raw = has_cfa
+        || ifd0.u64s(lightcraft_tiff::tags::BITS_PER_SAMPLE).is_some_and(|b| b.iter().any(|v| matches!(v, 12 | 14)))
+        || (model == "DSLR-A100" && ifd0.u16(lightcraft_tiff::tags::COMPRESSION) == Some(6) && ifd0.contains(lightcraft_tiff::tags::SUB_IFDS));
     if make.starts_with("CANON") && t.ifds.len() >= 4 && t.ifds[3].u16(lightcraft_tiff::tags::COMPRESSION) == Some(6) {
         return Some(RawFormat::Cr2);
     }
     if make.starts_with("NIKON") && has_cfa {
         return Some(if t.all_ifds().len() > 1 { RawFormat::Nef } else { RawFormat::Nrw });
     }
-    if make.starts_with("SONY") && has_cfa {
+    if make.starts_with("SONY") && sony_raw {
         return Some(RawFormat::Arw);
     }
     if (make.starts_with("PENTAX") || make.starts_with("RICOH")) && pentax_raw {
@@ -185,6 +201,9 @@ pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
     }
     if make.starts_with("SAMSUNG") && samsung_raw {
         return Some(RawFormat::Srw);
+    }
+    if vendor::kodak::raw_ifd(&t, bytes).is_some() {
+        return Some(RawFormat::KodakDcs);
     }
     if dng::is_plain_cfa_tiff(&t, bytes) {
         return Some(RawFormat::CfaTiff);
@@ -316,10 +335,13 @@ pub fn decode(bytes: &[u8]) -> Result<RawImage> {
 /// [`RawImage::info`] of the decoded image. Black and white levels are not included (some formats
 /// measure them from the samples).
 ///
-/// A few uncompressed vendor formats derive part of this from the samples themselves (Nikon
-/// NEF: optically masked trailing columns; Olympus ORF: the bit depth of 16-bit files, and the CFA
-/// phase of files without an Exif `CFAPattern`; Pentax PEF without crop tags: dark borders); for
-/// those the samples are read (unpacked, nothing to decompress) and dropped.
+/// A few vendor formats derive part of this from the samples themselves (Nikon NEF: optically
+/// masked trailing columns; Olympus ORF: the bit depth of 16-bit files, and the CFA phase of files
+/// without an Exif `CFAPattern`; Pentax PEF without crop tags: dark borders). Those read the
+/// samples they need and drop them: ORF and PEF unpack their uncompressed data; NEF reads only the
+/// first 128 rows (`vendor::nef::MASK_ROWS`), which both the probe and the full decode judge the masked
+/// columns from, so a compressed NEF probes in a few milliseconds instead of decoding its whole
+/// Huffman stream (issue #708).
 pub fn probe_info(bytes: &[u8]) -> Result<RawInfo> {
     decode_with(bytes, Mode::Header).map(RawImage::into_info)
 }
@@ -339,7 +361,7 @@ fn decode_with(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         RawFormat::Dng => dng::decode(bytes, mode).map(lift_clipped),
         RawFormat::Cr2 => vendor::cr2::decode(bytes, mode),
         RawFormat::Cr3 => vendor::cr3::decode(bytes, mode),
-        RawFormat::Nef | RawFormat::Nrw => vendor::nef::decode(bytes),
+        RawFormat::Nef | RawFormat::Nrw => vendor::nef::decode(bytes, mode),
         RawFormat::Arw => vendor::arw::decode(bytes, mode),
         RawFormat::Raf => vendor::raf::decode(bytes, mode),
         RawFormat::Rw2 => vendor::rw2::decode(bytes, mode),
@@ -347,6 +369,7 @@ fn decode_with(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         RawFormat::Orf => vendor::orf::decode(bytes, mode),
         RawFormat::CfaTiff => dng::decode_as(bytes, mode, RawFormat::CfaTiff).map(lift_clipped),
         RawFormat::Srw => vendor::srw::decode(bytes, mode),
+        RawFormat::KodakDcs => vendor::kodak::decode(bytes, mode),
         RawFormat::OtherTiff => Err(RawError::Unsupported(other_tiff_reason(bytes))),
         other => Err(RawError::Unsupported(format!("{other:?} files are not decoded yet"))),
     }
@@ -941,6 +964,35 @@ mod tests {
             cam.set_child(t::EXIF_IFD, exif_size(400, 300));
             assert_eq!(probe(&padded(&[cam])), None, "{make} TIFF should not be probed as raw");
         }
+    }
+
+    /// #702: two Sony layouts carry no CFA IFD, so the raw evidence #281 asks of Sony files has to
+    /// include them: SRF (an RGB-looking IFD0 of 14-bit samples) and the DSLR-A100 (raw data addressed
+    /// by `SubIFDs`). An 8-bit TIFF from the same bodies, or a SubIFDs TIFF from another Sony model,
+    /// stays an ordinary image.
+    #[test]
+    fn sony_raws_without_a_cfa_ifd_are_still_raws() {
+        let sony = |model: &str, bits: u16, compression: u16, sub_ifd: Option<IfdBuilder>| {
+            let mut ifd = rgb_ifd(400, 300);
+            ifd.set(t::MAKE, Value::Ascii("SONY".into()));
+            ifd.set(t::MODEL, Value::Ascii(model.into()));
+            ifd.set(t::BITS_PER_SAMPLE, Value::Short(vec![bits; 3]));
+            ifd.set(t::COMPRESSION, Value::Short(vec![compression]));
+            if let Some(child) = sub_ifd {
+                ifd.set_child(t::SUB_IFDS, child);
+            }
+            probe(&write(&[ifd]))
+        };
+        let raw_block = || Some(rgb_ifd(64, 48)); // stands in for the A100's raw-data pointer
+        assert_eq!(sony("DSC-F828", 14, 1, None), Some(RawFormat::Arw), "SRF");
+        assert_eq!(sony("DSC-F828", 12, 1, None), Some(RawFormat::Arw), "12-bit samples count too");
+        assert_eq!(sony("DSLR-A100", 8, 6, raw_block()), Some(RawFormat::Arw), "A100: old-JPEG IFD0 and SubIFDs");
+        assert_eq!(sony("DSC-F828", 8, 1, None), None, "an 8-bit TIFF");
+        assert_eq!(sony("DSC-F828", 16, 1, None), None, "a 16-bit TIFF");
+        // TIFFs exported from A100 photos, with a thumbnail in SubIFDs (Codex review of #702)
+        assert_eq!(sony("DSLR-A100", 8, 1, Some(rgb_ifd(64, 48))), None, "an 8-bit A100 TIFF with a SubIFDs thumbnail");
+        assert_eq!(sony("DSLR-A100", 16, 8, Some(rgb_ifd(64, 48))), None, "a 16-bit A100 TIFF with a SubIFDs thumbnail");
+        assert_eq!(sony("ILCE-7M4", 8, 6, raw_block()), None, "the A100's layout under another model");
     }
 
     // --- containers that are recognised but not decoded, with a preview ---

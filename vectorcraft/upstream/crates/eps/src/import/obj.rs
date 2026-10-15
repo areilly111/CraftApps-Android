@@ -2,6 +2,7 @@
 
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use super::data::Stream;
@@ -193,6 +194,14 @@ impl<T: Clone> Shared<T> {
     /// Do both see the same storage?
     pub fn shares(&self, o: &Self) -> bool {
         Rc::ptr_eq(&self.buf, &o.buf)
+    }
+}
+
+/// Hashes what [`Shared::same`] compares: the storage and the run of it.
+impl<T> Hash for Shared<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Rc::as_ptr(&self.buf).hash(state);
+        (self.at, self.len).hash(state);
     }
 }
 

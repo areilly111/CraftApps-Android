@@ -16,14 +16,15 @@ use std::sync::Arc;
 #[cfg(test)]
 mod recovery_tests;
 
-/// Everything File › Open reads: PhotoCraft, Photoshop and Affinity documents, flat images, and
+/// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster and Affinity documents, flat images, and
 /// Photoshop brushes (.abr), gradients (.grd), swatches (.aco, .ase) and keyboard shortcut sets
 /// (.kys), which go to the preset libraries and Edit › Keyboard Shortcuts.
 const OPEN_EXTS: &[&str] = &[
-    "pcraft", "pdn", "psd", "psb", "psdt", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico", "qoi", "exr", "hdr", "pbm", "pgm", "ppm",
-    "pam", "pfm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase",
-    "kys", "af", "afdesign", "afphoto", "afpub",
+    "pcraft", "pdn", "ora", "kra", "psd", "psb", "psdt", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico", "qoi", "exr", "hdr", "pbm",
+    "pgm", "ppm", "pam", "pfm", "pcx", "fits", "fit", "fts", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf",
+    "abr", "grd", "svg", "svgz", "aco", "ase", "kys", "af", "afdesign", "afphoto", "afpub",
 ];
+const SVG_EXTS: &[&str] = &["svg", "svgz"];
 
 /// Open dialog extensions that also match uppercase and mixed-case names (`IMG_0001.JPG`).
 /// On Linux and the BSDs rfd turns each extension into a case-sensitive `*.ext` glob for the XDG
@@ -35,18 +36,32 @@ fn open_filter_extensions(extensions: &[&str]) -> Vec<String> {
     extensions.iter().map(|ext| if case_sensitive_globs { ext.chars().map(class).collect() } else { ext.to_string() }).collect()
 }
 
+/// An explicit SVG filter keeps vector artwork discoverable even when a native picker defaults to
+/// the PhotoCraft-only filter. SVG is also included in All Formats for normal multi-format opens.
+fn open_filters() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        ("All Formats", open_filter_extensions(OPEN_EXTS)),
+        ("PhotoCraft", open_filter_extensions(&["pcraft"])),
+        ("OpenRaster", open_filter_extensions(&["ora"])),
+        ("Krita", open_filter_extensions(&["kra"])),
+        ("SVG", open_filter_extensions(SVG_EXTS)),
+    ]
+}
+
 /// File › Save As formats: (filter name, extensions). The filter matching the suggested name's
 /// extension comes first, so a .pcraft document saves as .pcraft by default and everything else
 /// keeps defaulting to PSD.
 const SAVE_FILTERS: &[(&str, &[&str])] = &[
     ("PSD Document", &["psd", "psb"]),
     ("PhotoCraft", &["pcraft"]),
+    ("OpenRaster", &["ora"]),
     ("PNG", &["png"]),
     ("JPEG", &["jpg"]),
     ("WebP", &["webp"]),
     ("TIFF", &["tif"]),
     ("Targa", &["tga"]),
     ("OpenEXR", &["exr"]),
+    ("FITS", &["fits", "fit"]),
 ];
 
 /// Non-document files the shell saves (Swatches panel exports): offered alone, so the dialog
@@ -88,9 +103,9 @@ fn show_file_dialog(request: FileDialogRequest, parent: Option<&eframe::Frame>, 
             let dialog = if let Some(exts) = extensions {
                 dialog.add_filter("Supported Files", &open_filter_extensions(&exts.iter().map(String::as_str).collect::<Vec<_>>()))
             } else {
-                dialog
-                    .add_filter("All Formats", &open_filter_extensions(OPEN_EXTS))
-                    .add_filter("PhotoCraft", &open_filter_extensions(&["pcraft"]))
+                open_filters()
+                    .into_iter()
+                    .fold(dialog, |dialog, (name, extensions)| dialog.add_filter(name, &extensions))
                     .add_filter("Paint.NET", &open_filter_extensions(&["pdn"]))
             };
             if multiple {
@@ -100,6 +115,13 @@ fn show_file_dialog(request: FileDialogRequest, parent: Option<&eframe::Frame>, 
                 let picked = dialog.pick_file();
                 Box::pin(async move { picked.await.map(|file| FileDialogAnswer::Paths(vec![path_of(&file)])) })
             }
+        }
+        FileDialogRequest::Folder { initial_dir } => {
+            if let Some(dir) = initial_dir {
+                dialog = dialog.set_directory(dir);
+            }
+            let picked = dialog.pick_folder();
+            Box::pin(async move { picked.await.map(|folder| FileDialogAnswer::FolderTo(path_of(&folder))) })
         }
         FileDialogRequest::Save { suggested } => {
             for (name, exts) in save_filters(&suggested) {
@@ -116,7 +138,11 @@ fn show_file_dialog(request: FileDialogRequest, parent: Option<&eframe::Frame>, 
         }
     };
     // Without the thread the reply is dropped unanswered, which the app takes as Cancel.
-    if let Err(e) = std::thread::Builder::new().name("file dialog".into()).spawn(move || reply.send(block_on(answer))) {
+    if let Err(e) = std::thread::Builder::new().name("file dialog".into()).spawn(move || {
+        // An empty answer from a system with no dialog backend isn't a Cancel (#3354).
+        let answer = block_on(answer).or_else(|| crate::file_dialog_probe::known_problem().map(FileDialogAnswer::Unavailable));
+        reply.send(answer)
+    }) {
         log::error!("couldn't wait for the file dialog: {e}");
     }
 }
@@ -173,6 +199,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     photocraft_format::atomic_write(path, bytes).map_err(|e| e.to_string())
 }
 
+/// [`write_atomic`] reporting the fraction written (a background save's progress, #3389).
+fn write_atomic_progress(path: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> Result<(), String> {
+    photocraft_format::atomic_write_progress(path, bytes, progress).map_err(|e| e.to_string())
+}
+
 fn export_options(settings: &photocraft_ui_egui::ExportSettings) -> photocraft_io::ExportOptions {
     let mut opts = photocraft_io::ExportOptions::default();
     if let Some(q) = settings.jpeg_quality {
@@ -184,25 +215,47 @@ fn export_options(settings: &photocraft_ui_egui::ExportSettings) -> photocraft_i
     }
     opts.tiff_layers = settings.tiff_layers;
     opts.xmp = if settings.xmp_all { photocraft_io::XmpEmbed::All } else { photocraft_io::XmpEmbed::None };
+    opts.tga_bits = settings.tga_bits;
+    opts.image_previews = settings.image_previews;
     opts
 }
 
-/// A save on a worker thread (`Services::save_file`, #2017): encode, then write atomically.
-/// Cancelling while encoding leaves the file on disk untouched; once writing starts the save
-/// can't be cancelled.
+/// The share of a save's progress bar that encoding fills; writing the file fills the rest. A
+/// 24 MP, 5-layer PSD (572 MB) takes about 3 s to encode and 0.5 s or more to write and flush.
+const ENCODE_SHARE: f32 = 0.85;
+
+/// A save on a worker thread (`Services::save_file` and `Services::automation_save`, #2017):
+/// encode, then write through `write`. Cancelling while encoding leaves the target untouched;
+/// once writing starts the save can't be cancelled. The encoder's progress fills the first
+/// [`ENCODE_SHARE`] of the job's progress, so the status bar and tab read "Saving NN%" (#3389).
+fn save_through(
+    doc: &Document,
+    path: &str,
+    settings: &photocraft_ui_egui::ExportSettings,
+    ctl: &photocraft_ui_egui::jobs_ui::SaveCtl,
+    write: impl Fn(&str, &[u8], &dyn Fn(f32)) -> Result<(), String>,
+) -> Result<Vec<String>, String> {
+    ctl.progress(0.0, "Encoding");
+    let opts = export_options(settings);
+    let cancelled = || ctl.check().is_err();
+    let progress = |f: f32| ctl.progress(f * ENCODE_SHARE, "");
+    let interrupt = photocraft_raster::Interrupt::new(&cancelled, &progress);
+    let r = crate::crash_guard::guard("Save", || photocraft_io::export_with(doc, path, &opts, &interrupt).map_err(|e| e.to_string()))?;
+    ctl.commit()?;
+    ctl.progress(ENCODE_SHARE, "Writing");
+    // The last bit is the flush and rename after the last chunk: 100% only once they're done.
+    write(path, &r.bytes, &|f| ctl.progress(ENCODE_SHARE + (0.99 - ENCODE_SHARE) * f, ""))?;
+    ctl.progress(1.0, "");
+    Ok(r.warnings)
+}
+
 fn save_file(
     doc: &Document,
     path: &str,
     settings: &photocraft_ui_egui::ExportSettings,
     ctl: &photocraft_ui_egui::jobs_ui::SaveCtl,
 ) -> Result<Vec<String>, String> {
-    ctl.progress(0.0, "Encoding");
-    let opts = export_options(settings);
-    let r = crate::crash_guard::guard("Save", || photocraft_io::export(doc, path, &opts).map_err(|e| e.to_string()))?;
-    ctl.commit()?;
-    ctl.progress(0.0, "Writing");
-    write_atomic(Path::new(path), &r.bytes)?;
-    Ok(r.warnings)
+    save_through(doc, path, settings, ctl, |p, b, progress| write_atomic_progress(Path::new(p), b, progress))
 }
 
 type SharedRecovery = Rc<RefCell<Option<RecoveryStore>>>;
@@ -302,6 +355,18 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
     let automation_write = automation.clone().map(|workspace| {
         Box::new(move |path: &str, bytes: &[u8]| workspace.write(path, bytes).map_err(|error| error.to_string())) as photocraft_ui_egui::AutomationWriteFn
     });
+    let automation_open_pcraft = automation.clone().map(|workspace| {
+        Box::new(move |path: &str| {
+            let name = Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path).to_string();
+            let opened = crate::crash_guard::guard("Open", || workspace.open_pcraft(path).map_err(|e| e.to_string()))?;
+            Ok(opened.map(|doc| (name, doc)))
+        }) as photocraft_ui_egui::AutomationOpenPcraftFn
+    });
+    let automation_save = automation.clone().map(|workspace| {
+        std::sync::Arc::new(move |doc: &Document, path: &str, settings: &photocraft_ui_egui::ExportSettings, ctl: &photocraft_ui_egui::jobs_ui::SaveCtl| {
+            save_through(doc, path, settings, ctl, |p, b, _| workspace.write(p, b).map_err(|e| e.to_string()))
+        }) as photocraft_ui_egui::SaveFileFn
+    });
     let step: fn(&str, &serde_json::Value) -> photocraft_engine::Result<()> = photocraft_automation::workspace::authorize_desktop_engine_step;
     let automation_authorize = automation.is_some().then_some(step);
     let automation_command = automation.map(|_| {
@@ -310,8 +375,10 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         }) as photocraft_ui_egui::AutomationCommandFn
     });
     Services {
-        import: Some(Box::new(|name: &str, bytes: &[u8]| {
-            crate::crash_guard::guard("Open", || photocraft_io::import(name, bytes).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string()))
+        import: Some(Box::new(|name: &str, bytes: &[u8], max_svg_group_depth: usize| {
+            crate::crash_guard::guard("Open", || {
+                photocraft_io::import_with_svg_group_depth(name, bytes, max_svg_group_depth).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
+            })
         })),
         export: Some(Box::new(|doc: &Document, path: &str, settings: &photocraft_ui_egui::ExportSettings| {
             let opts = export_options(settings);
@@ -322,6 +389,8 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         write: Some(Box::new(|path: &str, bytes: &[u8]| write_atomic(Path::new(path), bytes))),
         automation_read,
         automation_write,
+        automation_open_pcraft,
+        automation_save,
         automation_command,
         automation_authorize,
         encode_png: Some(Box::new(|w, h, rgba| {
@@ -330,6 +399,7 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         })),
         inbox: None,
         open_url: Some(Box::new(|url: &str| open::that(url).map_err(|e| e.to_string()))),
+        beep: Some(platform_beep),
         clipboard_set_image: Some({
             let clip = clip.clone();
             Box::new(move |w: u32, h: u32, px: &[u8]| {
@@ -373,6 +443,21 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         preset_store: None,
         is_wayland: false,
         ..recovery_services(recovery_dir())
+    }
+}
+
+/// Preferences ▸ General ▸ Beep When Done: the platform's default information beep.
+fn platform_beep() {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = winsafe::MessageBeep(winsafe::co::MBP::OK);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // No beep API among this app's other platforms' dependencies: write the terminal bell
+        // (audible when launched from a terminal, which is the same cue macOS terminals use).
+        use std::io::Write as _;
+        let _ = std::io::stdout().write_all(b"\x07").and_then(|()| std::io::stdout().flush());
     }
 }
 
@@ -475,6 +560,9 @@ mod tests {
             assert!(!matches(glob, &format!("{ext}x")) && !matches(glob, &ext[..ext.len() - 1]), "{glob} matches only .{ext}");
         }
         assert!(!globs.iter().any(|glob| matches(glob, "txt")));
+        let svg_filter = open_filters().into_iter().find(|(name, _)| *name == "SVG").map(|(_, exts)| exts).unwrap_or_default();
+        assert_eq!(svg_filter, open_filter_extensions(SVG_EXTS));
+        assert!(svg_filter.iter().any(|glob| matches(glob, "svg")) && svg_filter.iter().any(|glob| matches(glob, "svgz")));
     }
 
     #[cfg(not(all(unix, not(target_os = "macos"))))]
@@ -482,6 +570,7 @@ mod tests {
     fn open_filters_keep_literal_extensions_on_windows_and_macos() {
         assert_eq!(open_filter_extensions(OPEN_EXTS), OPEN_EXTS);
         assert_eq!(open_filter_extensions(&["pcraft"]), ["pcraft"]);
+        assert_eq!(open_filters().into_iter().find(|(name, _)| *name == "SVG").map(|(_, exts)| exts), Some(vec!["svg".to_string(), "svgz".to_string()]));
     }
 
     #[test]

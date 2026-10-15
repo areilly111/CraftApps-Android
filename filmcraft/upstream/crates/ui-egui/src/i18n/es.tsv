@@ -677,6 +677,7 @@
 	Extract (')	Extraer (')
 	Export Frame: use Export mode (M6)	Exportar fotograma: usa el modo Exportar (M6)
 	Button Editor	Editor de botones
+	More transport controls	Más controles de reproducción
 	Multi-Camera Record on	Grabación multicámara activada
 	Multi-Camera Record off	Grabación multicámara desactivada
 	{first} - Merged	{first} - Combinado
@@ -808,6 +809,7 @@
 	Relink others automatically	Volver a vincular los demás automáticamente
 	Search in:	Buscar en:
 	Browse…	Examinar…
+	A file dialog is already open	Ya hay un cuadro de diálogo de archivos abierto
 	Exact name matches only	Solo coincidencias exactas de nombre
 	No candidates yet — Search a folder or Locate the file.	Aún no hay candidatos: busca en una carpeta o localiza el archivo.
 	✔ same file	✔ mismo archivo
@@ -2803,8 +2805,8 @@
 	Ignore Audio	Ignorar audio
 	Ignore Video	Ignorar video
 	Apply a cut at each detected cut point	Aplicar un corte en cada punto de corte detectado
-	Create a subclip for each detected cut point	Crear un subclip para cada punto de corte detectado
-	Generate clip markers at each detected cut point	Generar marcadores de clip en cada punto de corte detectado
+	Create a bin of subclips from each detected cut point	Crear una bandeja de subclips a partir de cada punto de corte detectado
+	Create a clip marker at each detected cut point	Crear un marcador de clip en cada punto de corte detectado
 	Sensitivity:	Sensibilidad:
 	Normalize Mix Track to:	Normalizar pista de mezcla a:
 	Disabled clips	Clips desactivados
@@ -2974,9 +2976,18 @@
 	Step Forward 1 Frame	Avanzar 1 fotograma
 	Match Playhead	Igualar cabezal
 	Gang to Program	Vincular al programa
+	AAC Audio	AAC Audio
+	AAC Audio 48 kHz 320 kbps	AAC Audio 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	Audio MPEG-4 (.m4a), estéreo, AAC-LC de 48 kHz a 320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 bits
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF, estéreo, PCM de 48 kHz y 16 bits
+	FLAC	FLAC
+	FLAC 48 kHz 24-bit	FLAC 48 kHz 24 bits
+	FLAC, stereo 48 kHz 24-bit, lossless	FLAC, estéreo, 48 kHz y 24 bits, sin pérdida
+	FLAC (lossless)	FLAC (sin pérdida)
+	Compression Level	Nivel de compresión
+	0 fastest, 8 smallest	0 más rápido, 8 más pequeño
 	APV	APV
 	APV 422-10	APV 422-10
 	APV 422-12	APV 422-12
@@ -3182,6 +3193,9 @@
 	Numbered JPEG stills (quality 90)	Imágenes fijas JPEG numeradas (calidad 90)
 	Numbered Targa stills (24-bit, uncompressed)	Imágenes fijas Targa numeradas (24 bits, sin comprimir)
 	Numbered DPX stills (10-bit RGB)	Imágenes fijas DPX numeradas (RGB de 10 bits)
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	Secuencia OpenEXR
+	Numbered OpenEXR stills (half float, linear, uncompressed)	Imágenes fijas OpenEXR numeradas (coma flotante de 16 bits, lineal, sin comprimir)
 	Numbered PNG stills at the sequence's frame size	Imágenes fijas PNG numeradas al tamaño de fotograma de la secuencia
 	Numbered TIFF stills (RGB, 8-bit)	Imágenes fijas TIFF numeradas (RGB, 8 bits)
 	Opacity 0 → 100 % over the first second	Opacidad de 0 a 100 % durante el primer segundo
@@ -3482,6 +3496,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	Haz clic para seleccionar, o haz clic en un espacio vacío y arrastra para seleccionar con un marco. Usa Mayús, Alt y Ctrl para otras opciones.
 	Click to zoom in; Alt-click to zoom out.	Haz clic para acercar; Alt+clic para alejar.
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	Arrastrar: mover · Alt+clic: suave/esquina · Ctrl+clic: eliminar
+	Drag inward to round the corners	Arrastrar hacia dentro para redondear las esquinas
 	Include Alpha Channel	Incluir canal alfa
 	Sequence Settings	Ajustes de secuencia
 	Color Management	Gestión del color
@@ -3545,8 +3560,35 @@
 	Composite on the GPU when available	Componer en la GPU cuando esté disponible
 	Text to Speech	Texto a voz
 	Edit Narration	Editar narración
+
+	Dock Panel	Acoplar panel
+	Undock Panel	Desacoplar panel
+	Docking Action	Acción de acoplamiento
+	Resize floating panel	Cambiar tamaño del panel flotante
 	Project Notes	Notas del proyecto
 	Get Project Notes	Obtener notas del proyecto
 	Edit Project Notes	Editar notas del proyecto
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	Notas de este proyecto: tareas pendientes, instrucciones, números de fotograma… Se guardan con el proyecto.
 	Use Effect Shutter Angle	Usar el ángulo de obturación del efecto
+
+	Appearance Settings…	Ajustes de apariencia…
+
+	Add to favorites	Añadir a favoritos
+
+	Remove from favorites	Quitar de favoritos
+	Compression	Compresión
+	ZIP (1 scan line)	ZIP (1 línea de exploración)
+	ZIP (16 scan lines)	ZIP (16 líneas de exploración)
+	Safe graphics mode: {mode}	Modo gráfico seguro: {mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	Un inicio anterior falló con los gráficos predeterminados. Actualizar el controlador gráfico suele solucionarlo.
+	Use Default Graphics	Usar gráficos predeterminados
+	The default graphics are used from the next start.	Los gráficos predeterminados se usarán a partir del próximo inicio.
+	DirectX 12 only	Solo DirectX 12
+	software rendering	renderizado por software
+	Label Color Presets	Ajustes preestablecidos de color de etiqueta
+	{name} (Modified)	{name} (modificado)
+	Revert to the preset's colors and names	Volver a los colores y nombres del ajuste preestablecido
+	Import a preset file…	Importar un archivo de ajuste preestablecido…
+	Export the labels to a preset file…	Exportar las etiquetas a un archivo de ajuste preestablecido…
+	Show the presets folder	Mostrar la carpeta de ajustes preestablecidos
+	Delete this preset	Eliminar este ajuste preestablecido

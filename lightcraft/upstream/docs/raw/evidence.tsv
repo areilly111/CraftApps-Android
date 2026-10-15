@@ -11,6 +11,7 @@ Canon	EOS 7D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 80D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS M50 (EOS Kiss M)	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
 Canon	EOS R100	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
+Canon	EOS R5 Mark II	verified	corpus: crates/raw/tests/cr3_corpus.rs (pinned sensor hashes, docs/cr3.md); bulk: QP maps of 33,665 C-RAW files
 Canon	EOS R8	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
 Canon	EOS-5D Mark III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	GFX 100	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)

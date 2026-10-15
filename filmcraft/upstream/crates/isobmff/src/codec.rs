@@ -181,7 +181,8 @@ pub enum CodecConfig {
     /// Advanced Professional Video (`apv1` + `apvC`).
     Apv(ApvConfig),
     Aac(AacConfig),
-    /// MPEG-1/2 audio layer III (esds object type 0x69/0x6B, or QuickTime `.mp3`).
+    /// MPEG-1/2 audio (esds object type 0x69/0x6B, or QuickTime `.mp3` / `.mp2`). Usually layer
+    /// III, but these name no layer: ffmpeg stores MP2 as `mp4a` + 0x6B. Each frame header has it.
     Mp3,
     Pcm(PcmConfig),
     /// ALAC magic cookie (ALACSpecificConfig, 24 bytes, optionally followed by a channel layout).
@@ -568,11 +569,15 @@ impl AacConfig {
         let (object_type, sample_rate, channel_config) = parse_asc(&asc).unwrap_or((0, 0, 0));
         AacConfig { asc, object_type, sample_rate, channel_config, max_bitrate: 0, avg_bitrate: 0, buffer_size: 0 }
     }
-    /// Channel count implied by the channel configuration (0 if unspecified).
+    /// Channel count implied by the channel configuration (ISO/IEC 14496-3 Table 1.19 with Amd 4:
+    /// 7 and 12 are 7.1 front / back, 11 is 6.1, 13 is 22.2, 14 is 7.1 with front heights), 0 if
+    /// unspecified (a PCE) or reserved.
     pub fn channels(&self) -> u32 {
         match self.channel_config {
             1..=6 => self.channel_config as u32,
-            7 => 8,
+            11 => 7,
+            7 | 12 | 14 => 8,
+            13 => 24,
             _ => 0,
         }
     }
@@ -883,6 +888,7 @@ fn is_audio_fourcc(f: &[u8; 4]) -> bool {
             | b"ac-3"
             | b"ec-3"
             | b".mp3"
+            | b".mp2"
             | b"enca"
             | b"ulaw"
             | b"alaw"
@@ -1028,7 +1034,7 @@ pub(crate) fn parse_sample_entry(format: FourCc, payload: &[u8], handler: FourCc
                 Some(p) => parse_esds(p)?,
                 None => unknown(),
             },
-            b".mp3" => CodecConfig::Mp3,
+            b".mp3" | b".mp2" => CodecConfig::Mp3,
             b"alac" => match get(b"alac") {
                 Some(p) if p.len() >= 4 => CodecConfig::Alac { cookie: p[4..].to_vec() },
                 _ => unknown(),
@@ -1313,6 +1319,16 @@ impl SampleEntry {
     /// AAC entry (`mp4a` + `esds`) from an AudioSpecificConfig.
     pub fn aac(asc: Vec<u8>, channels: u32, sample_rate: u32) -> Self {
         Self::audio(FourCc(*b"mp4a"), CodecConfig::Aac(AacConfig::from_asc(asc)), channels, sample_rate as f64, 16)
+    }
+    /// FLAC entry (`fLaC` + `dfLa`) from the 34-byte STREAMINFO body: the only metadata block.
+    pub fn flac(streaminfo: &[u8; 34]) -> Self {
+        let mut blocks = vec![0x80, 0, 0, 34];
+        blocks.extend_from_slice(streaminfo);
+        let mut full = vec![0; 4];
+        full.extend_from_slice(&blocks);
+        let cfg = FlacConfig::parse(&full).unwrap_or(FlacConfig { metadata_blocks: blocks, ..Default::default() });
+        let (channels, rate, bits) = (u32::from(cfg.channels), f64::from(cfg.sample_rate), u16::from(cfg.bits_per_sample));
+        Self::audio(FourCc(*b"fLaC"), CodecConfig::Flac(cfg), channels, rate, bits)
     }
     /// PCM entry. The muxer picks the on-disk format (`sowt`/`twos`/`lpcm` for MOV, `ipcm`/`fpcm` for MP4).
     pub fn pcm(cfg: PcmConfig) -> Self {
@@ -1631,6 +1647,13 @@ mod tests {
     }
 
     #[test]
+    fn aac_channel_configuration_is_an_index() {
+        // 48 kHz AAC LC: configuration → channels (Table 1.19 with Amd 4; #922)
+        let channels = |c: u16| AacConfig::from_asc(((2 << 11) | (3 << 7) | (c << 3)).to_be_bytes().to_vec()).channels();
+        assert_eq!([0, 1, 6, 7, 8, 11, 12, 13, 14, 15].map(channels), [0, 1, 6, 8, 0, 7, 8, 24, 8, 0]);
+    }
+
+    #[test]
     fn aac_esds_roundtrip() {
         let e = SampleEntry::aac(vec![0x12, 0x10], 2, 44100);
         match &e.codec {
@@ -1641,6 +1664,20 @@ mod tests {
         }
         assert_eq!(roundtrip(&e, false, b"soun"), e);
         assert_eq!(roundtrip(&e, true, b"soun"), e);
+    }
+
+    /// QuickTime's `.mp2` entry (what ffmpeg writes for MP2 in MOV) is MPEG audio, as `.mp3` is,
+    /// even under a handler that does not say "sound" (#800).
+    #[test]
+    fn quicktime_mpeg_audio_entries() {
+        for fourcc in [*b".mp3", *b".mp2"] {
+            let e = SampleEntry::audio(FourCc(fourcc), CodecConfig::Mp3, 2, 48000.0, 16);
+            for handler in [b"soun", b"\0\0\0\0"] {
+                let back = roundtrip(&e, true, handler);
+                assert_eq!(back.codec, CodecConfig::Mp3, "{fourcc:?} {handler:?}");
+                assert_eq!(back.audio.map(|a| (a.channels, a.sample_rate)), Some((2, 48000.0)), "{fourcc:?} {handler:?}");
+            }
+        }
     }
 
     #[test]

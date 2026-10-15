@@ -16,6 +16,9 @@
 //! * Layered TIFFs (Photoshop layer data in tags 37724 and 34377) open with their
 //!   layers through the PSD path and are written back the same way; see `tiff_layers`.
 //! * Paint.NET PDN3 documents open as editable bitmap layers (import only).
+//! * OpenRaster (`.ora`) documents open and save with their layers, groups, blend modes,
+//!   opacity and visibility; see `ora`.
+//! * Krita (`.kra`) documents open as their merged composite; source layers are not imported.
 //! * Affinity documents (`.af`, `.afdesign`, `.afphoto`, `.afpub`) open natively
 //!   with no source save path, what isn't imported listed in the warnings; a file
 //!   whose native data can't be read opens as its embedded preview; see `affinity`.
@@ -36,15 +39,19 @@ pub mod blocks;
 mod channel_map;
 pub mod comps_map;
 pub mod effects_map;
+pub mod exr_parts;
 mod flat;
 mod gradient_bake;
+mod kra;
 pub mod linked;
 mod multichannel_map;
+mod ora;
 pub mod pattern_map;
 mod pdn;
 pub mod pixels;
 mod psd_export;
 mod psd_import;
+pub mod psd_thumbnail;
 pub mod raw;
 pub mod slices_map;
 pub mod smart_map;
@@ -59,7 +66,10 @@ use photocraft_doc::Document;
 use photocraft_psd::{PsdError, PsdFile};
 
 pub use adjust_map::ADJUSTMENT_KEYS;
-pub use flat::{document_to_image, import_tiff_page};
+pub use flat::{
+    DEFAULT_LOSSY_WEBP_QUALITY, apply_file_encoding, document_to_image, file_encoding, import_gif_frames, import_tiff_page, tga_alpha_channel_to_transparency,
+    tga_default_bits,
+};
 pub use psd_export::{PsdExportOptions, document_to_psd, document_to_psd_with};
 pub use psd_import::{psd_to_document, psd_to_document_with};
 
@@ -69,6 +79,12 @@ pub enum IoError {
     /// Paint.NET document decode failure.
     #[error("PDN: {0}")]
     Pdn(String),
+    /// OpenRaster read failure.
+    #[error("OpenRaster: {0}")]
+    Ora(String),
+    /// Krita document decode failure.
+    #[error("Krita: {0}")]
+    Kra(String),
     /// PSD parse/write failure.
     #[error("PSD: {0}")]
     Psd(#[from] PsdError),
@@ -90,7 +106,7 @@ pub enum IoError {
     /// An SVG that does not parse (or is too large to rasterise).
     #[error("SVG: {0}")]
     Svg(String),
-    /// A background import was cancelled ([`import_with`]).
+    /// A background import or save was cancelled ([`import_with`], [`export_with`]).
     #[error("cancelled")]
     Cancelled,
 }
@@ -155,11 +171,45 @@ pub struct ExportOptions {
     /// PSD/PSB always keep XMP; `.pcraft` keeps both. Everything by default, as Save As does;
     /// Export As offers None.
     pub xmp: XmpEmbed,
+    /// Targa: bits per pixel of an RGB file. `None` writes 32 when the document has an alpha
+    /// channel or transparency, else 24; Save As asks, starting at [`tga_default_bits`].
+    pub tga_bits: Option<TgaBits>,
+    /// PSD/PSB: embed the thumbnail image resource (1036), Preferences › File Handling › Image
+    /// Previews. On by default, as Photoshop's Always Save.
+    pub image_previews: bool,
 }
 
 impl Default for ExportOptions {
     fn default() -> Self {
-        ExportOptions { encode: EncodeOptions::default(), force_psb: false, tiff_layers: false, xmp: XmpEmbed::All }
+        ExportOptions { encode: EncodeOptions::default(), force_psb: false, tiff_layers: false, xmp: XmpEmbed::All, tga_bits: None, image_previews: true }
+    }
+}
+
+/// Bits per pixel of an RGB Targa (Photoshop's Targa Options › Resolution).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TgaBits {
+    /// The colours alone, no alpha.
+    Bits24,
+    /// The colours and an 8-bit alpha: the document's alpha channel, or its transparency.
+    Bits32,
+}
+
+impl TgaBits {
+    /// `24` or `32` as [`TgaBits`]; any other number is `None`.
+    pub fn from_bits(bits: u64) -> Option<Self> {
+        match bits {
+            24 => Some(TgaBits::Bits24),
+            32 => Some(TgaBits::Bits32),
+            _ => None,
+        }
+    }
+
+    /// The bits per pixel.
+    pub fn bits(self) -> u8 {
+        match self {
+            TgaBits::Bits24 => 24,
+            TgaBits::Bits32 => 32,
+        }
     }
 }
 
@@ -171,31 +221,45 @@ pub fn is_psd(bytes: &[u8]) -> bool {
 /// Imports a file. PSD/PSB, Affinity containers and camera raws are detected by magic; everything
 /// else is decoded with `photocraft-codecs`.
 pub fn import(name: &str, bytes: &[u8]) -> Result<ImportResult, IoError> {
-    import_with(name, bytes, &photocraft_raster::Interrupt::NONE)
+    import_with_svg_group_depth(name, bytes, photocraft_doc::MAX_GROUP_DEPTH)
 }
 
 /// [`import`] for a background open: checks `ctl` between stages (and per layer for PSD/PSB) and
 /// reports progress. A cancelled import fails with [`IoError::Cancelled`].
 pub fn import_with(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt) -> Result<ImportResult, IoError> {
+    import_with_svg_group_depth_and_interrupt(name, bytes, photocraft_doc::MAX_GROUP_DEPTH, ctl)
+}
+
+/// Imports a file with a configurable SVG editability threshold. SVG groups deeper than this are
+/// rasterised during conversion; the XML parser safety cap and document nesting limit stay fixed.
+pub fn import_with_svg_group_depth(name: &str, bytes: &[u8], max_group_depth: usize) -> Result<ImportResult, IoError> {
+    import_with_svg_group_depth_and_interrupt(name, bytes, max_group_depth, &photocraft_raster::Interrupt::NONE)
+}
+
+/// [`import_with`] with the SVG editable-group threshold selected by the user.
+pub fn import_with_svg_group_depth_and_interrupt(
+    name: &str,
+    bytes: &[u8],
+    max_group_depth: usize,
+    ctl: &photocraft_raster::Interrupt,
+) -> Result<ImportResult, IoError> {
     ctl.check().map_err(|_| IoError::Cancelled)?;
-    let r = import_stages(name, bytes, ctl)?;
+    let r = import_stages(name, bytes, ctl, max_group_depth)?;
     ctl.check().map_err(|_| IoError::Cancelled)?;
     ctl.progress(1.0);
     Ok(r)
 }
 
-fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt) -> Result<ImportResult, IoError> {
+fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt, max_group_depth: usize) -> Result<ImportResult, IoError> {
     // A declared native extension must reach its loader so malformed bundles retain format errors.
     if has_extension(name, photocraft_format::EXTENSION) || photocraft_format::is_pcraft(bytes) {
         return Ok(ImportResult { document: photocraft_format::load_from_bytes(bytes)?, warnings: Vec::new(), source_read_only: false, preview_only: false });
     }
     if is_psd(bytes) {
         let file = PsdFile::from_bytes(bytes)?;
-        // Nesting past the document model's cap could never be saved (.pcraft refuses it) and
-        // would overflow the importer's recursion; reject the file with the actionable limit.
-        if psd_import::group_depth(&file) > photocraft_doc::MAX_GROUP_DEPTH {
-            return Err(IoError::Unsupported(format!("layer groups nested deeper than {}", photocraft_doc::MAX_GROUP_DEPTH)));
-        }
+        // Nesting past the document model's cap could never be saved; reject the file with the
+        // actionable limit.
+        psd_import::check_group_depth(&file)?;
         ctl.check().map_err(|_| IoError::Cancelled)?;
         ctl.progress(0.05);
         let (mut document, warnings) = psd_import::psd_to_document_with(&file, ctl).ok_or(IoError::Cancelled)?;
@@ -206,16 +270,36 @@ fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt) -
     if affinity::is_affinity(bytes) || affinity::has_extension(name) {
         return affinity::import(name, bytes);
     }
+    if ora::is_ora(bytes) || has_extension(name, "ora") {
+        return ora::import(name, bytes, ctl);
+    }
+    // Krita files are ZIP containers carrying a merged PNG. A recognized raster signature
+    // still wins over a misleading .kra suffix (as with SVG imports).
+    if kra::is_kra(bytes) || (has_extension(name, "kra") && photocraft_codecs::detect(bytes).is_none()) {
+        return kra::import(name, bytes, ctl);
+    }
     if has_extension(name, "pdn") || bytes.starts_with(b"PDN3") {
         return pdn::import(name, bytes, ctl);
     }
     if raw::is_raw(bytes) {
         return raw::import_raw(name, bytes);
     }
-    if has_extension(name, "svg") || has_extension(name, "svgz") || svg::is_svg(bytes) {
-        return svg::import_svg(name, bytes);
+    if is_svg_input(name, bytes) {
+        return svg::import_svg_with_group_depth(name, bytes, max_group_depth);
     }
     flat::import_flat(name, bytes)
+}
+
+/// Extension names can be wrong (for example, an image downloaded as WebP and renamed `.svg`).
+/// Valid plain SVG is recognized by its XML content; an otherwise unknown `.svg` is passed to the
+/// SVG parser for a useful malformed-file error, and `.svgz` disambiguates gzip streams.
+fn is_svg_input(name: &str, bytes: &[u8]) -> bool {
+    // Keep the SVG extension as a fallback for malformed files so the SVG parser can return an
+    // actionable SVG error. A recognized raster signature still wins over a misleading `.svg`
+    // suffix (for example, a WebP downloaded as Firefox_logo.svg).
+    svg::is_svg(bytes)
+        || (has_extension(name, "svg") && photocraft_codecs::detect(bytes).is_none())
+        || (has_extension(name, "svgz") && bytes.starts_with(&[0x1f, 0x8b]))
 }
 
 fn extension(name_or_ext: &str) -> String {
@@ -229,6 +313,37 @@ fn has_extension(name: &str, expected: &str) -> bool {
 /// Exports `doc` to the format named by `name_or_ext` (a file name, path or
 /// bare extension).
 pub fn export(doc: &Document, name_or_ext: &str, opts: &ExportOptions) -> Result<ExportResult, IoError> {
+    export_with(doc, name_or_ext, opts, &photocraft_raster::Interrupt::NONE)
+}
+
+/// [`export`] for a background save (#3389): reports how far encoding has got through `ctl`
+/// (monotonic, `1.0` once the bytes are ready; per layer and per composite band for PSD/PSB and
+/// layered TIFF, in coarse steps for the other formats) and checks it between stages. A cancelled
+/// export fails with [`IoError::Cancelled`]; otherwise the bytes are exactly [`export`]'s.
+pub fn export_with(doc: &Document, name_or_ext: &str, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<ExportResult, IoError> {
+    ctl.check().map_err(|_| IoError::Cancelled)?;
+    let r = export_stages(doc, name_or_ext, opts, ctl)?;
+    ctl.check().map_err(|_| IoError::Cancelled)?;
+    ctl.progress(1.0);
+    Ok(r)
+}
+
+/// Run `f` with an interrupt whose progress `0..=1` fills `lo..=hi` of `ctl`'s (same cancellation).
+pub(crate) fn with_span<R>(ctl: &photocraft_raster::Interrupt, lo: f32, hi: f32, f: impl FnOnce(&photocraft_raster::Interrupt) -> R) -> R {
+    let cancelled = || ctl.cancelled();
+    let progress = |p: f32| ctl.progress(lo + (hi - lo) * p.clamp(0.0, 1.0));
+    f(&photocraft_raster::Interrupt::new(&cancelled, &progress))
+}
+
+/// Where a .pcraft save's progress stands once its thumbnail, then its 1024 px composite preview,
+/// are rendered (the bundle itself is written after them).
+const PCRAFT_THUMBNAIL_DONE: f32 = 0.15;
+const PCRAFT_PREVIEWS_DONE: f32 = 0.4;
+/// The share of a PSD/PSB export spent converting the document (layers, then the composite)
+/// before its bytes are assembled: about 2.7 s of 3.0 s for a 24 MP, 5-layer RGB/8 document.
+const PSD_MODEL_DONE: f32 = 0.9;
+
+fn export_stages(doc: &Document, name_or_ext: &str, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<ExportResult, IoError> {
     let ext = extension(name_or_ext);
     if ext == "pdn" {
         return Err(IoError::Unsupported("PDN is import-only; save as .pcraft to preserve all layers and blend modes".into()));
@@ -236,20 +351,38 @@ pub fn export(doc: &Document, name_or_ext: &str, opts: &ExportOptions) -> Result
     if affinity::EXTENSIONS.contains(&ext.as_str()) {
         return Err(IoError::Unsupported("Affinity export is not implemented; save a new PSD, PNG or .pcraft copy".into()));
     }
+    if ext == "ora" {
+        return ora::export(doc);
+    }
     if ext == photocraft_format::EXTENSION {
-        let previews = photocraft_format::SaveOptions {
-            thumbnail: Some(photocraft_compose::thumbnail(doc, 256)),
-            composite: Some(photocraft_compose::thumbnail(doc, 1024)),
-        };
+        let thumbnail = Some(photocraft_compose::thumbnail(doc, 256));
+        ctl.check().map_err(|_| IoError::Cancelled)?;
+        ctl.progress(PCRAFT_THUMBNAIL_DONE);
+        let composite = Some(photocraft_compose::thumbnail(doc, 1024));
+        ctl.check().map_err(|_| IoError::Cancelled)?;
+        ctl.progress(PCRAFT_PREVIEWS_DONE);
+        let previews = photocraft_format::SaveOptions { thumbnail, composite };
         return Ok(ExportResult { bytes: photocraft_format::save_to_bytes(doc, &previews)?, warnings: Vec::new() });
     }
     if ext == "psd" || ext == "psb" {
         let o = PsdExportOptions { force_psb: opts.force_psb || ext == "psb", ..Default::default() };
-        let (mut file, mut warnings) = document_to_psd_with(doc, &o);
+        let (mut file, mut warnings) = with_span(ctl, 0.0, PSD_MODEL_DONE, |ctl| psd_export::document_to_psd_interruptible(doc, &o, ctl));
+        // A cancelled conversion stops early with an incomplete model: never write it.
+        ctl.check().map_err(|_| IoError::Cancelled)?;
         if !doc.metadata.text.is_empty() {
             warnings.push("free-form text metadata is not supported by PSD/PSB; it will be dropped".into());
         }
         warnings.extend(tiff_layers::strip_foreign_order_blocks(&mut file));
+        if opts.image_previews {
+            match psd_thumbnail::resource(doc) {
+                // Beside the other resources Photoshop writes ahead of the version info.
+                Ok(r) => {
+                    let at = file.resources.iter().position(|r| r.id == photocraft_psd::resources::ids::VERSION_INFO).unwrap_or(file.resources.len());
+                    file.resources.insert(at, r);
+                }
+                Err(e) => warnings.push(format!("image preview not saved: {e}")),
+            }
+        }
         // Never write a header the reader would refuse (e.g. a zero-sized canvas).
         file.header.validate()?;
         let bytes = file.to_bytes()?;
@@ -257,17 +390,56 @@ pub fn export(doc: &Document, name_or_ext: &str, opts: &ExportOptions) -> Result
     }
     let format = photocraft_codecs::from_extension(&ext).ok_or_else(|| IoError::UnknownFormat(name_or_ext.to_string()))?;
     if format == photocraft_codecs::Format::Tiff && opts.tiff_layers && tiff_layers::would_write_layers(doc) {
-        return tiff_layers::export_layered(doc, opts);
+        return tiff_layers::export_layered(doc, opts, ctl);
     }
-    flat::export_flat(doc, format, opts)
+    flat::export_flat_with(doc, format, opts, ctl)
 }
 
 /// The PSD's merged composite as straight RGBA floats (row-major), converted
 /// with the document pixel model and un-matted from white (Photoshop mattes
 /// the merged image of transparent documents). Used as the compositing oracle.
 pub fn merged_composite(file: &PsdFile) -> Result<Vec<[f32; 4]>, IoError> {
-    let img = file.composite_rgba8().ok();
     let h = &file.header;
+    h.validate()?;
+    if h.color_mode == photocraft_psd::ColorMode::Rgb && file.merged_has_alpha() {
+        // Preserve native sample precision before removing the white matte.
+        let raw = file.decode_merged()?;
+        let plane = raw.len() / usize::from(h.channels);
+        if plane == 0 {
+            return Err(PsdError::Invalid("empty RGB composite".into()).into());
+        }
+        let planes = raw
+            .chunks_exact(plane)
+            .take(4)
+            .map(|bytes| match h.depth {
+                32 => Ok(photocraft_psd::pixels::samples_f32(bytes)),
+                16 => Ok(photocraft_psd::pixels::samples_u16(bytes).into_iter().map(|v| f32::from(v) / 65535.0).collect()),
+                _ => photocraft_psd::pixels::plane_to_u8(bytes, h.depth, h.width as usize, h.height as usize)
+                    .map(|values| values.into_iter().map(|v| f32::from(v) / 255.0).collect()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let [r, g, b, a] = planes.as_slice() else { return Err(PsdError::Invalid("missing RGB composite channels".into()).into()) };
+        return Ok(r
+            .iter()
+            .zip(g)
+            .zip(b)
+            .zip(a)
+            .map(|(((&r, &g), &b), &a)| {
+                let mut pixel = [r, g, b, a];
+                let alpha = pixel[3];
+                for c in pixel.iter_mut().take(3) {
+                    *c = pixels::unmatte(*c, alpha, 1.0);
+                    if h.depth != 32 {
+                        *c = c.clamp(0.0, 1.0);
+                    }
+                }
+                pixel
+            })
+            .collect());
+    }
+    // The RGBA8 preview clips signed/HDR values. Decode float merged images at their
+    // original depth through the model path below; they are the rendering oracle.
+    let img = if h.depth == 32 { None } else { file.composite_rgba8().ok() };
     // CMYK goes through the colour-managed model conversion (the PSD crate's RGBA preview is a
     // naive, profile-free conversion).
     if let (Some(img), false) = (img, matches!(h.color_mode, photocraft_psd::ColorMode::Lab | photocraft_psd::ColorMode::Cmyk)) {
@@ -289,7 +461,10 @@ pub fn merged_composite(file: &PsdFile) -> Result<Vec<[f32; 4]>, IoError> {
             .collect());
     }
     // Generic path (Lab, CMYK and others) via the raster model conversion.
-    let (doc, _) = psd_to_document(&PsdFile { layer_info: None, ..file.clone() });
+    // Keep the merged-alpha marker while discarding layers: otherwise an extra
+    // spot/alpha channel in an opaque composite is mistaken for transparency.
+    let layer_info = Some(photocraft_psd::LayerInfo { merged_alpha: file.merged_has_alpha(), layers: Vec::new(), padding: None });
+    let (doc, _) = psd_to_document(&PsdFile { layer_info, ..file.clone() });
     // Multichannel documents keep their channels apart (no layer): composite them.
     if doc.layers.is_empty() && doc.mode == photocraft_color::ColorMode::Multichannel {
         return Ok(photocraft_compose::flatten(&doc).px);
@@ -297,4 +472,18 @@ pub fn merged_composite(file: &PsdFile) -> Result<Vec<[f32; 4]>, IoError> {
     let l = doc.layers.first().ok_or_else(|| IoError::Unsupported("no merged image".into()))?;
     let s = l.surface().ok_or_else(|| IoError::Unsupported("no merged image".into()))?;
     Ok(photocraft_compose::surface_to_buffer(s, doc.bounds()).px)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_svg_input;
+
+    #[test]
+    fn svg_extension_does_not_override_another_format_signature() {
+        let webp_header = b"RIFF\x04\0\0\0WEBP";
+        assert!(!is_svg_input("Firefox_logo,_2019.svg", webp_header));
+        assert!(is_svg_input("drawing.svg", b"<?xml version=\"1.0\"?><svg/>"));
+        assert!(is_svg_input("drawing.svgz", &[0x1f, 0x8b, 0, 0]));
+        assert!(!is_svg_input("drawing.svgz", webp_header));
+    }
 }

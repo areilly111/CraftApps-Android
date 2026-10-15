@@ -18,7 +18,7 @@ fn app_with(answers: Vec<Option<FileDialogAnswer>>) -> (PhotocraftApp, Written) 
     let written: Written = Rc::default();
     let w = written.clone();
     let services = Services {
-        import: Some(Box::new(|name: &str, bytes: &[u8]| {
+        import: Some(Box::new(|name: &str, bytes: &[u8], _depth: usize| {
             if bytes == b"bad" {
                 return Err("not an image".into());
             }
@@ -159,6 +159,18 @@ fn the_web_hands_over_contents_rather_than_paths() {
     answer(&mut app);
     let st = app.session.active().unwrap();
     assert_eq!((st.doc.name.as_str(), st.path.as_deref()), ("cat.png", None));
+}
+
+#[test]
+fn the_web_opens_every_selected_file() {
+    let files = vec![("one.png".into(), b"x".to_vec()), ("broken.png".into(), b"bad".to_vec()), ("two.jpg".into(), b"x".to_vec())];
+    let (mut app, _) = app_with(vec![Some(FileDialogAnswer::ContentsMany(files))]);
+    menus::invoke(&mut app, &egui::Context::default(), "file.open", json!({})).unwrap();
+    answer(&mut app);
+    // Each good file is its own tab; the broken one is reported without stopping the rest.
+    let names: Vec<_> = app.session.documents().iter().map(|st| st.doc.name.as_str()).collect();
+    assert_eq!(names, ["one.png", "two.jpg"]);
+    assert!(app.ui.notices.iter().any(|n| n.error && n.title.contains("broken.png")), "{:?}", app.ui.notices);
 }
 
 #[test]
@@ -398,6 +410,9 @@ fn files_dropped_onto_the_canvas_are_placed_in_free_transform_one_by_one() {
     std::fs::create_dir_all(&dir).unwrap();
     let abs = dir.join("photo.png");
     std::fs::write(&abs, png_bytes(200, 100)).unwrap();
+    let svg = dir.join("logo.svg");
+    std::fs::write(&svg, b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"10\"><rect width=\"20\" height=\"10\" fill=\"red\"/></svg>")
+        .unwrap();
     let ctx = egui::Context::default();
     let mut app = app_with_canvas();
     let (layers, steps) = (layer_count(&app), history_steps(&app));
@@ -439,6 +454,13 @@ fn files_dropped_onto_the_canvas_are_placed_in_free_transform_one_by_one() {
     app.place_next_dropped(&ctx);
     assert!(app.ui.transform.is_none() && app.drop_places.is_empty());
     assert!(app.ui.recent_files.is_empty(), "placing isn't opening");
+    app.open_dropped(&ctx, vec![dropped(svg, Err("egui's reader must not be used".into()))], Some(egui::pos2(400.0, 300.0)));
+    app.place_next_dropped(&ctx);
+    let st = app.session.active().unwrap();
+    let placed_svg = st.doc.layer(st.active_layer.unwrap()).unwrap();
+    assert_eq!(placed_svg.name, "logo");
+    assert!(matches!(placed_svg.content, photocraft_doc::LayerContent::Smart(_)), "SVG drops use Place Embedded");
+    assert!(app.ui.transform.is_some(), "SVG drop should enter Free Transform");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -594,7 +616,8 @@ fn views_and_windows_stay_with_their_documents() {
     for (i, v) in app.ui.views.iter_mut().enumerate() {
         v.zoom = i as f32 + 1.0;
     }
-    app.ui.windows = (0..4).map(|document| crate::state::DocWindow { id: document as u64, document, view: Default::default(), open: true }).collect();
+    app.ui.windows =
+        (0..4).map(|document| crate::state::DocWindow { id: document as u64, document, view: Default::default(), open: true, position: None }).collect();
     let zooms = |app: &PhotocraftApp| app.ui.views.iter().map(|v| v.zoom).collect::<Vec<_>>();
     let windows = |app: &PhotocraftApp| app.ui.windows.iter().map(|w| (w.id, w.document)).collect::<Vec<_>>();
     assert_eq!(app.run("document.move", json!({"document": 0, "to": 3})).unwrap(), json!({"document": 3}));
@@ -664,4 +687,92 @@ fn notices_render_without_panicking() {
     let mut out = ctx.run_ui(Default::default(), |ui| notices::show(&mut app, ui.ctx()));
     out.textures_delta.clear();
     assert_eq!(app.ui.notices.len(), 2);
+}
+
+#[test]
+fn open_documents_as_tabs_preference_controls_floating_windows() {
+    let (mut app, _) = app_with(Vec::new());
+    app.session.edit_prefs(|p| p.workspace.open_documents_as_tabs = false);
+    app.open_bytes("a.psd", b"x").unwrap();
+    assert_eq!(app.ui.windows.len(), 1);
+    assert_eq!(app.ui.windows[0].document, 0);
+
+    app.run("file.new", json!({"width": 100, "height": 100})).unwrap();
+    assert_eq!(app.ui.windows.len(), 2);
+    assert_eq!(app.ui.windows[1].document, 1);
+
+    // Opening with preference true docks into tabs, creating no new floating window
+    app.session.edit_prefs(|p| p.workspace.open_documents_as_tabs = true);
+    app.open_bytes("b.psd", b"x").unwrap();
+    assert_eq!(app.ui.windows.len(), 2);
+}
+
+#[test]
+fn natural_order_counts_numbers_by_value() {
+    use std::cmp::Ordering;
+    assert_eq!(natural_cmp("File_2.psd", "File_10.psd"), Ordering::Less);
+    assert_eq!(natural_cmp("file_1.psd", "File_2.psd"), Ordering::Less, "case-insensitive");
+    assert_eq!(natural_cmp("File_03.psd", "File_10.psd"), Ordering::Less, "leading zeros");
+    assert_eq!(natural_cmp("a.psd", "a.psd"), Ordering::Equal);
+    assert_eq!(natural_cmp("a", "ab"), Ordering::Less);
+    assert_eq!(natural_cmp("File_02.psd", "File_2.psd").then(Ordering::Equal), "File_02.psd".cmp("File_2.psd"), "equal by value: by text");
+    let mut names = vec!["File_10.psd", "File_9.psd", "file_1.psd", "File_100.psd", "b.psd", "A.psd", "File_03.psd"];
+    names.sort_by(|a, b| natural_cmp(a, b));
+    assert_eq!(names, ["A.psd", "b.psd", "file_1.psd", "File_03.psd", "File_9.psd", "File_10.psd", "File_100.psd"]);
+}
+
+/// #3248: several files opened at once (File › Open, the command line, Finder) open in name order.
+#[test]
+fn open_paths_opens_a_set_in_name_order() {
+    let (dir, paths) = files("sorted", &["File_10.psd", "File_2.psd", "file_1.psd", "File_03.psd"], b"x");
+    let (mut app, _) = app_with(Vec::new());
+    assert_eq!(app.open_paths(&paths), 4);
+    assert_eq!(doc_names(&app), ["file_1.psd", "File_2.psd", "File_03.psd", "File_10.psd"]);
+    assert_eq!(app.session.active().and_then(|s| s.path.clone()).as_deref(), Some(paths[0].as_str()), "the last in order is active");
+    assert!(app.jobs.batches.is_empty(), "nothing left opening");
+    // The next set goes after.
+    let (dir2, more) = files("sorted-2", &["b.psd", "a.psd"], b"x");
+    assert_eq!(app.open_paths(&more), 2);
+    assert_eq!(doc_names(&app), ["file_1.psd", "File_2.psd", "File_03.psd", "File_10.psd", "a.psd", "b.psd"]);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}
+
+/// #3248: a set opening in the background keeps its order however the opens finish (a small file
+/// decodes before a big one named before it).
+#[test]
+fn a_set_of_background_opens_keeps_its_order_however_they_finish() {
+    use crate::jobs_ui::{self, OpenOrder, OpenTab};
+    use photocraft_engine::jobs::JobId;
+    let (mut app, _) = app_with(Vec::new());
+    app.open_bytes("existing.psd", b"x").unwrap();
+    let batch = jobs_ui::begin_batch(&mut app);
+    let tab = |seq: usize| OpenTab { job: JobId(100 + seq as u64), name: format!("f{seq}.psd"), path: None, slot: None, order: Some(OpenOrder { batch, seq }) };
+    app.jobs.opens.extend((0..4).map(tab));
+    // f1 opened at once (a preset file, say, or background jobs off for it).
+    app.jobs.opens.remove(1);
+    let index = app.session.add_document(Document::new("f1.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    assert_eq!(index, 1);
+    jobs_ui::opened_in_order(&mut app.jobs, OpenOrder { batch, seq: 1 });
+    jobs_ui::end_batch(&mut app.jobs);
+    assert_eq!(app.jobs.batches.len(), 1, "kept while members are opening");
+    // The rest finish out of order: last, first, third.
+    for seq in [3usize, 0, 2] {
+        let i = app.jobs.opens.iter().position(|o| o.order.is_some_and(|x| x.seq == seq)).unwrap();
+        let tab = app.jobs.opens.remove(i);
+        let index = app.session.add_document(Document::new(&tab.name, Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+        jobs_ui::finish_open_tab(&mut app, &tab, &json!({"document": index})).unwrap();
+    }
+    assert_eq!(doc_names(&app), ["existing.psd", "f0.psd", "f1.psd", "f2.psd", "f3.psd"]);
+    assert_eq!(app.session.active().map(|d| d.doc.name.as_str()), Some("f2.psd"), "the one that just opened is active");
+    assert_eq!(app.ui.views.len(), 5, "views follow their documents");
+    assert!(app.jobs.batches.is_empty(), "forgotten once every member opened");
+    // A tab with a slot (dropped on the tabs) keeps it; one from a forgotten set goes to the end.
+    let dropped = OpenTab { job: JobId(200), name: "dropped.psd".into(), path: None, slot: Some(0), order: None };
+    let index = app.session.add_document(Document::new("dropped.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    jobs_ui::finish_open_tab(&mut app, &dropped, &json!({"document": index})).unwrap();
+    let late = OpenTab { job: JobId(201), name: "late.psd".into(), path: None, slot: None, order: Some(OpenOrder { batch: 999, seq: 0 }) };
+    let index = app.session.add_document(Document::new("late.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    jobs_ui::finish_open_tab(&mut app, &late, &json!({"document": index})).unwrap();
+    assert_eq!(doc_names(&app), ["dropped.psd", "existing.psd", "f0.psd", "f1.psd", "f2.psd", "f3.psd", "late.psd"]);
 }

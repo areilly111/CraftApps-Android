@@ -103,6 +103,36 @@ fn empty_user_password_opens_but_reports_restrictions() {
 }
 
 #[test]
+fn the_permissions_password_unlocks_an_open_document() {
+    for alg in ALL {
+        // Only a permissions password: opens without asking, restricted (#995).
+        let mut doc = Document::open(Arc::new(protect(alg, "", "perms", 0b0100))).unwrap();
+        // Read something before unlocking: it must stay readable afterwards.
+        assert_eq!(content(&doc), SECRET, "{alg:?}");
+        assert_eq!(doc.unlock("").unwrap_err(), CosError::WrongPassword, "{alg:?}");
+        assert_eq!(doc.unlock("nope").unwrap_err(), CosError::WrongPassword, "{alg:?}");
+        assert!(!doc.permissions().unwrap().modify(), "{alg:?}: still restricted");
+        doc.unlock("perms").unwrap();
+        assert_eq!(doc.security().unwrap().auth(), Auth::Owner, "{alg:?}");
+        assert!(doc.permissions().unwrap().modify(), "{alg:?}");
+        assert_eq!(content(&doc), SECRET, "{alg:?}");
+        assert_eq!(title(&doc).as_deref(), Some("Quarterly numbers"), "{alg:?}");
+        // Unlocked, security can be removed.
+        doc.remove_encryption();
+        let plain = write_full(&doc, &SaveOptions::default()).unwrap();
+        assert!(Document::open(Arc::new(plain)).unwrap().security().is_none(), "{alg:?}");
+    }
+    // Opened with a separate open password: that password doesn't unlock.
+    let mut doc = Document::open_with_password(Arc::new(protect(Algorithm::Aes256, "open", "perms", 0b0100)), Some("open")).unwrap();
+    assert_eq!(doc.unlock("open").unwrap_err(), CosError::WrongPassword);
+    doc.unlock("perms").unwrap();
+    assert!(doc.permissions().unwrap().modify());
+    // Nothing to unlock: unencrypted, or already the owner.
+    Document::open(Arc::new(fixture())).unwrap().unlock("anything").unwrap();
+    doc.unlock("anything").unwrap();
+}
+
+#[test]
 fn incremental_edits_of_encrypted_documents_stay_encrypted() {
     for alg in ALL {
         let original = protect(alg, "user", "owner", -1);

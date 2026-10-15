@@ -100,6 +100,30 @@ fn range_based_on_words_and_lines() {
 }
 
 #[test]
+fn range_start_end_and_offset_are_capped() {
+    let (mut p, cid, comp) = setup(400, 200);
+    let mut l = text_layer(&mut p, &comp, doc("ABCD", 30.0));
+    let a = animator(&mut p, &mut l, &["opacity"], &["range"]);
+    set(&mut l, "text/animators/#1/selectors/#1/advanced/smoothness", Value::Scalar(0.0));
+    // End 300% is capped at 100% (Offset -150% at -100%): the range is -100%..0% and selects nothing.
+    // Uncapped it would be -150%..150% and select everything.
+    set(&mut l, "text/animators/#1/selectors/#1/end", Value::Scalar(300.0));
+    set(&mut l, "text/animators/#1/selectors/#1/offset", Value::Scalar(-150.0));
+    p.comp_mut(cid).unwrap().layers.push(l);
+    assert_eq!(selection(&p, cid, 0.0, a), vec![0.0; 4]);
+    // Start -200% is capped at 0%: with Offset 100% the range is 100%..150% and selects nothing.
+    // Uncapped it would be -100%..150% and select everything.
+    let l = &mut p.comp_mut(cid).unwrap().layers[0];
+    set(l, "text/animators/#1/selectors/#1/start", Value::Scalar(-200.0));
+    set(l, "text/animators/#1/selectors/#1/end", Value::Scalar(50.0));
+    set(l, "text/animators/#1/selectors/#1/offset", Value::Scalar(100.0));
+    assert_eq!(selection(&p, cid, 0.0, a), vec![0.0; 4]);
+    let l = &mut p.comp_mut(cid).unwrap().layers[0];
+    set(l, "text/animators/#1/selectors/#1/offset", Value::Scalar(0.0));
+    assert_eq!(selection(&p, cid, 0.0, a), vec![1.0, 1.0, 0.0, 0.0]);
+}
+
+#[test]
 fn selector_modes_and_randomize() {
     let (mut p, cid, comp) = setup(400, 200);
     let mut l = text_layer(&mut p, &comp, doc("ABCDEFGH", 30.0));

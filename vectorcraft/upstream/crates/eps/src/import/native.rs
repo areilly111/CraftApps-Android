@@ -1,11 +1,15 @@
 //! The layers of an Illustrator EPS or `.ai`.
 //!
 //! Besides the page it prints, such a file carries the app's own copy of the art: an EPS after its
-//! `%%EOF`, a `.ai` in its `AIPrivateData` streams (see `ai` for the containers). It has what the
-//! page doesn't: the layers with their names and options, the groups, compound paths and clipping
-//! groups, the objects' names, the hidden objects and layers, the art outside the artboards and
-//! every artboard. `ai` reads that structure into a document, with the colours, gradients,
-//! transparency and images of the art.
+//! `%%EOF`, a `.ai` in its `AIPrivateData` streams (see `ai` for the containers). A file in the
+//! legacy format (a `.ai` in PostScript form: versions 3 to 8, and the apps that still write it)
+//! is that copy itself: its program has the layers, and the prolog it names defines the operators
+//! for printing (other apps name it without including it, so their files can't be run).
+//!
+//! The copy has what the page doesn't: the layers with their names and options, the groups,
+//! compound paths and clipping groups, the objects' names, the hidden objects and layers, the art
+//! outside the artboards and every artboard. `ai` reads that structure into a document, with the
+//! colours, gradients, transparency and images of the art.
 //!
 //! Text objects are slots in that document: their characters, fonts and places are in the file's
 //! text document (see `ate`). Type that shows comes from the page, which draws it, into the slot
@@ -21,11 +25,12 @@
 //!
 //! Where a file doesn't match what this module expects, it is left alone and its page is imported.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use vectorcraft_doc::{AppearanceItem, Document, Node, NodeId, NodeKind};
-use vectorcraft_geom::{Affine, Point, Rect, Vec2};
+use vectorcraft_doc::{AppearanceItem, Document, Node, NodeId, NodeKind, TextKind};
+use vectorcraft_geom::{Affine, PathData, Point, Rect, Vec2};
 
 use super::Imported;
 use super::ai::{self, Structure, slot_of};
@@ -73,6 +78,8 @@ struct SlotInfo {
     frame: usize,
     /// It, its layer and the objects round it show.
     shown: bool,
+    /// Its own frame or path, where the file places it ([`ai::text_frames`]).
+    art_path: Option<PathData>,
 }
 
 /// The text slots of the layers and objects, in order.
@@ -80,7 +87,7 @@ fn collect_slots(nodes: &[Arc<Node>], shown: bool, out: &mut Vec<SlotInfo>) {
     for n in nodes {
         let shown = shown && n.visible;
         if let Some(story) = slot_of(n.name.as_deref()) {
-            out.push(SlotInfo { story, frame: ai::slot_frame(n.name.as_deref()), shown });
+            out.push(SlotInfo { story, frame: ai::slot_frame(n.name.as_deref()), shown, art_path: None });
         } else if let Some(c) = n.children().filter(|_| !matches!(n.kind, NodeKind::Compound { .. })) {
             collect_slots(c, shown, out);
         }
@@ -468,8 +475,24 @@ fn plan(
     if let Some(t) = template {
         for (k, info) in infos.iter().enumerate() {
             let Some(Some(story)) = stories.get(k) else { continue };
-            let Some(node) = story.node(NodeId(0), info.frame, t, to_doc) else { continue };
-            let region = story.region(t, to_doc);
+            let Some(mut node) = story.node(NodeId(0), info.frame, t, to_doc) else { continue };
+            let mut region = story.region(t, to_doc);
+            // Area type and type on a path in the object's own frame: the text document's frame
+            // of a copied object keeps its original's path.
+            if let (Some(path), NodeKind::Text(text)) = (&info.art_path, &mut node.kind) {
+                let size = text.runs.iter().map(|r| r.style.size).fold(0.0, f64::max);
+                match &mut text.kind {
+                    TextKind::Area { frame } => {
+                        *frame = path.clone();
+                        region = path.bounds();
+                    }
+                    TextKind::OnPath { path: on, .. } => {
+                        *on = path.clone();
+                        region = path.bounds().map(|r| r.inflate(size * 1.5, size * 1.5));
+                    }
+                    TextKind::Point => {}
+                }
+            }
             if let Some(c) = content.get_mut(k) {
                 *c = Content::Made(Box::new(node), region.filter(|_| info.shown), false, vec![]);
             }
@@ -619,6 +642,17 @@ fn differ(p: &[u8; 4], q: &[u8; 4]) -> bool {
     lightness(p).abs_diff(lightness(q)) > SAME_PIXEL || (a.min(b) <= WHITE && a.abs_diff(b) > SAME_PIXEL)
 }
 
+/// How far apart two pixels' red, green or blue may be for them to be the same colour (a colour
+/// and its CMYK equivalent stay within it; a red and a dark red don't).
+const SAME_COLOUR: u32 = 64;
+
+/// Are two pixels different colours ([`differ`] also takes a red and a dark red of about the same
+/// lightness to be alike)?
+fn differ_in_colour(p: &[u8; 4], q: &[u8; 4]) -> bool {
+    let (p, q) = (on_white(p), on_white(q));
+    p.iter().zip(q).any(|(a, b)| a.abs_diff(b) > SAME_COLOUR)
+}
+
 /// How much two documents draw differently: the share (0 to 1) of the pixels that differ, and of
 /// those whose neighbours all differ too, away from type (where one draws an object that the other
 /// doesn't, not the edges of one drawn a little differently, or type laid out a little
@@ -666,6 +700,20 @@ impl PageView {
         let mut areas = self.page_type.clone();
         type_areas(&b.layers, rb, self.scale, &mut areas);
         compared(&self.page, &y, &areas)
+    }
+
+    /// The share (0 to 1) of the pixels where `b` on `rb` draws another colour than the page
+    /// ([`differ_in_colour`]), type included: what taking an object out of the layers changes
+    /// there, when it is covered by one of about the same lightness (#1102).
+    fn colour_difference(&mut self, b: &Document, rb: Rect) -> f64 {
+        let printed = as_printed(b);
+        let b = printed.as_ref().unwrap_or(b);
+        let y = self.layers.render_region(b, rb, self.scale, false);
+        if (y.width, y.height) != (self.page.width, self.page.height) {
+            return 1.0;
+        }
+        let differing = self.page.pixels.as_chunks::<4>().0.iter().zip(y.pixels.as_chunks::<4>().0).filter(|(p, q)| differ_in_colour(p, q)).count();
+        differing as f64 / (f64::from(y.width) * f64::from(y.height)).max(1.0)
     }
 }
 
@@ -818,10 +866,23 @@ fn build(data: &[u8], visible: Option<&Document>, page: Page, outlined: bool) ->
         let artboard_page =
             artboard.is_some_and(|a| [a.x0 - art_box.x0, a.y0 - art_box.y0, a.x1 - art_box.x1, a.y1 - art_box.y1].iter().all(|d| d.abs() <= 1.0));
         let whole = matches!(page, Page::Art) && !artboard_page;
+        if whole {
+            // Its page is the file's own (its bounding box), as when it comes in as its page: art
+            // reaching past the editing data's artboard stays on it (#1102).
+            doc.artboards.truncate(1);
+            if let Some(a) = doc.artboards.first_mut() {
+                a.rect = rect;
+            }
+        }
         frame = Some(Frame { page: visible, page_rect, rect, whole });
     }
     let mut infos = vec![];
     collect_slots(&doc.layers, true, &mut infos);
+    // Each text object's own frame or path, by its story and frame.
+    let frames = ai::text_frames(data);
+    for info in &mut infos {
+        info.art_path = info.story.and_then(|s| frames.get(&(s, info.frame))).map(|p| PathData::from_bezpath(&(to_doc * p.clone())));
+    }
     // Type asked for as outlines is the page's: the text objects that show can't be filled.
     if outlined && infos.iter().any(|i| i.shown) {
         return Err("its type is to come in as outlines, which only its page has".into());
@@ -935,7 +996,7 @@ fn prune_unseen(frame: &Frame<'_>, view: &mut PageView, doc: &mut Document) -> u
     if found.is_empty() || found.len() > MAX_WEIGHED {
         return 0;
     }
-    let mut with = view.difference(doc, rect).any;
+    let with = view.difference(doc, rect).any;
     // Taking a text object out changes only what is drawn in its box. When the art would still
     // differ from the page by more than `compare` allows with every candidate gone, the layers
     // aren't used whatever is pruned: don't draw them again for each one (#758).
@@ -944,6 +1005,9 @@ fn prune_unseen(frame: &Frame<'_>, view: &mut PageView, doc: &mut Document) -> u
     if with - boxes / rect.area().max(1e-9) > MAX_DIFFERENCE {
         return 0;
     }
+    // Weighed by colour, not only lightness: a text object's red stroke over a dark red one is no
+    // less there for being about as light (#1102).
+    let mut with = view.colour_difference(doc, rect);
     let mut removed = 0;
     for (id, bounds) in found {
         if bounds.is_none_or(|b| b.intersect(rect).is_zero_area()) {
@@ -953,7 +1017,7 @@ fn prune_unseen(frame: &Frame<'_>, view: &mut PageView, doc: &mut Document) -> u
         if !take_out(&mut without.layers, id, true) {
             continue;
         }
-        let d = view.difference(&without, rect).any;
+        let d = view.colour_difference(&without, rect);
         if d - with <= UNSEEN_MARGIN {
             take_out(&mut doc.layers, id, false);
             with = d;
@@ -991,12 +1055,13 @@ fn compare(frame: &Frame<'_>, view: &mut PageView, layered: &Document) -> Result
     }))
 }
 
-/// The EPS `visible` (read as its page) read through its editing copy instead: its layers (the
+/// The EPS `visible` (read as its page) read through its editing copy instead (its private data, or
+/// its program in the legacy format, see [`editing_copy`]): its layers (the
 /// hidden ones too), groups, compound paths, clipping groups and artboards, with the text and the
 /// strokes around it of the page. When the file has no editing copy, `visible` as it was; when it
 /// has one that can't be used, `visible` with a warning that says why.
 pub(super) fn layered(ps: &[u8], visible: Imported) -> Imported {
-    let Some(data) = ai::eps_data(ps) else { return visible };
+    let Some(data) = editing_copy(ps) else { return visible };
     let result = data.and_then(|data| build(&data, Some(&visible.document), Page::Art, false));
     match result {
         Ok((document, mut warnings)) => {
@@ -1015,27 +1080,72 @@ pub(super) fn layered(ps: &[u8], visible: Imported) -> Imported {
     }
 }
 
-/// The `.ai` `visible` (read as its PDF part) read through its editing copy (`private`, the joined
-/// `AIPrivateData` streams) instead, as [`layered`] reads an EPS: with the layers and objects of the
-/// file, its artboards, and the art that lies outside them, which its PDF part doesn't have.
+/// The `.ai` `visible` (read as its PDF part), or a PDF saved with the editing data, read through
+/// its editing copy (`private`, the joined `AIPrivateData` or `AIPDFPrivateData` streams) instead,
+/// as [`layered`] reads an EPS: with the layers and objects of the file, its artboards (with the
+/// PDF part's bleed), and the art that lies outside them, which its PDF part doesn't have.
 /// `warnings` are the notes of reading the PDF part; the notes returned are those, and the layers'.
-/// `outlined`: the PDF part's type was read as outlines (a file whose type shows then comes in as
-/// its PDF part).
-pub fn layered_ai(private: &[u8], visible: Document, warnings: Vec<String>, outlined: bool) -> (Document, Vec<String>) {
-    let Ok(data) = ai::decode_private(private) else { return (visible, warnings) };
-    if !data.windows(15).any(|w| w == b"%AI5_BeginLayer") {
-        return (visible, warnings);
+/// The flag returned is `true` when the document is the one read from the layers; else the document
+/// is `visible`, its pages moved by `place_pages` when the layers can't be read. `outlined`: the
+/// PDF part's type was read as outlines (a file whose type shows then comes in as its PDF part).
+pub fn layered_ai(private: &[u8], visible: Document, warnings: Vec<String>, outlined: bool) -> (Document, Vec<String>, bool) {
+    let Ok(data) = ai::decode_private(private) else { return (visible, warnings, false) };
+    if !has_layers(&data) {
+        return (visible, warnings, false);
     }
     match build(&data, Some(&visible), Page::Artboard, outlined) {
-        Ok((done, notes)) => {
+        Ok((mut done, notes)) => {
+            done.setup.bleed = visible.setup.bleed;
             let mut all = warnings;
             all.extend(notes.into_iter().filter(|n| !all.contains(n)).collect::<Vec<_>>());
-            (done, all)
+            (done, all, true)
         }
         Err(why) => {
             let mut all = warnings;
             all.push(format!("{LAYERS_UNREAD} from its editing data ({why}): they come from its PDF part"));
-            (visible, all)
+            let mut visible = visible;
+            place_pages(&ai::artboards(&data), &mut visible);
+            (visible, all, false)
+        }
+    }
+}
+
+/// The pages of `doc` (a `.ai` read as its PDF part: a page per artboard, in a row) moved, with
+/// the art on each, to where `boards` (the artboards of its editing data, in art space) are, so
+/// the artboards keep their layout when the layers can't be read (#1068). Left as they are unless
+/// there are as many artboards as pages, of the same sizes.
+fn place_pages(boards: &[Rect], doc: &mut Document) {
+    let (Some(first), true) = (boards.first(), boards.len() == doc.artboards.len() && boards.len() > 1) else { return };
+    if boards.iter().zip(&doc.artboards).any(|(b, a)| (b.width() - a.rect.width()).abs() > 0.5 || (b.height() - a.rect.height()).abs() > 0.5) {
+        return;
+    }
+    // Art space (y up) → the document, the first artboard's top left at the origin, as `read` has it.
+    let to_doc = Affine::new([1.0, 0.0, 0.0, -1.0, -first.x0, first.y1]);
+    let pages: Vec<Rect> = doc.artboards.iter().map(|a| a.rect).collect();
+    let moves: Vec<Vec2> = boards.iter().zip(&pages).map(|(b, page)| to_doc.transform_rect_bbox(*b).origin() - page.origin()).collect();
+    for layer in &mut doc.layers {
+        place_art(Arc::make_mut(layer), &pages, &moves);
+    }
+    for (a, v) in doc.artboards.iter_mut().zip(&moves) {
+        a.rect = a.rect + *v;
+    }
+}
+
+/// The objects in `layer` (and its sublayers) moved by the move of the page they are on.
+fn place_art(layer: &mut Node, pages: &[Rect], moves: &[Vec2]) {
+    let Some(children) = layer.children_mut() else { return };
+    for child in children {
+        if matches!(child.kind, NodeKind::Layer { .. }) {
+            place_art(Arc::make_mut(child), pages, moves);
+            continue;
+        }
+        let Some(r) = child.visual_bounds() else { continue };
+        // The page it is on: the one with most of it (pages keep only the art that reaches into
+        // them), else the nearest.
+        let fit = |p: &Rect| (p.intersect(r).area().max(0.0), -(p.center() - r.center()).hypot());
+        let Some((i, _)) = pages.iter().map(fit).enumerate().max_by(|(_, a), (_, b)| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1))) else { continue };
+        if let Some(v) = moves.get(i).filter(|v| **v != Vec2::ZERO) {
+            Arc::make_mut(child).transform(Affine::translate(*v), false);
         }
     }
 }
@@ -1047,10 +1157,72 @@ pub fn ai_alone(private: &[u8]) -> Result<(Document, Vec<String>), String> {
     build(&data, None, Page::Artboard, false)
 }
 
+/// Does the editing data (or a program in the legacy format) have layers?
+fn has_layers(data: &[u8]) -> bool {
+    data.windows(15).any(|w| w == b"%AI5_BeginLayer")
+}
+
+/// The editing copy of the art in the PostScript `ps`: an EPS's private data, else the program
+/// itself when it has layers (the legacy format). `None` without one.
+fn editing_copy(ps: &[u8]) -> Option<Result<Cow<'_, [u8]>, String>> {
+    match ai::eps_data(ps) {
+        Some(data) => Some(data.map(Cow::Owned)),
+        None => has_layers(ps).then_some(Ok(Cow::Borrowed(ps))),
+    }
+}
+
+/// A file in the legacy format whose page can't be read (a `.ai` in PostScript form that names its
+/// prolog without including it) from its layers alone (`ps`: its program, which has them) → the
+/// document and the import's notes. `None` when the layers aren't in the program.
+pub(super) fn program_alone(ps: &[u8]) -> Option<Result<(Document, Vec<String>), String>> {
+    (!ai::has_eps_data(ps) && has_layers(ps)).then(|| build(ps, None, Page::Art, false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use vectorcraft_doc::{CharStyle, TextObject};
+
+    /// `doc` with a square ring round (20, 20)–(80, 80) (or at `at`), stroked `color` `width` wide,
+    /// named `name`.
+    fn ring(doc: &mut Document, name: Option<&str>, color: vectorcraft_color::Color, width: f64, at: Rect) {
+        let stroke = vectorcraft_color::Paint::solid(color);
+        let mut n = Node::path(
+            doc.alloc_id(),
+            vectorcraft_geom::shapes::rectangle(at),
+            vectorcraft_doc::Appearance::basic(vectorcraft_color::Paint::None, stroke, width),
+        );
+        n.name = name.map(str::to_string);
+        let layer = doc.layers[0].id;
+        doc.insert(Some(layer), usize::MAX, n).unwrap();
+    }
+
+    /// A text object's red stroke drawn over a dark red one of about the same lightness is drawn
+    /// by the page: it isn't taken out as unseen (#1102). An object the page doesn't draw still is.
+    #[test]
+    fn a_stroke_over_one_as_light_is_not_taken_for_unseen() {
+        let (dark, red) = (vectorcraft_color::Color::rgb(0.55, 0.0, 0.0), vectorcraft_color::Color::rgb(1.0, 0.0, 0.0));
+        let square = Rect::new(20.0, 20.0, 80.0, 80.0);
+        let mut page = Document::new(100.0, 100.0);
+        ring(&mut page, None, dark, 12.0, square);
+        ring(&mut page, None, red, 6.0, square);
+        let mut layers = Document::new(100.0, 100.0);
+        ring(&mut layers, Some(MADE), dark, 12.0, square);
+        ring(&mut layers, Some(MADE), red, 6.0, square);
+        ring(&mut layers, Some(MADE), red, 2.0, Rect::new(40.0, 40.0, 60.0, 60.0));
+        let rect = page.artboards[0].rect;
+        let frame = Frame { page: &page, page_rect: rect, rect, whole: false };
+        let mut view = PageView::new(&frame);
+        assert_eq!(prune_unseen(&frame, &mut view, &mut layers), 1, "only the ring the page doesn't draw");
+        let widths: Vec<f64> = layers.layers[0].children().unwrap().iter().filter_map(|n| n.appearance.stroke().map(|s| s.width)).collect();
+        assert_eq!(widths, [12.0, 6.0]);
+        // Taken by lightness alone, the red and the dark red are alike.
+        let px = |c: vectorcraft_color::Color| {
+            let [r, g, b] = c.to_rgb().map(|v| (v * 255.0).round() as u8);
+            [r, g, b, 255]
+        };
+        assert!(!differ(&px(dark), &px(red)) && differ_in_colour(&px(dark), &px(red)));
+    }
 
     fn piece(text: &str, x: f64, y: f64) -> Arc<Node> {
         Arc::new(Node::new(NodeId(0), NodeKind::Text(Box::new(TextObject::point(Point::new(x, y), text, CharStyle::default())))))

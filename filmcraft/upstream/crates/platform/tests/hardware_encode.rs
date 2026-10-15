@@ -9,7 +9,8 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 use filmcraft_export::{
-    BitrateMode, EncodedPacket, EncoderFrame, ExportSettings, Format, H264Pass, H264Profile, HardwareEncoding, Progress, VideoEncoder, export, rgba_to_yuv420_8,
+    BitrateMode, EncodedPacket, EncoderFrame, ExportSettings, Format, H264Pass, H264Profile, HardwareEncoding, Progress, VideoEncoder, export, hw_encode_stats,
+    rgba_to_yuv420_8,
 };
 use filmcraft_frame::PixelData;
 use filmcraft_isobmff::{CodecConfig, SampleEntry};
@@ -131,6 +132,22 @@ fn factory_only_acts_when_asked() {
         assert!(videotoolbox_encoder_factory(format, W, H, FPS, &s).is_none(), "{format:?}");
     }
     assert!(videotoolbox_encoder_factory(Format::H264, W, H, FPS, &ExportSettings { hardware_encoding: HardwareEncoding::Off, ..s }).is_none());
+}
+
+/// `perf.stats` reads these counters: a declined request, a session and every encoded picture must show.
+/// The counters are process-wide and other tests add to them, so only increases are checked.
+#[test]
+fn hardware_encoder_counters_follow_the_export() {
+    let s = hardware_settings();
+    let before = hw_encode_stats();
+    // an odd picture size is declined before any session is created
+    assert!(videotoolbox_encoder_factory(Format::H264, W + 1, H, FPS, &s).is_none());
+    assert!(hw_encode_stats().declined > before.declined, "a declined request is counted");
+    let Some(mut enc) = hardware(&s, W, H) else { return };
+    let created = hw_encode_stats();
+    assert!(created.sessions > before.sessions, "a created session is counted");
+    encode_all(&mut enc, 3);
+    assert!(hw_encode_stats().frames >= created.frames + 3, "every encoded picture is counted");
 }
 
 #[test]

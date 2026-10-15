@@ -69,6 +69,20 @@ fn last_step(s: &Session) -> String {
     s.doc().unwrap().history.undo.last().unwrap().label.clone()
 }
 
+/// How many steps there are to undo and to redo, and whether the document has unsaved changes.
+fn history(s: &Session) -> (usize, usize, bool) {
+    let st = s.doc().unwrap();
+    (st.history.undo.len(), st.history.redo.len(), st.is_dirty())
+}
+
+/// Leave a step to redo (a rectangle drawn and undone, which keeps the selection) and mark the
+/// document saved.
+fn with_a_step_to_redo(s: &mut Session) {
+    s.execute("shape.rectangle", &json!({"x": 700, "y": 500, "width": 10, "height": 10})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    s.doc_mut().unwrap().mark_saved();
+}
+
 /// Press, drag and release `tool` from `from` to `to`.
 fn drag(s: &mut Session, tool: &str, from: Point, to: Point, mods: Mods) {
     let v = ViewInfo::default();
@@ -111,6 +125,27 @@ fn options_keep_the_brackets() {
     for bad in [json!({"start": "x"}), json!({"effect": "nope"}), json!({"alignToPath": "top"})] {
         assert!(s.execute("type.pathOptions", &bad).is_err(), "{bad}");
     }
+}
+
+/// Type on a Path Options given the values the type has (OK in the dialog with nothing changed, the
+/// effect it has from the Type on a Path menu, the end bracket at the end of the path, or the
+/// query's own reply) records no undo step: the step to redo stays and the document stays
+/// unmodified. It still replies with the options. A flip is one undo step.
+#[test]
+fn options_the_type_has_record_no_undo_step() {
+    let mut s = session();
+    on_line(&mut s);
+    with_a_step_to_redo(&mut s);
+    let before = history(&s);
+    assert_eq!((before.1, before.2), (1, false), "a step to redo, and nothing unsaved");
+    let q = s.execute("type.pathOptions", &json!({})).unwrap();
+    let ok = json!({"effect": "rainbow", "flip": false, "alignToPath": "baseline", "spacing": 0});
+    for p in [ok, json!({"effect": "rainbow"}), json!({"end": null}), q.clone()] {
+        assert_eq!(s.execute("type.pathOptions", &p).unwrap(), q, "{p}");
+        assert_eq!(history(&s), before, "{p}");
+    }
+    s.execute("type.pathOptions", &json!({"flip": true})).unwrap();
+    assert_eq!(history(&s), (before.0 + 1, 0, true));
 }
 
 #[test]

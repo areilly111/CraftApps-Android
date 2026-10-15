@@ -15,8 +15,18 @@ if [ "${1:-}" != "--skip-build" ]; then
   (cd "$ROOT" && cargo xtask web)
 fi
 
-SITE="$CARGO_TARGET_DIR/web"
+SITE="$CARGO_TARGET_DIR/web-site"
 [ -f "$SITE/index.html" ] || { echo "error: $SITE/index.html missing; run without --skip-build" >&2; exit 1; }
+# Guard against Cargo build artifacts leaking into the release (issue #793): cross-compiling writes
+# the selected profile's *host* artifacts (build scripts, proc-macros, deps/, build/, .fingerprint/)
+# to <target>/<profile>/, so if SITE ever points at a profile directory again the zip would carry
+# ~113 MB of build output. Fail loudly instead.
+for d in deps build .fingerprint; do
+  if [ -e "$SITE/$d" ]; then
+    echo "error: $SITE/$d exists — $SITE holds Cargo build artifacts, not just the site (issue #793)" >&2
+    exit 1
+  fi
+done
 # Paths must be relative so the site works under any prefix.
 if grep -Eq '(src|href)="/[^/]' "$SITE/index.html"; then
   echo "error: $SITE/index.html has root-absolute URLs; it would break when served from a sub-path" >&2

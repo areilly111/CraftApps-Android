@@ -799,6 +799,7 @@
 	Relink others automatically	自动重新链接其他项
 	Search in:	搜索位置：
 	Browse…	浏览…
+	A file dialog is already open	已有一个文件对话框处于打开状态
 	Exact name matches only	仅精确名称匹配
 	No candidates yet — Search a folder or Locate the file.	暂无候选项 — 请搜索文件夹或定位文件。
 	✔ same file	✔ 同一文件
@@ -2787,8 +2788,8 @@
 	Ignore Audio	忽略音频
 	Ignore Video	忽略视频
 	Apply a cut at each detected cut point	在每个检测到的切点应用剪切
-	Create a subclip for each detected cut point	为每个检测到的切点创建子剪辑
-	Generate clip markers at each detected cut point	在每个检测到的切点生成剪辑标记
+	Create a bin of subclips from each detected cut point	从每个检测到的切点创建子剪辑素材箱
+	Create a clip marker at each detected cut point	在每个检测到的切点创建剪辑标记
 	Sensitivity:	灵敏度：
 	Normalize Mix Track to:	将混音轨道标准化至：
 	Disabled clips	已禁用的剪辑
@@ -2957,9 +2958,18 @@
 	Step Forward 1 Frame	前进 1 帧
 	Match Playhead	匹配播放头
 	Gang to Program	联动到节目
+	AAC Audio	AAC 音频
+	AAC Audio 48 kHz 320 kbps	AAC 音频 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	MPEG-4 音频 (.m4a)，立体声 48 kHz AAC-LC，320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 位
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF，立体声 48 kHz 16 位 PCM
+	FLAC	FLAC
+	FLAC 48 kHz 24-bit	FLAC 48 kHz 24 位
+	FLAC, stereo 48 kHz 24-bit, lossless	FLAC，立体声 48 kHz 24 位，无损
+	FLAC (lossless)	FLAC（无损）
+	Compression Level	压缩级别
+	0 fastest, 8 smallest	0 最快，8 最小
 	APV	APV
 	APV 422-10	APV 422-10
 	APV 422-12	APV 422-12
@@ -3165,6 +3175,9 @@
 	Numbered JPEG stills (quality 90)	带编号的 JPEG 静帧（质量 90）
 	Numbered Targa stills (24-bit, uncompressed)	带编号的 Targa 静帧（24 位，未压缩）
 	Numbered DPX stills (10-bit RGB)	带编号的 DPX 静帧（10 位 RGB）
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	OpenEXR 序列
+	Numbered OpenEXR stills (half float, linear, uncompressed)	带编号的 OpenEXR 静帧（16 位半精度浮点，线性，未压缩）
 	Numbered PNG stills at the sequence's frame size	带编号的 PNG 静帧（采用序列帧大小）
 	Numbered TIFF stills (RGB, 8-bit)	带编号的 TIFF 静帧（RGB，8 位）
 	Opacity 0 → 100 % over the first second	在最初一秒内不透明度从 0 → 100%
@@ -3465,6 +3478,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	单击以选择，或在空白处单击并拖动以框选。使用 Shift、Alt 和 Ctrl 进行其他操作。
 	Click to zoom in; Alt-click to zoom out.	单击以放大；Alt-单击以缩小。
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	拖动：移动 · Alt-单击：平滑/拐角 · Ctrl-单击：删除
+	Drag inward to round the corners	向内拖动以使拐角变圆
 	Include Alpha Channel	包含 Alpha 通道
 	Sequence Settings	序列设置
 	Color Management	色彩管理
@@ -3522,6 +3536,9 @@
 	Edit Narration	编辑旁白
 	Clear Transition	清除过渡
 	Set Transition Duration	设置过渡持续时间
+	Resize floating panel	调整浮动面板大小
+	More transport controls	更多播放控制
+	Undock Panel	取消面板停靠
 	Project Notes	项目备注
 	Get Project Notes	获取项目备注
 	Edit Project Notes	编辑项目备注
@@ -3531,3 +3548,25 @@
 	Delete Caption Track	删除字幕轨道
 	Delete Caption Tracks	删除多个字幕轨道
 	Delete Empty Caption Tracks	删除空字幕轨道
+
+	Appearance Settings…	外观设置…
+
+	Add to favorites	添加到收藏
+
+	Remove from favorites	从收藏中移除
+	Compression	压缩
+	ZIP (1 scan line)	ZIP（1 条扫描线）
+	ZIP (16 scan lines)	ZIP（16 条扫描线）
+	Safe graphics mode: {mode}	安全图形模式：{mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	上次启动时默认图形模式失败。更新显卡驱动程序通常可以解决此问题。
+	Use Default Graphics	使用默认图形
+	The default graphics are used from the next start.	下次启动时将使用默认图形。
+	DirectX 12 only	仅 DirectX 12
+	software rendering	软件渲染
+	Label Color Presets	标签颜色预设
+	{name} (Modified)	{name}（已修改）
+	Revert to the preset's colors and names	恢复为预设的颜色和名称
+	Import a preset file…	导入预设文件…
+	Export the labels to a preset file…	将标签导出为预设文件…
+	Show the presets folder	显示预设文件夹
+	Delete this preset	删除此预设

@@ -1,7 +1,8 @@
 //! Shadings: axial and radial ones become gradients (their stops sampled from the shading
 //! function in its own colour model; an end that doesn't extend clips the painted area), patch
-//! and triangle meshes become gradient meshes, and a gradient drawn through a luminosity mask that
-//! is the same gradient in grey (how stop opacity is written) gets its opacity stops back.
+//! and triangle meshes become gradient meshes, a gradient drawn through a luminosity mask that is
+//! the same gradient in grey (how stop opacity is written) gets its opacity stops back, and a shape
+//! clipping a gradient that fills it becomes one path with the gradient.
 
 use std::sync::Arc;
 
@@ -10,11 +11,12 @@ use hayro_interpret::shading::{ShadingFunction, ShadingType};
 use kurbo::{BezPath, Circle, Point, Rect, Shape, Vec2};
 use vectorcraft_color::{Color, Gradient, GradientGeom, GradientKind, GradientPaint, GradientStop, Paint};
 use vectorcraft_doc::live::{GradientMesh, lerp_color};
-use vectorcraft_doc::{Node, NodeKind, OpacityMask};
+use vectorcraft_doc::{AppearanceItem, Node, NodeKind, OpacityMask};
+use vectorcraft_geom::PathData;
 
-use crate::import::round3;
+use crate::import::{closed_subpaths, round3};
 use crate::import_color::{Colors, Native};
-use crate::import_mask::luminance;
+use crate::import_mask::{contains, is_rectangle, luminance};
 
 /// The most mesh patches (or triangles) imported per shading: past it, the shading is a flat
 /// colour.
@@ -195,7 +197,7 @@ fn only_leaf(n: &Node) -> Option<&Node> {
         NodeKind::Group { children, clip } => {
             let rest = if *clip { children.get(1..)? } else { children.as_slice() };
             match rest {
-                [one] if n.opacity >= 0.999 && n.mask.is_none() => only_leaf(one),
+                [one] if n.opacity >= 0.999 && n.extras().mask.is_none() => only_leaf(one),
                 _ => None,
             }
         }
@@ -265,4 +267,24 @@ pub(crate) fn fold_stop_opacity(content: &Node, mask: &OpacityMask) -> Option<No
 /// `node` (filling `bounds`) clipped to `clip`: a clip group.
 pub(crate) fn clipped(clip: Node, node: Node, id: vectorcraft_doc::NodeId) -> Node {
     Node::new(id, NodeKind::Group { children: vec![Arc::new(clip), Arc::new(node)], clip: true })
+}
+
+/// A shape filled with a gradient, as files write it (the shape as a clip, then `sh` filling the
+/// clip's bounds), as one path: the clip's outline with `content`'s look. `None` unless `content`
+/// is one rectangle covering the clip, filled with a gradient placed on the page and nothing else.
+pub(crate) fn gradient_shape(clip: &Node, content: &[Arc<Node>]) -> Option<Node> {
+    let ([only], NodeKind::Path { path: outline, rule, .. }) = (content, &clip.kind) else { return None };
+    let NodeKind::Path { path: area, clipping: false, guide: false, .. } = &only.kind else { return None };
+    let [AppearanceItem::Fill(f)] = only.appearance.items.as_slice() else { return None };
+    let Paint::Gradient(g) = &f.paint else { return None };
+    let (area, outline) = (area.to_bezpath(), outline.to_bezpath());
+    let covers = is_rectangle(&area) && contains(area.bounding_box().inflate(0.01, 0.01), outline.bounding_box());
+    if g.geom.is_none() || !covers {
+        return None;
+    }
+    let mut shape = (**only).clone();
+    // A clip closes its subpaths, as a fill does.
+    let path = PathData::from_bezpath(&closed_subpaths(&outline));
+    shape.kind = NodeKind::Path { path, rule: *rule, live: None, clipping: false, guide: false };
+    Some(shape)
 }

@@ -973,7 +973,7 @@ impl Interp<'_> {
         self.out.doc.images.entry(key.clone()).or_insert(blob);
         let im = ImageObject { key, width: img.w, height: img.h, xf, link: None, placement: Default::default() };
         let clips = self.g.clips.clone();
-        self.out.push(Node::new(NodeId(0), NodeKind::Image(im)), &clips);
+        self.out.push(Node::new(NodeId(0), NodeKind::Image(Box::new(im))), &clips);
         Ok(())
     }
 }

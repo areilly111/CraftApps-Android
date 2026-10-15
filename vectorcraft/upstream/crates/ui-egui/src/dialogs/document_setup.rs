@@ -48,15 +48,16 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
         d.fields.insert("tab".into(), json!(TABS[i]));
     }
     ui.add_space(12.0);
+    let mut close = false;
     ui.vertical(|ui| {
         ui.set_min_height(330.0);
         match tab {
-            0 => general(app, ui, d),
+            0 => close = general(app, ui, d),
             1 => transparency(app, ui, d),
             _ => typography(ui, d),
         }
     });
-    false
+    close
 }
 
 /// A dropdown row bound to the string `d.fields[key]`; `options` are (value, label).
@@ -77,23 +78,28 @@ fn unit(d: &Dialog) -> Unit {
     Unit::named(&d.str("units")).unwrap_or_default()
 }
 
-fn general(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
+fn general(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     let units: Vec<(&str, &str)> = Unit::ALL.iter().map(|u| (u.label(), u.label())).collect();
     choice(ui, d, "units", tl!("Units:"), &units);
     ui.add_space(6.0);
     let unit = unit(d);
     widgets::label_row(ui, tl!("Bleed:"), LABEL, |ui| form::bleed(ui, d, unit, 64.0));
     ui.add_space(6.0);
+    let mut close = false;
     widgets::label_row(ui, "", LABEL, |ui| {
         // Applies the settings, then edits the artboards with the Artboard tool.
         if widgets::flat_button(ui, tl!("Edit Artboards"), 120.0).clicked() && confirm(app, d).is_ok() {
             app.select_tool("artboard");
+            // The shared frame restores its working copy after drawing the body. Tell it to
+            // close too, otherwise it reopens the dialog that confirm just closed.
+            close = true;
         }
     });
     ui.add_space(12.0);
     check(ui, d, "outlineImages", tl!("Show Images in Outline Mode"));
     check(ui, d, "highlightSubstitutedFonts", tl!("Highlight Substituted Fonts"));
     check(ui, d, "highlightSubstitutedGlyphs", tl!("Highlight Substituted Glyphs"));
+    close
 }
 
 fn transparency(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
@@ -203,10 +209,83 @@ fn typography(ui: &mut egui::Ui, d: &mut Dialog) {
 
 #[cfg(test)]
 mod tests {
+    use egui::{Event, PointerButton, Pos2, Rect, vec2};
     use serde_json::json;
     use vectorcraft_engine::Session;
 
     use crate::VectorcraftApp;
+
+    fn dialog_frame(app: &mut VectorcraftApp, ctx: &egui::Context, events: Vec<Event>) -> Vec<(String, Rect)> {
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1200.0, 900.0))), events, ..Default::default() };
+        let mut out = ctx.run_ui(raw, |ui| crate::dialogs::show(app, ui.ctx()));
+        out.textures_delta.clear();
+        out.shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some((t.galley.text().to_string(), Rect::from_min_size(t.pos, t.galley.size()))),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn click_dialog_button(app: &mut VectorcraftApp, label: &str) {
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx);
+        crate::theme::apply(&ctx, Default::default());
+        dialog_frame(app, &ctx, vec![]);
+        let texts = dialog_frame(app, &ctx, vec![]);
+        let at = texts.iter().find(|(text, _)| text == label).unwrap_or_else(|| panic!("missing {label}: {texts:?}")).1.center();
+        let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        dialog_frame(app, &ctx, vec![Event::PointerMoved(at), button(true)]);
+        dialog_frame(app, &ctx, vec![button(false)]);
+        dialog_frame(app, &ctx, vec![]);
+    }
+
+    #[test]
+    fn edit_artboards_applies_settings_and_closes_the_dialog() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        app.run("file.documentSetup", json!({})).unwrap();
+        app.ui.dialog.as_mut().unwrap().fields.insert("bleed".into(), json!([9, 9, 9, 9]));
+        click_dialog_button(&mut app, "Edit Artboards");
+        assert!(app.ui.dialog.is_none(), "Edit Artboards must leave the canvas accessible");
+        assert_eq!(app.session.tool_id(), "artboard");
+        let st = app.session.active().unwrap();
+        assert_eq!(st.doc.setup.bleed, [9.0; 4]);
+        assert_eq!(st.history.undo.len(), 1);
+        app.run("edit.undo", json!({})).unwrap();
+        assert_eq!(app.session.active().unwrap().doc.setup.bleed, [0.0; 4]);
+    }
+
+    #[test]
+    fn edit_artboards_with_invalid_settings_keeps_the_dialog_and_tool() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+        app.run("file.documentSetup", json!({})).unwrap();
+        app.ui.dialog.as_mut().unwrap().fields.insert("bleed".into(), json!(500));
+        click_dialog_button(&mut app, "Edit Artboards");
+        assert!(app.ui.dialog.is_some());
+        assert_eq!(app.session.tool_id(), "selection");
+        let st = app.session.active().unwrap();
+        assert_eq!(st.doc.setup.bleed, [0.0; 4]);
+        assert!(st.history.undo.is_empty());
+    }
+
+    #[test]
+    fn ok_and_cancel_close_without_switching_tools() {
+        for (button, expected_bleed, undo_steps) in [("OK", [9.0; 4], 1), ("Cancel", [0.0; 4], 0)] {
+            let mut app = VectorcraftApp::new(Session::new(), Default::default());
+            app.run("file.new", json!({"width": 200, "height": 200})).unwrap();
+            app.run("file.documentSetup", json!({})).unwrap();
+            app.ui.dialog.as_mut().unwrap().fields.insert("bleed".into(), json!([9, 9, 9, 9]));
+            click_dialog_button(&mut app, button);
+            assert!(app.ui.dialog.is_none(), "{button}");
+            assert_eq!(app.session.tool_id(), "selection");
+            let st = app.session.active().unwrap();
+            assert_eq!(st.doc.setup.bleed, expected_bleed);
+            assert_eq!(st.history.undo.len(), undo_steps);
+        }
+    }
 
     fn frame(app: &mut VectorcraftApp) {
         let ctx = egui::Context::default();

@@ -203,3 +203,21 @@ fn type_tool_selection_styles_characters() {
     let hist = d.exec("history.list", json!({}));
     assert_eq!(hist["undo"].as_array().unwrap().last().unwrap(), "Character Style");
 }
+
+/// #611: installing a file FilmCraft refuses (a ZIP — EffectCraft's template package renamed
+/// to .fcgt) from the Browse panel must say why on the status bar, not do nothing.
+#[test]
+fn install_refused_shows_the_reason_on_the_status_bar() {
+    let mut d = Driver::demo("install-refused");
+    let file = std::env::temp_dir().join(format!("filmcraft-gfx-ui-zip-{}.fcgt", std::process::id()));
+    std::fs::write(&file, [0x50u8, 0x4b, 0x03, 0x04]).unwrap();
+    let picked = file.to_string_lossy().to_string();
+    d.harness.state_mut().hooks.pick_open_file = Some(Box::new(move |_, _| Some(picked.clone())));
+    d.ok("ui.set", json!({"workspace": "Captions and Graphics"}));
+    d.ok("ui.set", json!({"gfxTemplates": {"tab": "browse"}}));
+    d.ok("ui.click", json!({"id": "gfxTemplates.install"}));
+    let st = d.ok("ui.inspect", json!({}));
+    let _ = std::fs::remove_file(&file);
+    let msg = st["ui"]["status"].as_str().unwrap_or_default().to_lowercase();
+    assert!(msg.contains("zip archive"), "the refused install left no visible reason: {:?}", st["ui"]["status"]);
+}

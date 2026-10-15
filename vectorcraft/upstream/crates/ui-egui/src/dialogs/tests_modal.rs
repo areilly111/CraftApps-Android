@@ -201,3 +201,106 @@ fn offset_path_previews() {
     cancel(&mut app);
     assert_eq!(count(&app), 1, "rolled back");
 }
+
+/// Offset Path opens on the values it was last confirmed with (#1152).
+#[test]
+fn offset_path_remembers_its_last_values() {
+    let mut app = app_with_selection();
+    app.run("select.all", json!({})).unwrap();
+    crate::menus::invoke(&mut app, "object.path.offsetPath", json!({}));
+    let d = app.ui.dialog.as_mut().unwrap();
+    d.fields.insert("offset".into(), json!(-4.5));
+    d.fields.insert("joins".into(), json!("round"));
+    confirm(&mut app).unwrap();
+    assert!(app.ui.dialog.is_none());
+    crate::menus::invoke(&mut app, "object.path.offsetPath", json!({}));
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!((d.f64("offset", 0.0), d.str("joins"), d.f64("miterLimit", 0.0)), (-4.5, "round".to_string(), 4.0));
+}
+
+fn app_with_dense_path() -> VectorcraftApp {
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width": 400, "height": 300})).unwrap();
+    let anchors: Vec<_> = (0..20).map(|i| json!({"x": 30 + i * 15, "y": 100.0 + (i % 2) as f64 * 0.1})).collect();
+    let id = app.run("path.create", json!({"anchors": anchors})).unwrap()["id"].as_u64().unwrap();
+    app.run("select.anchors", json!({"id": id, "anchors": [[0, 19]]})).unwrap();
+    app
+}
+
+#[test]
+fn simplify_dialog_preview_counts_and_cancel_restore_the_original() {
+    let (ctx, mut app) = (ctx(), app_with_dense_path());
+    let before = app.session.doc().unwrap().doc.clone();
+    let selection = app.session.doc().unwrap().selection.clone();
+    let undo_len = app.session.doc().unwrap().history.undo.len();
+    crate::menus::invoke(&mut app, "object.path.simplify", json!({}));
+    settle(&ctx, &mut app);
+    let texts = frame(&ctx, &mut app, vec![]);
+    let preview = texts.iter().find(|(t, _)| t == "Preview").map(|(_, r)| *r).expect("a Preview checkbox");
+    assert!(texts.iter().any(|(t, _)| t == "Anchor Points: 20 → 2"), "the reduction is visible: {texts:?}");
+    assert!(app.session.in_interaction());
+    assert!(app.session.doc().unwrap().selection.anchors.is_empty());
+    assert_eq!(app.session.doc().unwrap().history.undo.len(), undo_len);
+    // The dialog focuses its first field. Type as a user does, then Tab commits it
+    // without confirming the dialog; replacing only its bound value leaves old focused text.
+    frame(&ctx, &mut app, vec![Event::Text("0.01 pt".into())]);
+    frame(&ctx, &mut app, vec![Event::Key { key: egui::Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+    frame(&ctx, &mut app, vec![]);
+    assert_eq!(app.ui.dialog.as_ref().unwrap().f64("tolerance", 0.0), 0.01);
+    let fine = app.session.doc().unwrap().doc.clone();
+    click(&ctx, &mut app, preview.center());
+    assert_eq!(app.session.doc().unwrap().doc, before);
+    assert_eq!(app.session.doc().unwrap().selection, selection);
+    assert!(!app.session.in_interaction());
+    let texts = frame(&ctx, &mut app, vec![]);
+    assert!(!texts.iter().any(|(t, _)| t.starts_with("Anchor Points:")), "no stale counts while Preview is off");
+    let preview = texts.iter().find(|(t, _)| t == "Preview").unwrap().1;
+    click(&ctx, &mut app, preview.center());
+    assert_eq!(app.session.doc().unwrap().doc, fine);
+    cancel(&mut app);
+    assert_eq!(app.session.doc().unwrap().doc, before);
+    assert_eq!(app.session.doc().unwrap().selection, selection);
+    assert_eq!(app.session.doc().unwrap().history.undo.len(), undo_len);
+    app.run("object.path.simplify", json!({"tolerance": 0.01})).unwrap();
+    assert_eq!(app.session.doc().unwrap().doc, fine, "changing tolerance refits the original, not the previous preview");
+}
+
+#[test]
+fn simplify_dialog_ok_keeps_exactly_one_undo_with_or_without_preview() {
+    for on in [true, false] {
+        let (ctx, mut app) = (ctx(), app_with_dense_path());
+        let before = app.session.doc().unwrap().doc.clone();
+        let selection = app.session.doc().unwrap().selection.clone();
+        let undo_len = app.session.doc().unwrap().history.undo.len();
+        crate::menus::invoke(&mut app, "object.path.simplify", json!({}));
+        app.ui.dialog.as_mut().unwrap().fields.insert("preview".into(), json!(on));
+        settle(&ctx, &mut app);
+        if on {
+            app.ui.dialog.as_mut().unwrap().fields.insert("tolerance".into(), json!("0.01 pt"));
+            frame(&ctx, &mut app, vec![]);
+            app.ui.dialog.as_mut().unwrap().fields.insert("tolerance".into(), json!("1 pt"));
+            frame(&ctx, &mut app, vec![]);
+        }
+        assert_eq!(app.session.doc().unwrap().history.undo.len(), undo_len);
+        confirm(&mut app).unwrap();
+        assert!(app.ui.dialog.is_none() && !app.session.in_interaction());
+        assert!(app.session.doc().unwrap().selection.anchors.is_empty());
+        assert_eq!(app.session.doc().unwrap().history.undo.len(), undo_len + 1);
+        let after = app.session.doc().unwrap().doc.clone();
+        assert_ne!(after, before);
+        app.run("edit.undo", json!({})).unwrap();
+        assert_eq!(app.session.doc().unwrap().doc, before);
+        assert_eq!(app.session.doc().unwrap().selection, selection);
+        app.run("edit.redo", json!({})).unwrap();
+        assert_eq!(app.session.doc().unwrap().doc, after);
+        assert!(app.session.doc().unwrap().selection.anchors.is_empty());
+    }
+}
+
+#[test]
+fn printer_mark_labels_are_distinct_from_language_names() {
+    let cs = crate::i18n::Lang::from_code("cs").unwrap();
+    assert_eq!(save_pdf::choice_label(cs, "marks.kind", "Japanese"), "Japonské");
+    assert_eq!(save_pdf::choice_label(cs, "language", "Japanese"), "Japonština");
+    assert_eq!(save_pdf::choice_label(crate::i18n::Lang::EN, "marks.kind", "Japanese"), "Japanese");
+}

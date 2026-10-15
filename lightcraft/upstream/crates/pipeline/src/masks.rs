@@ -440,25 +440,26 @@ pub struct BrushDabs {
     pub auto: bool,
 }
 
+/// Output pixels a brush sample must move from the last dab to count as movement: below this the
+/// pointer is held still (the same screen position mapped again, up to float rounding).
+const STATIONARY_PX: f64 = 1e-6;
+
 /// The dabs of stroke `s` in a `w × h` output.
 pub fn brush_dabs(s: &BrushStroke, frame: &Frame, w: usize, h: usize) -> BrushDabs {
     let to_out = frame.norm_to_out(w, h);
     let ppl = frame.px_per_long(w);
     let r = (s.size * ppl).max(0.5);
     let hard = r * (1.0 - (s.feather / 100.0).clamp(0.0, 1.0));
-    // Densify the path so dabs overlap (spacing r/4).
+    // Densify the path so dabs overlap (spacing r/4). Coverage builds up by passes, not by how
+    // long the button is held: a sample where the pointer hasn't moved (a stationary hold records
+    // one per frame) lays no dab, so waiting in place adds nothing (#518).
     let mut dabs: Vec<Point> = Vec::new();
-    for (i, p) in s.points.iter().enumerate() {
+    let mut prev = None;
+    for p in &s.points {
         let q = to_out.apply(*p);
-        if i > 0 {
-            let prev = to_out.apply(s.points[i - 1]);
-            let dist = prev.dist(q);
-            let n = (dist / (r / 4.0).max(0.5)).ceil() as usize;
-            for k in 1..n {
-                dabs.push(prev.lerp(q, k as f64 / n as f64));
-            }
+        if push_dabs(&mut dabs, prev, q, r) {
+            prev = Some(q);
         }
-        dabs.push(q);
     }
     BrushDabs {
         dabs,
@@ -469,6 +470,60 @@ pub fn brush_dabs(s: &BrushStroke, frame: &Frame, w: usize, h: usize) -> BrushDa
         erase: s.erase,
         auto: s.auto_mask,
     }
+}
+
+/// Distance between consecutive dabs of a brush of radius `r` (pixels): a quarter of the radius,
+/// so neighbouring dabs overlap and a stroke reads as continuous however fast it was painted.
+#[inline]
+pub fn dab_spacing(r: f64) -> f64 {
+    (r / 4.0).max(0.5)
+}
+
+/// Append the dabs of one path segment, from the previous sample `prev` (already stamped) to `q`,
+/// for a brush of radius `r`: evenly spaced at most [`dab_spacing`] apart, ending on `q`. The
+/// committed stroke ([`brush_dabs`]) and the live one the UI draws while the button is held place
+/// their dabs with this, so they cover the same pixels (issue #517). A sample where the pointer
+/// hasn't moved (a stationary hold records one per frame) or that is not a finite point lays
+/// nothing, so holding the brush still adds no coverage (#518). Returns whether `q` was stamped;
+/// callers move `prev` on only then.
+pub fn push_dabs(dabs: &mut Vec<Point>, prev: Option<Point>, q: Point, r: f64) -> bool {
+    if !(q.x.is_finite() && q.y.is_finite()) {
+        return false;
+    }
+    if let Some(prev) = prev {
+        let dist = prev.dist(q);
+        if dist.is_nan() || dist <= STATIONARY_PX {
+            return false;
+        }
+        let n = (dist / dab_spacing(r)).ceil();
+        // a hostile or degenerate segment (huge) gets no in-between dabs rather than a huge
+        // allocation: 1 M dabs is far more than any on-screen stroke needs
+        let n = if n.is_finite() { n.clamp(0.0, 1_000_000.0) as usize } else { 0 };
+        for k in 1..n {
+            dabs.push(prev.lerp(q, k as f64 / n as f64));
+        }
+    }
+    dabs.push(q);
+    true
+}
+
+/// How much one dab paints at distance `dd` from its centre: 1 inside the hard core `hard`,
+/// smoothly falling to 0 at the radius `r`.
+#[inline]
+pub fn dab_alpha(dd: f64, r: f64, hard: f64) -> f32 {
+    if dd > r {
+        0.0
+    } else if dd <= hard {
+        1.0
+    } else {
+        1.0 - smooth(hard as f32, r as f32, dd as f32)
+    }
+}
+
+/// A stroke's coverage `v` after another dab paints `a` there: flow accumulates up to density.
+#[inline]
+pub fn accumulate(v: f32, a: f32, flow: f32, density: f32) -> f32 {
+    (v + a * flow * (1.0 - v)).min(density)
 }
 
 /// Auto Mask tolerances: a pixel takes a dab's paint fully up to half of these from the colour
@@ -554,14 +609,14 @@ fn rasterize_brush(strokes: &[BrushStroke], frame: &Frame, w: usize, h: usize, i
                     if dd > r {
                         continue;
                     }
-                    let mut a = if dd <= hard { 1.0 } else { 1.0 - smooth(hard as f32, r as f32, dd as f32) };
+                    let mut a = dab_alpha(dd, r, hard);
                     let i = y * w + x;
                     if let Some((rl, rch)) = refc {
                         a *= auto_similarity(log_l.data[i], chromaticity(img.data[i]), rl, rch);
                     }
                     let v = &mut stroke_alpha.data[i];
                     // flow accumulates within a stroke up to density
-                    *v = (*v + a * flow * (1.0 - *v)).min(dens);
+                    *v = accumulate(*v, a, flow, dens);
                 }
             }
         }
@@ -696,6 +751,47 @@ mod tests {
         assert!(e[0].alpha.get(50, 50) < 0.01);
     }
 
+    /// Issue #517: dabs along a long segment (a fast stroke: two pointer samples far apart) are at
+    /// most [`dab_spacing`] apart, painting dab by dab (the live stroke) or the whole path at once
+    /// (the committed one).
+    #[test]
+    fn a_long_segment_gets_dabs_at_most_the_spacing_apart() {
+        let r = 12.0;
+        let pts = [Point::new(10.0, 20.0), Point::new(610.0, 260.0), Point::new(611.0, 260.0), Point::new(40.0, 400.0)];
+        let mut live = Vec::new();
+        let mut prev = None;
+        for q in pts {
+            if push_dabs(&mut live, prev, q, r) {
+                prev = Some(q);
+            }
+        }
+        assert!(live.len() > 3 * 600 / 12, "{} dabs", live.len());
+        assert!(live.windows(2).all(|w| w[0].dist(w[1]) <= dab_spacing(r) + 1e-9));
+        assert_eq!(live.first(), pts.first());
+        assert_eq!(live.last(), pts.last());
+        // the committed stroke places the same dabs (in output pixels; this frame maps 1:1 scaled)
+        let (w, h) = (1000, 500);
+        let f = frame(w, h);
+        let stroke = BrushStroke { points: pts.map(|p| Point::new(p.x / w as f64, p.y / h as f64)).to_vec(), ..Default::default() };
+        let committed = brush_dabs(&stroke, &f, w, h);
+        let mut again = Vec::new();
+        let mut prev = None;
+        for p in &stroke.points {
+            let q = f.norm_to_out(w, h).apply(*p);
+            if push_dabs(&mut again, prev, q, committed.r) {
+                prev = Some(q);
+            }
+        }
+        assert_eq!(committed.dabs, again);
+        assert!(committed.dabs.windows(2).all(|w| w[0].dist(w[1]) <= dab_spacing(committed.r) + 1e-9));
+        // a hostile segment places no in-between dabs
+        let mut v = Vec::new();
+        assert!(!push_dabs(&mut v, Some(Point::new(f64::NAN, 0.0)), Point::new(1.0, 1.0), r));
+        assert!(!push_dabs(&mut v, None, Point::new(f64::INFINITY, 1.0), r));
+        push_dabs(&mut v, Some(Point::new(0.0, 0.0)), Point::new(1e300, 1.0), 0.0);
+        assert!(v.len() <= 1_000_002, "{}", v.len());
+    }
+
     #[test]
     fn brush_and_subtract() {
         let f = frame(200, 100);
@@ -712,6 +808,58 @@ mod tests {
         assert!(a.get(40, 50) > 0.9, "{}", a.get(40, 50));
         assert!(a.get(100, 50) < 0.05, "erased centre {}", a.get(100, 50));
         assert!(a.get(40, 5) < 0.01);
+    }
+
+    /// #518: holding the brush still adds no coverage. A press plus any number of stationary
+    /// pointer samples paints exactly the single dab of the press, whatever the frame rate.
+    #[test]
+    fn holding_the_brush_still_adds_no_coverage() {
+        let (w, h) = (200, 100);
+        let f = frame(w, h);
+        let img = Rgb32f::new(w, h);
+        let l = Plane::new(w, h);
+        let p = Point::new(0.5, 0.5);
+        let spot = |samples: usize, flow: f64| {
+            let s = BrushStroke { points: vec![p; samples], size: 0.1, feather: 80.0, flow, ..Default::default() };
+            shape_alpha(&MaskShape::Brush { strokes: vec![s] }, &f, w, h, &img, &l, 0.0, None)
+        };
+        for flow in [100.0, 40.0] {
+            let press = spot(1, flow);
+            // the feathered edge is soft to begin with
+            let edge = press.get(100 + 14, 50);
+            assert!(edge > 0.05 && edge < 0.6, "flow {flow}: edge {edge}");
+            for n in [2, 5, 60, 600] {
+                let held = spot(n, flow);
+                assert!(held.data == press.data, "flow {flow}: {n} stationary samples hardened the edge {edge} → {}", held.get(100 + 14, 50));
+            }
+        }
+        let s = BrushStroke { points: vec![p; 60], size: 0.1, ..Default::default() };
+        assert_eq!(brush_dabs(&s, &f, w, h).dabs.len(), 1, "one dab for the press");
+        // a stroke that pauses partway lays the same dabs as one that doesn't
+        let (a, b) = (Point::new(0.2, 0.5), Point::new(0.8, 0.5));
+        let paused = BrushStroke { points: vec![a, p, p, p, p, b], flow: 30.0, ..Default::default() };
+        let smooth = BrushStroke { points: vec![a, p, b], flow: 30.0, ..Default::default() };
+        assert_eq!(brush_dabs(&paused, &f, w, h).dabs, brush_dabs(&smooth, &f, w, h).dabs);
+    }
+
+    /// Flow builds up by passes: going back over an area in the same stroke adds coverage.
+    #[test]
+    fn a_second_pass_builds_up_with_low_flow() {
+        let (w, h) = (200, 100);
+        let f = frame(w, h);
+        let img = Rgb32f::new(w, h);
+        let l = Plane::new(w, h);
+        let (a, b) = (Point::new(0.2, 0.5), Point::new(0.8, 0.5));
+        let paint = |points: Vec<Point>| {
+            let s = BrushStroke { points, size: 0.05, feather: 50.0, flow: 20.0, ..Default::default() };
+            shape_alpha(&MaskShape::Brush { strokes: vec![s] }, &f, w, h, &img, &l, 0.0, None)
+        };
+        let once = paint(vec![a, b]);
+        let twice = paint(vec![a, b, a]);
+        let thrice = paint(vec![a, b, a, b]);
+        let (o, t, th) = (once.get(100, 50), twice.get(100, 50), thrice.get(100, 50));
+        assert!(o > 0.05 && o < 0.99, "one pass {o}");
+        assert!(t > o + 0.02 && th > t + 0.01, "passes build up: {o} → {t} → {th}");
     }
 
     #[test]

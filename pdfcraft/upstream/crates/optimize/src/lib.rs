@@ -10,7 +10,8 @@
 //! - **Discard objects:** page thumbnails, alternate images, document tags (structure tree),
 //!   print settings.
 //! - **Clean up:** drop images and forms that pages list but never draw (such as a deleted
-//!   image); Flate-compress streams that have no filter.
+//!   image); Flate-compress streams that have no filter; remove a redundant outer ASCII85 or
+//!   ASCIIHex layer from streams that have one.
 //!
 //! Metadata, attachments, comments, scripts, private data, hidden layers, bookmarks and form
 //! fields are discarded by `pdfcraft-redact`'s Remove Hidden Information, which the engine
@@ -25,7 +26,7 @@ mod unused;
 
 pub use audit::{SpaceCategory, SpaceUse, audit_space};
 
-use pdfcraft_cos::{Document, ObjRef, Object, Stream};
+use pdfcraft_cos::{Document, ObjRef, Object, Stream, serialize};
 
 pub use images::effective_resolutions;
 
@@ -84,7 +85,8 @@ pub struct Settings {
     pub discard_alternate_images: bool,
     pub discard_tags: bool,
     pub discard_print_settings: bool,
-    /// Flate-compress streams stored without a filter.
+    /// Flate-compress streams stored without a filter, and strip a redundant outer ASCII85 or
+    /// ASCIIHex layer from streams that have one.
     pub flate_unencoded: bool,
     /// Clean Up: remove links (and bookmark destinations) that point nowhere.
     pub remove_invalid_links: bool,
@@ -227,17 +229,53 @@ pub fn optimize_with_progress(doc: &mut Document, settings: &Settings, progress:
             let obj = doc.get(r);
             let Object::Stream(s) = &*obj else { continue };
             // XMP stays readable as plain text (PDF/A requires it); tiny streams don't gain.
-            if s.dict.contains(b"Filter") || s.dict.name(b"Type") == Some(b"Metadata") || s.dict.name(b"Type") == Some(b"XRef") || s.raw.len() < 64 {
+            if s.dict.name(b"Type") == Some(b"Metadata") || s.dict.name(b"Type") == Some(b"XRef") || s.raw.len() < 64 {
                 continue;
             }
-            let mut d = s.dict.clone();
-            d.remove(b"Length");
-            let packed = Stream::flate(d, &s.raw);
-            if packed.raw.len() < s.raw.len() {
-                doc.set(r, Object::Stream(packed));
+            let replacement = if s.dict.contains(b"Filter") {
+                strip_ascii_wrapper(s)
+            } else {
+                let mut d = s.dict.clone();
+                d.remove(b"Length");
+                let packed = Stream::flate(d, &s.raw);
+                (packed.raw.len() < s.raw.len()).then_some(packed)
+            };
+            if let Some(replacement) = replacement {
+                doc.set(r, Object::Stream(replacement));
                 report.streams_compressed += 1;
             }
         }
     }
     Ok(report)
+}
+
+/// `s` without its outer ASCII85 or ASCIIHex layer (`[/ASCII85Decode /FlateDecode]` becomes
+/// `[/FlateDecode]`), when that is smaller. Only the outer layer is decoded: strictly, and within
+/// the stored size, which ASCII text never falls below, so the inner encoded bytes stay exact.
+fn strip_ascii_wrapper(s: &Stream) -> Option<Stream> {
+    if s.dict.contains(b"DecodeParms") || s.dict.name(b"Type") == Some(b"ObjStm") || s.dict.name(b"Subtype") == Some(b"Image") {
+        return None;
+    }
+    let Some(Object::Array(filters)) = s.dict.get(b"Filter") else { return None };
+    let names = filters.iter().map(Object::as_name).collect::<Option<Vec<_>>>()?;
+    let (outer, inner) = names.split_first()?;
+    if !matches!(*outer, b"ASCII85Decode" | b"ASCIIHexDecode") || inner.is_empty() || inner.contains(&&b"Crypt"[..]) {
+        return None;
+    }
+    let data = s.decoded_first_filter_strict(s.raw.len()).ok()?;
+    let mut dict = s.dict.clone();
+    dict.remove(b"Length");
+    dict.set(b"Filter".to_vec(), Object::Array(inner.iter().map(|n| Object::Name(n.to_vec())).collect()));
+    let candidate = Stream::from_raw(dict, data);
+    (stored_len(&candidate)? < stored_len(s)?).then_some(candidate)
+}
+
+/// Bytes the stream object takes in the file: its dictionary with `/Length` set as the writer
+/// sets it, then its data.
+fn stored_len(s: &Stream) -> Option<usize> {
+    let mut dict = s.dict.clone();
+    dict.set(b"Length".to_vec(), Object::Int(i64::try_from(s.raw.len()).ok()?));
+    let mut out = Vec::new();
+    serialize(&Object::Dict(dict), &mut out);
+    out.len().checked_add(s.raw.len())
 }

@@ -97,7 +97,7 @@ pub(crate) fn add_look(s: &mut Session, label: &str, kind: NodeKind, look: NewAr
                         let (par, idx, _) = d.position(target).ok_or(crate::EngineError::NoNode(target))?;
                         let mut mask = d.node(target).cloned().ok_or(crate::EngineError::NoNode(target))?;
                         mask.id = d.alloc_id();
-                        mask.appearance = Appearance::basic(vectorcraft_color::Paint::None, vectorcraft_color::Paint::None, 0.0);
+                        mask.appearance = Appearance::basic(vectorcraft_color::Paint::None, vectorcraft_color::Paint::None, 0.0).into();
                         if let NodeKind::Path { clipping, .. } = &mut mask.kind {
                             *clipping = true;
                         }
@@ -157,7 +157,7 @@ fn draw_mode(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn path_kind(path: PathData, live: Option<LiveShape>) -> NodeKind {
-    NodeKind::Path { path, rule: FillRule::NonZero, live, clipping: false, guide: false }
+    NodeKind::Path { path, rule: FillRule::NonZero, live: live.map(Box::new), clipping: false, guide: false }
 }
 
 fn rect_of(p: &Value, cmd: &str) -> Result<Rect> {

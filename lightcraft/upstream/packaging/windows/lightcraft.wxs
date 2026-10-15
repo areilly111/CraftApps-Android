@@ -44,6 +44,26 @@
     </Property>
     <SetProperty Id="INSTALLFOLDER" Value="[PREVIOUSINSTALLFOLDER]" After="AppSearch" Sequence="both"
         Condition="PREVIOUSINSTALLFOLDER AND NOT INSTALLFOLDER" />
+    <!-- Older MSIs (including 0.5.0) only recorded the executable in App Paths. Type="file"
+         without a FileSearch returns its containing directory. Keep the searches separate so
+         the newer InstallFolder value and an explicit INSTALLFOLDER always take precedence. -->
+    <Property Id="LEGACYINSTALLFOLDER">
+      <RegistrySearch Id="LegacyInstallFolder" Root="HKLM"
+          Key="Software\Microsoft\Windows\CurrentVersion\App Paths\lightcraft.exe" Type="file" />
+    </Property>
+    <!-- That directory search doesn't check the executable exists, and when its unquoted path is
+         gone it falls back to the text before the first space: a deleted
+         "C:\Program Files\LightCraft\lightcraft.exe" yields "C:\". Only use the folder when this
+         search, which does require lightcraft.exe, finds it too. -->
+    <Property Id="LEGACYINSTALLEXE">
+      <RegistrySearch Id="LegacyInstallExe" Root="HKLM"
+          Key="Software\Microsoft\Windows\CurrentVersion\App Paths\lightcraft.exe" Type="file">
+        <FileSearch Id="LegacyInstallExeFile" Name="lightcraft.exe" />
+      </RegistrySearch>
+    </Property>
+    <SetProperty Id="INSTALLFOLDER" Action="SetInstallFolderFromAppPaths" Value="[LEGACYINSTALLFOLDER]"
+        After="SetINSTALLFOLDER" Sequence="both"
+        Condition="LEGACYINSTALLFOLDER AND LEGACYINSTALLEXE AND NOT PREVIOUSINSTALLFOLDER AND NOT INSTALLFOLDER" />
     <StandardDirectory Id="ProgramMenuFolder" />
 
     <Feature Id="Main" Title="LightCraft" Level="1">

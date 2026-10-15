@@ -15,6 +15,8 @@ pub enum Format {
     Ico,
     /// Netpbm family: PBM/PGM/PPM (P1–P6), PAM (P7) and PFM (`PF`/`Pf`).
     Pnm,
+    /// ZSoft Paintbrush: 1/2/4-bit planar palettes, 8-bit indexed and 24-bit RGB.
+    Pcx,
     Qoi,
     OpenExr,
     /// Radiance RGBE.
@@ -23,6 +25,8 @@ pub enum Format {
     Avif,
     /// HEIF/HEIC (HEVC-coded): read-only; see [`ASYMMETRIC_EXCEPTIONS`].
     Heif,
+    /// FITS (Flexible Image Transport System), the astronomy format: gray or RGB image data.
+    Fits,
 }
 
 /// What a format can hold **and** what this crate reads/writes for it.
@@ -55,6 +59,10 @@ pub struct FormatCaps {
 /// The test-suite asserts that every other enabled format is read+write.
 pub const ASYMMETRIC_EXCEPTIONS: &[(Format, &str)] = &[
     (
+        Format::Pcx,
+        "PCX is supported for opening legacy paint and clipart assets. New files should use PNG; writing obsolete indexed and planar variants is intentionally not provided.",
+    ),
+    (
         Format::Avif,
         "AVIF encode uses ravif (pure Rust) but decoding requires dav1d (C); read stays unsupported \
          until a pure-Rust AV1 decoder is viable. Only enabled with the non-default `avif` feature.",
@@ -76,7 +84,7 @@ const ALL_LAYOUTS: &[ChannelLayout] = &[L::Gray, L::GrayA, L::Rgb, L::Rgba, L::C
 
 impl Format {
     /// Every format known to the crate (enabled or not).
-    pub const ALL: [Format; 14] = [
+    pub const ALL: [Format; 16] = [
         Format::Png,
         Format::Jpeg,
         Format::Tiff,
@@ -86,11 +94,13 @@ impl Format {
         Format::Tga,
         Format::Ico,
         Format::Pnm,
+        Format::Pcx,
         Format::Qoi,
         Format::OpenExr,
         Format::Hdr,
         Format::Avif,
         Format::Heif,
+        Format::Fits,
     ];
 
     pub fn caps(self) -> FormatCaps {
@@ -114,11 +124,13 @@ impl Format {
             Format::Tga => "TGA",
             Format::Ico => "ICO",
             Format::Pnm => "Netpbm",
+            Format::Pcx => "PCX",
             Format::Qoi => "QOI",
             Format::OpenExr => "OpenEXR",
             Format::Hdr => "Radiance HDR",
             Format::Avif => "AVIF",
             Format::Heif => "HEIF",
+            Format::Fits => "FITS",
         }
     }
 
@@ -135,11 +147,13 @@ impl Format {
             Format::Tga => &["tga", "icb", "vda", "vst"],
             Format::Ico => &["ico"],
             Format::Pnm => &["pnm", "pbm", "pgm", "ppm", "pam", "pfm"],
+            Format::Pcx => &["pcx"],
             Format::Qoi => &["qoi"],
             Format::OpenExr => &["exr"],
             Format::Hdr => &["hdr"],
             Format::Avif => &["avif"],
             Format::Heif => &["heic", "heif", "hif"],
+            Format::Fits => &["fits", "fit", "fts"],
         }
     }
 
@@ -154,11 +168,13 @@ impl Format {
             Format::Tga => "image/x-tga",
             Format::Ico => "image/x-icon",
             Format::Pnm => "image/x-portable-anymap",
+            Format::Pcx => "image/x-pcx",
             Format::Qoi => "image/qoi",
             Format::OpenExr => "image/x-exr",
             Format::Hdr => "image/vnd.radiance",
             Format::Avif => "image/avif",
             Format::Heif => "image/heif",
+            Format::Fits => "image/fits",
         }
     }
 
@@ -201,6 +217,7 @@ pub fn caps(format: Format) -> FormatCaps {
         Format::Tga => FormatCaps { layouts: RGB_GRAY, ..base },
         Format::Ico => FormatCaps { layouts: &[L::Rgba], ..base },
         Format::Pnm => FormatCaps { depths: &[S::U8, S::U16, S::F32], layouts: ALL_LAYOUTS, ..base },
+        Format::Pcx => FormatCaps { read: true, write: false, layouts: &[L::Rgb], alpha: false, ..base },
         Format::Qoi => base,
         Format::OpenExr => FormatCaps { depths: &[S::F16, S::F32], layouts: RGB_GRAY, ..base },
         Format::Hdr => FormatCaps { depths: &[S::F32], layouts: &[L::Rgb], alpha: false, lossy: true, ..base },
@@ -208,6 +225,7 @@ pub fn caps(format: Format) -> FormatCaps {
         Format::Heif => {
             FormatCaps { read: cfg!(feature = "heif"), write: false, depths: &[S::U8, S::U16], icc: true, exif: true, xmp: true, lossy: true, ..base }
         }
+        Format::Fits => FormatCaps { depths: &[S::U8, S::U16, S::F32], layouts: &[L::Gray, L::Rgb], alpha: false, text: true, ..base },
     }
 }
 
@@ -255,6 +273,12 @@ pub fn detect(bytes: &[u8]) -> Option<Format> {
     }
     if b.len() >= 3 && b[0] == b'P' && matches!(b[1], b'1'..=b'7' | b'F' | b'f') && b[2].is_ascii_whitespace() {
         return Some(Format::Pnm);
+    }
+    if b.starts_with(b"SIMPLE  =") {
+        return Some(Format::Fits);
+    }
+    if crate::codecs::pcx::looks_like_pcx(b) {
+        return Some(Format::Pcx);
     }
     if looks_like_tga(b) {
         return Some(Format::Tga);

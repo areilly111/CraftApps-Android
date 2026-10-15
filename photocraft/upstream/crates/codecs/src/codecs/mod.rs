@@ -1,7 +1,11 @@
 pub(crate) mod deep_exr;
 pub(crate) mod exr;
+pub(crate) mod exr_cryptomatte;
+pub(crate) mod fits;
+pub(crate) mod gif_frames;
 pub(crate) mod heif;
 pub(crate) mod jpeg;
+pub(crate) mod pcx;
 pub(crate) mod png;
 pub(crate) mod pnm;
 pub(crate) mod tiff;

@@ -681,6 +681,12 @@ fn list_fonts_lists_families_with_styles() {
     assert!(matched.len() < fams.len(), "the query filters: {one}");
     let mono = matched.iter().find(|f| f["family"] == "JetBrains Mono").unwrap_or_else(|| panic!("{one}"));
     assert!(mono["styles"].as_array().unwrap().contains(&json!("Regular")), "{one}");
+    assert_eq!(mono["variable"], false, "{one}");
+    // `variable` keeps only the variable fonts (the font menu's filter); the static bundled
+    // families drop out.
+    let var = call_json(&mut s, "list_fonts", json!({"variable": true}));
+    let listed = var["families"].as_array().unwrap();
+    assert!(listed.iter().all(|f| f["variable"] == true && f["family"] != "Inter"), "{var}");
 }
 
 /// Trained models over MCP (Roto Brush and face tracking): listed with their authors and
@@ -1180,4 +1186,75 @@ fn command_tools_accept_id_as_an_alias() {
     call_json(&mut s, "execute_command", json!({"id": "comp.new", "params": {"name": "Alias", "width": 64, "height": 36}}));
     let (_, err) = call(&mut s, "execute_command", json!({}));
     assert!(err, "neither key is an error");
+}
+
+/// #500: `--automation-read-root` / `--automation-write-root` confine the files an agent reads
+/// and writes: inside the roots works, outside (or relative, `..`, through a symbolic link, by
+/// a batch step, by Save to the project's own file, from a script) is refused.
+#[test]
+fn automation_roots_confine_file_access() {
+    use crate::confine::Confinement;
+    let base = std::env::temp_dir().join(format!("ec-mcp-confine-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (read, write, outside) = (base.join("in"), base.join("out"), base.join("elsewhere"));
+    for d in [&read, &write, &outside] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let p = |d: &std::path::Path, f: &str| d.join(f).to_string_lossy().into_owned();
+    // Unconfined (the default): anywhere.
+    let mut s = server();
+    call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "A", "width": 64, "height": 64}}));
+    call_json(&mut s, "save_project", json!({"path": p(&outside, "free.ecproj")}));
+    call_json(&mut s, "save_project", json!({"path": p(&read, "source.ecproj")}));
+
+    let mut s = server();
+    s.backend().confine(Confinement::new(std::slice::from_ref(&read), std::slice::from_ref(&write)).unwrap());
+    let denied = |s: &mut McpServer, name: &str, args: Value| {
+        let (c, err) = call(s, name, args.clone());
+        assert!(err, "{name} {args} should be refused: {c:?}");
+        c[0]["text"].as_str().unwrap_or_default().to_string()
+    };
+    // Reading: inside a read root, not outside.
+    call_json(&mut s, "open_project", json!({"path": p(&read, "source.ecproj")}));
+    let msg = denied(&mut s, "open_project", json!({"path": p(&outside, "free.ecproj")}));
+    assert!(msg.contains("outside the automation roots"), "{msg}");
+    // Writing: inside a write root only; not into a read root, not relative, not with `..`.
+    call_json(&mut s, "save_project", json!({"path": p(&write, "saved.ecproj")}));
+    assert!(write.join("saved.ecproj").is_file());
+    denied(&mut s, "save_project", json!({"path": p(&read, "copy.ecproj")}));
+    denied(&mut s, "save_project", json!({"path": "relative.ecproj"}));
+    denied(&mut s, "save_project", json!({"path": p(&write, "../elsewhere/up.ecproj")}));
+    denied(&mut s, "execute_command", json!({"command": "comp.saveFrameAs", "params": {"path": p(&outside, "f.png")}}));
+    // Any other absolute path a command is given.
+    denied(&mut s, "execute_command", json!({"command": "renderQueue.add", "params": {"output": p(&outside, "movie.mp4")}}));
+    // A batch step.
+    let steps = json!([{"command": "comp.new", "params": {"name": "B"}}, {"command": "file.saveAs", "params": {"path": p(&outside, "b.ecproj")}}]);
+    denied(&mut s, "batch", json!({"steps": steps}));
+    let steps = json!([{"command": "file.saveAs", "params": {"path": "$1.path"}}]);
+    denied(&mut s, "batch", json!({"steps": steps}));
+    // Save (and Increment and Save) write the open project's own file: it must be writable.
+    call_json(&mut s, "open_project", json!({"path": p(&read, "source.ecproj")}));
+    denied(&mut s, "save_project", json!({}));
+    denied(&mut s, "execute_command", json!({"command": "file.incrementAndSave"}));
+    // Rendering the queue writes its items' outputs (by default beside the project).
+    call_json(&mut s, "execute_command", json!({"command": "renderQueue.add", "params": {"comp": "A"}}));
+    let queue = call_json(&mut s, "execute_command", json!({"command": "renderQueue.list"}));
+    assert!(queue["items"][0]["outputPath"].as_str().is_some_and(|o| o.starts_with(&*read.to_string_lossy())), "{queue}");
+    let msg = denied(&mut s, "execute_command", json!({"command": "renderQueue.render"}));
+    assert!(msg.contains("cannot write"), "{msg}");
+    call_json(&mut s, "open_project", json!({"path": p(&write, "saved.ecproj")}));
+    call_json(&mut s, "save_project", json!({}));
+    // Through a symbolic link out of a root.
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&outside, write.join("link")).unwrap();
+        denied(&mut s, "save_project", json!({"path": p(&write.join("link"), "escaped.ecproj")}));
+        assert!(!outside.join("escaped.ecproj").exists());
+    }
+    // Scripts can read and write anything: refused.
+    denied(&mut s, "run_script", json!({"code": "1 + 1"}));
+    denied(&mut s, "execute_command", json!({"command": "file.runScript", "params": {"path": p(&read, "x.jsx")}}));
+    // Writes to the files the agent named: none outside.
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 1, "only the unconfined save");
+    let _ = std::fs::remove_dir_all(&base);
 }

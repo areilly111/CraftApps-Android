@@ -108,6 +108,15 @@ showpage
     let inner = outer.children().map(|c| (c.len(), c[1].children().map(Vec::len))).unwrap();
     assert!(matches!(outer.kind, vectorcraft_doc::NodeKind::Group { clip: false, .. }), "{:?}", outer.kind);
     assert_eq!(inner, (2, Some(2)));
+    // One that names the prolog defining its operators without including it (as other apps write
+    // the format) opens with the layers its program has (#1027).
+    let named = b"%!PS-Adobe-3.0\n%%BoundingBox: 0 0 100 100\n%%DocumentNeededResources: procset Adobe_IllustratorA_AI3 1.0 0\n%AI3_TemplateBox: 50 50 50 50\n%%EndComments\n\
+                  %%BeginProlog\n%%IncludeResource: procset Adobe_IllustratorA_AI3 1.0 0\n%%EndProlog\n%%BeginSetup\nAdobe_IllustratorA_AI3 /initialize get exec\n%%EndSetup\n\
+                  %AI5_BeginLayer\n1 1 1 1 0 0 2 0 0 0 Lb\n(PLAN::Walls) Ln\n0 0 0 1 K\n0 i 1 w\n10 10 m\n90 90 L\nS\nLB\n%AI5_EndLayer--\n%%PageTrailer\n%%Trailer\n%%EOF\n";
+    let r = open(&mut s, "cad.ai", named).unwrap();
+    assert_eq!(r["warnings"].as_array().map_or(0, Vec::len), 0, "{r}");
+    let d = s.doc().unwrap().doc.clone();
+    assert_eq!((d.layers.len(), d.layers[0].name.as_deref(), objects(&s)), (1, Some("PLAN::Walls"), 1));
     // A .ait one opens as a new untitled document.
     let r = open(&mut s, "legacy.ait", ps).unwrap();
     assert!(r["title"].as_str().unwrap().starts_with("Untitled"), "{r}");

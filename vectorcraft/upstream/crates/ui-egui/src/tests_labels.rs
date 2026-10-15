@@ -51,6 +51,18 @@ fn effect_menu_has_a_vector_effects_section() {
 }
 
 #[test]
+fn effect_menu_lists_film_grain_in_artistic_before_blur() {
+    let app = app();
+    let entries = menus::menu_entries(&app);
+    let artistic: Vec<_> = entries.iter().filter(|e| e.path == ["Effect", "Artistic"]).collect();
+    assert_eq!(artistic.len(), 1);
+    assert_eq!(artistic[0].label, "Film Grain…");
+    assert_eq!(artistic[0].command.as_deref(), Some("effect.dialog"));
+    let at = |name: &str| entries.iter().position(|e| e.path == ["Effect", name]).unwrap();
+    assert!(at("Artistic") < at("Blur"));
+}
+
+#[test]
 fn effect_menu_lists_the_pixelate_filters_between_blur_and_sharpen() {
     let app = app();
     let entries = menus::menu_entries(&app);

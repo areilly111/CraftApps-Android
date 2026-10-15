@@ -185,12 +185,14 @@ fn without_media_ctrl_v_pastes_copied_clips() {
     let asked = d.clipboard(None);
     let first = d.clips().into_iter().find(|c| c.0 == 'V' && c.1 == 0).unwrap();
     d.ok("engine.execute", json!({"command": "timeline.select", "params": {"clips": [first.2]}}));
-    d.ok("engine.execute", json!({"command": "edit.copy", "params": {}}));
+    d.ok("ui.menu.invoke", json!({"id": "edit.copy"}));
     let copies = |d: &mut Driver| d.clips().iter().filter(|c| c.0 == 'V' && c.3 == first.3).count();
     let n = copies(&mut d);
+    let asked_after_copy = asked.get();
+    assert!(asked_after_copy >= 1, "Copy looks at lingering OS media");
     d.ctrl_v_without_text(egui::Modifiers::COMMAND);
     assert_eq!(copies(&mut d), n + 1, "the copied clip is pasted");
-    assert_eq!(asked.get(), 1);
+    assert_eq!(asked.get(), asked_after_copy + 1);
     for pressed in [true, false] {
         d.harness.input_mut().events.push(egui::Event::Key {
             key: egui::Key::V,
@@ -202,5 +204,48 @@ fn without_media_ctrl_v_pastes_copied_clips() {
         d.frames(1);
     }
     d.frames(2);
-    assert_eq!((copies(&mut d), asked.get()), (n + 1, 1), "V alone pastes nothing");
+    assert_eq!((copies(&mut d), asked.get()), (n + 1, asked_after_copy + 1), "V alone pastes nothing");
+}
+
+/// Files left on the OS clipboard from before Copy/Cut must not steal Paste: Ctrl+V pastes the
+/// cut clip, as the Edit menu does (#697).
+#[test]
+fn ctrl_v_pastes_a_cut_clip_even_when_old_files_linger_on_the_clipboard() {
+    let mut d = Driver::demo("cut-linger");
+    d.ok("ui.set", json!({"focused": "Timeline"}));
+    let png = d.dir.join("stale.png");
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 200, 255])).save(&png).unwrap();
+    let path = png.to_string_lossy().into_owned();
+    d.app().hooks.clipboard_media = Some(Box::new(move || Some(ClipboardMedia::Files(vec![path.clone()]))));
+    let first = d.clips().into_iter().find(|c| c.0 == 'V' && c.1 == 0).unwrap();
+    d.ok("engine.execute", json!({"command": "timeline.select", "params": {"clips": [first.2]}}));
+    d.ok("ui.menu.invoke", json!({"id": "edit.cut"}));
+    assert!(d.clips().iter().all(|c| c.2 != first.2), "the clip left the timeline");
+    let named = |d: &mut Driver| d.clips().iter().filter(|c| c.3 == first.3).count();
+    assert_eq!(named(&mut d), 0);
+    d.ctrl_v_with_text();
+    assert!(named(&mut d) >= 1, "the cut clip is pasted");
+    assert!(!d.clips().iter().any(|c| c.3.contains("stale")), "lingering OS files are not pasted");
+}
+
+/// Copy from the keyboard (Ctrl+C as `Event::Copy`) also snapshots lingering OS media, so Ctrl+V
+/// pastes the clips rather than those files.
+#[test]
+fn ctrl_c_then_ctrl_v_pastes_clips_not_lingering_files() {
+    let mut d = Driver::demo("copy-linger");
+    d.ok("ui.set", json!({"focused": "Timeline"}));
+    let png = d.dir.join("stale.png");
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 200, 0, 255])).save(&png).unwrap();
+    let path = png.to_string_lossy().into_owned();
+    d.app().hooks.clipboard_media = Some(Box::new(move || Some(ClipboardMedia::Files(vec![path.clone()]))));
+    let first = d.clips().into_iter().find(|c| c.0 == 'V' && c.1 == 0).unwrap();
+    d.ok("engine.execute", json!({"command": "timeline.select", "params": {"clips": [first.2]}}));
+    d.harness.input_mut().events.extend([egui::Event::ModifiersChanged(egui::Modifiers::COMMAND), egui::Event::Copy]);
+    d.frames(1);
+    d.harness.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    d.frames(2);
+    assert!(!d.app().session.state.clipboard.is_empty());
+    let n = d.clips().iter().filter(|c| c.0 == 'V' && c.3 == first.3).count();
+    d.ctrl_v_with_text();
+    assert_eq!(d.clips().iter().filter(|c| c.0 == 'V' && c.3 == first.3).count(), n + 1);
 }

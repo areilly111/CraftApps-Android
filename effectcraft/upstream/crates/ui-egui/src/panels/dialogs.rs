@@ -60,12 +60,15 @@ pub struct DialogState {
     pub unsaved: super::unsaved::Pending,
     /// Deleting Project items in use: the deletion waiting on the prompt.
     pub delete_items: super::delete_items::Pending,
+    /// The Gradient Editor's draft and the property it edits.
+    pub gradient: super::gradient_editor::Draft,
 }
 
 pub fn open_new_comp(app: &mut EffectcraftApp) {
     let n = app.session.project.comps().count() + 1;
     let last = app.dialog_state.last_new_comp.clone().unwrap_or_default();
-    app.dialog_state.comp = CompDraft { name: format!("Comp {n}"), tab: super::comp_settings::Tab::Basic, start_tc: None, dur_tc: None, ..last };
+    app.dialog_state.comp =
+        CompDraft { name: format!("Comp {n}"), tab: super::comp_settings::Tab::Basic, start_tc: None, dur_tc: None, preset_name: None, ..last };
     app.dialog_state.editing_existing = false;
     app.dialog = Some(Dialog::NewComp);
 }
@@ -149,9 +152,32 @@ pub fn route_layer_settings(app: &mut EffectcraftApp, id: &str, params: &Value) 
     }
 }
 
+/// The room a modal dialog may take: the window less a margin.
+fn modal_space(ctx: &egui::Context) -> egui::Vec2 {
+    (ctx.content_rect().size() - vec2(48.0, 48.0)).max(vec2(120.0, 80.0))
+}
+
 pub(crate) fn modal(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui)) {
-    let available = (ctx.content_rect().size() - vec2(48.0, 48.0)).max(vec2(120.0, 80.0));
-    let size = size.min(available);
+    modal_with_scroll(ctx, title, size, t, false, body);
+}
+
+pub(crate) fn modal_vertical(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui)) {
+    modal_with_scroll(ctx, title, size, t, true, body);
+}
+
+fn modal_with_scroll(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, vertical_only: bool, body: impl FnOnce(&mut egui::Ui)) {
+    let max_height = (modal_space(ctx).y - 84.0).max(40.0);
+    modal_fit(ctx, title, size, t, |ui, _| {
+        let scroll = if vertical_only { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };
+        scroll.max_height(max_height).auto_shrink([false, true]).show(ui, body);
+    });
+}
+
+/// [`modal`] without its scroll area, for a dialog that keeps its buttons in view and scrolls
+/// only its content: `body` gets the height left under the title, with `size` kept within the
+/// window.
+pub(crate) fn modal_fit(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui, f32)) {
+    let size = size.min(modal_space(ctx));
     egui::Modal::new(egui::Id::new(("modal", title)))
         .backdrop_color(Color32::from_black_alpha(120))
         .frame(egui::Frame::window(&ctx.style_of(ctx.theme())).fill(t.panel_bg).inner_margin(egui::Margin::same(18)))
@@ -161,7 +187,8 @@ pub(crate) fn modal(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Toke
             // The id stays keyed on the untranslated source, so switching language cannot move it.
             ui.label(egui::RichText::new(tr(title)).font(Tokens::semibold(15.0)).color(t.tab_text_active));
             ui.add_space(10.0);
-            egui::ScrollArea::both().max_height((available.y - 84.0).max(40.0)).auto_shrink([false, true]).show(ui, body);
+            let title_h = ui.cursor().top() - ui.min_rect().top();
+            body(ui, (size.y - 36.0 - title_h).max(40.0));
         });
 }
 
@@ -193,6 +220,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         Dialog::RenderTemplates => super::rq_templates::show(app, ctx, &t),
         Dialog::UnsavedChanges => super::unsaved::show(app, ctx, &t),
         Dialog::DeleteItems => super::delete_items::show(app, ctx, &t),
+        Dialog::GradientEditor => super::gradient_editor::show(app, ctx, &t),
     }
 }
 
@@ -311,10 +339,24 @@ fn about_main(app: &mut EffectcraftApp, ui: &mut egui::Ui, t: &Tokens, cmd: &mut
 fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, existing: bool) {
     let mut d = app.dialog_state.comp.clone();
     let mut result = None;
+    let custom = app.session.prefs.comp_presets.clone();
+    let mut cmds = Vec::new();
     modal(ctx, "Composition Settings", vec2(600.0, 470.0), t, |ui| {
-        result = super::comp_settings::show(ui, &mut d, t, &mut app.auto);
+        result = super::comp_settings::show(ui, &mut d, t, &mut app.auto, &custom, &mut cmds);
     });
-    if result.is_none() && ui_enter(ctx) {
+    if d.preset_name.is_some() {
+        // Save Preset asks for the name in its own window over the dialog, as After Effects does.
+        result = None;
+        modal(ctx, "Choose Name", vec2(360.0, 150.0), t, |ui| super::comp_settings::choose_name(ui, &mut d, t, &mut app.auto, &custom, &mut cmds));
+    }
+    // Enter that saved a preset name (or while one is typed) doesn't also press OK.
+    let preset_busy = !cmds.is_empty() || d.preset_name.is_some();
+    for (id, params) in cmds {
+        if let Err(e) = app.session.execute(id, params) {
+            app.ui.status = e.to_string();
+        }
+    }
+    if result.is_none() && !preset_busy && ui_enter(ctx) {
         result = Some(super::comp_settings::params(&d));
     }
     app.dialog_state.comp = d;
@@ -332,6 +374,35 @@ fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, exis
         }
         None => {}
     }
+}
+
+/// One frame of the open dialog with `key` pressed.
+#[cfg(test)]
+pub(crate) fn press_key(app: &mut EffectcraftApp, ctx: &egui::Context, key: egui::Key, modifiers: egui::Modifiers) {
+    let mut raw = egui::RawInput::default();
+    raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+    let mut out = ctx.run_ui(raw, |ui| {
+        app.auto.begin_frame();
+        show(app, ui.ctx());
+    });
+    out.textures_delta.clear();
+}
+
+/// The letter that answers the open confirmation with Cmd (Ctrl elsewhere): Cmd+D is Delete in
+/// Delete Items, Cmd+R is Revert in Revert Project. The native menu bar hands these keys back
+/// while the prompt is open ([`crate::native_menu::activate`]).
+pub(crate) fn command_key(app: &EffectcraftApp) -> Option<egui::Key> {
+    match app.dialog? {
+        Dialog::DeleteItems => Some(egui::Key::D),
+        Dialog::UnsavedChanges if super::unsaved::is_revert(app) => Some(egui::Key::R),
+        _ => None,
+    }
+}
+
+/// Cmd+`key` (Ctrl elsewhere) pressed, also while a text field has focus: ask before the dialog
+/// is drawn, so the field does not edit with the key first.
+pub(crate) fn ui_command_key(ctx: &egui::Context, key: egui::Key) -> bool {
+    ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, key))
 }
 
 pub(crate) fn ui_enter(ctx: &egui::Context) -> bool {
@@ -353,6 +424,7 @@ fn solid(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         ui.horizontal(|ui| {
             ui.label(tr("Name:"));
             let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(320.0));
+            crate::widgets::focus_on_open(ui.ctx(), &r, &name);
             auto.add("dialog.solid.name", r.rect, "Name");
         });
         ui.add_space(8.0);
@@ -626,6 +698,32 @@ mod tests {
         let comps = app.session.project.comps().count();
         app.session.execute_checked("file.newCompFromSelection", app.dialog_state.form.params()).unwrap();
         assert_eq!(app.session.project.comps().count(), comps + 1, "Single Composition is the default");
+    }
+
+    #[test]
+    fn a_dialog_opens_with_its_name_field_focused_and_selected() {
+        let (mut app, ctx) = app();
+        let selected = |ctx: &egui::Context| {
+            let id = ctx.memory(|m| m.focused())?;
+            egui::TextEdit::load_state(ctx, id)?.cursor.char_range().map(|r| r.as_sorted_char_range()).map(|r| r.start.0..r.end.0)
+        };
+        open_new_comp(&mut app);
+        let name = app.dialog_state.comp.name.clone();
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        assert_eq!(selected(&ctx), Some(0..name.chars().count()), "typing replaces “{name}”");
+        // Afterwards the focus is the user's: it is not taken back.
+        ctx.memory_mut(|m| m.stop_text_input());
+        frame(&mut app, &ctx);
+        assert!(ctx.memory(|m| m.focused()).is_none());
+        // Closed and opened again: focused again.
+        app.dialog = None;
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        open_new_solid(&mut app).unwrap();
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        assert_eq!(selected(&ctx), Some(0..app.dialog_state.solid_name.chars().count()));
     }
 
     #[test]

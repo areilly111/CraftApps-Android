@@ -6,6 +6,10 @@ and the VectorCraft maintainers have not verified it on Windows 7.
 This separate build targets **64-bit Windows 7 SP1**. It uses OpenGL instead of wgpu,
 and omits the native AccessKit accessibility adapter. Printer discovery supports the
 PowerShell version included with Windows 7, and printer setup opens Control Panel.
+Printing retains the PDF viewer's Print/PrintTo verb on this build: Windows 7 has no
+Windows.Data.Pdf renderer. The win7 target excludes `craft-print` from its dependency
+tree; normal desktop builds use the shared spooler. The `windows7` feature and dedicated win7 target must be selected together; the
+existing compile-time guards reject mixing this feature with the ordinary Windows target.
 The normal desktop and web builds retain their existing defaults. A vendor graphics driver providing **OpenGL 3.3 or newer**
 is required; the Windows built-in generic display driver is insufficient. GPU selection
 in Preferences and `WGPU_POWER_PREF` do not control this OpenGL build.
@@ -13,7 +17,7 @@ in Preferences and `WGPU_POWER_PREF` do not control this OpenGL build.
 ## Build or download
 
 In your GitHub fork, open **Actions → Windows 7 x64 compatibility → Run workflow** (it
-also runs weekly, never on pull requests).
+also runs weekly and on pull requests changing the compatibility path).
 When it succeeds, download the `vectorcraft-windows7-x64-portable` artifact, extract the
 contained portable ZIP, then run `vectorcraft.exe` on Windows 7. The CLI is included.
 No MSI is provided: the existing installer remains for modern Windows.

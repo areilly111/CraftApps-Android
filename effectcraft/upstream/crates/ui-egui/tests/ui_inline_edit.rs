@@ -72,6 +72,30 @@ fn project_rename_replaces_the_name() {
     assert!(!h.ctx.egui_wants_keyboard_input(), "Enter releases the keyboard");
 }
 
+/// #881: Tab in the Project panel's rename field commits the name like Enter and gives the keyboard
+/// back to the panel; it doesn't leave keyboard focus on another widget (the row's label swatch),
+/// where Enter would no longer rename and the arrow keys would move between widgets.
+#[test]
+fn tab_in_the_project_rename_field_commits_and_keeps_enter_renaming() {
+    let (mut h, comp) = harness();
+    let name = |h: &Harness<'_, EffectcraftApp>| h.state().session.project.items.values().find(|i| i.id.0 == comp).unwrap().name.clone();
+    let edit = format!("project.item.{comp}.nameEdit");
+    let editing = |h: &Harness<'_, EffectcraftApp>| h.state().auto.elements.iter().any(|e| e.id == edit);
+    let p = center(&h, &format!("project.item.{comp}.name"));
+    click(&mut h, p, 1);
+    key(&mut h, Key::Enter);
+    type_text(&mut h, "Hero");
+    key(&mut h, Key::Tab);
+    assert_eq!(name(&h), "Hero", "Tab commits the name");
+    assert!(!editing(&h), "Tab closes the rename field");
+    assert_eq!(h.ctx.memory(|m| m.focused()), None, "no other widget takes the keyboard");
+    key(&mut h, Key::Enter);
+    assert!(editing(&h), "Enter renames again");
+    type_text(&mut h, "Main");
+    key(&mut h, Key::Enter);
+    assert_eq!(name(&h), "Main");
+}
+
 #[test]
 fn timecode_field_replaces_commits_and_cancels() {
     let (mut h, _) = harness();
@@ -473,4 +497,45 @@ fn a_layout_switch_keeps_the_name_field_and_arabic_names_are_kept() {
         let focused = h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label()).unwrap_or_default();
         assert_eq!(focused.trim(), "File", "Alt focused the menu bar");
     }
+}
+
+/// #488: once a rename field is open, the arrow keys move its caret (the whole name is selected
+/// only as it opens), so part of a name can be edited.
+#[test]
+fn arrow_keys_move_the_caret_in_rename_fields() {
+    let (mut h, comp) = harness();
+    let name = |h: &Harness<'_, EffectcraftApp>| h.state().session.project.items.values().find(|i| i.id.0 == comp).unwrap().name.clone();
+    let p = center(&h, &format!("project.item.{comp}.name"));
+    click(&mut h, p, 1);
+    key(&mut h, Key::Enter);
+    // The arrows keep the field (Up / Down too); in "Main", two to the left of its end.
+    key(&mut h, Key::ArrowRight);
+    key(&mut h, Key::ArrowLeft);
+    key(&mut h, Key::ArrowUp);
+    key(&mut h, Key::ArrowDown);
+    key(&mut h, Key::End);
+    key(&mut h, Key::ArrowLeft);
+    key(&mut h, Key::ArrowLeft);
+    type_text(&mut h, "X");
+    key(&mut h, Key::Backspace);
+    key(&mut h, Key::Backspace);
+    type_text(&mut h, "Y");
+    key(&mut h, Key::Enter);
+    assert_eq!(name(&h), "MYin");
+    // The Timeline's layer rename.
+    let layer = h.state_mut().session.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+    h.state_mut().session.execute("layer.select", json!({"layers": [layer]})).unwrap();
+    h.run_steps(3);
+    let p = center(&h, &format!("timeline.layer.{layer}.row"));
+    click(&mut h, p, 1);
+    key(&mut h, Key::Enter);
+    key(&mut h, Key::ArrowRight);
+    key(&mut h, Key::ArrowUp);
+    key(&mut h, Key::End);
+    key(&mut h, Key::ArrowLeft);
+    key(&mut h, Key::ArrowLeft);
+    type_text(&mut h, "-");
+    key(&mut h, Key::Enter);
+    let layer_name = h.state().session.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(layer)).unwrap().name.clone();
+    assert_eq!(layer_name, "Pla-te");
 }

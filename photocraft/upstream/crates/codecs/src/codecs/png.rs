@@ -7,7 +7,7 @@ use crate::Format;
 use crate::error::CodecError;
 use crate::fidelity::Plan;
 use crate::image::{ChannelLayout, DecodeWarning, Image, Metadata, SampleType};
-use crate::options::{EncodeOptions, Limits, PngCompression};
+use crate::options::{EncodeOptions, Limits, PngCompression, alloc_zeroed};
 
 const F: Format = Format::Png;
 pub(crate) const XMP_KEYWORD: &str = "XML:com.adobe.xmp";
@@ -29,6 +29,10 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
         let (w, h) = info.size();
         // Worst case output: 4 channels x 16 bit.
         limits.check_bytes(w, h, 8)?;
+        // zlib never beats 1032:1; refuse a file too small for the declared image before the
+        // output buffer exists. Measured on the stored samples (before palette/bit expansion).
+        let stored = u64::from(w).saturating_mul(u64::from(h)).saturating_mul(info.bits_per_pixel() as u64).div_ceil(8);
+        Limits::check_plausible(stored, bytes.len(), 1100)?;
     }
     let mut reader = decoder.read_info().map_err(map_png_err)?;
     // APNG: the IDAT image is the first frame, or an extra default image when no fcTL precedes it.
@@ -47,7 +51,7 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
         d => return Err(err(format!("unexpected output bit depth {d:?}"))),
     };
     let size = reader.output_buffer_size().ok_or_else(|| err("image too large"))?;
-    let mut buf = vec![0u8; size];
+    let mut buf = alloc_zeroed::<u8>(size)?;
     let out = reader.next_frame(&mut buf).map_err(map_png_err)?;
     buf.truncate(out.buffer_size());
     // Collect ancillary chunks after IDAT. Tolerate malformed tails once pixels
@@ -521,8 +525,16 @@ fn adler32_combine(a1: u32, a2: u32, len2: usize) -> u32 {
 }
 
 /// Writes an 8-bit palette PNG (PNG-8): `indices` row-major, `palette` RGB entries (≤ 256),
-/// optional fully transparent entry (`tRNS`). Used for Indexed Color documents.
-pub fn encode_indexed(width: u32, height: u32, indices: &[u8], palette: &[[u8; 3]], transparent: Option<u8>) -> Result<Vec<u8>, CodecError> {
+/// optional fully transparent entry (`tRNS`) and optional resolution in dpi (`pHYs`, written when
+/// both axes are positive and finite). Used for Indexed Color documents.
+pub fn encode_indexed(
+    width: u32,
+    height: u32,
+    indices: &[u8],
+    palette: &[[u8; 3]],
+    transparent: Option<u8>,
+    dpi: Option<(f32, f32)>,
+) -> Result<Vec<u8>, CodecError> {
     if width == 0 || height == 0 || indices.len() != width as usize * height as usize {
         return Err(CodecError::InvalidImage("index data does not match the size".into()));
     }
@@ -537,6 +549,15 @@ pub fn encode_indexed(width: u32, height: u32, indices: &[u8], palette: &[[u8; 3
         let mut trns = vec![255u8; usize::from(t) + 1];
         trns[usize::from(t)] = 0;
         info.trns = Some(trns.into());
+    }
+    if let Some((x, y)) = dpi
+        && x.is_finite()
+        && y.is_finite()
+        && x > 0.0
+        && y > 0.0
+    {
+        info.pixel_dims =
+            Some(png::PixelDimensions { xppu: (x / METERS_PER_INCH).round() as u32, yppu: (y / METERS_PER_INCH).round() as u32, unit: png::Unit::Meter });
     }
     let mut out = Vec::new();
     {
@@ -556,14 +577,14 @@ mod indexed_tests {
     fn png8_roundtrips_through_the_decoder() {
         let pal = [[255, 0, 0], [0, 0, 255], [0, 0, 0]];
         let idx = [0u8, 1, 2, 1, 0, 2];
-        let bytes = encode_indexed(3, 2, &idx, &pal, Some(2)).unwrap();
+        let bytes = encode_indexed(3, 2, &idx, &pal, Some(2), None).unwrap();
         let img = decode(&bytes, &Limits::default()).unwrap();
         assert_eq!(img.dimensions(), (3, 2));
         let px = img.convert(ChannelLayout::Rgba, SampleType::U8);
         assert_eq!(&px.data()[..8], &[255, 0, 0, 255, 0, 0, 255, 255]);
         assert_eq!(px.data()[11], 0, "transparent entry");
-        assert!(encode_indexed(3, 2, &[9; 6], &pal, None).is_err());
-        assert!(encode_indexed(3, 3, &idx, &pal, None).is_err());
+        assert!(encode_indexed(3, 2, &[9; 6], &pal, None, None).is_err());
+        assert!(encode_indexed(3, 3, &idx, &pal, None, None).is_err());
     }
 }
 

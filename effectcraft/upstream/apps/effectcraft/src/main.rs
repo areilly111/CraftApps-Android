@@ -21,6 +21,10 @@ mod control_server;
 mod launch_guard;
 #[cfg(target_os = "macos")]
 mod native_menu;
+// Built everywhere so it stays checked; only the macOS app uses it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod sheet_dialogs;
+mod window;
 
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
@@ -85,13 +89,24 @@ fn parse_args(args: impl IntoIterator<Item = String>, env_port: Option<String>) 
 }
 
 fn main() -> eframe::Result {
-    // Help ▸ Enable Logging writes through this logger; warnings feed the compatibility report.
+    // First, so the panic hook and every start-up warning are recorded. Records go to stderr
+    // and the session log; Help ▸ Enable Logging writes through this logger too, and warnings
+    // feed the compatibility report.
     effectcraft_engine::logging::install();
     effectcraft_engine::logging::install_panic_hook();
     let Some(Args { control_port, files, demo, home }) = parse_args(std::env::args().skip(1), std::env::var("EFFECTCRAFT_CONTROL_PORT").ok()) else {
         println!("effectcraft {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     };
+    // The session log lives in the settings folder (`Logs/effectcraft.log`, the previous two runs
+    // kept): a launch from the Dock or a menu has no terminal. Opened after the arguments, so
+    // `--version` leaves no file behind; records logged until now are written to it first.
+    if let Some(dir) = effectcraft_host::config_dir() {
+        match effectcraft_engine::logging::attach_session_log(&effectcraft_engine::logging::log_dir(Some(&dir))) {
+            Ok(path) => log::info!("effectcraft {}, log file {}", env!("CARGO_PKG_VERSION"), path.display()),
+            Err(e) => log::warn!("no log file: {e}"),
+        }
+    }
     // The font menus list the installed fonts: read their names while the window opens.
     effectcraft_engine::text::fonts::scan_system_in_background();
     // Wayland shows the window's icon from its desktop entry: an AppImage brings its own.
@@ -105,8 +120,8 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EffectCraft")
-            .with_inner_size([1680.0, 1020.0])
-            .with_min_inner_size([960.0, 600.0])
+            .with_inner_size(window::DEFAULT_SIZE)
+            .with_min_inner_size(window::MIN_SIZE)
             .with_drag_and_drop(true)
             // Started for an agent (`--control`): open without taking the user's keyboard focus.
             .with_active(control_port.is_none())
@@ -117,8 +132,8 @@ fn main() -> eframe::Result {
         wgpu_options: wgpu_options(launch.backends),
         ..Default::default()
     };
-    // Start-up milestones: with `RUST_LOG=info` they go to stderr, so a window that never
-    // appears shows how far start-up got (#234).
+    // Start-up milestones go to stderr and the session log, so a window that never appears
+    // shows how far start-up got (#234).
     log::info!("effectcraft {}: opening the window", env!("CARGO_PKG_VERSION"));
     // Registered before the event loop starts, so it catches the Finder event that launched us as
     // well as later ones. Lives until the event loop returns; the app creator only borrows it.
@@ -167,11 +182,14 @@ fn main() -> eframe::Result {
                 session.config = Some(std::sync::Arc::new(effectcraft_engine::config::DirConfig::new(dir)));
             }
             session.load_settings();
+            // Fit the window to its monitor, or put it back where it was (still hidden).
+            let saved_window = session.config.as_deref().and_then(window::load);
+            let opened = cc.winit_window().map(|w| window::restore(w, saved_window));
             let recovery = if control_port.is_none() { session.begin_recovery() } else { None };
             let project = files.iter().find(|f| is_project_file(f)).cloned();
             if let Some(p) = project {
                 if let Err(e) = session.execute("file.open", json!({"path": p})) {
-                    eprintln!("effectcraft: {e}");
+                    log::warn!("{p}: {e}");
                 }
             } else if demo {
                 let _ = session.execute("file.openDemoProject", json!({}));
@@ -180,7 +198,7 @@ fn main() -> eframe::Result {
             if !media.is_empty()
                 && let Err(e) = session.execute("file.import", json!({"paths": media}))
             {
-                eprintln!("effectcraft: {e}");
+                log::warn!("import: {e}");
             }
             let show_home = home.unwrap_or(session.prefs.startup.show_home_on_launch && files.is_empty() && control_port.is_none());
             // The ScriptUI panels open when the app last quit open again (a failing one is
@@ -207,6 +225,22 @@ fn main() -> eframe::Result {
             app.hooks.pick_save = Some(Box::new(|name: &str| {
                 rfd::FileDialog::new().add_filter("EffectCraft Project", &["ecproj"]).set_file_name(name).save_file().map(|p| p.to_string_lossy().to_string())
             }));
+            // The window closes after a lost graphics device (#591); say why, unless an agent drives
+            // the app through the control channel.
+            if control_port.is_none() {
+                app.hooks.device_lost = Some(Box::new(|saved: Option<Result<String, String>>| {
+                    let saved = match saved {
+                        Some(Ok(path)) => format!("\n\nYour unsaved changes were saved to:\n{path}\n\nReopen EffectCraft to recover them."),
+                        Some(Err(e)) => format!("\n\nYour unsaved changes could not be saved ({e})."),
+                        None => String::new(),
+                    };
+                    rfd::MessageDialog::new()
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_title("EffectCraft: graphics device lost")
+                        .set_description(format!("The graphics driver stopped responding, so EffectCraft has to close.{saved}"))
+                        .show();
+                }));
+            }
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file().map(|p| p.to_string_lossy().to_string())
             }));
@@ -227,6 +261,9 @@ fn main() -> eframe::Result {
             }));
             #[cfg(target_os = "macos")]
             {
+                // The commands' file dialogs open as sheets instead of nested modal loops (#511).
+                let ctx = cc.egui_ctx.clone();
+                app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| sheet_dialogs::show(dialog, done, ctx.clone())));
                 app.hooks.app_action = Some(Box::new(native_menu::app_action));
                 app.hooks.clipboard_text = Some(Box::new(native_menu::clipboard_text));
             }
@@ -242,6 +279,7 @@ fn main() -> eframe::Result {
                 #[cfg(target_os = "macos")]
                 apple_events: apple_events.connect(&cc.egui_ctx),
                 app,
+                window: window::Tracker::new(opened, saved_window, control_port.is_none()),
                 launch,
                 drawn: false,
             }))
@@ -293,8 +331,12 @@ fn startup_failed(e: &eframe::Error, gl_next: bool) {
     let message = format!(
         "EffectCraft couldn't start its window: {e}\n\n{next}Updating the graphics driver often helps. If it keeps happening, please report it at https://github.com/storytold/effectcraft/issues with this message."
     );
-    log::error!("{message}");
-    eprintln!("effectcraft: {message}");
+    // Standard error and the session log; standard error alone when RUST_LOG turned errors off.
+    if log::log_enabled!(log::Level::Error) {
+        log::error!("{message}");
+    } else {
+        eprintln!("effectcraft: {message}");
+    }
     let _ = rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title("EffectCraft")
@@ -311,6 +353,8 @@ struct Desktop {
     /// Documents opened from Finder, the Dock or `open` (macOS).
     #[cfg(target_os = "macos")]
     apple_events: apple_events::Opened,
+    /// The window's size and position, saved for the next launch.
+    window: window::Tracker,
     launch: launch_guard::Launch,
     /// The first frame was drawn (logged once).
     drawn: bool,
@@ -325,6 +369,7 @@ impl eframe::App for Desktop {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.app.ui(ui, frame);
+        self.window.frame(ui.ctx(), self.app.session.config.as_deref());
         if !self.drawn {
             self.drawn = true;
             log::info!("first frame drawn");
@@ -338,6 +383,7 @@ impl eframe::App for Desktop {
 
     fn on_exit(&mut self) {
         self.launch.exited();
+        self.window.save(self.app.session.config.as_deref());
         self.app.on_exit();
     }
 

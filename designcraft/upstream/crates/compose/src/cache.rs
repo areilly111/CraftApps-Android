@@ -13,7 +13,8 @@ use designcraft_doc::{Document, Item, Story, StoryId, Styles, WrapMode};
 use crate::vars::RunningIndex;
 use crate::{ComposeOptions, ComposedStory};
 
-type Key = (StoryId, Option<String>);
+/// A story, composed for one absolute page (parent-page items) or for its own frames (`None`).
+type Key = (StoryId, Option<usize>);
 
 struct Entry {
     sig: Vec<usize>,
@@ -55,11 +56,23 @@ impl Cache {
         Self::default()
     }
 
-    /// The composed story, from cache or freshly composed.
-    pub fn get(&self, doc: &Document, sid: StoryId, page_name: Option<&str>) -> Arc<ComposedStory> {
+    /// The composed story, from cache or freshly composed. `page` is the absolute page a
+    /// parent-page item is shown on (its page number markers and variables are that page's), or
+    /// `None` for a story's own frames. Pages are identified by index, not name: names repeat when
+    /// sections restart their numbering.
+    pub fn get(&self, doc: &Document, sid: StoryId, page: Option<usize>) -> Arc<ComposedStory> {
         let Some(story) = doc.stories.get(&sid) else { return Arc::new(ComposedStory { story: sid, ..Default::default() }) };
         let (mut sig, keep_items) = signature(doc, story);
-        let key = (sid, page_name.map(str::to_string));
+        let key = (sid, page);
+        // The key holds the page's index, which a renumbering doesn't change: its name (section
+        // start number, style, prefix) is part of the signature.
+        let page_name = page.map(|p| doc.page_name(p));
+        if let Some(name) = &page_name {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            name.hash(&mut h);
+            sig.push(h.finish() as usize);
+        }
         let with_vars = crate::vars::has_vars(story);
         let running = with_vars && crate::vars::has_running(doc, story);
         if with_vars {
@@ -125,23 +138,20 @@ impl Cache {
                 return e.out.clone();
             }
         }
-        // Parent-page items are composed per page; variables need that page's index.
-        let page = match page_name {
-            Some(n) if with_vars => (0..doc.page_count()).find(|&i| doc.page_name(i) == n),
-            _ => None,
-        };
+        // Parent-page items are composed per page: markers show its name, variables need its index.
+        let page = page.filter(|_| with_vars);
         let running = running.then(|| self.running_index(doc));
         let out = Arc::new(crate::compose_story(
             doc,
             sid,
-            &ComposeOptions { page_name: page_name.map(str::to_string), page, running, label: None, xrefs: with_xrefs.then(|| self.xref_index(doc)) },
+            &ComposeOptions { page_name, page, running, label: None, xrefs: with_xrefs.then(|| self.xref_index(doc)) },
         ));
         let mut g = self.map.lock().unwrap_or_else(|e| e.into_inner());
         let stamp = g.1;
         if g.0.len() > 4096 {
             g.0.retain(|_, e| stamp - e.stamp < 64);
         }
-        let replaced = g.0.insert(key.clone(), Entry { sig, _keep: (story.clone(), doc.styles.clone(), keep_items), out: out.clone(), stamp });
+        let replaced = g.0.insert(key, Entry { sig, _keep: (story.clone(), doc.styles.clone(), keep_items), out: out.clone(), stamp });
         drop(g);
         if key.1.is_none()
             && let Some(old) = replaced

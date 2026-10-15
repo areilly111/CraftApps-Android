@@ -123,7 +123,7 @@ fn pdfx_1a_files_have_no_rgb() {
         link: None,
         placement: Default::default(),
     };
-    let n = Node::new(d.alloc_id(), NodeKind::Image(im));
+    let n = Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)));
     d.insert(Some(l), 0, n).unwrap();
     let t = text(&export(&d, &opts(Standard::PdfX1a, |_| {})).unwrap());
     for no in ["/DeviceRGB", "/ICCBased", "/Lab", "/CalRGB"] {

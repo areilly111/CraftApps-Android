@@ -371,6 +371,11 @@ fn options_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bool, s
         }
     });
     let defined = |attrs: &Value, k: &str| attrs.get(k).is_some();
+    // Preferences ▸ Type ▸ Font Preview Size sizes the family picker's samples.
+    let preview = app.session.prefs().type_.font_preview;
+    // Preferences ▸ Units & Rulers ▸ Type: the model stores points; the fields may show pixels
+    // (by the document's resolution) or millimetres.
+    let (type_unit, unit_label) = crate::type_tool::type_unit(app);
     egui::Grid::new(("style-opts", paragraph, id)).num_columns(3).spacing([6.0, 3.0]).show(ui, |ui| {
         // (label, model key, panel key, kind)
         let rows: &[(&str, &str, &str, &str)] = &[
@@ -394,7 +399,7 @@ fn options_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bool, s
             ui.add_enabled_ui(on, |ui| match kind {
                 "font" => {
                     let mut f = v.as_str().unwrap_or("").to_string();
-                    if family_picker(ui, &format!("style-font-{paragraph}-{id}"), &mut f) {
+                    if family_picker(ui, &format!("style-font-{paragraph}-{id}"), &mut f, preview) {
                         set = Some(json!({ panel: f }));
                     }
                 }
@@ -449,17 +454,27 @@ fn options_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bool, s
                 ui.add_enabled_ui(on, |ui| match kind {
                     "align" => {
                         let mut a = v.as_str().unwrap_or("Left").to_string();
-                        let opts = [tl!("Left"), tl!("Center"), tl!("Right"), "JustifyLeft", "JustifyCenter", "JustifyRight", "JustifyAll"]
-                            .map(|o| (o.to_string(), o));
-                        let opts: Vec<(String, &str)> = opts.to_vec();
+                        // English values for the engine; labels go through `dropdown`'s `tl!`.
+                        let opts: Vec<(String, &str)> = [
+                            ("Left", "Left"),
+                            ("Center", "Center"),
+                            ("Right", "Right"),
+                            ("JustifyLeft", "Justify last left"),
+                            ("JustifyCenter", "Justify last centered"),
+                            ("JustifyRight", "Justify last right"),
+                            ("JustifyAll", "Justify all"),
+                        ]
+                        .into_iter()
+                        .map(|(v, l)| (v.to_string(), l))
+                        .collect();
                         if crate::widgets::dropdown(ui, &format!("style-align-{id}"), &mut a, &opts, 110.0) {
                             set = Some(json!({ "align": a }));
                         }
                     }
                     "pt" => {
-                        let mut x = v.as_f64().unwrap_or(0.0) as f32;
-                        if crate::widgets::value_field(ui, &mut x, -1296.0..=1296.0, " pt", 70.0).changed() {
-                            set = Some(json!({ key: x }));
+                        let mut x = v.as_f64().unwrap_or(0.0) as f32 * type_unit;
+                        if crate::widgets::value_field(ui, &mut x, -1296.0 * type_unit..=1296.0 * type_unit, &format!(" {unit_label}"), 70.0).changed() {
+                            set = Some(json!({ key: x / type_unit }));
                         }
                     }
                     _ => {
@@ -503,9 +518,12 @@ fn options_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bool, s
 }
 
 /// Searchable family combo box.
-fn family_picker(ui: &mut egui::Ui, salt: &str, current: &mut String) -> bool {
+fn family_picker(ui: &mut egui::Ui, salt: &str, current: &mut String, preview: photocraft_engine::prefs::FontPreview) -> bool {
+    if !crate::type_tool::fonts_ready(ui, 140.0) {
+        return false;
+    }
     let mut shown = if current.is_empty() { photocraft_text::fonts::DEFAULT_FAMILY.to_string() } else { current.clone() };
-    let changed = crate::type_tool::family_picker_in(ui, salt, &mut shown, 140.0, &crate::type_tool::families());
+    let changed = crate::type_tool::family_picker_in(ui, salt, &mut shown, 140.0, &crate::type_tool::families(), preview);
     if changed {
         *current = shown;
     }
@@ -589,13 +607,17 @@ pub fn insert_glyph(app: &mut PhotocraftApp, g: &str) -> bool {
 }
 
 pub fn glyphs_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    // Every glyph cell needs the font database: wait for the font scan without blocking.
+    if !crate::type_tool::fonts_ready(ui, 260.0) {
+        return;
+    }
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     let (family, style) = glyph_font(app);
     // Font family + style.
     ui.horizontal(|ui| {
         let mut f = family.clone();
-        if family_picker(ui, "glyph-family", &mut f) {
+        if family_picker(ui, "glyph-family", &mut f, app.session.prefs().type_.font_preview) {
             app.ui.type_panels.glyph_family = f;
             app.ui.type_panels.glyph_style = tl!("Regular").into();
         }

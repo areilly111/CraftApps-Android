@@ -24,6 +24,7 @@ fn harness() -> Option<(Harness, Writes)> {
                     file_dialog: Some(Box::new(|request, _parent, reply| {
                         reply.send(match request {
                             FileDialogRequest::Save { suggested } => Some(FileDialogAnswer::SaveTo(suggested)),
+                            FileDialogRequest::Folder { .. } => None,
                             FileDialogRequest::Open { .. } => None,
                         })
                     })),
@@ -68,6 +69,7 @@ fn evidence(h: &mut Harness, depth: u8, stage: &str) {
 
 #[test]
 fn export_as_scales_a_narrow_image_without_editing_the_source() {
+    let _gpu = photocraft_testkit::gpu_lock();
     let Some((mut h, writes)) = harness() else { return };
     h.run_steps(4);
     for depth in [8, 16, 32] {
