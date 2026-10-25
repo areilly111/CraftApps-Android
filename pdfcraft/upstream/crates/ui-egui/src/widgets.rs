@@ -13,6 +13,15 @@ const FIELD_MIN_HEIGHT: f32 = 30.0;
 const DIALOG_PAD_X: i8 = 20;
 const DIALOG_PAD_Y: i8 = 16;
 
+/// Stack setting labels and controls on phones; keep desktop rows unchanged.
+pub(crate) fn responsive_row<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> egui::InnerResponse<R> {
+    if crate::mobile::enabled(ui.ctx()) { ui.vertical(content) } else { ui.horizontal(content) }
+}
+
+pub(crate) fn dialog_width(ui: &egui::Ui, desired: f32) -> f32 {
+    if crate::mobile::enabled(ui.ctx()) { desired.min((ui.ctx().content_rect().width() - 56.0).max(1.0)) } else { desired }
+}
+
 fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
     let t = Tokens::get(ctx);
     egui::Frame::new()
@@ -33,7 +42,17 @@ pub fn show_modal<R>(ctx: &egui::Context, id: &str, content: impl FnOnce(&mut eg
     let stored = egui::Id::new(id);
     modal(ctx, id).show(ctx, |ui| {
         begin_dialog(ui);
-        let inner = content(ui);
+        let inner = if crate::mobile::enabled(ctx) {
+            let available = ctx.content_rect().size() - vec2(56.0, 72.0);
+            egui::ScrollArea::both()
+                .max_width(available.x.max(1.0))
+                .max_height(available.y.max(44.0))
+                .auto_shrink([true, true])
+                .show(ui, |ui| content(ui))
+                .inner
+        } else {
+            content(ui)
+        };
         // The frame's stroke sits outside this content rect; the stored card is the fill.
         let card = ui.min_rect().expand2(egui::vec2(f32::from(DIALOG_PAD_X), f32::from(DIALOG_PAD_Y)));
         ui.ctx().data_mut(|d| d.insert_temp(stored.with("card"), card));
@@ -57,7 +76,7 @@ pub fn begin_dialog(ui: &mut egui::Ui) {
         state.corner_radius = CornerRadius::same(4);
     }
     ui.visuals_mut().selection.stroke = Stroke::new(1.5, t.accent);
-    ui.spacing_mut().interact_size.y = FIELD_MIN_HEIGHT;
+    ui.spacing_mut().interact_size.y = if crate::mobile::enabled(ui.ctx()) { 44.0 } else { FIELD_MIN_HEIGHT };
 }
 
 /// A single-line field tall enough to read and to click.

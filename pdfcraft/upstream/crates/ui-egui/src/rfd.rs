@@ -52,15 +52,12 @@ pub struct PickRequest {
 /// Install the shell's pick handler. The handler runs on the worker thread
 /// that awaits the pick future; it must launch the SAF picker and return a
 /// channel that receives the chosen paths (empty when cancelled).
-pub fn set_pick_handler(
-    handler: impl Fn(PickRequest) -> std::sync::mpsc::Receiver<Vec<PathBuf>> + Send + Sync + 'static,
-) {
+pub fn set_pick_handler(handler: impl Fn(PickRequest) -> std::sync::mpsc::Receiver<Vec<PathBuf>> + Send + Sync + 'static) {
     let _ = HANDLER.set(Box::new(handler));
 }
 
-static HANDLER: OnceLock<
-    Box<dyn Fn(PickRequest) -> std::sync::mpsc::Receiver<Vec<PathBuf>> + Send + Sync>,
-> = OnceLock::new();
+type PickHandler = Box<dyn Fn(PickRequest) -> std::sync::mpsc::Receiver<Vec<PathBuf>> + Send + Sync>;
+static HANDLER: OnceLock<PickHandler> = OnceLock::new();
 
 fn handle_request(req: PickRequest) -> Vec<PathBuf> {
     match HANDLER.get() {
@@ -134,11 +131,7 @@ impl AsyncFileDialog {
         let req = self.request(PickKind::Files);
         async move {
             let paths = handle_request(req);
-            if paths.is_empty() {
-                None
-            } else {
-                Some(paths.into_iter().map(|path| FileHandle { path }).collect())
-            }
+            if paths.is_empty() { None } else { Some(paths.into_iter().map(|path| FileHandle { path }).collect()) }
         }
     }
 
@@ -171,10 +164,7 @@ impl FileHandle {
     /// File name of the picked path. Kept for API parity with rfd.
     #[allow(dead_code)]
     pub fn file_name(&self) -> String {
-        self.path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
+        self.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
     }
 
     /// Read the picked file's bytes. Kept for API parity with rfd.

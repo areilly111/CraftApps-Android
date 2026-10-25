@@ -48,6 +48,9 @@ import java.util.ArrayList;
  * nothing ever arrives.
  */
 public class PdfCraftActivity extends NativeActivity {
+    // NativeActivity's dlopen is not a Java ClassLoader native-library registration.
+    // Register the same library for Java's native method lookup as well.
+    static { System.loadLibrary("pdfcraft_android"); }
     /** Starts a picker for result. May be called from any thread. */
     public static void launchForResult(android.app.Activity activity, Intent intent, int requestCode) {
         activity.runOnUiThread(() -> activity.startActivityForResult(intent, requestCode));
@@ -171,6 +174,10 @@ public class PdfCraftActivity extends NativeActivity {
     /** "open" or "save". */
     private String bridgeRequestKind = "";
 
+    private static final java.util.concurrent.ExecutorService DOCUMENT_IMPORTS =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    private native void nativeOnDocumentReady();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // NativeActivity.onCreate loads the native library and takes over the
@@ -178,6 +185,58 @@ public class PdfCraftActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         applyImmersiveFullscreen();
         startPickerBridge();
+        if (savedInstanceState == null) {
+            importIncomingDocument(getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        importIncomingDocument(intent);
+    }
+
+    /** ACTION_VIEW grants access to one document, not the whole filesystem. */
+    private void importIncomingDocument(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
+            return;
+        }
+        final Uri uri = intent.getData();
+        DOCUMENT_IMPORTS.execute(() -> {
+            String token = String.format(java.util.Locale.ROOT, "%019d-", System.currentTimeMillis())
+                    + java.util.UUID.randomUUID();
+            File incoming = new File(bridgeDir(), "incoming");
+            try {
+                if (uri == null || !("content".equals(uri.getScheme()) || "file".equals(uri.getScheme()))) {
+                    throw new java.io.IOException("No readable document URI was supplied");
+                }
+                File directory = new File(incoming, "documents/" + token);
+                String path = copyDocument(uri, directory, "");
+                publishIncoming(incoming, token + ".open", path);
+            } catch (Exception error) {
+                android.util.Log.w("PdfCraftActivity", "External document import failed", error);
+                try {
+                    publishIncoming(incoming, token + ".error", "The document could not be read. "
+                            + String.valueOf(error.getMessage()));
+                } catch (Exception publishError) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Couldn't open document from another app", android.widget.Toast.LENGTH_LONG).show());
+                }
+            }
+        });
+    }
+
+    private void publishIncoming(File incoming, String name, String value) throws Exception {
+        File queue = new File(incoming, "queue");
+        if (!queue.isDirectory() && !queue.mkdirs()) {
+            throw new java.io.IOException("Couldn't create external document queue");
+        }
+        File temporary = new File(queue, name + ".tmp");
+        java.nio.file.Files.write(temporary.toPath(), value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        java.nio.file.Files.move(temporary.toPath(), new File(queue, name).toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        nativeOnDocumentReady();
     }
 
 
@@ -246,13 +305,9 @@ public class PdfCraftActivity extends NativeActivity {
         }, POLL_MS);
     }
 
-    /** Where the bridge files live: the app's own external files dir. */
+    /** Where the bridge files live: the app's private persistent files dir. */
     private File bridgeDir() {
-        File base = getExternalFilesDir(null);
-        if (base == null) {
-            base = getFilesDir();
-        }
-        return new File(base, ".picker");
+        return new File(getFilesDir(), ".picker");
     }
 
     private void checkPickerRequest() {
@@ -411,13 +466,20 @@ public class PdfCraftActivity extends NativeActivity {
     /** Copy a picked document into <bridge>/inbox/<id>/ and return its path. */
     private String copyIntoInbox(long id, int index, Uri uri) throws Exception {
         File inbox = new File(bridgeDir(), "inbox/" + id);
-        inbox.mkdirs();
+        return copyDocument(uri, inbox, index + "-");
+    }
+
+    private String copyDocument(Uri uri, File inbox, String prefix) throws Exception {
+        if (!inbox.isDirectory() && !inbox.mkdirs()) {
+            throw new java.io.IOException("Couldn't create private document directory");
+        }
         String name = displayName(uri);
         if (name == null || name.trim().isEmpty()) {
-            name = "picked-" + index;
+            name = "document.pdf";
         }
         name = name.replace('/', '_').replace('\\', '_');
-        File out = new File(inbox, index + "-" + name);
+        if (".".equals(name) || "..".equals(name)) { name = "document.pdf"; }
+        File out = new File(inbox, prefix + name);
         try (InputStream in = getContentResolver().openInputStream(uri);
              OutputStream os = new FileOutputStream(out)) {
             if (in == null) {

@@ -82,12 +82,24 @@ impl StorageManager {
     pub fn new(cache_dir: &Path, app: &StorageAppInfo) -> Result<Self, String> {
         let root = jni_bridge::external_storage_root()?;
         log::info!("{} shared storage root: {root}", app.app_name);
-        let external_root = PathBuf::from(&root);
+        Self::new_at_root(cache_dir, app, Path::new(&root))
+    }
+
+    /// Construct storage under an explicitly supplied root, including an
+    /// app-private getFilesDir() root that needs no broad storage permission.
+    pub fn new_at_root(
+        cache_dir: &Path,
+        app: &StorageAppInfo,
+        root: &Path,
+    ) -> Result<Self, String> {
+        let external_root = root.to_path_buf();
         // Migration (2026-10): the suite folder was renamed from `ArtCraft` to
         // `CraftApps` for trademark compliance. Move the old tree over once.
         migrate_legacy_suite_dir(&external_root);
         let tablet_media = external_root.join("CraftApps/Media");
-        let settings_dir = external_root.join("CraftApps/Settings").join(app.settings_folder);
+        let settings_dir = external_root
+            .join("CraftApps/Settings")
+            .join(app.settings_folder);
         let plugins_dir = external_root.join("CraftApps/Plugins");
         let inbox_dir = cache_dir.join("saf-inbox");
         let mut this = StorageManager {
@@ -96,7 +108,11 @@ impl StorageManager {
             settings_dir,
             plugins_dir,
             inbox_dir,
-            state: Mutex::new(State { location: MediaLocation::Tablet, sd_tree_uri: None, uri_names: HashMap::new() }),
+            state: Mutex::new(State {
+                location: MediaLocation::Tablet,
+                sd_tree_uri: None,
+                uri_names: HashMap::new(),
+            }),
         };
         this.load_state();
         Ok(this)
@@ -108,13 +124,20 @@ impl StorageManager {
 
     /// Read back the persisted media location (best effort; defaults apply).
     fn load_state(&mut self) {
-        let Ok(text) = std::fs::read_to_string(self.state_file()) else { return };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+        let Ok(text) = std::fs::read_to_string(self.state_file()) else {
+            return;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return;
+        };
         if let Ok(mut st) = self.state.lock() {
             if v.get("location").and_then(|l| l.as_str()) == Some("sdcard") {
                 st.location = MediaLocation::SdCard;
             }
-            st.sd_tree_uri = v.get("sd_tree_uri").and_then(|u| u.as_str()).map(str::to_string);
+            st.sd_tree_uri = v
+                .get("sd_tree_uri")
+                .and_then(|u| u.as_str())
+                .map(str::to_string);
             // A remembered SD location without its tree is unusable: fall back.
             if st.location == MediaLocation::SdCard && st.sd_tree_uri.is_none() {
                 st.location = MediaLocation::Tablet;
@@ -134,7 +157,8 @@ impl StorageManager {
             ),
             Err(_) => return,
         };
-        let text = serde_json::json!({ "location": location, "sd_tree_uri": sd_tree_uri }).to_string();
+        let text =
+            serde_json::json!({ "location": location, "sd_tree_uri": sd_tree_uri }).to_string();
         let _ = std::fs::write(self.state_file(), text);
     }
 
@@ -148,7 +172,8 @@ impl StorageManager {
             &self.settings_dir.join("Presets"),
             &self.plugins_dir,
         ] {
-            std::fs::create_dir_all(dir).map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
+            std::fs::create_dir_all(dir)
+                .map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
         }
         // Stale staged opens from a previous run must not linger.
         let _ = std::fs::remove_dir_all(&self.inbox_dir);
@@ -184,13 +209,19 @@ impl StorageManager {
     }
 
     pub fn media_location(&self) -> MediaLocation {
-        self.state.lock().map(|st| st.location).unwrap_or(MediaLocation::Tablet)
+        self.state
+            .lock()
+            .map(|st| st.location)
+            .unwrap_or(MediaLocation::Tablet)
     }
 
     /// Human-readable current media location for Preferences › Storage.
     pub fn location_label(&self) -> String {
         match self.media_location() {
-            MediaLocation::Tablet => format!("Tablet storage ({}/CraftApps/Media)", self.external_root.display()),
+            MediaLocation::Tablet => format!(
+                "Tablet storage ({}/CraftApps/Media)",
+                self.external_root.display()
+            ),
             MediaLocation::SdCard => "SD card (chosen folder)".to_string(),
         }
     }
@@ -206,7 +237,8 @@ impl StorageManager {
     /// result handler.
     pub fn set_sd_tree_uri(&self, tree_uri: &str) -> Result<(), String> {
         // Sanity: the tree must list before we trust it.
-        saf::saf_tree_children(tree_uri, None).map_err(|e| format!("that folder couldn't be used: {e}"))?;
+        saf::saf_tree_children(tree_uri, None)
+            .map_err(|e| format!("that folder couldn't be used: {e}"))?;
         if let Ok(mut st) = self.state.lock() {
             st.sd_tree_uri = Some(tree_uri.to_string());
             st.location = MediaLocation::SdCard;
@@ -217,7 +249,11 @@ impl StorageManager {
 
     fn sd_tree(&self) -> Option<String> {
         self.state.lock().ok().and_then(|st| {
-            if st.location == MediaLocation::SdCard { st.sd_tree_uri.clone() } else { None }
+            if st.location == MediaLocation::SdCard {
+                st.sd_tree_uri.clone()
+            } else {
+                None
+            }
         })
     }
 
@@ -253,7 +289,11 @@ impl StorageManager {
                 let entries = saf::saf_tree_children(&tree, id)?;
                 Ok(entries
                     .into_iter()
-                    .map(|e| MediaEntry { name: e.name, is_dir: e.is_dir, id: e.uri })
+                    .map(|e| MediaEntry {
+                        name: e.name,
+                        is_dir: e.is_dir,
+                        id: e.uri,
+                    })
                     .collect())
             }
             None => {
@@ -261,20 +301,28 @@ impl StorageManager {
                     Some(p) => PathBuf::from(p),
                     None => self.tablet_media.clone(),
                 };
-                let read = std::fs::read_dir(&dir).map_err(|e| format!("couldn't list {}: {e}", dir.display()))?;
+                let read = std::fs::read_dir(&dir)
+                    .map_err(|e| format!("couldn't list {}: {e}", dir.display()))?;
                 let mut entries = Vec::new();
                 for entry in read {
-                    let entry = entry.map_err(|e| format!("couldn't list {}: {e}", dir.display()))?;
+                    let entry =
+                        entry.map_err(|e| format!("couldn't list {}: {e}", dir.display()))?;
                     let path = entry.path();
                     let name = path
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "?".to_string());
                     let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                    entries.push(MediaEntry { name, is_dir, id: path.to_string_lossy().into_owned() });
+                    entries.push(MediaEntry {
+                        name,
+                        is_dir,
+                        id: path.to_string_lossy().into_owned(),
+                    });
                 }
                 entries.sort_by(|a, b| {
-                    b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    b.is_dir
+                        .cmp(&a.is_dir)
+                        .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                 });
                 Ok(entries)
             }
@@ -286,8 +334,8 @@ impl StorageManager {
         if entry.id.starts_with("content://") {
             saf::saf_read_uri(&entry.id)
         } else {
-            let bytes =
-                std::fs::read(&entry.id).map_err(|e| format!("couldn't read {}: {e}", entry.name))?;
+            let bytes = std::fs::read(&entry.id)
+                .map_err(|e| format!("couldn't read {}: {e}", entry.name))?;
             Ok((entry.name.clone(), bytes))
         }
     }
@@ -330,7 +378,6 @@ impl StorageManager {
             crate::services::write_atomic(Path::new(id), bytes)
         }
     }
-
 }
 
 /// One file or folder in the media browser.
@@ -357,4 +404,62 @@ fn clean_name(name: &str) -> Result<String, String> {
 fn mime_for_name(name: &str) -> &'static str {
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     saf::mime_for_extension(&ext).unwrap_or("application/octet-stream")
+}
+
+#[cfg(test)]
+mod private_storage_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn test_directory() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "pdfcraft-private-storage-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    #[test]
+    fn private_storage_starts_and_preserves_document_without_android_permission() {
+        let scratch = test_directory();
+        let root = scratch.join("files");
+        let cache = scratch.join("cache");
+        let app = StorageAppInfo {
+            app_name: "PdfCraft",
+            settings_folder: "PdfCraft",
+        };
+        let storage = StorageManager::new_at_root(&cache, &app, &root).expect("private storage");
+        storage
+            .ensure_dirs()
+            .expect("private directories need no Android permission");
+        assert!(storage.settings_dir().starts_with(&root));
+        assert!(storage.tablet_media_dir().starts_with(&root));
+        let document = storage.tablet_media_dir().join("regression.pdf");
+        std::fs::write(&document, b"synthetic regression fixture").expect("write fixture");
+        let reopened = StorageManager::new_at_root(&cache, &app, &root).expect("reopen");
+        reopened.ensure_dirs().expect("reinitialize");
+        assert_eq!(
+            std::fs::read(&document).expect("preserved"),
+            b"synthetic regression fixture"
+        );
+        std::fs::remove_dir_all(&scratch).expect("remove test-owned directory");
+    }
+
+    #[test]
+    fn unusable_private_root_returns_an_error() {
+        let scratch = test_directory();
+        std::fs::create_dir_all(&scratch).expect("test directory");
+        let root = scratch.join("not-a-directory");
+        std::fs::write(&root, b"blocked").expect("blocking file");
+        let app = StorageAppInfo {
+            app_name: "PdfCraft",
+            settings_folder: "PdfCraft",
+        };
+        let storage =
+            StorageManager::new_at_root(&scratch.join("cache"), &app, &root).expect("construct");
+        assert!(storage.ensure_dirs().is_err());
+        std::fs::remove_dir_all(&scratch).expect("remove test-owned directory");
+    }
 }

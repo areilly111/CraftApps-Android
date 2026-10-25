@@ -28,12 +28,12 @@ pub struct PdfCraftShell {
 
 impl PdfCraftShell {
     /// Create the shell around a fresh `PdfCraftApp`.
-    pub fn new() -> Self {
-        Self {
-            inner: pdfcraft_ui_egui::PdfCraftApp::new(),
-            gestures: craftapps_shared::gestures::GestureDetector::new(),
-            modifiers: craftapps_shared::modifiers::ModifierKeys::default(),
+    pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
+        let mut inner = pdfcraft_ui_egui::PdfCraftApp::new();
+        if let Some(json) = storage.and_then(|s| s.get_string("pdfcraft")) {
+            inner.restore(&json);
         }
+        Self { inner, gestures: craftapps_shared::gestures::GestureDetector::new(), modifiers: craftapps_shared::modifiers::ModifierKeys::default() }
     }
 
     /// Multi-finger taps (the "stylus mode" gestures) and the keyboard
@@ -52,6 +52,15 @@ impl PdfCraftShell {
 
         // The file bridge's answer to a system picker, if one came back.
         craftapps_shared::saf::poll_bridge();
+        crate::install_document_waker(ctx);
+        if let Some(event) = crate::incoming::poll(&craftapps_shared::picker_bridge::bridge_dir()) {
+            match event {
+                Ok(path) => self.inner.open_path(&path),
+                Err(error) => self.inner.notify_fmt("Couldn't open document from another app: {e}", &[("e", &error)]),
+            }
+            // Drain additional completed imports without an idle repaint timer.
+            ctx.request_repaint();
+        }
 
         // The stylus data of the last motion event: the tool type (stylus,
         // eraser end, palm) and the side-button state. winit drops both, so
@@ -87,33 +96,19 @@ impl PdfCraftShell {
         } else {
             let raw = android_activity::input::drain_stylus_states();
             for state in &raw {
-                craftapps_shared::pen::note_queue_state(
-                    state.action,
-                    state.buttons,
-                    state.action_button as i32,
-                    state.tool_type,
-                );
+                craftapps_shared::pen::note_queue_state(state.action, state.buttons, state.action_button as i32, state.tool_type);
             }
             raw
         };
         for state in states {
             // A finger's touch is not the pen's business: it must not clear
             // the pen's state (the pen may well still be down).
-            if (state.tool_type == TOOL_FINGER || state.tool_type == TOOL_MOUSE)
-                && state.buttons & STYLUS_BUTTONS == 0
-            {
+            if (state.tool_type == TOOL_FINGER || state.tool_type == TOOL_MOUSE) && state.buttons & STYLUS_BUTTONS == 0 {
                 continue;
             }
             // The pen runtime speaks the Java protocol: the Android action
             // codes (0 down, 1 up, 2 move, 3 cancel) and the `BUTTON_*` bits.
-            pen::on_pen_event(
-                state.action,
-                state.tool_type,
-                state.buttons as i32,
-                state.action_button as i32,
-                state.x,
-                state.y,
-            );
+            pen::on_pen_event(state.action, state.tool_type, state.buttons as i32, state.action_button as i32, state.x, state.y);
         }
     }
 
@@ -160,7 +155,7 @@ impl PdfCraftShell {
 
 impl Default for PdfCraftShell {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 

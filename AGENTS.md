@@ -300,3 +300,14 @@ Document EVERY patch in `PATCHES.md` (recreate if missing). Minimum:
 - `https://github.com/morte2437/photocraft-android` — File-based picker bridge pattern
 - `https://github.com/2IIZ/spen_remote` — the Samsung **S Pen Remote SDK** (needs a Bluetooth S Pen; it cannot work on the Tab S6 Lite's passive pen. The *button* itself does work — see above)
 - `https://github.com/artcraft-android/lightcraft-android` — SAF bridging pattern
+
+## PdfCraft private storage and phone workspace
+- Initialize PdfCraft storage and its Java/Rust picker bridge under getFilesDir();
+  do not require shared-root/all-files access before showing the UI.
+- ACTION_VIEW requires both cold-launch and onNewIntent handling. Keep its
+  durable event queue separate from picker response.json and register Java
+  native wake methods with System.loadLibrary, not only NativeActivity dlopen.
+- Compact inspectors replace the canvas: keep text extraction queued for search.
+- Bound dialogs and stack narrow preference rows/theme cards; a scroll frame
+  alone does not make desktop rows fit. Test portrait, landscape and translations.
+- See docs/fixes-pdfcraft-honor-mobile.md for verification and migration limits.

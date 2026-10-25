@@ -117,7 +117,7 @@ fn card(ui: &mut egui::Ui, t: &Tokens, title: &str, active: bool, themes: &[(The
 /// The Appearance section of Preferences.
 pub fn preferences_section(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) {
     ui.label(RichText::new(tl_ctx!("theme", "Appearance")).font(theme::semibold(13.0)));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Appearance mode"));
         egui::ComboBox::from_id_salt("appearance-mode").selected_text(tl!(mode_label(app.theme_preference))).show_ui(ui, |ui| {
             for preference in [ThemePreference::System, ThemePreference::Light, ThemePreference::Dark] {
@@ -130,6 +130,16 @@ pub fn preferences_section(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens)
     });
     ui.add_space(4.0);
     let light_active = app.theme == ThemeKind::Light;
+    if crate::mobile::enabled(ui.ctx()) {
+        if card(ui, t, tl!("Light theme"), light_active, LIGHT_THEMES) {
+            app.execute(mode_command(ThemePreference::Light));
+        }
+        ui.add_space(8.0);
+        if card(ui, t, tl!("Dark theme"), !light_active, DARK_THEMES) {
+            app.execute(mode_command(ThemePreference::Dark));
+        }
+        return;
+    }
     ui.columns(2, |cols| {
         let [light, dark] = cols else { return };
         if card(light, t, tl!("Light theme"), light_active, LIGHT_THEMES) {

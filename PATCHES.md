@@ -300,3 +300,13 @@ ports. Upstream cloned at tag `v0.10.0`; re-pinning follows
   hosting (CLAP/VST3/AU) compiles but has no Android plug-ins to load.
   Stylus settings load from `/sdcard/CraftApps/Settings/SoundCraft/pen.json`
   with no in-app settings screen (as FilmCraft/EffectCraft).
+
+## PdfCraft private storage, external open and compact Android UI
+Retain the explicit private storage root, matching Java/Rust private bridge,
+ACTION_VIEW import queue and wake hook, mobile workspace integration, reduced
+canvas gutters, search demand outside the canvas, responsive preferences and
+bounded dialogs/palette when re-pinning upstream. Other ports keep shared
+storage and desktop/wide layouts. See docs/fixes-pdfcraft-honor-mobile.md and
+docs/fixes-0.2.8-external-open.md for file-by-file notes and verification.
+Keep the Android shell's layering-table registration and the explicit WASM
+eframe dependency alongside the desktop/Android dependency split.

@@ -39,13 +39,14 @@ pub mod android;
 /// so the same call sites compile for both.
 #[cfg(not(target_os = "android"))]
 pub(crate) use rfd;
-#[cfg(target_os = "android")]
-pub(crate) mod rfd;
 mod appearance;
 pub mod canvas;
 mod chrome;
 mod combine_grid;
 mod image_pick;
+mod mobile;
+#[cfg(target_os = "android")]
+pub(crate) mod rfd;
 mod tags_ui;
 pub use combine_grid::ThumbState as CombineThumb;
 mod combine_ui;
@@ -1874,7 +1875,9 @@ impl PdfCraftApp {
         #[cfg(not(target_arch = "wasm32"))]
         self.pick(
             pickers::PickFor::Open,
-            crate::rfd::AsyncFileDialog::new().add_filter("PDF", &["pdf"]).add_filter(tl!("Images and text (converted to PDF)"), &create_ui::CONVERTIBLE),
+            crate::rfd::AsyncFileDialog::new()
+                .add_filter("PDF", &["pdf"])
+                .add_filter(tl!("Images and text (converted to PDF)"), &create_ui::CONVERTIBLE),
             true,
         );
         // Browsers pick files asynchronously; the bytes arrive through `inbox`.
@@ -3162,6 +3165,16 @@ impl eframe::App for PdfCraftApp {
             return;
         }
         self.sync_window_frame(&ctx);
+        if mobile::enabled(&ctx) {
+            mobile::show(self, ui);
+            self.process_pending_edits();
+            palette::show(self, &ctx);
+            dialogs::show(self, &ctx);
+            self.show_progress(&ctx);
+            widgets::toast(self, &ctx);
+            self.finish_render_frame(&ctx);
+            return;
+        }
         if self.draws_window_frame() {
             window_controls::resize_edges(&ctx);
         }

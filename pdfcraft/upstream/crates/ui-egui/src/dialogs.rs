@@ -80,13 +80,14 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let mut close = false;
     let mut next = dialog;
     let modal = widgets::show_modal(ctx, "dialog", |ui| {
-        ui.set_width(match dialog {
+        let desired_width: f32 = match dialog {
             Dialog::Properties(_) => 640.0,
             Dialog::Print => 820.0,
             Dialog::FieldProps | Dialog::BulkFieldProps => 600.0,
             Dialog::About => 780.0,
             _ => 520.0,
-        });
+        };
+        ui.set_width(if crate::mobile::enabled(ctx) { desired_width.min((ctx.content_rect().width() - 56.0).max(1.0)) } else { desired_width });
         match dialog {
             Dialog::WordCount => {
                 close = crate::word_count_ui::body(ui, app);
@@ -730,7 +731,7 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 return;
             }
             Dialog::CertificateViewer => {
-                ui.set_width(700.0);
+                ui.set_width(crate::widgets::dialog_width(ui, 700.0));
                 let trusted = app.session.trusted_certificates().to_vec();
                 let Some(v) = app.cert_viewer.as_mut() else {
                     close = true;
@@ -942,7 +943,7 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 return;
             }
             Dialog::ActionWizard => {
-                ui.set_width(620.0);
+                ui.set_width(crate::widgets::dialog_width(ui, 620.0));
                 close = crate::actions_ui::body(ui, app, &t);
                 return;
             }
@@ -953,12 +954,12 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 return;
             }
             Dialog::JsConsole => {
-                ui.set_width(640.0);
+                ui.set_width(crate::widgets::dialog_width(ui, 640.0));
                 close = crate::js_ui::console_body(ui, app, &t);
                 return;
             }
             Dialog::DocumentJs => {
-                ui.set_width(640.0);
+                ui.set_width(crate::widgets::dialog_width(ui, 640.0));
                 close = crate::js_ui::document_js_body(ui, app, &t);
                 return;
             }
@@ -987,7 +988,7 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                 return;
             }
             Dialog::Marks(kind) => {
-                ui.set_width(720.0);
+                ui.set_width(crate::widgets::dialog_width(ui, 720.0));
                 let (apply, cancel) = crate::marks_ui::body(ui, app, &t, kind);
                 marks_now = apply;
                 close = apply || cancel;
@@ -1476,7 +1477,7 @@ fn save_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let shown = shorten_middle(&name, 80);
     let mut choice: Option<Option<bool>> = None;
     let modal = widgets::show_modal(ctx, "save_prompt", |ui| {
-        ui.set_width(420.0);
+        ui.set_width(crate::widgets::dialog_width(ui, 420.0));
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("save", 22.0, t.accent));
             let title = ui.add(
@@ -1537,7 +1538,7 @@ fn link_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let (title, open) = if email { (tl!("Write this email?"), tl!("Open email app")) } else { (tl!("Open this web page?"), tl!("Open link")) };
     let mut choice: Option<bool> = None;
     let modal = widgets::show_modal(ctx, "link_prompt", |ui| {
-        ui.set_width(460.0);
+        ui.set_width(crate::widgets::dialog_width(ui, 460.0));
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("external-link", 22.0, t.accent));
             ui.label(egui::RichText::new(title).font(theme::semibold(16.0)));
@@ -1604,7 +1605,7 @@ fn full_screen_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let mut choice = None;
     let modal = widgets::show_modal(ctx, "full_screen_prompt", |ui| {
-        ui.set_width(460.0);
+        ui.set_width(crate::widgets::dialog_width(ui, 460.0));
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("maximize", 22.0, t.accent));
             ui.label(egui::RichText::new(tl!("Open in Full Screen mode?")).font(theme::semibold(16.0)));
@@ -1639,7 +1640,7 @@ fn remote_link_prompt(app: &mut PdfCraftApp, ctx: &egui::Context) {
     let Some(pending) = app.pending_remote_link.clone() else { return };
     let mut choice = None;
     let modal = widgets::show_modal(ctx, "remote_link_prompt", |ui| {
-        ui.set_width(460.0);
+        ui.set_width(crate::widgets::dialog_width(ui, 460.0));
         ui.label(egui::RichText::new(tl!("Open this local PDF?")).font(theme::semibold(16.0)));
         ui.add_space(6.0);
         ui.label(tl!("This document is trying to open a local file:"));
@@ -1689,7 +1690,7 @@ fn password_modal(
     let t = Tokens::get(ctx);
     let mut answer = None;
     let modal = widgets::show_modal(ctx, id, |ui| {
-        ui.set_width(400.0);
+        ui.set_width(crate::widgets::dialog_width(ui, 400.0));
         ui.horizontal(|ui| {
             ui.add(crate::icons::image("lock", 22.0, t.accent));
             ui.label(egui::RichText::new(title).font(theme::semibold(17.0)));

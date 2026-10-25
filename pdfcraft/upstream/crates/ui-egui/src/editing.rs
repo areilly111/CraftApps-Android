@@ -1019,8 +1019,7 @@ pub fn write_atomically(path: &str, bytes: &[u8]) -> std::io::Result<()> {
     // can't write. Route them through the shared SAF writer.
     #[cfg(target_os = "android")]
     if path.starts_with("content://") {
-        return craftapps_shared::saf::saf_write_uri(path, bytes)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        return craftapps_shared::saf::saf_write_uri(path, bytes).map_err(std::io::Error::other);
     }
     write_atomically_with(path, bytes, staging_suffixes())
 }

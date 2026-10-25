@@ -48,7 +48,9 @@ impl std::fmt::Display for BridgeError {
 pub(crate) type JniResult<T> = Result<T, BridgeError>;
 
 pub(crate) fn with_env<T>(f: impl FnOnce(&mut Env, &JObject) -> JniResult<T>) -> Result<T, String> {
-    let (vm, activity) = BRIDGE.get().ok_or_else(|| "JNI bridge not initialised".to_string())?;
+    let (vm, activity) = BRIDGE
+        .get()
+        .ok_or_else(|| "JNI bridge not initialised".to_string())?;
     vm.attach_current_thread(|env| f(env, activity.as_obj()))
         .map_err(|e: BridgeError| format!("JNI call failed: {e}"))
 }
@@ -92,9 +94,17 @@ pub(crate) fn jstring<'a>(env: &mut Env<'a>, s: &str) -> JniResult<JString<'a>> 
 /// `ContentResolver` for the activity. The activity's lifetime is independent
 /// of the env's: it is only a method receiver, while the returned local ref
 /// is created by (and tied to) `env`.
-pub(crate) fn content_resolver<'a>(env: &mut Env<'a>, activity: &JObject<'_>) -> JniResult<JObject<'a>> {
+pub(crate) fn content_resolver<'a>(
+    env: &mut Env<'a>,
+    activity: &JObject<'_>,
+) -> JniResult<JObject<'a>> {
     Ok(env
-        .call_method(activity, jni_str!("getContentResolver"), jni_sig!("()Landroid/content/ContentResolver;"), &[])?
+        .call_method(
+            activity,
+            jni_str!("getContentResolver"),
+            jni_sig!("()Landroid/content/ContentResolver;"),
+            &[],
+        )?
         .l()?)
 }
 
@@ -102,7 +112,9 @@ pub(crate) fn content_resolver<'a>(env: &mut Env<'a>, activity: &JObject<'_>) ->
 pub fn android_sdk_int() -> Result<i32, String> {
     with_env(|env, _| {
         let version = env.find_class(jni_str!("android/os/Build$VERSION"))?;
-        Ok(env.get_static_field(&version, jni_str!("SDK_INT"), jni_sig!("I"))?.i()?)
+        Ok(env
+            .get_static_field(&version, jni_str!("SDK_INT"), jni_sig!("I"))?
+            .i()?)
     })
 }
 
@@ -116,7 +128,12 @@ pub fn is_external_storage_manager() -> Result<bool, String> {
     with_env(|env, _| {
         let env_class = env.find_class(jni_str!("android/os/Environment"))?;
         Ok(env
-            .call_static_method(&env_class, jni_str!("isExternalStorageManager"), jni_sig!("()Z"), &[])?
+            .call_static_method(
+                &env_class,
+                jni_str!("isExternalStorageManager"),
+                jni_sig!("()Z"),
+                &[],
+            )?
             .z()?)
     })
 }
@@ -127,10 +144,21 @@ pub fn external_storage_root() -> Result<String, String> {
     with_env(|env, _| {
         let env_class = env.find_class(jni_str!("android/os/Environment"))?;
         let dir = env
-            .call_static_method(&env_class, jni_str!("getExternalStorageDirectory"), jni_sig!("()Ljava/io/File;"), &[])?
+            .call_static_method(
+                &env_class,
+                jni_str!("getExternalStorageDirectory"),
+                jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
             .l()?;
-        let path =
-            env.call_method(&dir, jni_str!("getAbsolutePath"), jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+        let path = env
+            .call_method(
+                &dir,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
         let s: JString = env.cast_local::<JString>(path)?;
         Ok(s.mutf8_chars(env)?.to_str().into_owned())
     })
@@ -149,9 +177,20 @@ pub fn open_all_files_settings() -> Result<(), String> {
                 jni_sig!("Ljava/lang/String;"),
             )?
             .l()?;
-        let intent = env.new_object(&intent_class, jni_sig!("(Ljava/lang/String;)V"), &[JValue::from(&action)])?;
+        let intent = env.new_object(
+            &intent_class,
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::from(&action)],
+        )?;
         // package:<pkg> deep-links straight to this app's page.
-        let pkg = env.call_method(activity, jni_str!("getPackageName"), jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+        let pkg = env
+            .call_method(
+                activity,
+                jni_str!("getPackageName"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
         let pkg: JString = env.cast_local::<JString>(pkg)?;
         let pkg = pkg.mutf8_chars(env)?.to_str().into_owned();
         let uri_j = jstring(env, &format!("package:{pkg}"))?;
@@ -172,10 +211,24 @@ pub fn open_all_files_settings() -> Result<(), String> {
         // The JNI bridge holds the application context, not the Activity:
         // starting an activity from it requires FLAG_ACTIVITY_NEW_TASK.
         let flag = env
-            .get_static_field(&intent_class, jni_str!("FLAG_ACTIVITY_NEW_TASK"), jni_sig!("I"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("FLAG_ACTIVITY_NEW_TASK"),
+                jni_sig!("I"),
+            )?
             .i()?;
-        env.call_method(&intent, jni_str!("addFlags"), jni_sig!("(I)Landroid/content/Intent;"), &[JValue::from(flag)])?;
-        env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::from(&intent)])?;
+        env.call_method(
+            &intent,
+            jni_str!("addFlags"),
+            jni_sig!("(I)Landroid/content/Intent;"),
+            &[JValue::from(flag)],
+        )?;
+        env.call_method(
+            activity,
+            jni_str!("startActivity"),
+            jni_sig!("(Landroid/content/Intent;)V"),
+            &[JValue::from(&intent)],
+        )?;
         Ok(())
     })
 }
@@ -187,9 +240,16 @@ pub fn open_all_files_settings() -> Result<(), String> {
 pub fn restart_process() -> Result<(), String> {
     with_env(|env, _| {
         let process = env.find_class(jni_str!("android/os/Process"))?;
-        let pid = env.call_static_method(&process, jni_str!("myPid"), jni_sig!("()I"), &[])?.i()?;
+        let pid = env
+            .call_static_method(&process, jni_str!("myPid"), jni_sig!("()I"), &[])?
+            .i()?;
         // Never returns; the Err case below is only for a failed lookup.
-        env.call_static_method(&process, jni_str!("killProcess"), jni_sig!("(I)V"), &[JValue::from(pid)])?;
+        env.call_static_method(
+            &process,
+            jni_str!("killProcess"),
+            jni_sig!("(I)V"),
+            &[JValue::from(pid)],
+        )?;
         Ok(())
     })
 }
@@ -199,7 +259,11 @@ pub fn open_url(url: &str) -> Result<(), String> {
     with_env(|env, activity| {
         let intent_class = env.find_class(jni_str!("android/content/Intent"))?;
         let action_view = env
-            .get_static_field(&intent_class, jni_str!("ACTION_VIEW"), jni_sig!("Ljava/lang/String;"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("ACTION_VIEW"),
+                jni_sig!("Ljava/lang/String;"),
+            )?
             .l()?;
         let url_j = jstring(env, url)?;
         let uri = env
@@ -216,9 +280,18 @@ pub fn open_url(url: &str) -> Result<(), String> {
             &[JValue::from(&action_view), JValue::from(&uri)],
         )?;
         let flag = env
-            .get_static_field(&intent_class, jni_str!("FLAG_ACTIVITY_NEW_TASK"), jni_sig!("I"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("FLAG_ACTIVITY_NEW_TASK"),
+                jni_sig!("I"),
+            )?
             .i()?;
-        env.call_method(&intent, jni_str!("addFlags"), jni_sig!("(I)Landroid/content/Intent;"), &[JValue::from(flag)])?;
+        env.call_method(
+            &intent,
+            jni_str!("addFlags"),
+            jni_sig!("(I)Landroid/content/Intent;"),
+            &[JValue::from(flag)],
+        )?;
         env.call_method(
             activity,
             jni_str!("startActivity"),
@@ -254,7 +327,9 @@ pub fn clipboard_set_text(text: &str) -> Result<(), String> {
             .call_static_method(
                 jni_str!("android/content/ClipData"),
                 jni_str!("newPlainText"),
-                jni_sig!("(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"),
+                jni_sig!(
+                    "(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Landroid/content/ClipData;"
+                ),
                 &[JValue::from(&label), JValue::from(&text_j)],
             )?
             .l()?;
@@ -280,12 +355,19 @@ pub fn clipboard_get_text() -> Result<Option<String>, String> {
             return Ok(None);
         }
         let clip = env
-            .call_method(&cm, jni_str!("getPrimaryClip"), jni_sig!("()Landroid/content/ClipData;"), &[])?
+            .call_method(
+                &cm,
+                jni_str!("getPrimaryClip"),
+                jni_sig!("()Landroid/content/ClipData;"),
+                &[],
+            )?
             .l()?;
         if clip.is_null() {
             return Ok(None);
         }
-        let count = env.call_method(&clip, jni_str!("getItemCount"), jni_sig!("()I"), &[])?.i()?;
+        let count = env
+            .call_method(&clip, jni_str!("getItemCount"), jni_sig!("()I"), &[])?
+            .i()?;
         if count <= 0 {
             return Ok(None);
         }
@@ -298,16 +380,30 @@ pub fn clipboard_get_text() -> Result<Option<String>, String> {
             )?
             .l()?;
         let text = env
-            .call_method(&item, jni_str!("getText"), jni_sig!("()Ljava/lang/CharSequence;"), &[])?
+            .call_method(
+                &item,
+                jni_str!("getText"),
+                jni_sig!("()Ljava/lang/CharSequence;"),
+                &[],
+            )?
             .l()?;
         if text.is_null() {
             return Ok(None);
         }
         let s = env
-            .call_method(&text, jni_str!("toString"), jni_sig!("()Ljava/lang/String;"), &[])?
+            .call_method(
+                &text,
+                jni_str!("toString"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
             .l()?;
         let s: JString = env.cast_local::<JString>(s)?;
-        let out = s.mutf8_chars(env).map_err(BridgeError::from)?.to_str().into_owned();
+        let out = s
+            .mutf8_chars(env)
+            .map_err(BridgeError::from)?
+            .to_str()
+            .into_owned();
         if out.trim().is_empty() {
             return Ok(None);
         }
@@ -347,8 +443,12 @@ pub fn installed_package_info(package: &str) -> Result<Option<(i64, String)>, St
             }
         };
         // minSdk 29, so getLongVersionCode() (API 28+) is always available.
-        let code = env.call_method(&pi, jni_str!("getLongVersionCode"), jni_sig!("()J"), &[])?.j()?;
-        let name_obj = env.get_field(&pi, jni_str!("versionName"), jni_sig!("Ljava/lang/String;"))?.l()?;
+        let code = env
+            .call_method(&pi, jni_str!("getLongVersionCode"), jni_sig!("()J"), &[])?
+            .j()?;
+        let name_obj = env
+            .get_field(&pi, jni_str!("versionName"), jni_sig!("Ljava/lang/String;"))?
+            .l()?;
         let name_j: JString = env.cast_local::<JString>(name_obj)?;
         Ok(Some((code, name_j.mutf8_chars(env)?.to_str().into_owned())))
     })
@@ -376,11 +476,17 @@ pub fn launch_package(package: &str) -> Result<(), String> {
             )?
             .l()?;
         if intent.is_null() {
-            return Err(BridgeError::Msg(format!("{package} has no launchable activity")));
+            return Err(BridgeError::Msg(format!(
+                "{package} has no launchable activity"
+            )));
         }
         let intent_class = env.find_class(jni_str!("android/content/Intent"))?;
         let flag = env
-            .get_static_field(&intent_class, jni_str!("FLAG_ACTIVITY_NEW_TASK"), jni_sig!("I"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("FLAG_ACTIVITY_NEW_TASK"),
+                jni_sig!("I"),
+            )?
             .i()?;
         env.call_method(
             &intent,
@@ -398,12 +504,49 @@ pub fn launch_package(package: &str) -> Result<(), String> {
     })
 }
 
-/// The app's cache directory (downloads land here), e.g.
-/// `/data/user/0/<pkg>/cache`.
+/// Persistent app-private directory, independent of broad storage permission.
+pub fn files_dir() -> Result<String, String> {
+    with_env(|env, activity| {
+        let dir = env
+            .call_method(
+                activity,
+                jni_str!("getFilesDir"),
+                jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
+            .l()?;
+        let path = env
+            .call_method(
+                &dir,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let s: JString = env.cast_local::<JString>(path)?;
+        Ok(s.mutf8_chars(env)?.to_str().into_owned())
+    })
+}
+
+/// The app's cache directory (downloads land here).
 pub fn cache_dir() -> Result<String, String> {
     with_env(|env, activity| {
-        let dir = env.call_method(activity, jni_str!("getCacheDir"), jni_sig!("()Ljava/io/File;"), &[])?.l()?;
-        let path = env.call_method(&dir, jni_str!("getAbsolutePath"), jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+        let dir = env
+            .call_method(
+                activity,
+                jni_str!("getCacheDir"),
+                jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
+            .l()?;
+        let path = env
+            .call_method(
+                &dir,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
         let s: JString = env.cast_local::<JString>(path)?;
         Ok(s.mutf8_chars(env)?.to_str().into_owned())
     })
@@ -428,7 +571,12 @@ pub fn http_get(
             &[JValue::from(&url_j)],
         )?;
         let conn = env
-            .call_method(&url_obj, jni_str!("openConnection"), jni_sig!("()Ljava/net/URLConnection;"), &[])?
+            .call_method(
+                &url_obj,
+                jni_str!("openConnection"),
+                jni_sig!("()Ljava/net/URLConnection;"),
+                &[],
+            )?
             .l()?;
         let method_j = jstring(env, "GET")?;
         env.call_method(
@@ -437,7 +585,10 @@ pub fn http_get(
             jni_sig!("(Ljava/lang/String;)V"),
             &[JValue::from(&method_j)],
         )?;
-        for (key, value) in [("User-Agent", user_agent), ("Accept", "application/vnd.github+json")] {
+        for (key, value) in [
+            ("User-Agent", user_agent),
+            ("Accept", "application/vnd.github+json"),
+        ] {
             let k_j = jstring(env, key)?;
             let v_j = jstring(env, value)?;
             env.call_method(
@@ -447,20 +598,52 @@ pub fn http_get(
                 &[JValue::from(&k_j), JValue::from(&v_j)],
             )?;
         }
-        env.call_method(&conn, jni_str!("setConnectTimeout"), jni_sig!("(I)V"), &[JValue::from(15_000i32)])?;
-        env.call_method(&conn, jni_str!("setReadTimeout"), jni_sig!("(I)V"), &[JValue::from(60_000i32)])?;
+        env.call_method(
+            &conn,
+            jni_str!("setConnectTimeout"),
+            jni_sig!("(I)V"),
+            &[JValue::from(15_000i32)],
+        )?;
+        env.call_method(
+            &conn,
+            jni_str!("setReadTimeout"),
+            jni_sig!("(I)V"),
+            &[JValue::from(60_000i32)],
+        )?;
         env.call_method(&conn, jni_str!("connect"), jni_sig!("()V"), &[])?;
-        let code = env.call_method(&conn, jni_str!("getResponseCode"), jni_sig!("()I"), &[])?.i()?;
+        let code = env
+            .call_method(&conn, jni_str!("getResponseCode"), jni_sig!("()I"), &[])?
+            .i()?;
         let stream = if (200..300).contains(&code) {
-            env.call_method(&conn, jni_str!("getInputStream"), jni_sig!("()Ljava/io/InputStream;"), &[])?.l()?
+            env.call_method(
+                &conn,
+                jni_str!("getInputStream"),
+                jni_sig!("()Ljava/io/InputStream;"),
+                &[],
+            )?
+            .l()?
         } else {
-            let err = env.call_method(&conn, jni_str!("getErrorStream"), jni_sig!("()Ljava/io/InputStream;"), &[])?.l()?;
+            let err = env
+                .call_method(
+                    &conn,
+                    jni_str!("getErrorStream"),
+                    jni_sig!("()Ljava/io/InputStream;"),
+                    &[],
+                )?
+                .l()?;
             let body = read_all(env, &err)?;
             env.call_method(&conn, jni_str!("disconnect"), jni_sig!("()V"), &[])?;
             let text = String::from_utf8_lossy(&body);
             return Err(BridgeError::Msg(format!("HTTP {code}: {text}")));
         };
-        let total = env.call_method(&conn, jni_str!("getContentLengthLong"), jni_sig!("()J"), &[])?.j()?;
+        let total = env
+            .call_method(
+                &conn,
+                jni_str!("getContentLengthLong"),
+                jni_sig!("()J"),
+                &[],
+            )?
+            .j()?;
         let body = if let Some(dest) = dest {
             let dest_s = dest.to_string_lossy();
             let dest_j = jstring(env, &dest_s)?;
@@ -493,7 +676,14 @@ fn stream_to(
     let mut received: u64 = 0;
     let mut last_report: u64 = 0;
     loop {
-        let n = env.call_method(stream, jni_str!("read"), jni_sig!("([B)I"), &[JValue::from(&buf)])?.i()?;
+        let n = env
+            .call_method(
+                stream,
+                jni_str!("read"),
+                jni_sig!("([B)I"),
+                &[JValue::from(&buf)],
+            )?
+            .i()?;
         if n <= 0 {
             break;
         }
@@ -517,9 +707,15 @@ fn stream_to(
 
 /// Slurp an `InputStream` into memory via `ByteArrayOutputStream`.
 fn read_all(env: &mut Env, stream: &JObject<'_>) -> JniResult<Vec<u8>> {
-    let out = env.new_object(jni_str!("java/io/ByteArrayOutputStream"), jni_sig!("()V"), &[])?;
+    let out = env.new_object(
+        jni_str!("java/io/ByteArrayOutputStream"),
+        jni_sig!("()V"),
+        &[],
+    )?;
     stream_to(env, stream, &out, -1, None)?;
-    let arr = env.call_method(&out, jni_str!("toByteArray"), jni_sig!("()[B"), &[])?.l()?;
+    let arr = env
+        .call_method(&out, jni_str!("toByteArray"), jni_sig!("()[B"), &[])?
+        .l()?;
     let arr: JByteArray = env.cast_local::<JByteArray>(arr)?;
     let len = arr.len(env)?;
     let mut raw = vec![0i8; len];
@@ -543,7 +739,14 @@ pub fn sha256_hex(bytes: &[u8]) -> Result<String, String> {
         let arr = env.new_byte_array(bytes.len())?;
         let signed: Vec<i8> = bytes.iter().map(|b| *b as i8).collect();
         arr.set_region(env, 0, &signed)?;
-        let digest = env.call_method(&md, jni_str!("digest"), jni_sig!("([B)[B"), &[JValue::from(&arr)])?.l()?;
+        let digest = env
+            .call_method(
+                &md,
+                jni_str!("digest"),
+                jni_sig!("([B)[B"),
+                &[JValue::from(&arr)],
+            )?
+            .l()?;
         let digest: JByteArray = env.cast_local::<JByteArray>(digest)?;
         let len = digest.len(env)?;
         let mut raw = vec![0i8; len];
@@ -554,11 +757,24 @@ pub fn sha256_hex(bytes: &[u8]) -> Result<String, String> {
 
 /// Insert a PNG/JPEG/WebP into the shared photo gallery (API 29+ scoped
 /// storage: `MediaStore` with `RELATIVE_PATH`). Returns the content URI.
-pub fn gallery_insert(app_name: &str, display_name: &str, mime: &str, bytes: &[u8]) -> Result<String, String> {
+pub fn gallery_insert(
+    app_name: &str,
+    display_name: &str,
+    mime: &str,
+    bytes: &[u8],
+) -> Result<String, String> {
     with_env(|env, activity| {
-        let values = env.new_object(jni_str!("android/content/ContentValues"), jni_sig!("()V"), &[])?;
+        let values = env.new_object(
+            jni_str!("android/content/ContentValues"),
+            jni_sig!("()V"),
+            &[],
+        )?;
         let relative_path = format!("Pictures/{app_name}");
-        for (k, v) in [("display_name", display_name), ("mime_type", mime), ("relative_path", relative_path.as_str())] {
+        for (k, v) in [
+            ("display_name", display_name),
+            ("mime_type", mime),
+            ("relative_path", relative_path.as_str()),
+        ] {
             let k_j = jstring(env, k)?;
             let v_j = jstring(env, v)?;
             env.call_method(
@@ -569,11 +785,20 @@ pub fn gallery_insert(app_name: &str, display_name: &str, mime: &str, bytes: &[u
             )?;
         }
         let resolver = env
-            .call_method(activity, jni_str!("getContentResolver"), jni_sig!("()Landroid/content/ContentResolver;"), &[])?
+            .call_method(
+                activity,
+                jni_str!("getContentResolver"),
+                jni_sig!("()Landroid/content/ContentResolver;"),
+                &[],
+            )?
             .l()?;
         let media_class = env.find_class(jni_str!("android/provider/MediaStore$Images$Media"))?;
         let collection = env
-            .get_static_field(&media_class, jni_str!("EXTERNAL_CONTENT_URI"), jni_sig!("Landroid/net/Uri;"))?
+            .get_static_field(
+                &media_class,
+                jni_str!("EXTERNAL_CONTENT_URI"),
+                jni_sig!("Landroid/net/Uri;"),
+            )?
             .l()?;
         let uri = env
             .call_method(
@@ -594,9 +819,21 @@ pub fn gallery_insert(app_name: &str, display_name: &str, mime: &str, bytes: &[u
         let arr = env.new_byte_array(bytes.len())?;
         let signed: Vec<i8> = bytes.iter().map(|b| *b as i8).collect();
         arr.set_region(env, 0, &signed)?;
-        env.call_method(&out, jni_str!("write"), jni_sig!("([B)V"), &[JValue::from(&arr)])?;
+        env.call_method(
+            &out,
+            jni_str!("write"),
+            jni_sig!("([B)V"),
+            &[JValue::from(&arr)],
+        )?;
         env.call_method(&out, jni_str!("close"), jni_sig!("()V"), &[])?;
-        let s = env.call_method(&uri, jni_str!("toString"), jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+        let s = env
+            .call_method(
+                &uri,
+                jni_str!("toString"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
         let s: JString = env.cast_local::<JString>(s)?;
         Ok(s.mutf8_chars(env)?.to_str().into_owned())
     })
@@ -619,7 +856,11 @@ pub fn install_apk(apk_path: &std::path::Path, provider_authority: &str) -> Resu
         let uri_str = format!("content://{provider_authority}/{name}");
         let intent_class = env.find_class(jni_str!("android/content/Intent"))?;
         let action_view = env
-            .get_static_field(&intent_class, jni_str!("ACTION_VIEW"), jni_sig!("Ljava/lang/String;"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("ACTION_VIEW"),
+                jni_sig!("Ljava/lang/String;"),
+            )?
             .l()?;
         let uri_j = jstring(env, &uri_str)?;
         let uri = env
@@ -631,7 +872,11 @@ pub fn install_apk(apk_path: &std::path::Path, provider_authority: &str) -> Resu
             )?
             .l()?;
         let mime_j = jstring(env, "application/vnd.android.package-archive")?;
-        let intent = env.new_object(&intent_class, jni_sig!("(Ljava/lang/String;)V"), &[JValue::from(&action_view)])?;
+        let intent = env.new_object(
+            &intent_class,
+            jni_sig!("(Ljava/lang/String;)V"),
+            &[JValue::from(&action_view)],
+        )?;
         env.call_method(
             &intent,
             jni_str!("setDataAndType"),
@@ -639,10 +884,18 @@ pub fn install_apk(apk_path: &std::path::Path, provider_authority: &str) -> Resu
             &[JValue::from(&uri), JValue::from(&mime_j)],
         )?;
         let new_task = env
-            .get_static_field(&intent_class, jni_str!("FLAG_ACTIVITY_NEW_TASK"), jni_sig!("I"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("FLAG_ACTIVITY_NEW_TASK"),
+                jni_sig!("I"),
+            )?
             .i()?;
         let grant = env
-            .get_static_field(&intent_class, jni_str!("FLAG_GRANT_READ_URI_PERMISSION"), jni_sig!("I"))?
+            .get_static_field(
+                &intent_class,
+                jni_str!("FLAG_GRANT_READ_URI_PERMISSION"),
+                jni_sig!("I"),
+            )?
             .i()?;
         env.call_method(
             &intent,

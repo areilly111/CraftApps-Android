@@ -1,31 +1,27 @@
-//! Android services for the PdfCraft port: shared suite storage.
-//!
-//! The port keeps documents under the suite's shared media tree
-//! (`/sdcard/CraftApps/Media/PdfCraft`) when "All files access" is granted,
-//! falling back to the app-private files dir otherwise. Settings live in
-//! `/sdcard/CraftApps/Settings/PdfCraft`.
+//! Android services for the PdfCraft port.
+//! Persistent data lives under getFilesDir(); external documents use SAF.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use craftapps_shared::storage::{StorageAppInfo, StorageManager};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const APP_INFO: StorageAppInfo = StorageAppInfo {
-    app_name: "PdfCraft",
-    settings_folder: "PdfCraft",
-};
+const APP_INFO: StorageAppInfo = StorageAppInfo { app_name: "PdfCraft", settings_folder: "PdfCraft" };
 
 /// Media subdirectory for this app's documents.
 const MEDIA_SUBDIR: &str = "PdfCraft";
 
 /// Build the shared [`StorageManager`]. `cache_dir` comes from the JNI bridge
 /// (the app's cache dir).
-pub fn init_storage(cache_dir: &PathBuf) -> Result<Arc<StorageManager>, String> {
-    let storage = Arc::new(StorageManager::new(cache_dir, &APP_INFO)?);
+pub fn init_storage(cache_dir: &Path) -> Result<Arc<StorageManager>, String> {
+    // Persistent app-private storage: startup must not require all-files access.
+    // Open/save outside this directory goes through the Android system picker.
+    let private_root = PathBuf::from(craftapps_shared::jni_bridge::files_dir()?);
+    let storage = Arc::new(StorageManager::new_at_root(cache_dir, &APP_INFO, &private_root)?);
     storage.ensure_dirs()?;
     // Tell the portable UI where output-folder picks resolve
-    // (`/sdcard/CraftApps/Media/PdfCraft`).
+    // (the app-private `CraftApps/Media/PdfCraft` directory).
     let out_base = app_media_dir(&storage);
     pdfcraft_ui_egui::android::set_output_base(out_base);
     Ok(storage)

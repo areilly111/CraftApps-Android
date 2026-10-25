@@ -263,7 +263,7 @@ fn reading_mode_label(mode: &str) -> &'static str {
 /// Preferences: interface language and size, appearance, identity and JavaScript. Returns `true` to close.
 pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) -> bool {
     ui.label(egui::RichText::new(tl!("Preferences")).font(theme::semibold(18.0)));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Interface language"));
         let selected = crate::i18n::Lang::from_code(&app.language).map_or(tl!("Auto"), crate::i18n::Lang::name);
         let before = app.language.clone();
@@ -282,7 +282,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
             crate::i18n::set_current(crate::i18n::Lang::from_pref(&app.language));
         }
     });
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         use crate::ui_scale;
         ui.label(tl!("Interface size"));
         // Auto shows the size it draws at: the display's scale times the system's text scale.
@@ -308,7 +308,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
             .small()
             .color(t.text_muted),
     );
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Tools panel side"));
         let right = app.docking.tools_on_right();
         if ui.selectable_label(!right, tl!("Left")).clicked()
@@ -326,7 +326,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     crate::appearance::preferences_section(ui, app, t);
     ui.add_space(8.0);
     ui.label(egui::RichText::new(tl!("Documents and view")).font(theme::semibold(13.0)));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Default workspace mode"));
         for (mode, label) in [
             (crate::Mode::AllTools, "All tools"),
@@ -344,14 +344,14 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
             .color(t.text_muted),
     );
     let defaults = &mut app.view_defaults;
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Default page display"));
         for l in crate::canvas::PageLayout::ORDER {
             widgets::radio_value(ui, &mut defaults.layout, l, tl!(l.label()));
         }
         ui.add(widgets::checkbox(&mut defaults.continuous, tl!("Continuous scrolling")));
     });
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         use crate::canvas::Fit;
         ui.label(tl!("Default zoom"));
         widgets::radio_value(ui, &mut defaults.fit, Fit::Width, tl!("Fit to width"));
@@ -368,7 +368,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
             .small()
             .color(t.text_muted),
     );
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Units"));
         for u in crate::units::Unit::ALL {
             widgets::radio_value(ui, &mut app.units, u, u.label());
@@ -381,7 +381,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     // The web build has no files on disk to watch.
     #[cfg(not(target_arch = "wasm32"))]
     ui.add(widgets::checkbox(&mut app.reload_changed_files, tl!("Reload documents when their files change on disk")));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Scroll speed (mouse wheel and arrow keys)"));
         for speed in crate::scroll_speed::ScrollSpeed::ALL {
             widgets::radio_value(ui, &mut app.scroll_speed, speed, tl_ctx!("scroll speed", speed.label()));
@@ -389,7 +389,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     });
     // Whether anything animates, the wheel's scrolling and zooming included; left alone it
     // follows the system's animation setting.
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Animation effects"));
         for choice in crate::motion::AnimationEffects::ALL {
             widgets::radio_value(ui, &mut app.animation_effects, choice, tl_ctx!("animation effects", choice.label()));
@@ -405,7 +405,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     // remapped while rendering, and the page clears to the background colour. The preference
     // is app-wide: every open document follows it, and documents open with it.
     ui.label(egui::RichText::new(tl!("Reading colours")).font(theme::semibold(13.0)));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         ui.label(tl!("Replace document colours"));
         let mode = app.reading_colors.mode_name();
         egui::ComboBox::from_id_salt("reading-colors").selected_text(tl!(reading_mode_label(mode))).show_ui(ui, |ui| {
@@ -442,7 +442,7 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     if app.reading_colors.params.is_some() {
         let mut changed = false;
         if let Some(params) = app.reading_colors.params.as_mut() {
-            ui.horizontal(|ui| {
+            widgets::responsive_row(ui, |ui| {
                 let text = ui.label(tl!("Text"));
                 changed |= ui.color_edit_button_srgb(&mut params.text).labelled_by(text.id).changed();
                 let background = ui.label(tl!("Page background"));
@@ -463,9 +463,12 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     ui.add_space(8.0);
     // Identity: the author of new comments (Acrobat: Preferences ▸ Identity).
     ui.label(egui::RichText::new(tl!("Identity")).font(theme::semibold(13.0)));
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         let label = ui.label(tl!("Name on new comments"));
-        ui.add(crate::widgets::line(&mut app.comment_prefs.author).desired_width(220.0).char_limit(crate::MAX_AUTHOR_CHARS)).labelled_by(label.id);
+        ui.add(
+            crate::widgets::line(&mut app.comment_prefs.author).desired_width(ui.available_width().min(220.0)).char_limit(crate::MAX_AUTHOR_CHARS),
+        )
+        .labelled_by(label.id);
     });
     ui.add(widgets::checkbox(&mut app.comment_prefs.hide_empty_highlight_hover, tl!("Hide hover previews for highlights without comment text")));
     ui.add_space(8.0);
@@ -501,13 +504,13 @@ fn date_format(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) {
     use pdfcraft_engine::dates::{DATE_FORMATS, DATE_LANGUAGES, MAX_DATE_FORMAT_CHARS};
     ui.label(egui::RichText::new(tl!("Date format")).font(theme::semibold(13.0)));
     let sample = |app: &PdfCraftApp, f: &str| format!("{}   {f}", app.date_text(Some(f)).unwrap_or_default());
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         let label = ui.label(tl!("Fill & Sign dates"));
         let current = app.session.date_format().to_string();
         let selected = if DATE_FORMATS.contains(&current.as_str()) { sample(app, &current) } else { tl!("Custom").to_string() };
         egui::ComboBox::from_id_salt("date-format")
             .selected_text(selected)
-            .width(240.0)
+            .width(ui.available_width().min(240.0))
             .show_ui(ui, |ui| {
                 for f in DATE_FORMATS {
                     if ui.selectable_label(current == f, sample(app, f)).clicked() && app.session.set_date_format(f).is_ok() {
@@ -519,10 +522,12 @@ fn date_format(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) {
             .response
             .labelled_by(label.id);
     });
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         let label = ui.label(tl!("Pattern"));
         let mut text = app.date_format_draft.clone().unwrap_or_else(|| app.session.date_format().to_string());
-        let edit = ui.add(egui::TextEdit::singleline(&mut text).desired_width(160.0).char_limit(MAX_DATE_FORMAT_CHARS)).labelled_by(label.id);
+        let edit = ui
+            .add(egui::TextEdit::singleline(&mut text).desired_width(ui.available_width().min(160.0)).char_limit(MAX_DATE_FORMAT_CHARS))
+            .labelled_by(label.id);
         // The box keeps the text as typed (a trailing space included) while it has focus; the
         // setting takes the trimmed pattern whenever it's valid.
         if edit.changed() {
@@ -551,7 +556,7 @@ fn date_format(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) {
             .color(egui::Color32::from_rgb(0xD1, 0x3B, 0x3B)),
         );
     }
-    ui.horizontal(|ui| {
+    widgets::responsive_row(ui, |ui| {
         let label = ui.label(tl!("Language"));
         let interface = crate::i18n::current().name();
         let follow = crate::i18n::fmt(tl!("Same as interface ({language})"), &[("language", interface)]);
@@ -559,7 +564,7 @@ fn date_format(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens) {
         let selected = DATE_LANGUAGES.iter().find(|l| current.as_deref() == Some(l.code)).map_or(follow.clone(), |l| l.name.to_string());
         egui::ComboBox::from_id_salt("date-language")
             .selected_text(selected)
-            .width(240.0)
+            .width(ui.available_width().min(240.0))
             .show_ui(ui, |ui| {
                 if ui.selectable_label(current.is_none(), follow).clicked() && app.session.set_date_language(None).is_ok() {
                     ui.close();

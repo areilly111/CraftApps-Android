@@ -11,10 +11,10 @@ use crate::widgets;
 /// Glyphs of context shown on each side of a match.
 const CONTEXT: usize = 36;
 
-pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: usize) {
+pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: usize) -> bool {
     crate::widgets::begin_dialog(ui);
     let searched = view.texts.len() + view.text_failed.len();
-    let Some(find) = view.find.as_mut() else { return };
+    let Some(find) = view.find.as_mut() else { return false };
     find.in_panel = true;
     let l = ui.label(egui::RichText::new(tl!("What word or phrase would you like to search for?")).color(t.text_muted));
     let r = ui
@@ -24,7 +24,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
         r.request_focus();
         find.focus = false;
     }
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         // Outlined boxes (the panel and the check-box fill are alike), as in dialogs.
         let w = &mut ui.visuals_mut().widgets;
         w.inactive.bg_stroke = egui::Stroke::new(1.0, t.border);
@@ -38,7 +38,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
     if find.query != find.case_query {
         view.rerun_find();
     }
-    let Some(find) = view.find.as_ref() else { return };
+    let Some(find) = view.find.as_ref() else { return false };
     ui.add_space(6.0);
     let status = if find.query.trim().is_empty() {
         String::new()
@@ -95,5 +95,7 @@ pub(crate) fn panel(ui: &mut egui::Ui, t: &Tokens, view: &mut DocView, pages: us
     }
     if let Some(i) = go {
         view.go_to_match(i);
+        return true;
     }
+    false
 }

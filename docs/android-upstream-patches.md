@@ -62,3 +62,13 @@ shared crate. See `docs/fixes-0.4.0.md`.
 - Upstream is storytold/craft-launcher (not a storytold app repo); port reuses
   its core/ui-egui crates. No layers.rs or eframe patches currently needed.
 - Port crate wires the shared GPU cascade in `lib.rs` (no upstream change).
+
+## PdfCraft private storage, external open and compact Android UI
+Retain the explicit private storage root, matching Java/Rust private bridge,
+ACTION_VIEW import queue and wake hook, mobile workspace integration, reduced
+canvas gutters, search demand outside the canvas, responsive preferences and
+bounded dialogs/palette when re-pinning upstream. Other ports keep shared
+storage and desktop/wide layouts. See docs/fixes-pdfcraft-honor-mobile.md and
+docs/fixes-0.2.8-external-open.md for file-by-file notes and verification.
+Keep the Android shell's layering-table registration and the explicit WASM
+eframe dependency alongside the desktop/Android dependency split.

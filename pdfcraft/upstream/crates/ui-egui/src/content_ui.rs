@@ -736,6 +736,8 @@ impl crate::PdfCraftApp {
             return false;
         }
         let Some(pixels) = self.session.get(id).map(|d| d.page_image_rgba(page, index)) else { return false };
+        // The desktop/web branches can fail after decoding; Android only caches the image.
+        #[cfg_attr(target_os = "android", allow(clippy::bind_instead_of_map))]
         let copied = pixels.and_then(|(w, h, rgba)| {
             // Desktop only: arboard has no Android backend. On Android the
             // image stays in the in-app clipboard (`last_copied_image`).

@@ -38,16 +38,17 @@ pub fn left_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
 fn panel_header(ui: &mut egui::Ui, t: &Tokens, title: &str, back: bool) -> (bool, bool) {
     let mut go_back = false;
     let mut close = false;
+    let control = if crate::mobile::enabled(ui.ctx()) { 44.0 } else { 26.0 };
     ui.horizontal(|ui| {
-        if back && icons::button(ui, "chevron-left", 26.0, false, tl!("Back to all tools")).clicked() {
+        if back && icons::button(ui, "chevron-left", control, false, tl!("Back to all tools")).clicked() {
             go_back = true;
         }
         // Reserve space for Close before laying out the translated title. Long tool names
         // must never expand the fixed-width sidebar or push the Close control off-screen.
-        let title_width = (ui.available_width() - 26.0 - ui.spacing().item_spacing.x).max(1.0);
-        ui.add_sized([title_width, 26.0], egui::Label::new(egui::RichText::new(tl!(title)).font(theme::semibold(15.5)).color(t.text)).truncate())
+        let title_width = (ui.available_width() - control - ui.spacing().item_spacing.x).max(1.0);
+        ui.add_sized([title_width, control], egui::Label::new(egui::RichText::new(tl!(title)).font(theme::semibold(15.5)).color(t.text)).truncate())
             .on_hover_text(tl!(title));
-        if icons::button(ui, "x", 26.0, false, tl!("Close panel")).clicked() {
+        if icons::button(ui, "x", control, false, tl!("Close panel")).clicked() {
             close = true;
         }
     });
@@ -97,12 +98,12 @@ fn row_label(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: Color32, 
 }
 
 fn tool_row(ui: &mut egui::Ui, t: &Tokens, g: &ToolGroup) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), if crate::mobile::enabled(ui.ctx()) { 48.0 } else { 34.0 }), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!(g.label)));
     let press = theme::Press::track(ui, &resp);
     press.wash(ui, rect, 6, false);
     let body = rect.translate(press.offset());
-    icons::paint(ui, Rect::from_min_size(body.min + vec2(6.0, 7.0), vec2(20.0, 20.0)), g.icon, 19.0, hue(g));
+    icons::paint(ui, Rect::from_min_size(body.min + vec2(6.0, (body.height() - 20.0) / 2.0), vec2(20.0, 20.0)), g.icon, 19.0, hue(g));
     let right_reserved = match (g.badge, g.availability) {
         (Some(b), _) => ui.fonts_mut(|f| f.layout_no_wrap(tl!(b).to_owned(), theme::semibold(9.5), Color32::WHITE).size().x) + 26.0,
         (None, Availability::Planned(m)) if resp.hovered() => {
@@ -718,7 +719,11 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
                         }
                         panel_edit = edit;
                     }
-                    RightPanel::Search => crate::search_ui::panel(ui, &t, view, info.pages.len()),
+                    RightPanel::Search => {
+                        if crate::search_ui::panel(ui, &t, view, info.pages.len()) && crate::mobile::enabled(ui.ctx()) {
+                            close = true;
+                        }
+                    }
                     RightPanel::Compare => compare_action = crate::compare_ui::panel(ui, &t, compare, id),
                     RightPanel::Attachments => {
                         if info.attachments.is_empty() {
@@ -818,6 +823,7 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
     {
         app.views[index].invalidate_content();
     }
+    let navigated = nav.is_some();
     match nav {
         Some(Nav::Page(p)) => app.views[index].go_to_page(p),
         Some(Nav::Dest(p, dest)) => match app.session.get(id) {
@@ -830,6 +836,9 @@ pub fn right_panel(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
             v.flash = Some((p, r, 0.0));
         }
         None => {}
+    }
+    if navigated && crate::mobile::enabled(ui.ctx()) {
+        app.choose_right_panel(None);
     }
 }
 

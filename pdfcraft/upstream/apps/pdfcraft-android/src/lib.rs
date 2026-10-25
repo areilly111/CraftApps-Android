@@ -1,7 +1,7 @@
 //! PdfCraft for Android (tablet).
 //!
 //! A NativeActivity shell around `pdfcraft-ui-egui`'s [`PdfCraftApp`]:
-//! - shared suite storage (`/sdcard/CraftApps`), SAF file pickers and the
+//! - app-private persistent storage, SAF file pickers and the
 //!   `rfd` shim's pick handler (see [`file_browser`]);
 //! - stylus support through the shared [`pen`](craftapps_shared::pen) module
 //!   and the activity's `dispatchTouchEvent` side-channel;
@@ -14,6 +14,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod file_browser;
+mod incoming;
 mod services;
 mod shell;
 
@@ -23,7 +24,25 @@ use std::path::PathBuf;
 
 /// Port version, shown in the UI. `build-apk.sh` derives the Gradle
 /// `versionCode` from it.
-pub const VERSION_NAME: &str = "0.2.1";
+pub const VERSION_NAME: &str = "0.2.8";
+
+static DOCUMENT_CONTEXT: std::sync::Mutex<Option<egui::Context>> = std::sync::Mutex::new(None);
+
+pub(crate) fn install_document_waker(ctx: &egui::Context) {
+    if let Ok(mut slot) = DOCUMENT_CONTEXT.lock() {
+        *slot = Some(ctx.clone());
+    }
+}
+
+/// Java publishes a complete import event before waking the render thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_pdfcraft_android_PdfCraftActivity_nativeOnDocumentReady(_env: *mut jni::sys::JNIEnv, _this: jni::sys::jobject) {
+    if let Ok(slot) = DOCUMENT_CONTEXT.lock() {
+        if let Some(ctx) = slot.as_ref() {
+            ctx.request_repaint();
+        }
+    }
+}
 
 /// The android-activity 0.6 `native-activity` entry point: exported,
 /// unmangled, Rust ABI.
@@ -41,35 +60,30 @@ fn run(app: AndroidApp) -> Result<(), String> {
 
     let cache_dir = PathBuf::from(jni_bridge::cache_dir().map_err(|e| format!("cache dir: {e}"))?);
 
-    // The file picker bridge lives in the app's own external files dir: always
-    // writable, and no "All files access" permission needed. The Java side
-    // reads the same path (`getExternalFilesDir(null)/.picker`).
-    let bridge_base = app.external_data_path().unwrap_or_else(|| cache_dir.clone());
+    // Java uses getFilesDir() as well. Keep the bridge independent of shared
+    // storage permission and of external-storage availability.
+    let bridge_base = PathBuf::from(jni_bridge::files_dir()?);
     let bridge_dir = bridge_base.join(".picker");
-    let _ = std::fs::create_dir_all(&bridge_dir);
+    std::fs::create_dir_all(&bridge_dir).map_err(|e| format!("picker directory: {e}"))?;
     // Edition 2021: `set_var` is still a safe fn here (it became unsafe only
     // in edition 2024).
     std::env::set_var("CRAFTAPPS_BRIDGE_DIR", &bridge_dir);
 
     let storage = services::init_storage(&cache_dir)?;
+    log::info!("Private storage ready: {}", storage.settings_dir().display());
 
     // Route the rfd shim's picks through the SAF file browser.
     file_browser::install_pick_handler(storage.clone());
 
     // Shared GPU cascade (Vulkan → GLES → CPU).
-    let gpu_plan = gpu::plan(
-        &storage.settings_dir().join("prefs.json"),
-        &gpu::GpuAppInfo { app_name: "PdfCraft", cpu_canvas_env: "PDFCRAFT_CPU_CANVAS" },
-    );
-    let mut options = eframe::NativeOptions { android_app: Some(app), ..Default::default() };
+    let gpu_plan =
+        gpu::plan(&storage.settings_dir().join("prefs.json"), &gpu::GpuAppInfo { app_name: "PdfCraft", cpu_canvas_env: "PDFCRAFT_CPU_CANVAS" });
+    let mut options =
+        eframe::NativeOptions { android_app: Some(app), persistence_path: Some(storage.settings_dir().join("ui-state.ron")), ..Default::default() };
     gpu::configure(&mut options, &gpu_plan);
 
-    eframe::run_native(
-        "PdfCraft",
-        options,
-        Box::new(move |_cc| Ok(Box::new(shell::PdfCraftShell::new()) as Box<dyn eframe::App>)),
-    )
-    .map_err(|e| format!("eframe: {e}"))
+    eframe::run_native("PdfCraft", options, Box::new(move |cc| Ok(Box::new(shell::PdfCraftShell::new(cc.storage)) as Box<dyn eframe::App>)))
+        .map_err(|e| format!("eframe: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +92,10 @@ fn run(app: AndroidApp) -> Result<(), String> {
 
 /// `PdfCraftActivity.nativeOnActivityResult`. The JVM resolves the mangled
 /// name on first call; no explicit registration.
+///
+/// # Safety
+/// The JVM must supply the valid JNI environment, activity and result objects
+/// for this callback; they are forwarded to the shared JNI boundary.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_app_pdfcraft_android_PdfCraftActivity_nativeOnActivityResult(
     raw_env: *mut jni::sys::JNIEnv,
@@ -95,6 +113,10 @@ pub unsafe extern "system" fn Java_app_pdfcraft_android_PdfCraftActivity_nativeO
 /// `PdfCraftActivity.nativeOnPenEvent`: the stylus side-channel. The
 /// activity's `dispatchTouchEvent` forwards tool-type and barrel-button
 /// transitions here; winit never sees them.
+///
+/// # Safety
+/// This callback must be invoked with the JVM's native-method calling convention.
+/// Object/environment pointers are unused and the numeric event values are copied.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_app_pdfcraft_android_PdfCraftActivity_nativeOnPenEvent(
     _env: *mut jni::sys::JNIEnv,

@@ -1207,7 +1207,7 @@ impl DocView {
         let point = |x: Option<f32>, y: Option<f32>| p.dest_fraction(x, y, self.rotation);
         // The window's top-left as far as pages go: its left edge is the gutter that keeps them
         // clear of the floating quick-action bar, so `left` 0 shows the page's edge beside it.
-        let corner = vec2(SIDE, 0.0);
+        let corner = vec2(self.side_margin(), 0.0);
         let (fx, fy, rel) = match dest {
             DestView::Top => return,
             DestView::Xyz { left, top, zoom } => {
@@ -1755,6 +1755,23 @@ impl DocView {
         self.texts.retain(|p, _| keep.contains(p));
     }
 
+    /// A phone inspector replaces the canvas, but search still needs text demand.
+    pub(crate) fn queue_inspector_search(&mut self, pages: usize) {
+        if self.find.as_ref().is_none_or(|f| f.case_query.trim().is_empty()) {
+            return;
+        }
+        self.frame_queue.extend(
+            (0..pages).filter(|page| !self.texts.contains_key(page) && !self.text_failed.contains(page)).map(|page| RenderRequest {
+                page,
+                kind: RequestKind::Text,
+                tile: None,
+                scale: 1.0,
+                tag: TEXT_TAG,
+                preview: false,
+            }),
+        );
+    }
+
     pub(crate) fn finish_render_frame(&mut self, ctx: &egui::Context, info: &DocInfo, pool: &RenderPool) {
         if self.frame_geometry_changed {
             // Dialogs and edits can replace pages after the canvas collected demand. Its
@@ -1920,6 +1937,10 @@ impl DocView {
         }
     }
 
+    fn side_margin(&self) -> f32 {
+        if cfg!(target_os = "android") && self.viewport_w < 900.0 { 10.0 } else { SIDE }
+    }
+
     fn fit_zoom(&mut self, info: &DocInfo) {
         let largest = |side: fn((f32, f32)) -> f32| info.pages.iter().map(|p| side(self.display_size(p))).fold(1.0, f32::max);
         let max_w = largest(|s| s.0);
@@ -1931,7 +1952,7 @@ impl DocView {
         } else {
             (max_w, largest(|s| s.1))
         };
-        let avail_w = (self.viewport_w - 2.0 * SIDE).max(100.0);
+        let avail_w = (self.viewport_w - 2.0 * self.side_margin()).max(100.0);
         let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
         match self.fit {
             Fit::Width => self.zoom = (avail_w - GAP * (per_row - 1.0)) / (w * PT * per_row),
@@ -1953,7 +1974,7 @@ impl DocView {
         let shown = info.pages.iter().enumerate().filter(|&(i, _)| single.is_none_or(|c| c == i));
         let max_w = shown.map(|(_, p)| self.display_size(p).0).fold(0.0, f32::max);
         let per_row = if self.layout == PageLayout::TwoUp { 2.0 } else { 1.0 };
-        (max_w * self.zoom * PT * per_row + 2.0 * SIDE).max(avail_w)
+        (max_w * self.zoom * PT * per_row + 2.0 * self.side_margin()).max(avail_w)
     }
 
     /// Page rects in content coordinates (origin at the scroll content's top-left).
@@ -1966,7 +1987,7 @@ impl DocView {
                 for p in &info.pages {
                     let (w, h) = self.display_size(p);
                     let size = vec2(w * s, h * s);
-                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(SIDE), y), size));
+                    rects.push(Rect::from_min_size(pos2(((content_w - size.x) / 2.0).max(self.side_margin()), y), size));
                     y += size.y + GAP;
                 }
             }
@@ -1981,7 +2002,11 @@ impl DocView {
                     let sizes: Vec<Vec2> = pair.iter().map(|p| self.display_size(p)).map(|(w, h)| vec2(w * s, h * s)).collect();
                     let row_w: f32 = sizes.iter().map(|v| v.x).sum::<f32>() + GAP * (sizes.len() as f32 - 1.0);
                     let row_h = sizes.iter().map(|v| v.y).fold(0.0, f32::max);
-                    let mut x = if self.cover && ri == 0 { (content_w / 2.0 + GAP / 2.0).max(SIDE) } else { ((content_w - row_w) / 2.0).max(SIDE) };
+                    let mut x = if self.cover && ri == 0 {
+                        (content_w / 2.0 + GAP / 2.0).max(self.side_margin())
+                    } else {
+                        ((content_w - row_w) / 2.0).max(self.side_margin())
+                    };
                     for size in sizes {
                         rects.push(Rect::from_min_size(pos2(x, y + (row_h - size.y) / 2.0), size));
                         x += size.x + GAP;
@@ -2647,7 +2672,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         // The page counts with its side gutters, which keep its edge clear of the floating
         // quick-action bar as the layout does.
         let (x, w) = (view.last_scroll.x, avail.width());
-        let (left, right) = (r.left() - SIDE, r.right() + SIDE);
+        let (left, right) = (r.left() - view.side_margin(), r.right() + view.side_margin());
         let target = if right - left <= w { if left >= x && right <= x + w { x } else { r.center().x - w / 2.0 } } else { x.clamp(left, right - w) };
         if (target - x).abs() > 0.5 {
             scroll = scroll.horizontal_scroll_offset(target.clamp(0.0, (content_w - w).max(0.0)));
@@ -4008,7 +4033,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
         app.execute("edit.copy");
     }
     // Read mode hides the tools (#2646).
-    if app.mode != crate::Mode::Read {
+    if app.mode != crate::Mode::Read && !crate::mobile::enabled(ui.ctx()) {
         quick_bar(app, avail, ui);
     }
     if let Some((source, file, destination)) = remote_open {

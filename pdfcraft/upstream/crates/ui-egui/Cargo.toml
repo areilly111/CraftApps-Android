@@ -79,6 +79,7 @@ sys-locale = "0.3"
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi", "user"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "glow", "persistence", "accesskit", "links"] }
 rfd = { workspace = true, features = ["file-handle-inner"] }
 wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2"
