@@ -71,29 +71,36 @@ fn split_grid(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
     let gutter_label = form::humanized("gutter");
     egui::Grid::new("dlg").num_columns(4).spacing([10.0, 8.0]).show(ui, |ui| {
         for (number, label, ..) in axes {
-            form::row_label(ui, label);
-            if let Some(v) = crate::widgets::plain_field(ui, ("dlg-num", number), d.f64(number, 2.0), "", 0, WIDTH) {
-                d.fields.insert(number.into(), json!(v.round().clamp(1.0, 500.0)));
-            }
+            let row = form::row_label(ui, label);
+            ui.label_inputs_by(row.id, |ui| {
+                if let Some(v) = crate::widgets::range_field(ui, ("dlg-num", number), d.f64(number, 2.0), 1.0..=500.0, "", 0, WIDTH) {
+                    d.fields.insert(number.into(), json!(v));
+                }
+            });
         }
         ui.end_row();
         for (number, _, label, gutter, total) in axes {
-            form::row_label(ui, label);
+            let row = form::row_label(ui, label);
             let n = d.f64(number, 2.0).max(1.0);
             let gaps = d.f64(gutter, 0.0) * (n - 1.0);
-            if let Some(v) = crate::widgets::num_field(ui, ("dlg-size", number), Some((d.f64(total, 0.0) - gaps) / n), unit, WIDTH) {
-                d.fields.insert(total.into(), json!(n * v + gaps));
-            }
+            ui.label_inputs_by(row.id, |ui| {
+                if let Some(v) = crate::widgets::num_field(ui, ("dlg-size", number), Some((d.f64(total, 0.0) - gaps) / n), unit, WIDTH) {
+                    d.fields.insert(total.into(), json!(n * v + gaps));
+                }
+            });
         }
         ui.end_row();
-        for (.., gutter, _) in axes {
-            form::row_label(ui, &gutter_label);
-            form::length(ui, d, gutter, unit, WIDTH);
+        for (_, axis, _, gutter, _) in axes {
+            // The visible rows stay the existing translated "Gutter:" and "Total:" labels; the
+            // accessible names say which axis they belong to (two identical visible labels would
+            // otherwise name two different inputs the same).
+            let _ = form::row_label(ui, &gutter_label);
+            ui.name_inputs(format!("{axis} {gutter_label}"), |ui| form::length(ui, d, gutter, unit, WIDTH));
         }
         ui.end_row();
-        for (.., total) in axes {
-            form::row_label(ui, tl!("Total:"));
-            form::length(ui, d, total, unit, WIDTH);
+        for (_, axis, _, _, total) in axes {
+            let _ = form::row_label(ui, tl!("Total:"));
+            ui.name_inputs(format!("{axis} {}", tl!("Total:")), |ui| form::length(ui, d, total, unit, WIDTH));
         }
         ui.end_row();
     });
@@ -101,9 +108,18 @@ fn split_grid(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
     form::check(ui, d, "addGuides", tl!("Add Guides"));
 }
 
+/// The fields the Simplify dialog opens with at `tolerance` (points): the slider's tolerance when
+/// its More Options opens the dialog.
+pub(crate) fn simplify_dialog(tolerance: f64) -> Value {
+    json!({"tolerance": tolerance, "angleThreshold": ANGLE_THRESHOLD, "straightLines": false, "showOriginal": false, "retain": false, "preview": true})
+}
+
+/// The fields the Simplify dialog keeps when OK confirms it with `retain` ticked.
+const SIMPLIFY_KEPT: [&str; 6] = ["tolerance", "angleThreshold", "straightLines", "showOriginal", "retain", "preview"];
+
 /// Simplify's fields: Tolerance, Corner Point Angle Threshold (its label above a slider from 0° on
-/// the left, the smoothest, to 180°, the sharpest), Convert to Straight Lines and Show Original
-/// Path.
+/// the left, the smoothest, to 180°, the sharpest), Convert to Straight Lines, Show Original Path
+/// and Open this dialog with these settings next time.
 fn simplify_fields(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
     let rail = Tokens::get(ui.ctx()).input_border;
     egui::Grid::new("dlg").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
@@ -115,6 +131,7 @@ fn simplify_fields(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
     ui.add_space(8.0);
     form::check(ui, d, "straightLines", tl!("Convert to Straight Lines"));
     form::check(ui, d, "showOriginal", tl!("Show Original Path"));
+    form::check(ui, d, "retain", tl!("Open this dialog with these settings next time"));
 }
 
 /// Simplify's Show Original Path: while the dialog previews with it on, every path the preview ran
@@ -175,9 +192,17 @@ fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
         return run_and_close(app, id, params);
     }
     let r = form::commit_preview(app, id, params)?;
+    // Simplify: with retain ticked, the menu item opens this dialog on these fields next time; with it
+    // unticked, the menu item opens the slider.
+    if d.kind == "simplify" {
+        let kept = SIMPLIFY_KEPT.into_iter().filter_map(|k| Some((k.to_string(), d.fields.get(k)?.clone())));
+        app.ui.simplify = if d.bool("retain") { Value::Object(kept.collect()) } else { Value::Null };
+    }
     // The fields as the dialog held them, so they show as typed when it opens again.
     if d.kind == "offsetPath" {
-        let kept = ["offset", "joins", "miterLimit"].into_iter().filter_map(|k| Some((k.to_string(), d.fields.get(k)?.clone())));
+        // Preview among them: the checkbox keeps its last state across opens (#3195), as
+        // Simplify's retained fields keep theirs.
+        let kept = ["offset", "joins", "miterLimit", "preview"].into_iter().filter_map(|k| Some((k.to_string(), d.fields.get(k)?.clone())));
         app.ui.offset_path = Value::Object(kept.collect());
     }
     Ok(r)

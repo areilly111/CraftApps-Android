@@ -10,7 +10,7 @@
 //! text besides it (see `flavours`).
 
 mod flavours;
-mod resources;
+pub(crate) mod resources;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -21,8 +21,9 @@ use vectorcraft_color::Swatch;
 use vectorcraft_doc::{Document, GraphicStyle, ImageBlob, Node, NodeId, PatternDef, Symbol, TextStyleDef};
 use vectorcraft_geom::Rect;
 
-pub use flavours::{BITMAP, EMF, EPS, FILE_HEAD, Flavour, PASTE_ORDER, PDF, PNG, SVG, TEXT, file_flavour, is_address, names_a_picture};
+pub use flavours::{AI, BITMAP, EMF, EPS, FILE_HEAD, Flavour, PASTE_ORDER, PDF, PNG, SVG, TEXT, file_flavour, is_address, names_a_picture};
 pub(crate) use resources::SwatchChoices;
+pub use resources::{ArtResources, art_resources};
 
 use super::*;
 use crate::DocState;

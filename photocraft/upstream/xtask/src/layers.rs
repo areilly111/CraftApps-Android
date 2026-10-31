@@ -73,9 +73,6 @@ pub const TABLE: &[(&str, Class)] = &[
     ("web", Class::Exempt),
     ("web-boot", Class::Exempt),
     ("xtask", Class::Exempt),
-    // ANDROID-PORT: the Android port crate (apps/photocraft-android). It is
-    // an app shell, like the others.
-    ("android", Class::Exempt),
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).

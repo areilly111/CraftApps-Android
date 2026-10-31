@@ -139,6 +139,41 @@ fn distribute_with_a_huge_spacing_from_the_key_object() {
 }
 
 #[test]
+fn distribute_with_a_huge_spacing_from_a_key_guide() {
+    for (vertical, pos) in [(true, 50.0), (true, 10000.0), (false, -10000.0)] {
+        for p in [json!({"horizontal": "left", "spacing": 1e308}), json!({"vertical": "bottom", "spacing": -1e308})] {
+            let mut s = Fixture::Multi.session();
+            s.execute("guide.add", &json!({"vertical": vertical, "pos": pos})).unwrap();
+            s.execute("guide.select", &json!({"indexes": [0], "toggle": true})).unwrap();
+            s.execute("select.key", &json!({"guide": 0})).unwrap();
+            if no_panic(s.execute("object.distribute", &p)).is_ok() {
+                check_session(&s).unwrap_or_else(|e| panic!("guide at {pos}, {p}: {e}"));
+                vectorcraft_testkit::invariants::check_native_roundtrip(&s.doc().unwrap().doc).unwrap_or_else(|e| panic!("guide at {pos}, {p}: {e}"));
+            }
+        }
+    }
+}
+
+#[test]
+fn distribute_guides_selected_alone_with_a_huge_spacing() {
+    for (cmd, p) in [
+        ("object.distributeSpacing", json!({"axis": "horizontal", "spacing": 1e308})),
+        ("object.distributeSpacing", json!({"axis": "vertical", "spacing": -1e308})),
+        ("object.distribute", json!({"horizontal": "center", "to": "artboard", "artboard": 99})),
+    ] {
+        let mut s = Fixture::Empty.session();
+        for (v, pos) in [(true, 10.0), (true, 20.0), (true, 9000.0), (false, -9000.0), (false, 0.0)] {
+            s.execute("guide.add", &json!({"vertical": v, "pos": pos})).unwrap();
+        }
+        s.execute("guide.select", &json!({"indexes": [0, 1, 2, 3, 4]})).unwrap();
+        if no_panic(s.execute(cmd, &p)).is_ok() {
+            check_session(&s).unwrap_or_else(|e| panic!("{cmd} {p}: {e}"));
+            vectorcraft_testkit::invariants::check_native_roundtrip(&s.doc().unwrap().doc).unwrap_or_else(|e| panic!("{cmd} {p}: {e}"));
+        }
+    }
+}
+
+#[test]
 fn bug_artboard_huge_props_break_svg() {
     for key in ["x", "y", "width", "height"] {
         let mut s = Fixture::Single.session();
@@ -219,6 +254,8 @@ fn structured_junk() {
         ("path.insertAnchor", json!({"id": 2, "subpath": 0, "segment": 99, "t": 5})),
         ("path.insertAnchor", json!({"id": 2, "subpath": 7, "segment": 0, "t": -1})),
         ("path.setHandle", json!({"id": 2, "subpath": 0, "anchor": 100, "which": "in", "x": 0, "y": 0})),
+        ("path.moveAnchor", json!({"id": 2, "subpath": 0, "anchor": 100, "x": 0, "y": 0})),
+        ("path.moveAnchor", json!({"id": 2, "subpath": 0, "anchor": 0, "x": 1e308, "y": -1e308})),
         ("path.removeAnchor", json!({"id": 2, "subpath": 0, "anchor": 0})),
         ("path.split", json!({"id": 2, "subpath": 0, "segment": 1000, "t": 0.5})),
         ("path.reshapeSegment", json!({"id": 2, "subpath": 0, "segment": 0, "t": 2.0, "dx": 1e308, "dy": 0})),
@@ -329,10 +366,29 @@ fn structured_junk() {
         ("effect.apply", json!({"effect": "pixelate.crystallize", "params": {"cellSize": -1e308}})),
         ("effect.apply", json!({"effect": "pixelate.mezzotint", "params": {"type": 5}})),
         ("effect.apply", json!({"effect": "pixelate.pointillize", "params": {"cellSize": "NaN"}})),
+        ("effect.apply", json!({"effect": "artistic.smudgeStick", "params": {"strokeLength": 1e308, "highlightArea": "NaN", "intensity": [1]}})),
+        ("effect.apply", json!({"effect": "artistic.sponge", "params": {"brushSize": -1e308, "definition": 1e308, "smoothness": null}})),
+        ("effect.apply", json!({"effect": "artistic.watercolor", "params": {"brushDetail": "1e999", "shadowIntensity": -1, "texture": 1e308}})),
         ("effect.apply", json!({"effect": "artistic.cutout", "params": {"levels": 1e308, "edgeSimplicity": "NaN", "edgeFidelity": -1e308}})),
+        ("effect.apply", json!({"effect": "artistic.dryBrush", "params": {"brushSize": -1e308, "brushDetail": "NaN", "texture": 1e308}})),
         ("effect.apply", json!({"effect": "artistic.neonGlow", "params": {"glowSize": -1e308, "glowBrightness": "1e999", "color": [1]}})),
         ("effect.apply", json!({"effect": "artistic.posterEdges", "params": {"edgeThickness": 1e308, "edgeIntensity": [], "posterization": -7}})),
+        (
+            "effect.apply",
+            json!({"effect": "artistic.roughPastels", "params": {"strokeLength": 1e308, "strokeDetail": "NaN", "texture": -1e308, "scaling": "bad", "lightDirection": "nope"}}),
+        ),
+        ("effect.apply", json!({"effect": "sketch.chrome", "params": {"detail": -1e308, "smoothness": "NaN"}})),
+        (
+            "effect.apply",
+            json!({"effect": "sketch.conteCrayon", "params": {"foregroundLevel": "NaN", "backgroundLevel": 1e308, "texture": [1], "scaling": -1e308, "relief": "1e999", "lightDirection": 3, "invert": "yes"}}),
+        ),
+        ("effect.apply", json!({"effect": "sketch.graphicPen", "params": {"strokeLength": -1e308, "lightDarkBalance": "NaN", "strokeDirection": 3}})),
         ("effect.apply", json!({"effect": "sketch.halftonePattern", "params": {"size": -1e308, "contrast": "NaN", "patternType": 3}})),
+        ("effect.apply", json!({"effect": "sketch.basRelief", "params": {"detail": "NaN", "smoothness": 1e308, "lightDirection": 3}})),
+        ("effect.apply", json!({"effect": "sketch.charcoal", "params": {"thickness": 1e308, "detail": -1e308, "lightDarkBalance": [1]}})),
+        ("effect.apply", json!({"effect": "sketch.photocopy", "params": {"detail": "1e999", "darkness": null}})),
+        ("effect.apply", json!({"effect": "sketch.stamp", "params": {"lightDarkBalance": -1e308, "smoothness": "NaN"}})),
+        ("effect.apply", json!({"effect": "sketch.reticulation", "params": {"density": "NaN", "foregroundLevel": -1e308, "backgroundLevel": 1e308}})),
         ("effect.apply", json!({"effect": "texture.craquelure", "params": {"crackSpacing": -1e308, "crackDepth": "NaN", "crackBrightness": 1e308}})),
         ("effect.apply", json!({"effect": "texture.grain", "params": {"intensity": 1e308, "contrast": [1], "grainType": 7}})),
         ("effect.apply", json!({"effect": "texture.mosaicTiles", "params": {"tileSize": "1e999", "groutWidth": -1, "lightenGrout": null}})),
@@ -353,6 +409,9 @@ fn structured_junk() {
         ("object.path.offsetPath", json!({"offset": 1e308})),
         ("object.path.offsetPath", json!({"offset": -1e308})),
         ("object.path.simplify", json!({"tolerance": -1, "cornerAngle": 1e308})),
+        ("object.path.simplify", json!({"level": 1e308, "tolerance": "x"})),
+        ("object.path.simplify", json!({"level": -1e308, "auto": "yes"})),
+        ("object.path.simplify", json!({"auto": true, "level": [1]})),
         (
             "shape.rectangularGrid",
             json!({"x": 0, "y": 0, "width": 1e308, "height": -1e308, "rows": 999, "columns": u64::MAX, "rowSkew": 1e308, "columnSkew": -1e308, "frame": false, "fill": true}),
@@ -417,6 +476,8 @@ fn structured_junk() {
         ("object.blend.make", json!({"ids": [1, 2, 3], "starts": [u64::MAX, -1, "x", null, 1e308]})),
         ("object.blend.make", json!({"ids": [2, 2], "starts": {"a": 1}, "steps": 1e308})),
         ("object.blend.options", json!({"spacing": "distance", "value": -1e308, "orientation": 5})),
+        ("object.blend.options", json!({"ramp": 1e308, "colorShift": -1e308, "easingType": [1]})),
+        ("object.blend.make", json!({"ids": [1, 2], "ramp": f64::NAN, "colorShift": [1]})),
         ("object.blend.spine.moveAnchor", json!({"id": 2, "anchor": u64::MAX, "x": 1e308, "y": -1e308, "handle": "sideways"})),
         ("object.blend.spine.addAnchor", json!({"id": u64::MAX, "x": 0, "y": 0})),
         ("object.blend.spine.reshapeSegment", json!({"id": 2, "segment": u64::MAX, "t": f64::NAN, "dx": 1e308, "dy": -1e308})),
@@ -434,12 +495,65 @@ fn structured_junk() {
         ("symbol.options", json!({"name": "Dot", "nineSlice": true, "nineSliceGuides": [1e308, -1e308, 0, 0]})),
         ("symbol.options", json!({"nineSlice": 7, "nineSliceGuides": []})),
         ("symbol.options", json!({"nineSlice": false, "nineSliceGuides": null})),
+        // Shape Builder Gap Detection: the `gap` param and the tool options.
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80]], "gap": 1e308})),
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80], [120, 90]], "gap": -1e308})),
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80]], "gap": f64::MAX})),
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80]], "gap": "NaN"})),
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80]], "gap": "1e999"})),
+        ("shapeBuilder.merge", json!({"ids": [2, 3], "points": [[100, 80]], "gap": null})),
+        ("shapeBuilder.merge", json!({"points": [[100, 80]], "gap": [1, 2]})),
+        ("shapeBuilder.merge", json!({"points": [[100, 80]], "gap": {"a": 1}, "erase": true})),
+        ("shapeBuilder.merge", json!({"points": [[100, 80]], "gap": 1e-300, "erase": true, "tolerance": 1e308})),
+        ("shapeBuilder.regions", json!({"gap": 1e308})),
+        ("shapeBuilder.regions", json!({"ids": [0, 1, 2, 3], "gap": -1})),
+        ("shapeBuilder.regions", json!({"ids": [2, 3], "gap": "x"})),
+        ("shapeBuilder.regions", json!({"gap": true})),
+        ("shapeBuilder.regions", json!({"gap": 12, "ids": [u64::MAX]})),
     ];
     let mut failures = vec![];
     for fx in Fixture::ALL {
         for (id, p) in &cases {
             if let Some(f) = probe(fx, id, p) {
                 failures.push(f);
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
+}
+
+/// Shape Builder Tool Options (Gap Detection) with junk values: never a panic, and the tool still
+/// answers with options and works on a drag afterwards.
+#[test]
+fn shape_builder_options_junk() {
+    let cases = [
+        json!({"values": {"gapDetection": true, "gapLength": 1e308}}),
+        json!({"values": {"gapDetection": "yes", "gapLength": -1e308}}),
+        json!({"values": {"gapDetection": null, "gapLength": "NaN"}}),
+        json!({"values": {"gapDetection": [true], "gapLength": [1, 2]}}),
+        json!({"values": {"gapDetection": true, "gapLength": "1e999"}}),
+        json!({"values": {"gapLength": {"a": 1}, "bogus": 1}}),
+        json!({"key": "gapLength", "value": f64::MAX}),
+        json!({"key": "gapLength", "value": f64::MIN_POSITIVE}),
+        json!({"key": "gapDetection"}),
+        json!({"key": "gapDetection", "value": 1}),
+        json!({"values": [1, 2]}),
+        json!({"values": "x"}),
+    ];
+    let mut failures = vec![];
+    for fx in Fixture::ALL {
+        for p in &cases {
+            let mut s = fx.session();
+            let r = catch_quiet(|| {
+                let _ = s.select_tool("shapeBuilder", Default::default());
+                let _ = s.set_tool_option_cmd(p);
+                let _ = s.set_tool_option_cmd(&json!({"values": {"gapDetection": true}}));
+                no_panic(s.execute("shapeBuilder.regions", &json!({})))
+            });
+            if let Err(msg) = r {
+                failures.push(format!("PANIC {p} [{fx:?}]: {msg}"));
+            } else if let Err(e) = check_session(&s) {
+                failures.push(format!("{p} [{fx:?}]: {e}"));
             }
         }
     }
@@ -775,7 +889,7 @@ fn gradient_mesh_from_images_with_junk_params() {
                 d.images.insert("pic".into(), ImageBlob::png(bytes.clone()));
                 let id = d.alloc_id();
                 let link = linked.then(|| LinkInfo { path: "/nonexistent/pic.png".into(), ..Default::default() });
-                let im = ImageObject { key: "pic".into(), width: *w, height: *h, xf: *xf, link, placement: Default::default() };
+                let im = ImageObject { key: "pic".into(), width: *w, height: *h, xf: *xf, link, placement: Default::default(), pixels: None };
                 d.insert(d.default_layer(), 0, Node::new(id, NodeKind::Image(Box::new(im))))?;
                 sel.set([id]);
                 Ok(())

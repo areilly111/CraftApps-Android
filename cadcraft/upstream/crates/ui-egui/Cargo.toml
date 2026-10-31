@@ -1,0 +1,45 @@
+[package]
+name = "cadcraft-ui-egui"
+description = "CADCraft user interface (egui): the swappable front end"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version = "1.95"
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-ui = { workspace = true }
+cadcraft-geom = { workspace = true }
+cadcraft-color = { workspace = true }
+cadcraft-doc = { workspace = true }
+cadcraft-render = { workspace = true }
+cadcraft-engine = { workspace = true }
+cadcraft-fonts = { workspace = true }
+craft-window = { workspace = true }
+egui = { workspace = true }
+# GPU canvas paint callback (same egui-wgpu/wgpu eframe uses with its "wgpu" feature).
+egui-wgpu = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+image = { workspace = true }
+web-time = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+craft-update = { workspace = true }
+
+[dev-dependencies]
+# Tests build the dock area as the desktop app does (headless contexts keep floats in-window).
+craft-ui = { workspace = true, features = ["native-windows"] }
+# The workspace `egui` dependency enables `default_fonts` and `monochrome_emoji_fonts` in
+# production too; the tests exercise the same installed chain as the app.
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+# Validates the canvas WGSL and its GLSL ES 3.0 (WebGL2) translation in tests (same naga wgpu uses).
+naga = { version = "30", features = ["wgsl-in", "glsl-out"] }
+
+[build-dependencies]
+serde_json = { workspace = true }
+toml = "1"

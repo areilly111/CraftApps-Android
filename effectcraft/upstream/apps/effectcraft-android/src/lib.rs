@@ -26,7 +26,7 @@ use serde_json::json;
 
 /// Port version, shown in the UI. `build-apk.sh` derives the Gradle
 /// `versionCode` from it (`0.1.0` → 100100).
-pub const VERSION_NAME: &str = "0.1.0";
+pub const VERSION_NAME: &str = "0.1.1";
 
 const APP_NAME: &str = "EffectCraft";
 

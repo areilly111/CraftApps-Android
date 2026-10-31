@@ -16,7 +16,7 @@ designcraft-ui-egui = { workspace = true }
 # feature is a compile error with `android-native-activity` (eframe 0.36's
 # lib.rs), so it is deliberately absent here. designcraft-ui-egui does not
 # depend on eframe, so no feature unification pulls accesskit in.
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
 egui = { workspace = true }
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 # Shared suite shell: JNI bridge, SAF pickers, storage, GPU cascade, pen.

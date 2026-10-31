@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 /// Port version, shown in the UI. `build-apk.sh` derives the Gradle
 /// `versionCode` from it.
-pub const VERSION_NAME: &str = "0.2.1";
+pub const VERSION_NAME: &str = "0.2.3";
 
 /// The android-activity 0.6 `native-activity` entry point: exported,
 /// unmangled, Rust ABI.

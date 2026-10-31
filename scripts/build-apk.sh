@@ -9,7 +9,7 @@
 #   4. copy it to ~/workspace/your_files/<Name>-<version>-universal.apk
 set -euo pipefail
 
-APP="${1:?usage: build-apk.sh <app> (photocraft|designcraft|vectorcraft|lightcraft|pdfcraft|filmcraft|effectcraft|soundcraft|launcher)}"
+APP="${1:?usage: build-apk.sh <app> (photocraft|designcraft|vectorcraft|lightcraft|pdfcraft|filmcraft|effectcraft|soundcraft|cadcraft|launcher)}"
 MONOREPO="$HOME/workspace/craftapps-android"
 APP_DIR="$MONOREPO/$APP"
 UPSTREAM="$APP_DIR/upstream"
@@ -26,6 +26,7 @@ case "$APP" in
     filmcraft)    APP_NAME="FilmCraft";     CRATE="filmcraft-android";    LIB="libfilmcraft_android.so" ;;
     effectcraft)  APP_NAME="EffectCraft";   CRATE="effectcraft-android";  LIB="libeffectcraft_android.so" ;;
     soundcraft)   APP_NAME="SoundCraft";    CRATE="soundcraft-android";   LIB="libsoundcraft_android.so" ;;
+    cadcraft)     APP_NAME="CadCraft";      CRATE="cadcraft-android";     LIB="libcadcraft_android.so" ;;
     launcher)     APP_NAME="CraftLauncher"; CRATE="craftlauncher-android"; LIB="libcraftlauncher_android.so" ;;
     *) echo "unknown app: $APP" >&2; exit 1 ;;
 esac

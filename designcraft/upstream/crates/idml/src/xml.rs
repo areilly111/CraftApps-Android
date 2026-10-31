@@ -88,13 +88,14 @@ impl El {
         if let Some(v) = self.get(k) {
             return Some(v.to_string());
         }
-        self.prop_el(k).map(|e| e.text_content())
+        self.prop_el(k).map(El::text_content)
     }
     pub fn prop_el(&self, k: &str) -> Option<&El> {
         self.find("Properties").and_then(|p| p.find(k))
     }
+    /// A finite numeric property; `NaN` and infinities count as absent.
     pub fn num(&self, k: &str) -> Option<f64> {
-        self.prop(k).and_then(|v| v.trim().parse().ok())
+        self.prop(k).and_then(|v| v.trim().parse::<f64>().ok()).filter(|v| v.is_finite())
     }
     pub fn boolean(&self, k: &str) -> Option<bool> {
         match self.prop(k)?.trim() {
@@ -336,5 +337,13 @@ mod tests {
         assert_eq!(e.num("PointSize"), Some(9.0));
         assert_eq!(e.num("Leading"), Some(14.0));
         assert_eq!(e.prop("Missing"), None);
+    }
+
+    /// `NaN` and infinities parse as `f64` but are not usable numbers.
+    #[test]
+    fn non_finite_numbers_count_as_absent() {
+        let x = br#"<A W="NaN" X="inf"><Properties><Y type="unit">-inf</Y><Z>2.5</Z></Properties></A>"#;
+        let e = parse(x).unwrap();
+        assert_eq!((e.num("W"), e.num("X"), e.num("Y"), e.num("Z")), (None, None, None, Some(2.5)));
     }
 }

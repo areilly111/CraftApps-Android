@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 /// Port version, shown in the UI and used by the self-update row.
 /// `scripts/build-apk.sh` greps this line for the Gradle `versionName`.
-pub const VERSION_NAME: &str = "0.9.2";
+pub const VERSION_NAME: &str = "0.9.3";
 
 /// The android-activity 0.6 `native-activity` entry point: exported,
 /// unmangled, Rust ABI.
@@ -337,7 +337,7 @@ impl App {
     /// Android-only stylus settings, drawn as a floating toggle + window so
     /// the upstream preferences UI stays untouched.
     fn stylus_chrome(&mut self, ctx: &egui::Context) {
-        egui::Area::new("android-stylus-toggle".into())
+        egui::Area::new(egui::Id::new("android-stylus-toggle"))
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
             .show(ctx, |ui| {
                 if ui.small_button("✒ Stylus").clicked() {
@@ -375,8 +375,8 @@ impl eframe::App for App {
         self.app.logic(ctx);
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        self.app.raw_input_hook(raw);
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.app.raw_input_hook(ctx, raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

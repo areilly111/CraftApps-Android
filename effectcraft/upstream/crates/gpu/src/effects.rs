@@ -234,7 +234,13 @@ pub(crate) fn box_passes(e: &mut Enc, img: &GpuImage, rx: &[usize], ry: &[usize]
         let mut p = Params::default();
         p.u[0] = [r as u32, repeat as u32, block, 0];
         let out = e.scratch(cur.width, cur.height);
-        e.dispatch(if vertical { "box_v" } else { "box_h" }, &p, &cur, None, &out, None, (lines.div_ceil(64), n.div_ceil(block)));
+        e.dispatch(
+            if vertical { "box_v" } else { "box_h" },
+            &p,
+            crate::context::KernelImages { src: &cur, aux: None, out: &out },
+            None,
+            (lines.div_ceil(64), n.div_ceil(block)),
+        );
         cur = out;
     }
     cur
@@ -261,6 +267,10 @@ fn gaussian(e: &mut Enc, ctx: &EffectCtx, mut b: GBuf) -> Option<GBuf> {
         return Some(b);
     }
     let (kx, ky) = dims_xy(ctx.params.e("dimensions"));
+    // Small sigmas use the CPU's sampled kernel (#1939).
+    if effectcraft_raster::gaussian_is_exact(s * kx, s * ky) {
+        return None;
+    }
     let repeat = ctx.params.b("repeatEdge");
     if !repeat && !ctx.adjustment {
         b.pad(e, (s * 3.0).ceil() as u32)?;
@@ -270,7 +280,12 @@ fn gaussian(e: &mut Enc, ctx: &EffectCtx, mut b: GBuf) -> Option<GBuf> {
 }
 
 fn box_blur(e: &mut Enc, ctx: &EffectCtx, mut b: GBuf) -> Option<GBuf> {
-    let r = (ctx.params.f("radius") * b.scale).round().max(0.0) as usize;
+    let radius = (ctx.params.f("radius") * b.scale).max(0.0);
+    // Fractional radii blend two integer radii on the CPU (#1939).
+    if radius - radius.floor() >= 1e-4 {
+        return None;
+    }
+    let r = radius.floor() as usize;
     if r == 0 {
         return Some(b);
     }
@@ -381,14 +396,14 @@ fn transform(e: &mut Enc, ctx: &EffectCtx, mut b: GBuf) -> Option<GBuf> {
         * Mat3::translate(vec2(-anchor.0, -anchor.1));
     let sampling = if ctx.params.e("sampling") == 1 { Sampling::Bicubic } else { Sampling::Bilinear };
     let empty = e.image(b.img.width, b.img.height);
-    b.img = ops::warp(e, &empty, &b.img, &m, sampling, effectcraft_color::BlendMode::Normal, opacity, 0, None);
+    b.img = ops::warp(e, &empty, &b.img, &m, ops::WarpOptions { sampling, mode: effectcraft_color::BlendMode::Normal, opacity, seed: 0 }, None);
     Some(b)
 }
 
 // ---------------------------------------------------------------- per-pixel
 
 fn curves(e: &mut Enc, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> {
-    let parsed = ["rgb", "red", "green", "blue", "alpha"].map(|id| effectcraft_effects::Curve::parse(ctx.params.s(id)));
+    let parsed = ["rgb", "red", "green", "blue", "alpha"].map(|id| effectcraft_effects::Curve::parse_natural(ctx.params.s(id)));
     if parsed.iter().all(Option::is_none) {
         return Some(b);
     }

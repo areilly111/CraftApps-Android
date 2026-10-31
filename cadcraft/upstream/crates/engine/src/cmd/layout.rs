@@ -1,0 +1,894 @@
+//! Layouts, paper-space viewports, page setup and plotting: LAYOUT (new/delete/rename/copy/saveas),
+//! MVIEW / VPORTS, viewport scale/lock/layer settings, PAGESETUP, PLOT and EXPORTPDF.
+//!
+//! Plotting goes through the host's [`super::file::IoHooks::plot`] hook so the engine stays
+//! I/O-agnostic.
+
+use cadcraft_doc::{Drawing, Entity, EntityKind, EntityStore, Handle, Layout, PageSetup, Space, Viewport};
+use cadcraft_geom::{Bounds2, Vec2};
+use serde_json::{Value, json};
+
+use super::file::{base64_encode, io};
+use super::{CommandSpec, bad, bool_or, find_command, point_param, point_value, str_param, targets};
+
+use crate::{Accept, Input, Interactive, Prompt, Result, Session, Step};
+use viewports::MviewM;
+
+mod plotstyle;
+mod prompts;
+mod viewports;
+
+pub fn specs() -> Vec<CommandSpec> {
+    vec![
+        CommandSpec::new("layout", "Layout", run_layout)
+            .alias(&["lo"])
+            .params("{option: new|copy|delete|rename|saveas|set|list, name?, to?, path? (saveas)} (typed LAYOUT / -LAYOUT: option prompts)")
+            .interactive(|_| Ok(Box::new(prompts::LayoutM::default()))),
+        CommandSpec::new("layout.new", "New Layout", run_new)
+            .menu(&["Insert", "Layout", "New Layout"])
+            .params("{name?, viewport?: bool (default true)} → {name, viewport}")
+            .interactive(|_| Ok(Box::new(NewLayoutM))),
+        CommandSpec::new("layout.delete", "Delete Layout", run_delete).params("{name}"),
+        CommandSpec::new("layout.rename", "Rename Layout", run_rename).params("{from?: current layout, to}"),
+        CommandSpec::new("layout.copy", "Copy Layout", run_copy).params("{from, to?}"),
+        CommandSpec::new("layout.list", "List Layouts", run_list).params("→ [{name, tabOrder, page, viewports}]").noundo(),
+        CommandSpec::new("layout.saveas", "Save Layout as Template", saveas::run_saveas)
+            .params("{name?: layout (default: the current layout, else the first tab), path: .dwt (or .dwg, .dxf; no extension adds .dwt)} → {name, path, bytes, notSaved?}")
+            .noundo(),
+        CommandSpec::new("mview", "Viewports", run_mview)
+            .alias(&["mv"])
+            .params(
+                "{option?: fit|polygonal|object|on|off|lock|restore, p1?, p2? (default: printable area), count?: 1-4, arrangement?: vertical|horizontal|left|right|above|below, points?: [[x,y]…] + bulges? (polygonal), object? (closed object to clip by), handles? + locked? (on/off/lock), name? (restore: a model space viewport configuration, default *Active; its viewports fill p1-p2 or the printable area), layout?}",
+            )
+            .interactive(|_| Ok(Box::new(MviewM::new(1, true)))),
+        CommandSpec::new("mview.polygonal", "Polygonal Viewport", |s, p| run_mview(s, &viewports::with(p.clone(), "option", json!("polygonal"))))
+            .menu(&["View", "Viewports", "Polygonal Viewport"])
+            .params("{points: [[x,y]…] (at least three), bulges?, layout?}")
+            .interactive(|_| Ok(Box::new(MviewM::polygonal()))),
+        CommandSpec::new("vpclip", "Clip Viewport", viewports::run_vpclip)
+            .menu(&["Modify", "Clip", "Viewport"])
+            .params("{handle?: viewport (default: selected or active), object?: closed object | points?: [[x,y]…] + bulges?, delete?: bool, layout?}")
+            .interactive(|_| Ok(Box::new(viewports::VpclipM::default()))),
+        CommandSpec::new("vports", "New Viewports...", run_mview)
+            .menu(&["View", "Viewports", "New Viewports..."])
+            .params("{count?: 1-4, arrangement?, p1?, p2?, layout?} (typed in the Model tab: tiled viewports; their JSON form is -vports)")
+            .interactive(|s| Ok(super::view::model_vports(s, None).unwrap_or_else(|| Box::new(MviewM::new(1, true))))),
+        CommandSpec::new("vports.1", "1 Viewport", |s, p| run_mview_n(s, p, 1))
+            .menu(&["View", "Viewports", "1 Viewport"])
+            .params("{p1?, p2?, layout?}")
+            .interactive(|s| Ok(super::view::model_vports(s, Some(1)).unwrap_or_else(|| Box::new(MviewM::new(1, false))))),
+        CommandSpec::new("vports.2", "2 Viewports", |s, p| run_mview_n(s, p, 2))
+            .menu(&["View", "Viewports", "2 Viewports"])
+            .params("{p1?, p2?, arrangement?: vertical|horizontal, layout?}")
+            .interactive(|s| Ok(super::view::model_vports(s, Some(2)).unwrap_or_else(|| Box::new(MviewM::new(2, false))))),
+        CommandSpec::new("vports.3", "3 Viewports", |s, p| run_mview_n(s, p, 3))
+            .menu(&["View", "Viewports", "3 Viewports"])
+            .params("{p1?, p2?, arrangement?: right|left|above|below|vertical|horizontal, layout?}")
+            .interactive(|s| Ok(super::view::model_vports(s, Some(3)).unwrap_or_else(|| Box::new(MviewM::new(3, false))))),
+        CommandSpec::new("vports.4", "4 Viewports", |s, p| run_mview_n(s, p, 4))
+            .menu(&["View", "Viewports", "4 Viewports"])
+            .params("{p1?, p2?, layout?}")
+            .interactive(|s| Ok(super::view::model_vports(s, Some(4)).unwrap_or_else(|| Box::new(MviewM::new(4, false))))),
+        CommandSpec::new("viewport.set", "Viewport Properties", run_viewport_set).params(
+            "{handle? (default: selected viewports), scale?: paper units per model unit | \"1:50\", viewHeight?, center?: [x,y], locked?, freeze?: [layer], thaw?: [layer], colors?: {layer: color | null}}",
+        ),
+        CommandSpec::new("vplayer", "Viewport Layer Freeze", run_viewport_set)
+            .params("{handle?, freeze?: [layer], thaw?: [layer], colors?: {layer: color (\"red\" | 1..255 | \"r,g,b\") | null to clear}} (typed: option prompts)")
+            .interactive(|_| Ok(Box::new(vplayer::VplayerM::default()))),
+        CommandSpec::new("pagesetup", "Page Setup Manager...", run_pagesetup)
+            .menu(&["File", "Page Setup Manager..."])
+            .params(
+                "{layout?: current, device?: plotter name (PLOTTERMANAGER) | \"None\", paper?: the device's paper | \"A4\"|\"A3\"|\"Letter\"|\"ANSI B\"|…, width?, height? (mm), landscape?, margins?: [l,b,r,t] mm, lineweights?, plotArea?, scale?, scaleToFit?, center?, plotStyleTable?: \"monochrome.ctb\"|\"grayscale.ctb\"|\"default.ctb\"|\"None\"|…, displayPlotStyles?: bool, plotTransparency?: bool}",
+            ),
+        CommandSpec::new("plot", "Print...", |s, p| run_plot(s, &super::plotters::plot_options(s, p, "plot")?, "plot"))
+            .menu(&["File", "Print..."])
+            .key("Cmd+P")
+            .alias(&["print"])
+            .params("{path? (else returns base64 `data`), layout?: current|\"Model\", paper?, landscape?, fit?: bool, scale?: number | \"1:50\", center?: bool (Model, default true), offset?: [x,y] mm (Model, when center is false; each within ±100000), lineweights?: bool, plotTransparency?: bool (default: the page setup's; PLOTTRANSPARENCYOVERRIDE 0/2 overrides it), plotArea?: extents|display|limits|window (Model) | layout, window?: [[x1,y1],[x2,y2]]} (typed or from the menu: the Plot dialog)")
+            .noundo(),
+        CommandSpec::new("exportpdf", "Export to PDF...", |s, p| run_plot(s, &super::plotters::plot_options(s, p, "exportpdf")?, "exportpdf"))
+            .menu(&["File", "Export to PDF..."])
+            .params("{path? (else returns base64 `data`), layout?, paper?, landscape?, fit?, scale?, center?: bool (Model, default true), offset?: [x,y] mm (Model, when center is false; each within ±100000), lineweights?, plotTransparency?, plotArea?, window?} (as PLOT)")
+            .noundo(),
+        CommandSpec::new("mspace", "Model Space (in viewport)", run_mspace)
+            .alias(&["ms"])
+            .params("{handle?: viewport, at?: [x,y] paper point inside a viewport} (default: the last active or first viewport)")
+            .noundo(),
+        CommandSpec::new("pspace", "Paper Space", run_pspace).alias(&["ps"]).noundo(),
+    ]
+    .into_iter()
+    .chain(plotstyle::specs())
+    .chain(super::plotters::specs())
+    .collect()
+}
+
+// ---------- model space through viewports ----------
+
+fn layout_viewports(s: &Session) -> Result<Vec<(Handle, Viewport)>> {
+    let sp = s.layout_space();
+    if sp == Space::Model {
+        return Err(bad("mspace", "** Command not allowed in Model Tab **"));
+    }
+    let d = s.doc()?;
+    Ok(d.space(&sp)
+        .map(|st| {
+            st.iter()
+                .filter_map(|e| match &e.kind {
+                    EntityKind::Viewport(v) if v.id != 1 && v.on && v.height > 1e-12 && v.view_height > 1e-12 => Some((e.handle, v.clone())),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+fn run_mspace(s: &mut Session, p: &Value) -> Result<Value> {
+    let vps = layout_viewports(s)?;
+    let at = p.get("at").and_then(|v| Some(Vec2::new(v.get(0)?.as_f64()?, v.get(1)?.as_f64()?)));
+    let want = p.get("handle").and_then(|v| v.as_str().and_then(Handle::parse_hex).or_else(|| v.as_u64().map(Handle)));
+    let pick = if let Some(h) = want {
+        vps.iter().find(|(x, _)| *x == h).map(|(h, _)| *h).ok_or_else(|| bad("mspace", "`handle` is not a viewport in this layout"))?
+    } else if let Some(a) = at {
+        viewports::viewport_at(s, a).ok_or_else(|| bad("mspace", "no viewport at that point"))?
+    } else {
+        let last = s.state()?.mspace;
+        match last.filter(|h| vps.iter().any(|(x, _)| x == h)).or_else(|| vps.first().map(|(h, _)| *h)) {
+            Some(h) => h,
+            None => return Err(bad("mspace", "There are no active model space viewports.")),
+        }
+    };
+    let st = s.state_mut()?;
+    st.mspace = Some(pick);
+    st.selection.clear();
+    s.pending_window = None;
+    s.echo("MSPACE");
+    Ok(json!({ "viewport": pick.hex() }))
+}
+
+fn run_pspace(s: &mut Session, _p: &Value) -> Result<Value> {
+    if s.layout_space() == Space::Model {
+        return Err(bad("pspace", "** Command not allowed in Model Tab **"));
+    }
+    let st = s.state_mut()?;
+    st.mspace = None;
+    st.selection.clear();
+    s.pending_window = None;
+    Ok(json!({ "space": "paper" }))
+}
+
+// ---------- layouts ----------
+
+/// Characters AutoCAD does not allow in layout names.
+const BAD_CHARS: &[char] = &['<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', ',', '=', '`'];
+
+fn check_name(cmd: &str, d: &Drawing, name: &str, except: Option<&str>) -> Result<String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err(bad(cmd, "layout name is empty"));
+    }
+    if n.chars().count() > 255 {
+        return Err(bad(cmd, "layout name is longer than 255 characters"));
+    }
+    if n.contains(BAD_CHARS) || n.chars().any(char::is_control) {
+        return Err(bad(cmd, format!("invalid layout name `{n}`")));
+    }
+    if n.eq_ignore_ascii_case("model") {
+        return Err(bad(cmd, "`Model` is reserved"));
+    }
+    if d.layouts.iter().any(|l| l.name.eq_ignore_ascii_case(n) && except.is_none_or(|e| !l.name.eq_ignore_ascii_case(e))) {
+        return Err(bad(cmd, format!("layout `{n}` already exists")));
+    }
+    Ok(n.to_string())
+}
+
+fn layout_name(cmd: &str, d: &Drawing, name: &str) -> Result<String> {
+    d.layout(name).map(|l| l.name.clone()).ok_or_else(|| bad(cmd, format!("no layout `{name}`")))
+}
+
+fn next_layout_name(d: &Drawing) -> String {
+    (1..=10_000).map(|i| format!("Layout{i}")).find(|n| d.layout(n).is_none()).unwrap_or_else(|| "Layout".into())
+}
+
+/// The page setup new layouts get: ANSI A landscape (imperial) or ISO A4 landscape (metric).
+fn default_page(d: &Drawing) -> PageSetup {
+    let mut p = PageSetup::default();
+    if cadcraft_render::paper::paper_unit_mm(d) == 1.0
+        && let Some(a4) = cadcraft_render::paper_size("A4")
+    {
+        p.paper = a4.name.into();
+        p.width_mm = a4.width_mm;
+        p.height_mm = a4.height_mm;
+    }
+    p
+}
+
+/// LAYOUT.NEW from the menu or command line: asks for the name (Enter takes the next free one).
+struct NewLayoutM;
+
+impl Interactive for NewLayoutM {
+    fn name(&self) -> &'static str {
+        "LAYOUT"
+    }
+    fn prompt(&self, s: &Session) -> Prompt {
+        let next = s.doc().map(next_layout_name).unwrap_or_else(|_| "Layout1".into());
+        Prompt::new("Enter name of new layout", Accept::TEXT).default(next)
+    }
+    fn input(&mut self, s: &mut Session, i: Input) -> Result<Step> {
+        let p = match i {
+            Input::Text(t) if !t.trim().is_empty() => json!({ "name": t.trim() }),
+            Input::Text(_) | Input::Enter => json!({}),
+            _ => return Ok(Step::Continue),
+        };
+        // A taken or invalid name is an error: the session reports it and asks again.
+        run_new(s, &p)?;
+        Ok(Step::Done)
+    }
+}
+
+fn run_new(s: &mut Session, p: &Value) -> Result<Value> {
+    let d = s.doc()?;
+    let name = match str_param(p, "name") {
+        Some(n) => check_name("layout.new", d, n, None)?,
+        None => next_layout_name(d),
+    };
+    let page = default_page(d);
+    let order = d.layouts.iter().map(|l| l.tab_order).max().unwrap_or(0).saturating_add(1);
+    s.doc_mut()?.layouts.push(Layout { page, ..Layout::new(&name, order) });
+    let mut vp = Value::Null;
+    if bool_or(p, "viewport", true) {
+        // AutoCAD behaviour: one viewport over the printable area, zoomed to the model extents.
+        let space = Space::Paper(name.clone());
+        let rect = printable(s, &name)?;
+        if let Some(h) = add_viewports(s, &space, rect, 1, "")?.first() {
+            vp = json!(h.hex());
+        }
+    }
+    Ok(json!({ "name": name, "viewport": vp }))
+}
+
+fn run_delete(s: &mut Session, p: &Value) -> Result<Value> {
+    let name = str_param(p, "name").ok_or_else(|| bad("layout.delete", "`name` is required"))?;
+    let name = layout_name("layout.delete", s.doc()?, name)?;
+    if s.doc()?.layouts.len() <= 1 {
+        return Err(bad("layout.delete", "a drawing must keep at least one layout"));
+    }
+    s.doc_mut()?.layouts.retain(|l| l.name != name);
+    let gone = Space::Paper(name.clone());
+    let st = s.state_mut()?;
+    st.views.retain(|(sp, _)| sp != &gone);
+    if st.space == gone {
+        st.space = Space::Model;
+        st.mspace = None;
+        st.selection.clear();
+    }
+    s.touch();
+    Ok(json!({ "deleted": name }))
+}
+
+fn run_rename(s: &mut Session, p: &Value) -> Result<Value> {
+    let from = match (str_param(p, "from"), s.layout_space().layout()) {
+        (Some(f), _) => f.to_string(),
+        (None, Some(n)) => n.to_string(),
+        (None, None) => return Err(bad("layout.rename", "`from` is required in the Model tab")),
+    };
+    let from = layout_name("layout.rename", s.doc()?, &from)?;
+    let to = str_param(p, "to").ok_or_else(|| bad("layout.rename", "`to` is required"))?;
+    let to = check_name("layout.rename", s.doc()?, to, Some(&from))?;
+    let d = s.doc_mut()?;
+    if let Some(l) = d.layouts.iter_mut().find(|l| l.name == from) {
+        l.name = to.clone();
+    }
+    if d.active_layout.as_ref().is_some_and(|a| a.eq_ignore_ascii_case(&from)) {
+        d.active_layout = Some(to.clone());
+    }
+    let (old, new) = (Space::Paper(from.clone()), Space::Paper(to.clone()));
+    let st = s.state_mut()?;
+    for (sp, _) in st.views.iter_mut() {
+        if *sp == old {
+            *sp = new.clone();
+        }
+    }
+    if st.space == old {
+        st.space = new;
+    }
+    s.touch();
+    Ok(json!({ "from": from, "to": to }))
+}
+
+fn run_copy(s: &mut Session, p: &Value) -> Result<Value> {
+    let from = str_param(p, "from").ok_or_else(|| bad("layout.copy", "`from` is required"))?;
+    let from = layout_name("layout.copy", s.doc()?, from)?;
+    let to = match str_param(p, "to") {
+        Some(t) => check_name("layout.copy", s.doc()?, t, None)?,
+        None => {
+            let d = s.doc()?;
+            (2..=10_000).map(|i| format!("{from} ({i})")).find(|n| d.layout(n).is_none()).ok_or_else(|| bad("layout.copy", "no free name"))?
+        }
+    };
+    let d = s.doc_mut()?;
+    let Some(src) = d.layouts.iter().find(|l| l.name == from).cloned() else { return Err(bad("layout.copy", "no such layout")) };
+    let order = d.layouts.iter().map(|l| l.tab_order).max().unwrap_or(0).saturating_add(1);
+    let mut store = EntityStore::new();
+    for e in src.entities.iter() {
+        let h = d.new_handle();
+        store.push(Entity { handle: h, ..Entity::clone(e) });
+    }
+    d.layouts.push(Layout { name: to.clone(), tab_order: order, page: src.page, entities: store, view: src.view });
+    Ok(json!({ "name": to }))
+}
+
+fn run_list(s: &mut Session, _p: &Value) -> Result<Value> {
+    let d = s.doc()?;
+    let mut ls: Vec<&Layout> = d.layouts.iter().collect();
+    ls.sort_by_key(|l| l.tab_order);
+    let current = s.layout_space();
+    Ok(Value::Array(
+        ls.iter()
+            .map(|l| {
+                json!({
+                    "name": l.name,
+                    "tabOrder": l.tab_order,
+                    "current": current == Space::Paper(l.name.clone()),
+                    "page": serde_json::to_value(&l.page).unwrap_or(Value::Null),
+                    "viewports": l.entities.iter().filter(|e| matches!(&e.kind, EntityKind::Viewport(v) if v.id != 1)).map(|e| e.handle.hex()).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    ))
+}
+
+/// LAYOUT SAveas: a layout written as a drawing template.
+mod saveas;
+
+/// `-LAYOUT`-style dispatcher.
+fn run_layout(s: &mut Session, p: &Value) -> Result<Value> {
+    let opt = str_param(p, "option").unwrap_or("list").to_ascii_lowercase();
+    match opt.as_str() {
+        "new" | "n" => run_new(s, p),
+        "copy" | "c" => {
+            let mut q = p.clone();
+            if q.get("from").is_none()
+                && let (Some(n), Some(o)) = (p.get("name").cloned(), q.as_object_mut())
+            {
+                o.insert("from".into(), n);
+            }
+            run_copy(s, &q)
+        }
+        "delete" | "d" => run_delete(s, p),
+        "rename" | "r" => {
+            let mut q = p.clone();
+            if q.get("from").is_none()
+                && let (Some(n), Some(o)) = (p.get("name").cloned(), q.as_object_mut())
+            {
+                o.insert("from".into(), n);
+            }
+            run_rename(s, &q)
+        }
+        "set" | "s" => {
+            let set = find_command("layout.set").ok_or_else(|| bad("layout", "layout.set is missing"))?;
+            (set.run)(s, p)
+        }
+        "saveas" | "sa" => saveas::run_saveas(s, p),
+        "list" | "?" => run_list(s, p),
+        _ => Err(bad("layout", "option must be new, copy, delete, rename, saveas, set or list")),
+    }
+}
+
+// ---------- viewports ----------
+
+/// The printable area of a layout, in paper units.
+fn printable(s: &Session, layout: &str) -> Result<Bounds2> {
+    cadcraft_render::sheet(s.doc()?, layout).map(|sh| sh.printable).ok_or_else(|| bad("mview", format!("no layout `{layout}`")))
+}
+
+/// The layout a viewport command acts on: `layout` param or the current layout.
+fn target_layout(s: &Session, cmd: &str, p: &Value) -> Result<Space> {
+    if let Some(n) = str_param(p, "layout") {
+        return Ok(Space::Paper(layout_name(cmd, s.doc()?, n)?));
+    }
+    match s.layout_space() {
+        Space::Model => Err(bad(cmd, "** Command not allowed in Model Tab ** (switch to a layout or pass `layout`)")),
+        sp => Ok(sp),
+    }
+}
+
+/// Split a rectangle into `count` viewport rectangles (AutoCAD's VPORTS arrangements).
+fn split(r: Bounds2, count: usize, arrangement: &str) -> Vec<Bounds2> {
+    let (x0, y0, x1, y1) = (r.min.x, r.min.y, r.max.x, r.max.y);
+    let xm = (x0 + x1) / 2.0;
+    let ym = (y0 + y1) / 2.0;
+    let b = |a: f64, b: f64, c: f64, d: f64| Bounds2::new(Vec2::new(a, b), Vec2::new(c, d));
+    let a = arrangement.to_ascii_lowercase();
+    match count {
+        2 if a.starts_with('h') => vec![b(x0, ym, x1, y1), b(x0, y0, x1, ym)],
+        2 => vec![b(x0, y0, xm, y1), b(xm, y0, x1, y1)],
+        3 => {
+            let (t1, t2) = (x0 + (x1 - x0) / 3.0, x0 + 2.0 * (x1 - x0) / 3.0);
+            let (u1, u2) = (y0 + (y1 - y0) / 3.0, y0 + 2.0 * (y1 - y0) / 3.0);
+            match a.as_str() {
+                "left" | "l" => vec![b(x0, y0, xm, y1), b(xm, ym, x1, y1), b(xm, y0, x1, ym)],
+                "above" | "a" => vec![b(x0, ym, x1, y1), b(x0, y0, xm, ym), b(xm, y0, x1, ym)],
+                "below" | "b" => vec![b(x0, y0, x1, ym), b(x0, ym, xm, y1), b(xm, ym, x1, y1)],
+                "vertical" | "v" => vec![b(x0, y0, t1, y1), b(t1, y0, t2, y1), b(t2, y0, x1, y1)],
+                "horizontal" | "h" => vec![b(x0, u2, x1, y1), b(x0, u1, x1, u2), b(x0, y0, x1, u1)],
+                // Right (the default): two stacked on the left, the large one on the right.
+                _ => vec![b(x0, ym, xm, y1), b(x0, y0, xm, ym), b(xm, y0, x1, y1)],
+            }
+        }
+        4 => vec![b(x0, ym, xm, y1), b(xm, ym, x1, y1), b(x0, y0, xm, ym), b(xm, y0, x1, ym)],
+        _ => vec![r],
+    }
+}
+
+/// View height that shows `ext` in a viewport of the given size (zoom extents).
+fn fit_view(d: &Drawing, w: f64, h: f64) -> (Vec2, f64) {
+    let mut ext = d.extents(&Space::Model);
+    if ext.is_empty() {
+        let lo = d.header.point("LIMMIN").map(|p| p.xy()).unwrap_or(Vec2::ZERO);
+        let hi = d.header.point("LIMMAX").map(|p| p.xy()).unwrap_or(Vec2::new(12.0, 9.0));
+        ext = Bounds2::new(lo, hi);
+    }
+    let aspect = (w / h.max(1e-12)).max(1e-12);
+    let vh = (ext.height().max(ext.width() / aspect) * 1.02).max(1e-9);
+    let c = ext.center();
+    if vh.is_finite() && c.is_finite() { (c, vh) } else { (Vec2::ZERO, 1.0) }
+}
+
+/// Add `count` viewports tiling `rect` in a layout, each zoomed to the model extents.
+fn add_viewports(s: &mut Session, space: &Space, rect: Bounds2, count: usize, arrangement: &str) -> Result<Vec<Handle>> {
+    if !(1..=4).contains(&count) {
+        return Err(bad("mview", "count must be 1, 2, 3 or 4"));
+    }
+    if rect.is_empty() || !rect.min.is_finite() || !rect.max.is_finite() || rect.width() < 1e-6 || rect.height() < 1e-6 {
+        return Err(bad("mview", "the viewport has no area"));
+    }
+    if rect.width() > 1e7 || rect.height() > 1e7 {
+        return Err(bad("mview", "the viewport is too large"));
+    }
+    let common = s.current_common();
+    let d = s.doc_mut()?;
+    let mut out = Vec::new();
+    for r in split(rect, count, arrangement) {
+        let id = viewports::next_viewport_id(d);
+        let vp = viewports::new_viewport(d, r, id);
+        out.push(d.add(space, common.clone(), EntityKind::Viewport(vp))?);
+    }
+    Ok(out)
+}
+
+fn mview(s: &mut Session, p: &Value, count: usize, cmd: &str) -> Result<Value> {
+    if cmd == "vports" && s.layout_space() == Space::Model && p.get("layout").is_none() {
+        // View > Viewports > n in the Model tab: tiled viewports.
+        return super::view::tile_model(s, p, count);
+    }
+    let space = target_layout(s, cmd, p)?;
+    let Space::Paper(name) = &space else { return Err(bad(cmd, "not a layout")) };
+    let rect = match (point_param(p, "p1"), point_param(p, "p2")) {
+        (Some(a), Some(b)) => Bounds2::new(a, b),
+        _ => printable(s, name)?,
+    };
+    let arrangement = str_param(p, "arrangement").unwrap_or("");
+    let hs = add_viewports(s, &space, rect, count, arrangement)?;
+    Ok(json!({ "viewports": hs.iter().map(|h| h.hex()).collect::<Vec<_>>() }))
+}
+
+fn run_mview(s: &mut Session, p: &Value) -> Result<Value> {
+    if let Some(r) = viewports::mview_option(s, p) {
+        return r;
+    }
+    let count = match p.get("count") {
+        None | Some(Value::Null) => 1,
+        Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| bad("mview", "count must be 1, 2, 3 or 4"))?,
+    };
+    mview(s, p, count, "mview")
+}
+
+fn run_mview_n(s: &mut Session, p: &Value, n: usize) -> Result<Value> {
+    mview(s, p, n, "vports")
+}
+
+/// A plot scale: a number (paper units per model unit) or `"a:b"` / `"a/b"`.
+fn parse_scale(v: &Value) -> Option<f64> {
+    let s = match v {
+        Value::Number(n) => n.as_f64(),
+        Value::String(t) => {
+            let t = t.trim();
+            match t.split_once([':', '/']) {
+                Some((a, b)) => {
+                    let a: f64 = a.trim().parse().ok()?;
+                    let b: f64 = b.trim().parse().ok()?;
+                    Some(a / b)
+                }
+                None => t.trim_end_matches(['x', 'X']).parse().ok(),
+            }
+        }
+        _ => None,
+    }?;
+    (s.is_finite() && s > 0.0).then_some(s)
+}
+
+fn layer_list(p: &Value, key: &str) -> Vec<String> {
+    match p.get(key) {
+        Some(Value::String(s)) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).take(10_000).collect(),
+        Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).take(10_000).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn viewport_json(h: Handle, v: &Viewport) -> Value {
+    json!({
+        "handle": h.hex(),
+        "id": v.id,
+        "center": [v.center.x, v.center.y],
+        "width": v.width,
+        "height": v.height,
+        "viewCenter": [v.view_center.x, v.view_center.y],
+        "viewHeight": v.view_height,
+        "scale": if v.view_height > 0.0 { v.height / v.view_height } else { 0.0 },
+        "locked": v.locked,
+        "on": v.on,
+        "clip": v.clip.map(|h| h.hex()),
+        "frozenLayers": v.frozen_layers,
+        "layerColors": v.layer_colors.iter().map(|(l, c)| json!({ "layer": l, "color": c.name() })).collect::<Vec<_>>(),
+    })
+}
+
+/// VPLAYER's command-line prompts.
+mod vplayer;
+
+fn run_viewport_set(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "viewport.set";
+    let d = s.doc()?;
+    let mut hs: Vec<Handle> =
+        targets(s, p)?.into_iter().filter(|h| d.entity(*h).is_some_and(|e| matches!(&e.kind, EntityKind::Viewport(v) if v.id != 1))).collect();
+    // Inside a viewport (MSPACE) the active viewport is the default.
+    if hs.is_empty()
+        && p.get("handle").is_none()
+        && p.get("handles").is_none()
+        && let Some((h, _)) = s.state()?.active_viewport()
+    {
+        hs.push(h);
+    }
+    if hs.is_empty() {
+        return Err(bad(cmd, "no viewport given (pass `handle` or select a viewport)"));
+    }
+    let scale = match p.get("scale") {
+        Some(v) => Some(parse_scale(v).ok_or_else(|| bad(cmd, "`scale` must be a positive number or \"a:b\""))?),
+        None => None,
+    };
+    let view_height = match p.get("viewHeight") {
+        Some(v) => Some(v.as_f64().filter(|x| x.is_finite() && *x > 0.0).ok_or_else(|| bad(cmd, "`viewHeight` must be positive"))?),
+        None => None,
+    };
+    let center = match p.get("center") {
+        Some(v) => Some(point_value(v).ok_or_else(|| bad(cmd, "`center` must be [x, y]"))?),
+        None => None,
+    };
+    let locked = p.get("locked").and_then(Value::as_bool);
+    let freeze = layer_list(p, "freeze");
+    let thaw = layer_list(p, "thaw");
+    // Per-viewport layer colours: {layer: colour} (null clears the override).
+    let mut colors: Vec<(String, Option<cadcraft_color::Color>)> = Vec::new();
+    if let Some(m) = p.get("colors").and_then(Value::as_object) {
+        for (layer, c) in m.iter().take(10_000) {
+            let col = match c {
+                Value::Null => None,
+                Value::String(t) => Some(cadcraft_color::Color::parse(t).ok_or_else(|| bad(cmd, format!("bad colour for `{layer}`")))?),
+                Value::Number(n) => Some(
+                    n.as_u64()
+                        .and_then(|i| u8::try_from(i).ok())
+                        .filter(|i| *i > 0)
+                        .map(cadcraft_color::Color::Index)
+                        .ok_or_else(|| bad(cmd, "colour index 1..255"))?,
+                ),
+                _ => return Err(bad(cmd, "`colors` values are colours or null")),
+            };
+            if matches!(col, Some(cadcraft_color::Color::ByLayer | cadcraft_color::Color::ByBlock)) {
+                return Err(bad(cmd, "a viewport layer colour must be an index or true colour"));
+            }
+            colors.push((layer.clone(), col));
+        }
+    }
+    let changes_view = scale.is_some() || view_height.is_some() || center.is_some();
+    let mut out = Vec::new();
+    for h in hs {
+        let Some(EntityKind::Viewport(cur)) = s.doc()?.entity(h).map(|e| e.kind.clone()) else { continue };
+        if changes_view && cur.locked && locked != Some(false) {
+            return Err(bad(cmd, format!("viewport {} is locked", h.hex())));
+        }
+        let mut v = cur;
+        if let Some(sc) = scale {
+            let vh = v.height / sc;
+            if vh.is_finite() && vh > 0.0 {
+                v.view_height = vh;
+            }
+        }
+        if let Some(vh) = view_height {
+            v.view_height = vh;
+        }
+        if let Some(c) = center {
+            v.view_center = c;
+        }
+        if let Some(l) = locked {
+            v.locked = l;
+        }
+        for f in &freeze {
+            if !v.frozen_layers.iter().any(|x| x.eq_ignore_ascii_case(f)) {
+                v.frozen_layers.push(f.clone());
+            }
+        }
+        v.frozen_layers.retain(|x| !thaw.iter().any(|t| t.eq_ignore_ascii_case(x)));
+        for (layer, c) in &colors {
+            v.layer_colors.retain(|(n, _)| !n.eq_ignore_ascii_case(layer));
+            if let Some(c) = c {
+                v.layer_colors.push((layer.clone(), *c));
+            }
+        }
+        out.push(viewport_json(h, &v));
+        s.doc_mut()?.modify_entity(h, |e| e.kind = EntityKind::Viewport(v)).map_err(|e| bad(cmd, e.to_string()))?;
+    }
+    Ok(Value::Array(out))
+}
+
+// ---------- page setup ----------
+
+fn run_pagesetup(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "pagesetup";
+    let keys = [
+        "device",
+        "paper",
+        "width",
+        "height",
+        "landscape",
+        "margins",
+        "lineweights",
+        "plotArea",
+        "scale",
+        "scaleToFit",
+        "center",
+        "plotStyleTable",
+        "displayPlotStyles",
+        "plotTransparency",
+    ];
+    let changes = keys.iter().any(|k| p.get(k).is_some());
+    let name = match str_param(p, "layout") {
+        Some(n) => Some(layout_name(cmd, s.doc()?, n)?),
+        None => s.space().layout().map(str::to_string),
+    };
+    let Some(name) = name else {
+        if changes {
+            return Err(bad(cmd, "pass `layout` (model-space page setups are not stored yet)"));
+        }
+        // Report every layout's page setup.
+        let d = s.doc()?;
+        return Ok(json!({
+            "layouts": d.layouts.iter().map(|l| json!({"name": l.name, "page": serde_json::to_value(&l.page).unwrap_or(Value::Null)})).collect::<Vec<_>>(),
+            "papers": cadcraft_render::PAPER_SIZES.iter().map(|p| p.name).collect::<Vec<_>>(),
+            "plotStyleTables": cadcraft_doc::BUILTIN_PLOT_STYLE_TABLES,
+            "devices": super::plotters::device_names(),
+        }));
+    };
+    let mut page = s.doc()?.layout(&name).map(|l| l.page.clone()).unwrap_or_default();
+    // A plotter's own papers (with their printable areas) come first.
+    let device_paper = super::plotters::page_device(cmd, p, &mut page)?;
+    if let Some(paper) = p.get("paper").filter(|_| !device_paper) {
+        let n = paper.as_str().ok_or_else(|| bad(cmd, "`paper` must be a paper name"))?;
+        let ps = cadcraft_render::paper_size(n).ok_or_else(|| {
+            let known: Vec<&str> = cadcraft_render::PAPER_SIZES.iter().filter_map(|p| p.aliases.first().copied()).collect();
+            bad(cmd, format!("unknown paper size `{n}` (known: {})", known.join(", ")))
+        })?;
+        page.paper = ps.name.into();
+        page.width_mm = ps.width_mm;
+        page.height_mm = ps.height_mm;
+    }
+    let mm = |k: &str| p.get(k).and_then(Value::as_f64).filter(|v| v.is_finite() && *v > 0.0 && *v <= 5080.0);
+    match (mm("width"), mm("height")) {
+        (Some(w), Some(h)) => {
+            page.paper = format!("User ({w:.2} x {h:.2} MM)");
+            page.width_mm = w.min(h);
+            page.height_mm = w.max(h);
+        }
+        (None, None) if p.get("width").is_none() && p.get("height").is_none() => {}
+        _ => return Err(bad(cmd, "`width` and `height` (mm, 0-5080) are both required for a custom size")),
+    }
+    if let Some(l) = p.get("landscape").and_then(Value::as_bool) {
+        page.landscape = l;
+    }
+    if let Some(m) = p.get("margins") {
+        let a: Vec<f64> = m.as_array().map(|a| a.iter().filter_map(Value::as_f64).collect()).unwrap_or_default();
+        match a[..] {
+            [l, b, r, t] if a.iter().all(|v| v.is_finite() && (0.0..=1000.0).contains(v)) => page.margins_mm = [l, b, r, t],
+            _ => return Err(bad(cmd, "`margins` must be [left, bottom, right, top] in mm")),
+        }
+    }
+    if let Some(v) = p.get("lineweights").and_then(Value::as_bool) {
+        page.lineweights = v;
+    }
+    if let Some(v) = p.get("scaleToFit").and_then(Value::as_bool) {
+        page.scale_to_fit = v;
+    }
+    if let Some(v) = p.get("center").and_then(Value::as_bool) {
+        page.center = v;
+    }
+    if let Some(v) = p.get("scale") {
+        page.scale = parse_scale(v).ok_or_else(|| bad(cmd, "`scale` must be positive"))?;
+    }
+    if let Some(v) = str_param(p, "plotArea") {
+        let v = v.to_ascii_lowercase();
+        if !["layout", "extents", "display", "window", "limits"].contains(&v.as_str()) {
+            return Err(bad(cmd, "`plotArea` must be layout, extents, display, window or limits"));
+        }
+        // Layout plotting always prints the whole sheet; the other areas are only stored for DXF round trips.
+        if v != "layout" && v != page.plot_area {
+            return Err(bad(cmd, format!("plot area `{v}` is not available yet; layouts plot the whole sheet (`layout`)")));
+        }
+        page.plot_area = v;
+    }
+    if let Some(v) = str_param(p, "plotStyleTable") {
+        page.plot_style_table = v.chars().take(260).collect();
+    }
+    if let Some(v) = p.get("displayPlotStyles").and_then(Value::as_bool) {
+        page.show_plot_styles = v;
+    }
+    if let Some(v) = p.get("plotTransparency").and_then(Value::as_bool) {
+        page.plot_transparency = v;
+    }
+    if changes {
+        if let Some(l) = s.doc_mut()?.layouts.iter_mut().find(|l| l.name == name) {
+            l.page = page.clone();
+        }
+        s.touch();
+    }
+    Ok(json!({ "layout": name, "page": serde_json::to_value(&page).unwrap_or(Value::Null) }))
+}
+
+// ---------- plotting ----------
+
+/// Most sheets in one plot (the PDF writer's own limit, `cadcraft_io::pdf::MAX_PAGES`).
+const MAX_PLOT_SHEETS: usize = 256;
+
+/// The sheets of a multi-sheet plot, as canonical names: the `layouts` list (`"Model"` or layout
+/// names, any case) or `"all"` (Model if it has objects, then every layout in tab order).
+fn plot_sheets(cmd: &str, d: &cadcraft_doc::Drawing, v: &Value) -> Result<Vec<String>> {
+    let names: Vec<String> = match v {
+        Value::String(a) if a.eq_ignore_ascii_case("all") => {
+            let mut layouts: Vec<_> = d.layouts.iter().collect();
+            layouts.sort_by_key(|l| l.tab_order);
+            let model = (!d.model.is_empty()).then(|| "Model".to_string());
+            model.into_iter().chain(layouts.iter().map(|l| l.name.clone())).collect()
+        }
+        Value::Array(a) => a
+            .iter()
+            .map(|n| match n.as_str() {
+                Some(n) if n.eq_ignore_ascii_case("model") => Ok("Model".to_string()),
+                Some(n) => layout_name(cmd, d, n),
+                None => Err(bad(cmd, "`layouts` must be a list of layout names or \"all\"")),
+            })
+            .collect::<Result<_>>()?,
+        _ => return Err(bad(cmd, "`layouts` must be a list of layout names or \"all\"")),
+    };
+    if names.is_empty() {
+        return Err(bad(cmd, "there are no sheets to plot"));
+    }
+    if names.len() > MAX_PLOT_SHEETS {
+        return Err(bad(cmd, format!("at most {MAX_PLOT_SHEETS} sheets fit in one PDF")));
+    }
+    Ok(names)
+}
+
+/// PLOT / EXPORTPDF. Besides the page setup overrides, the plotter takes `layouts?: [name |
+/// "Model"] | "all"` (several sheets in one PDF, one page each, labelled with the layout names),
+/// `layers?: bool` (drawing layers as PDF layers, default on), `offLayers?: bool` (layers that
+/// are off on hidden PDF layers), `links?: [{handle, url}]` (hyperlinks) and `title?`.
+fn run_plot(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
+    let hook = io().and_then(|h| h.plot).ok_or_else(|| bad(cmd, "plotting is not available in this build"))?;
+    // Checked here for a clear error; the plotter resolves the names the same way.
+    let sheets = p.get("layouts").map(|v| plot_sheets(cmd, s.doc()?, v)).transpose()?;
+
+    let space = match str_param(p, "layout") {
+        Some(n) if n.eq_ignore_ascii_case("model") => Space::Model,
+        Some(n) => Space::Paper(layout_name(cmd, s.doc()?, n)?),
+        None => s.space(),
+    };
+    let mut opts = if p.is_object() { p.clone() } else { json!({}) };
+    if let Some(raw) = p.get("offset") {
+        let values = raw
+            .as_array()
+            .filter(|values| values.len() == 2)
+            .ok_or_else(|| bad(cmd, "`offset` must contain exactly two finite millimetre values within ±100000"))?;
+        let x = values.first().and_then(Value::as_f64);
+        let y = values.get(1).and_then(Value::as_f64);
+        if !x.zip(y).is_some_and(|(x, y)| {
+            x.is_finite()
+                && y.is_finite()
+                && x.abs() <= cadcraft_render::paper::MAX_PLOT_OFFSET_MM
+                && y.abs() <= cadcraft_render::paper::MAX_PLOT_OFFSET_MM
+        }) {
+            return Err(bad(cmd, "`offset` must contain exactly two finite millimetre values within ±100000"));
+        }
+    }
+    if matches!(space, Space::Model)
+        && opts.get("output").and_then(Value::as_str).is_some_and(|output| output.eq_ignore_ascii_case("svg"))
+        && opts.get("center").and_then(Value::as_bool) == Some(false)
+    {
+        return Err(bad(cmd, "model-space plot offsets are not supported for SVG; choose PDF/PNG or center the plot"));
+    }
+    if let Some(o) = opts.as_object_mut() {
+        if let Some(v) = p.get("scale") {
+            let k = parse_scale(v).ok_or_else(|| bad(cmd, "`scale` must be positive: paper units per drawing unit, or a ratio such as \"1:50\""))?;
+            o.insert("scale".into(), json!(k));
+        }
+        if let Some(w) = plot_window(s, p, cmd, &space)? {
+            o.insert("window".into(), json!([[w.min.x, w.min.y], [w.max.x, w.max.y]]));
+        }
+        // Without one, the plotter uses each sheet's page setup.
+        match super::plotters::plot_transparency(s, p) {
+            Some(t) => o.insert("plotTransparency".into(), json!(t)),
+            None => o.remove("plotTransparency"),
+        };
+    }
+    let bytes = hook(s.doc()?, &space, &opts).map_err(|e| bad(cmd, e))?;
+    let layout = match &sheets {
+        Some(names) => names.first().cloned().unwrap_or_default(),
+        None => space.tab_name().to_string(),
+    };
+    let pages = sheets.as_ref().map_or(1, Vec::len);
+    match str_param(p, "path") {
+        Some(_path) => {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let path = _path;
+                // Exclusively create a fresh temporary file and rename it into place so a planted
+                // `<path>.cadcraft-tmp` symlink cannot redirect the plot write (CWE-59).
+                crate::atomic_write::write_atomic(std::path::Path::new(path), &bytes).map_err(|e| bad(cmd, format!("{path}: {e}")))?;
+                Ok(json!({ "path": path, "bytes": bytes.len(), "layout": layout, "pages": pages }))
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                super::exchange::deliver_file(cmd, _path, &bytes, super::file::deliver())?;
+                Ok(json!({ "path": _path, "bytes": bytes.len(), "layout": layout, "pages": pages }))
+            }
+        }
+        None => Ok(json!({ "data": base64_encode(&bytes), "bytes": bytes.len(), "layout": layout, "pages": pages })),
+    }
+}
+
+/// The model-space rectangle a plot of `plotArea` covers: `extents` (default) plots everything,
+/// `display` the current model view, `limits` the drawing limits, `window` the `window` corners.
+/// Layouts plot their sheet (`layout`).
+fn plot_window(s: &Session, p: &Value, cmd: &str, space: &Space) -> Result<Option<Bounds2>> {
+    let area = str_param(p, "plotArea").map(str::to_ascii_lowercase);
+    let w = match (space, area.as_deref()) {
+        (_, None) | (Space::Model, Some("extents")) | (Space::Paper(_), Some("layout")) => return Ok(None),
+        (Space::Paper(_), Some(_)) => return Err(bad(cmd, "a layout plots its whole sheet: `plotArea` must be layout")),
+        (Space::Model, Some("display")) => {
+            let st = s.state()?;
+            let v = st.views.iter().find(|(sp, _)| *sp == Space::Model).map(|(_, v)| *v).unwrap_or_default();
+            let (px, py) = s.viewport_px;
+            let aspect = if px.is_finite() && py.is_finite() && px > 0.0 && py > 0.0 { px / py } else { 1.0 };
+            let half = Vec2::new(v.height * aspect / 2.0, v.height / 2.0);
+            Bounds2::new(v.center - half, v.center + half)
+        }
+        (Space::Model, Some("limits")) => {
+            let d = s.doc()?;
+            let lo = d.header.point("LIMMIN").map(|p| p.xy()).unwrap_or(Vec2::ZERO);
+            let hi = d.header.point("LIMMAX").map(|p| p.xy()).unwrap_or(Vec2::new(12.0, 9.0));
+            Bounds2::new(lo, hi)
+        }
+        (Space::Model, Some("window")) => {
+            let corners = p.get("window").and_then(Value::as_array);
+            let a = corners.and_then(|c| c.first()).and_then(point_value);
+            let b = corners.and_then(|c| c.get(1)).and_then(point_value);
+            let (Some(a), Some(b)) = (a, b) else {
+                return Err(bad(cmd, "`plotArea` window needs `window`: [[x1, y1], [x2, y2]]"));
+            };
+            Bounds2::new(a, b)
+        }
+        (Space::Model, Some(_)) => return Err(bad(cmd, "`plotArea` must be extents, display, limits or window (layouts: layout)")),
+    };
+    let ok = w.min.is_finite() && w.max.is_finite() && w.width() > 1e-9 && w.height() > 1e-9;
+    if ok { Ok(Some(w)) } else { Err(bad(cmd, "the plot area is empty")) }
+}
+
+#[cfg(test)]
+mod tests;

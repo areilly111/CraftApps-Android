@@ -91,6 +91,24 @@ pub(crate) fn map_frames_while<I: Send, T: Send>(
     out
 }
 
+/// Threads that encode one batch of frames while the next renders ([`Cx::frames_beside`]).
+/// Their own pool: the encoder's parallel steps (colour conversion) would otherwise queue behind
+/// the render's work in the global pool. `None` where threads can't be started (a browser
+/// without them): encoding and rendering then take turns.
+pub(crate) struct Beside(Option<rayon::ThreadPool>);
+
+impl Beside {
+    fn new() -> Beside {
+        Beside(rayon::ThreadPoolBuilder::new().thread_name(|i| format!("export-encode-{i}")).build().ok())
+    }
+
+    /// The process's encode threads, started by the first movie export and shared by all.
+    pub fn shared() -> &'static Beside {
+        static SHARED: std::sync::OnceLock<Beside> = std::sync::OnceLock::new();
+        SHARED.get_or_init(Beside::new)
+    }
+}
+
 /// A job being exported: the job, the project with the Render Settings overrides applied, the
 /// job's layer cache and per-frame timing for the render log.
 pub(crate) struct Cx<'a> {
@@ -214,6 +232,40 @@ impl<'a> Cx<'a> {
         map_frames_while(ks, self.gpu_cap(), gpu_live, |k| self.frame(comp, k), f)
     }
 
+    /// [`Cx::frames`] for `ks` while `encode` runs beside them on `beside`'s threads, so the
+    /// render threads don't wait for the (largely sequential) encoder of the previous batch.
+    /// With deferred readbacks, or where no encode thread could be started, `encode` runs first.
+    pub async fn frames_beside<T: Send, A: Send>(
+        &self,
+        beside: &Beside,
+        comp: &Comp,
+        ks: Vec<u64>,
+        f: impl Fn(u64, Image) -> T + Sync + Send,
+        encode: impl FnOnce() -> A + Send,
+    ) -> crate::Result<(A, Vec<T>)> {
+        match &beside.0 {
+            Some(pool) if !self.deferred() => {
+                let mut done = None;
+                let frames = pool.in_place_scope(|s| {
+                    s.spawn(|_| done = Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(encode))));
+                    effectcraft_render::passes::block_on(self.frames(comp, ks, f))
+                });
+                match done {
+                    Some(Ok(a)) => Ok((a, frames)),
+                    Some(Err(panic)) => {
+                        let why = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
+                        Err(crate::ExportError::Encode(format!("the encoder stopped unexpectedly: {why}")))
+                    }
+                    None => Err(crate::ExportError::Encode("the encoder stopped unexpectedly".into())),
+                }
+            }
+            _ => {
+                let a = encode();
+                Ok((a, self.frames(comp, ks, f).await))
+            }
+        }
+    }
+
     /// GPU frames rendered at once (#879), decided once per batch: with a GPU accelerator every
     /// frame in flight holds its own working textures, so a whole batch rendered at once can
     /// exhaust VRAM (or shared memory, which crashes instead of falling back). `None` when the
@@ -247,7 +299,7 @@ impl<'a> Cx<'a> {
         }
         let img = self.crop_resize(img);
         if let Some(ft) = &self.frame_times {
-            ft.lock().unwrap_or_else(|e| e.into_inner()).push((i, t0.elapsed().as_secs_f64()));
+            ft.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((i, t0.elapsed().as_secs_f64()));
         }
         img
     }
@@ -327,7 +379,7 @@ impl<'a> Cx<'a> {
         for dir in &self.job.options.overflow {
             let p = std::path::Path::new(dir).join(&name).to_string_lossy().to_string();
             if q.has_room(&p, bytes) {
-                self.overflowed.lock().unwrap_or_else(|e| e.into_inner()).push(p.clone());
+                self.overflowed.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(p.clone());
                 return p;
             }
         }
@@ -351,7 +403,7 @@ impl<'a> Cx<'a> {
             Ok(r) => s.push_str(&format!("Result: Done ({} frames, {}×{}, {} bytes) in {seconds:.2} s\n", r.frames, r.width, r.height, r.bytes)),
             Err(e) => s.push_str(&format!("Result: Failed\nError: {e}\n")),
         }
-        let over = self.overflowed.lock().unwrap_or_else(|e| e.into_inner());
+        let over = self.overflowed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if !over.is_empty() {
             s.push_str(&format!("Storage overflow: {} file(s) written to overflow folders (first: {})\n", over.len(), over[0]));
         }
@@ -366,7 +418,7 @@ impl<'a> Cx<'a> {
             }
         }
         if let (RenderLog::PlusPerFrameInfo, Some(ft), Some(c)) = (level, &self.frame_times, comp) {
-            let mut v = ft.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut v = ft.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
             v.sort_by_key(|(i, _)| *i);
             s.push_str("\nFrames:\n");
             let f0 = self.job.settings.first_frame(c);
@@ -704,6 +756,45 @@ mod tests {
         let stats = cx.cache.stats();
         assert_eq!(stats.misses, renders, "the solid rendered on the first frame only");
         assert!(stats.hits >= 9, "{stats:?}");
+    }
+
+    #[test]
+    fn frames_render_beside_the_encoder() {
+        use effectcraft_project::render_queue::{OutputFormat, OutputModule, RenderSettings};
+        use effectcraft_render::NoFootage;
+        use effectcraft_time::FrameRate;
+        let mut p = Project::default();
+        let comp = Comp::new(32, 16, FrameRate::FPS_25, Tick::from_seconds_f64(1.0));
+        let cid = p.add_item("Comp", effectcraft_color::Label::Sandstone, None, effectcraft_project::ItemKind::Comp(comp.into()));
+        let (settings, output) = (RenderSettings::default(), OutputModule::for_format(OutputFormat::H264));
+        let job = Job {
+            project: &p,
+            footage: &NoFootage,
+            expr: None,
+            accel: None,
+            comp: cid,
+            settings: &settings,
+            output: &output,
+            path: "/c/out.mp4",
+            sink: None,
+            nested_switches: true,
+            options: Default::default(),
+        };
+        let cx = Cx::new(&job);
+        let comp = cx.comp().unwrap();
+        use effectcraft_render::passes::block_on;
+        let want = block_on(cx.frames(comp, (0..6).collect(), |k, img| (k, img.width, img.height)));
+        // On threads of their own, and taking turns (no threads): the same frames, in order.
+        for beside in [Beside::shared(), &Beside(None)] {
+            let (a, frames) = block_on(cx.frames_beside(beside, comp, (0..6).collect(), |k, img| (k, img.width, img.height), || 7)).unwrap();
+            assert_eq!((a, &frames), (7, &want));
+        }
+        // A panicking encoder fails the export instead of taking the render thread down.
+        let r = block_on(cx.frames_beside(Beside::shared(), comp, vec![0], |k, _| k, || -> u32 { panic!("encoder bug") }));
+        match r {
+            Err(crate::ExportError::Encode(e)) => assert!(e.contains("encoder bug"), "{e}"),
+            other => panic!("{:?}", other.map(|(a, f)| (a, f.len()))),
+        }
     }
 
     #[test]

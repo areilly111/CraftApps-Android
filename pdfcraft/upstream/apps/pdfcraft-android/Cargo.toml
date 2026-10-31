@@ -10,11 +10,11 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
-# feature is a compile error with `android-native-activity` (see eframe 0.36
+# feature is a compile error with `android-native-activity` (see eframe 0.37
 # src/lib.rs), so it is deliberately absent here — and in pdfcraft-ui-egui's
 # Android target deps as well (feature unification would otherwise re-enable it).
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
-egui = "0.36"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
+egui = "0.37"
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 # The PdfCraft UI (eframe app). On Android its rfd dependency resolves to the
 # in-tree shim (crate::rfd in ui-egui); pick types come through its android

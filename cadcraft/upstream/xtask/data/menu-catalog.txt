@@ -1,0 +1,560 @@
+File
+    New Drawing...
+    New Sheet Set...
+    Open...
+    Open Sheet Set...
+    Open Recent
+        Clear Menu
+    Close
+    Close All
+    Import...
+    Attach...
+    Save
+    Save As...
+    Export...
+    Export to PDF...
+    Export Layout to Model...
+    Package Drawing...
+    DWG Compare...
+    Markup Import...
+    Page Setup Manager...
+    Plot Styles...
+    Print...
+    Batch Publish...
+    Share...
+Edit
+    Undo Group of commands
+    Redo
+    Cut
+    Cut with Base Point
+    Copy
+    Copy with Base Point
+    Paste
+    Paste as Block
+    Paste to Original Coordinates
+    Clear
+    Select All
+    Quick Select...
+    Find...
+View
+    Zoom
+        Realtime
+        Previous
+        Window
+        Dynamic
+        Scale
+        Center
+        Object
+        In
+        Out
+        All
+        Extents
+    Pan
+        Realtime
+        Point
+        Left
+        Right
+        Up
+        Down
+    Orbit
+        Constrained Orbit
+        Free Orbit
+    Camera
+        Adjust Distance
+        Swivel
+    Viewports
+        Named Viewports...
+        New Viewports...
+        1 Viewport
+        2 Viewports
+        3 Viewports
+        4 Viewports
+        Polygonal Viewport
+        Object
+        Join
+    3D Views
+        Viewpoint
+        Plan View
+            Current UCS
+            World UCS
+            Named UCS
+        Top
+        Bottom
+        Left
+        Right
+        Front
+        Back
+        SW Isometric
+        SE Isometric
+        NE Isometric
+        NW Isometric
+    Show Annotative Objects
+        Current Scale Only
+        All Scales
+    Hide
+    Visual Styles
+        2D Wireframe
+        Wireframe
+        Hidden
+        Realistic
+        Conceptual
+        Shaded
+        Shaded with Edges
+        Shades of Gray
+        Sketchy
+        X-Ray
+    Render
+        Light
+            New Point Light
+            New Spotlight
+            New Distant Light
+            Light Glyphs
+        Materials Browser
+    UCS Icon
+        On
+        Origin
+        Properties...
+    ViewCube
+        On
+        Settings
+    Attribute Display
+        Normal
+        On
+        Off
+    Lights
+    Redraw
+    Regen
+    Regen All
+    Enter Full Screen
+Insert
+    Block...
+    DWG Reference...
+    PDF Underlay...
+    Raster Image Reference...
+    Field...
+    Data Link...
+    Layout
+        New Layout
+        Layout from Template...
+    ACIS File...
+    Drawing Exchange Binary...
+    Reference Manager
+Format
+    Layers
+    Layer States Manager...
+    Layer Tools
+        Make Current
+        Layer Match
+        Change to Current Layer
+        Previous Layer
+        Isolate Layer
+        Unisolate Layer
+        Freeze Layer
+        Layer Off
+        Lock Layer
+        Unlock Layer
+    Color...
+    Linetype...
+    Lineweight...
+    Transparency
+    Scale List...
+    Text Style...
+    Dimension Style...
+    Table Style...
+    Multileader Style...
+    Plot Style...
+    Point Style...
+    Units...
+    Thickness
+    Drawing Limits
+    Rename...
+Tools
+    Spelling
+    Draw Order
+        Bring to Front
+        Send to Back
+        Bring Above Objects
+        Send Under Objects
+        Bring Annotations to Front
+            Text Objects Only
+            Dimension Objects Only
+            Leaders Only
+            All Annotation Objects
+        Send Hatches to Back
+    Isolate
+        Isolate Objects
+        Hide Objects
+        End Object Isolation
+    Inquiry
+        Quick
+        Distance
+        Radius
+        Angle
+        Area
+        Volume
+        Region/Mass Properties
+        List
+        ID Point
+        Time
+        Status
+        Set Variable
+    Update Fields
+    Count
+    Block Editor
+    Edit Xref in Place
+    Open Xref
+    Load Application...
+    Parametric
+        Geometric Constraints
+            Coincident
+            Perpendicular
+            Parallel
+            Tangent
+            Horizontal
+            Vertical
+            Collinear
+            Concentric
+            Smooth
+            Symmetric
+            Equal
+            Fix
+        AutoConstrain
+        Constraint Bars
+            Select Objects
+            Show All
+            Hide All
+        Dimensional Constraints
+            Aligned
+            Horizontal
+            Vertical
+            Angular
+            Radius
+            Diameter
+        Dynamic Dimensions
+            Select Objects
+            Show All
+            Hide All
+        Delete Constraints
+        Constraint Settings
+    New UCS
+        World
+        Previous
+        Face
+        Object
+        View
+        Origin
+        Z Axis Vector
+        3 Point
+        X
+        Y
+        Z
+    Named UCS...
+    Drafting Settings...
+    Customize
+        Interface (CUI)...
+        Edit Command Aliases (PGP)...
+    Import Settings
+    Export Settings
+    Express Tools
+        Convert Text to Mtext
+        Break-line Symbol
+        Explode Attributes to Text
+        Move/Copy/Rotate
+        Replace Block...
+        Super Hatch
+            Image...
+            Block...
+            Xref...
+            Wipeout
+            Select Existing Object
+Draw
+    3D Modeling
+        Polysolid
+        Box
+        Wedge
+        Cone
+        Sphere
+        Cylinder
+        Torus
+        Pyramid
+        Extrude
+        Revolve
+        Sweep
+        Loft
+        Section Plane
+        Surfaces
+            Planar
+            Network
+            Blend
+            Patch
+            Offset
+            Fillet
+        Meshes
+            Primitives
+                Box
+                Wedge
+                Cone
+                Sphere
+                Cylinder
+                Torus
+                Pyramid
+            Smooth Mesh
+            3D Face
+            Meshes, Revolved Surface
+            Meshes, Tabulated Surface
+            Meshes, Ruled Surface
+            Meshes, Edge Surface
+        Setup
+            Drawing
+            View
+            Profile
+    Line
+    Polyline
+    3D Polyline
+    Spline
+        Fit Points
+        Control Vertices
+    Ray
+    Construction Line
+    Multiline
+    Arc
+        3 Points
+        Start, Center, End
+        Start, Center, Angle
+        Start, Center, Length
+        Start, End, Angle
+        Start, End, Direction
+        Start, End, Radius
+        Center, Start, End
+        Center, Start, Angle
+        Center, Start, Length
+        Continue
+    Circle
+        Center, Radius
+        Center, Diameter
+        2 Points
+        3 Points
+        Tan, Tan, Radius
+        Tan, Tan, Tan
+    Ellipse
+        Center
+        Axis, End
+        Arc
+    Polygon
+    Rectangle
+    Revision Cloud
+        Rectangular
+        Polygonal
+        Freehand
+    Point
+        Single Point
+        Multiple Point
+        Divide
+        Measure
+    Helix
+    Donut
+    Hatch...
+    Gradient...
+    Boundary...
+    Region
+    Wipeout
+    Block
+        Make...
+        Base
+        Define Attributes...
+    Text
+        Multiline Text...
+        Single Line Text
+    Table...
+    Center Line
+    Center Mark
+Dimension
+    Dimension
+    Quick Dimension
+    Linear
+    Aligned
+    Arc Length
+    Ordinate
+    Radius
+    Jogged
+    Diameter
+    Angular
+    Baseline
+    Continue
+    Dimension Space
+    Dimension Break
+    Multileader
+    Tolerance...
+    Inspection
+    Jogged Linear
+    Oblique
+    Align Text
+        Home
+        Angle
+        Left
+        Center
+        Right
+    Dimension Style...
+    Override
+    Update
+    Reassociate Dimensions
+Modify
+    Properties
+    Match Properties
+    Object
+        External Reference
+            Bind...
+            Frame
+        Image
+            Adjust...
+            Quality
+            Transparency
+            Frame
+        Hatch...
+        Polyline
+        Spline
+        Array
+        Multileader
+            Add Leader
+            Remove Leader
+            Align
+            Collect
+        Multiline...
+        Attribute
+            Single...
+            Global
+            Block Attribute Manager...
+        Block Description...
+        Edit Text...
+    Clip
+        Image
+        Xref
+        Viewport
+    Annotative Object Scale
+        Add Current Scale
+        Delete Current Scale
+        Add/Delete Scales...
+        Synchronize Multiple-scale Positions
+    Erase
+    Copy
+    Mirror
+    Offset
+    Array
+        Rectangular Array
+        Path Array
+        Polar Array
+    Delete Duplicate Objects
+    Copy Nested Objects
+    Move
+    Rotate
+    Scale
+    Stretch
+    Lengthen
+    Trim
+    Extend
+    Break
+    Break At Point
+    Join
+    Chamfer
+    Fillet
+    Blend
+    3D Operations
+        3D Move
+        3D Rotate
+        Align
+        3D Align
+        3D Mirror
+        3D Array
+        Interference Checking
+        Slice
+        Thicken
+        Convert to Solid
+        Convert to Surface
+        Extract Edges
+        Extract Isolines
+    Solid Editing
+        Union
+        Subtract
+        Intersect
+        Imprint Edges
+        Fillet edges
+        Chamfer edges
+        Color edges
+        Copy edges
+        Extrude faces
+        Move faces
+        Offset faces
+        Delete faces
+        Rotate faces
+        Taper faces
+        Color faces
+        Copy faces
+        Clean
+        Separate
+        Shell
+        Check
+    Surface Editing
+        Trim
+        Untrim
+        Extend
+        Sculpt
+        Convert to NURBS
+        Convert to Mesh
+        NURBS Surface Editing
+            Show CV
+            Hide CV
+            Add CV
+            Remove CV
+            Rebuild
+    Mesh Editing
+        Smooth More
+        Smooth Less
+        Refine Mesh
+        Crease
+        Uncrease
+        Split Face
+        Extrude Face
+        Merge Face
+        Spin Triangle Face
+        Close Hole
+        Collapse Face or Edge
+        Convert to Faceted Solid
+        Convert to Faceted Surface
+        Convert to Smooth Solid
+        Convert to Smooth Surface
+    Change Space
+    Flatten Objects
+    Explode
+Window
+    Minimize
+    Minimize All
+    Zoom
+    Tool Bar
+    File Tab
+    Tool Sets
+    Status Bar
+    Command Line
+    Blocks
+    Count
+    Layers
+    Properties Inspector
+    Reference Manager
+    Traces
+    Sheet Set Manager
+    Materials Browser
+    Activity Insights
+    Geometry Cleanup
+    Hide Palettes
+    Reset Palettes
+    Start
+    Drawing1.dwg
+Help
+    AutoCAD Help
+    Autodesk Assistant
+    Download Offline Help
+    What's New
+    Highlight New Features
+    Recover Files
+    Send Feedback
+    Privacy Settings...
+

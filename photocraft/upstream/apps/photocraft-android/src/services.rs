@@ -153,8 +153,8 @@ pub fn android_services(
     let prefs = prefs_file(dirs);
     let prefs_load = prefs.clone();
     Services {
-        import: Some(Box::new(|name: &str, bytes: &[u8], _size_hint: usize| {
-            guard("Open", || photocraft_io::import(name, bytes).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string()))
+        import: Some(Box::new(|name: &str, bytes: &[u8], opts: &photocraft_io::ImportOptions| {
+            guard("Open", || photocraft_io::import_with_options(name, bytes, opts).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string()))
         })),
         export: Some(Box::new(|doc: &photocraft_doc::Document, path: &str, settings: &photocraft_ui_egui::ExportSettings| {
             let opts = export_options(settings);

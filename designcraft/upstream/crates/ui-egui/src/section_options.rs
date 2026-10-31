@@ -105,7 +105,7 @@ fn text(ui: &mut Ui, d: &mut Dialog, key: &str, width: f32) {
 fn style_menu(ui: &mut Ui, d: &mut Dialog, key: &str) {
     let current: NumberStyle = d.fields.get(key).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
     let shown = STYLES.iter().find(|(s, _)| *s == current).map_or(STYLES[0].1, |(_, l)| l);
-    egui::ComboBox::from_id_salt(("section_style", key)).selected_text(shown).width(150.0).show_ui(ui, |ui| {
+    craft_ui::ComboBox::from_id_salt(("section_style", key)).selected_text(shown).width(150.0).show_ui(ui, |ui| {
         for (style, label) in STYLES {
             if ui.selectable_label(style == current, label).clicked() {
                 d.fields.insert(key.into(), json!(style));

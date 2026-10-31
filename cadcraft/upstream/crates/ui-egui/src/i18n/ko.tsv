@@ -1,0 +1,1249 @@
+# CADCraft Korean interface catalog — original Korean translations.
+# License: MIT OR Apache-2.0 (the repository LICENSE-MIT and LICENSE-APACHE).
+# Written from CADCraft English strings; no proprietary translations copied.
+# UTF-8: context<TAB>English source<TAB>Korean translation.
+# @plural uses a single Korean form with {n}.
+	Apply	적용
+	Attach DWG...	DWG 부착...
+	Bind	결합
+	Detach	분리
+	Loaded	로드됨
+	Make it a block of this drawing, keeping its layer names	도면층 이름을 유지하여 이 도면의 블록으로 만들기
+	Make it a block of this drawing; its layers become NAME$0$LAYER	이 도면의 블록으로 만들기; 도면층 이름은 NAME$0$LAYER로 변경됨
+	No external references are attached.	부착된 외부 참조가 없습니다.
+	Not Found	찾을 수 없음
+	Not loaded	로드되지 않음
+	Open	열기
+	Overlay	중첩
+	Reference Manager	참조 관리자
+	Reference Name	참조 이름
+	References: {n}	참조: {n}개
+	Reload	다시 로드
+	Reload All	모두 다시 로드
+	Saved Path	저장된 경로
+	Unload	언로드
+	Unloaded	언로드됨
+	Unreferenced	참조되지 않음
+	Unresolved	경로 확인 실패
+	  Cancel  	  취소  
+	  OK  	  확인  
+	 or [	 또는 [
+	% of all commits	전체 커밋 중 비율(%)
+	* Wildcard Match	* 와일드카드 일치
+	*VARIES*	*다양함*
+	+  |  Top  |  2D Wireframe	+  |  평면  |  2D 와이어프레임
+	+Bin	+Bin
+	+LOC	+LOC
+	1 Viewport	뷰포트 1개
+	2 Points	2점
+	2 Viewports	뷰포트 2개
+	2D Solid	2D 솔리드
+	3 Points	3점
+	3 Viewports	뷰포트 3개
+	3D Face	3D 면
+	3D Operations	3D 작업
+	3D Polyline	3D 폴리선
+	4 Viewports	뷰포트 4개
+	< Less than	< 미만
+	<> Not Equal	<> 같지 않음
+	= Equals	= 같음
+	> Greater than	> 초과
+	A variable name starts with a letter and has only letters, digits and _	변수 이름은 문자로 시작하며 문자, 숫자, _만 사용할 수 있습니다
+	About	정보
+	About CADCraft	CADCraft 정보
+	Absolute	절대
+	Add Leader	지시선 추가
+	Additional angles	추가 각도
+	Align	정렬
+	Align Text	문자 정렬
+	Aligned	정렬
+	All	모두
+	All Annotation Objects	모든 주석 객체
+	All Used Layers	사용 중인 모든 도면층
+	All files	모든 파일
+	Angle	각도
+	Angular	각도
+	Annotation Visibility	주석 표시
+	Annotation scale	주석 축척
+	Apparent Intersection	가상 교차점
+	Append to current selection set	현재 선택 세트에 추가
+	Apply to:	적용 대상:
+	Apply true color	트루 컬러 적용
+	Arc	호
+	Arc Length	호 길이
+	Area	면적
+	Arrange Panel	패널 배치
+	Array	배열
+	Attach	부착
+	Attribute	속성
+	Attribute Definition	속성 정의
+	Attribute Display	속성 표시
+	Audit	검사
+	Auto (system language)	자동(시스템 언어)
+	Auto Constrain	자동 구속
+	AutoConstrain	자동 구속
+	Axis, End	축, 끝점
+	Base	기준
+	Baseline	기준선
+	Batch Publish	일괄 게시
+	Binary assets added	추가된 바이너리 자산
+	Binary assets removed	삭제된 바이너리 자산
+	Bind...	결합...
+	Blend	곡선 연결
+	Block	블록
+	Block Attribute Manager...	블록 속성 관리자...
+	Block Description...	블록 설명...
+	Block Editor	블록 편집기
+	Block Reference	블록 참조
+	Block...	블록...
+	Blocks	블록
+	Blue	파란색
+	Bold	굵게
+	Boolean	불리언
+	Boundary	경계
+	Boundary...	경계...
+	Box	직육면체
+	Break	끊기
+	Break At Point	한 점에서 끊기
+	Bring Above Objects	객체 위로 가져오기
+	Bring Annotations to Front	주석을 맨 앞으로 가져오기
+	Bring to Front	맨 앞으로 가져오기
+	Bulleted list	글머리 기호 목록
+	ByBlock	블록별
+	ByColor	색상별
+	ByLayer	도면층별
+	CADCraft Help	CADCraft 도움말
+	Cancel	취소
+	Cartesian (x, y)	직교 좌표(x, y)
+	Center	중심
+	Center Line	중심선
+	Center Mark	중심 표식
+	Center X	중심 X
+	Center Y	중심 Y
+	Center Z	중심 Z
+	Center, Diameter	중심, 지름
+	Center, Radius	중심, 반지름
+	Center, Start, Angle	중심, 시작점, 각도
+	Center, Start, End	중심, 시작점, 끝점
+	Center, Start, Length	중심, 시작점, 길이
+	Chamfer	모따기
+	Change Space	공간 변경
+	Change to Current Layer	현재 도면층으로 변경
+	Changed: {n}	변경됨: {n}개
+	Circle	원
+	Circumference	둘레
+	Clear History	기록 지우기
+	Clear	지우기
+	Clip	자르기
+	Clip Viewport	뷰포트 자르기
+	Clipboard	클립보드
+	Close	닫기
+	Close All	모두 닫기
+	Close All Other Drawings	다른 도면 모두 닫기
+	Closed	닫힘
+	Close Comparison	비교 닫기
+	Export Comparison	비교 내보내기
+	Coincident	일치
+	Collapse Palettes	팔레트 접기
+	Collapse Tool Sets	도구 세트 접기
+	Collinear	동일 선상
+	Color	색상
+	Color 8	색상 8
+	Color 9	색상 9
+	Color Index	색상 인덱스
+	Color...	색상...
+	Command Aliases	명령 별칭
+	Command History	명령 기록
+	Clear Command History	명령 기록 지우기
+	Command Line	명령행
+	Command Line History Lines	명령행 기록 줄 수
+	Command Reference	명령 참조
+	Commits	커밋
+	Company	회사
+	Compare Drawings...	도면 비교...
+	Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.	컴퓨터 지원 설계 및 제도를 위한 순수 Rust 기반 오픈 소스 CAD 프로그램입니다. 독립적으로 개발되었습니다.
+	Concentric	동심
+	Cone	원뿔
+	Constraint Bars	구속조건 막대
+	Constraint Settings	구속조건 설정
+	Construction Line	구성선
+	Contents	내용
+	Continue	계속
+	Contributors	기여자
+	Control Vertices	조정 정점
+	Convert	변환
+	Copy	복사
+	Copy Full File Path	전체 파일 경로 복사
+	Copy History	기록 복사
+	Copy Layout	배치 복사
+	Copy Nested Objects	내포된 객체 복사
+	Copy Selection	선택 항목 복사
+	Copy with Base Point	기준점을 지정하여 복사
+	Count	개수
+	Count List	개수 목록
+	Count Table	개수 표
+	Create Block	블록 작성
+	Creates a user parameter	사용자 매개변수를 만듭니다
+	Ctrl+Enter to finish	Ctrl+Enter로 완료
+	Current layer	현재 도면층
+	Current selection	현재 선택 항목
+	Current: {color}	현재: {color}
+	Cut	잘라내기
+	Cut with Base Point	기준점을 지정하여 잘라내기
+	Cyan	청록색
+	Cylinder	원기둥
+	DWG	DWG
+	DWG Reference...	DWG 참조...
+	DXF	DXF
+	Dark	어둡게
+	Data Extraction...	데이터 추출...
+	Default	기본값
+	Data Link...	데이터 링크...
+	Default Save Format	기본 저장 형식
+	Default Save Version	기본 저장 버전
+	Define Attributes	속성 정의
+	Define Attributes...	속성 정의...
+	Defined width	지정된 폭
+	Degree	도 기호
+	Degrees of Freedom	자유도
+	Degrees of freedom: {n}	자유도: {n}
+	Delete	삭제
+	Delete Column	열 삭제
+	Delete Constraints	구속조건 삭제
+	Delete Dimension Style	치수 스타일 삭제
+	Delete Duplicate Objects	중복 객체 삭제
+	Delete Layer	도면층 삭제
+	Delete Layer State	도면층 상태 삭제
+	Delete Layout	배치 삭제
+	Delete Row	행 삭제
+	Delete Text Style	문자 스타일 삭제
+	Delta X	X 변화량
+	Delta Y	Y 변화량
+	Description	설명
+	Deselect All	모두 선택 해제
+	Diameter	지름
+	Dim style	치수 스타일
+	Dimension Break	치수 끊기
+	Dimension Edit	치수 편집
+	Dimension	치수
+	Dimension Objects Only	치수 객체만
+	Dimension Space	치수 간격
+	Dimension Style Override	치수 스타일 재지정
+	Dimension Style...	치수 스타일...
+	Dimension Text Edit	치수 문자 편집
+	Dimension style	치수 스타일
+	Dimensional Constraint	치수 구속조건
+	Dimensional Constraint Parameters	치수 구속조건 매개변수
+	Dimensional Constraints	치수 구속조건
+	Disassociate Dimensions	치수 연관 해제
+	Display name	표시 이름
+	Distance	거리
+	Divide	등분할
+	Do not plot (click: plot)	플롯 안 함(클릭: 플롯)
+	Donut	도넛
+	Double-click to edit the description	두 번 클릭하여 설명 편집
+	Down	아래로
+	Drafting	제도
+	Drafting Settings	제도 설정
+	Drafting Settings...	제도 설정...
+	Draw	그리기
+	Draw Order	그리기 순서
+	Drawing (DWG)	도면(DWG)
+	Drawing (DXF)	도면(DXF)
+	Drawing Limits	도면 한계
+	Drawing Template (DWT)	도면 템플릿(DWT)
+	Drawing Utilities	도면 유틸리티
+	Drawings (DWG, DXF)	도면(DWG, DXF)
+	SVG drawings (SVG, SVGZ)	SVG 도면(SVG, SVGZ)
+	Dynamic	동적
+	Dynamic Dimensions	동적 치수
+	Dynamic Input	동적 입력
+	Dynamic Input (F12)	동적 입력(F12)
+	E	동
+	Edit	편집
+	Edit Attributes...	속성 편집...
+	Edit Text...	문자 편집...
+	Edit Table Cell	표 셀 편집
+	Elevation	고도
+	Ellipse	타원
+	Elliptical Arc	타원 호
+	Enable Dynamic Input (F12)	동적 입력 사용(F12)
+	End Object Isolation	객체 분리 종료
+	End Width	끝 폭
+	End X	끝점 X
+	End Y	끝점 Y
+	End angle	끝 각도
+	Endpoint	끝점
+	Enter	Enter
+	Enter Top, Zero or Bottom.	Top, Zero 또는 Bottom을 입력하세요.
+	Enter a fit data option	맞춤 데이터 옵션 입력
+	Enter a pattern name	패턴 이름 입력
+	Enter a vertex editing option	정점 편집 옵션 입력
+	Enter an option	옵션 입력
+	Enter angle of xline	구성선 각도 입력
+	Enter angle of xline (0) or	구성선 각도 입력(0) 또는
+	Enter area of rectangle in current units	현재 단위로 직사각형 면적 입력
+	Enter attribute prompt	속성 프롬프트 입력
+	Enter attribute tag name	속성 태그 이름 입력
+	Enter attribute value	속성 값 입력
+	Enter block name	블록 이름 입력
+	Enter constraint type	구속조건 유형 입력
+	Enter continuity	연속성 입력
+	Enter default attribute value	기본 속성 값 입력
+	Enter degree of spline	스플라인 차수 입력
+	Enter delta angle	각도 변화량 입력
+	Enter delta length or	길이 변화량 입력 또는
+	Enter dimension text	치수 문자 입력
+	Enter dimension text (<> = measurement)	치수 문자 입력(<> = 측정값)
+	Enter dimension value or [name=expression]	치수 값 또는 [name=expression] 입력
+	Enter dimension variable name to override	재지정할 치수 변수 이름 입력
+	Enter justification type	자리맞추기 유형 입력
+	Enter leader text	지시선 문자 입력
+	Enter mline scale	다중선 축척 입력
+	Enter mode	모드 입력
+	Enter name of block to insert	삽입할 블록 이름 입력
+	Enter new text	새 문자 입력
+	Enter next point	다음 점 입력
+	Enter number of columns	열 수 입력
+	Enter number of data rows	데이터 행 수 입력
+	Enter number of items	항목 수 입력
+	Enter number of items along path	경로를 따라 배치할 항목 수 입력
+	Enter number of sides	변의 수 입력
+	Enter number of turns	회전 수 입력
+	Enter percentage length	길이 비율(%) 입력
+	Enter rectangle length	직사각형 길이 입력
+	Enter rectangle width	직사각형 폭 입력
+	Enter scale factor	축척 비율 입력
+	Enter text	문자 입력
+	Enter text (use \P for new paragraphs)	문자 입력(새 단락은 \P 사용)
+	Enter the number of segments	구간 수 입력
+	Enter twist direction of helix	나선의 회전 방향 입력
+	Entire drawing	전체 도면
+	Equal	같음
+	Erase	지우기
+	Evaluate	계산
+	Exclude from new selection set	새 선택 세트에서 제외
+	Explode	분해
+	Export	내보내기
+	Export Table	표 내보내기
+	Export to PDF...	PDF로 내보내기...
+	Expression	표현식
+	Extend	연장
+	Extension	연장선
+	Extents	범위
+	External Reference	외부 참조
+	External References	외부 참조
+	Extrude	돌출
+	File	파일
+	File Tab	파일 탭
+	Fillet	모깎기
+	Filter	필터
+	Filters	필터
+	Find and Replace	찾기 및 바꾸기
+	Find...	찾기...
+	First	첫 번째
+	First commit	첫 커밋
+	Fit Points	맞춤점
+	Fix	고정
+	Flatten Objects	객체 평면화
+	Format	형식
+	Freehand	자유곡선
+	Freeze	동결
+	Freeze Layer	도면층 동결
+	Freeze in new viewports	새 뷰포트에서 동결
+	Freeze/Thaw	동결/동결 해제
+	Freeze/Thaw in all viewports	모든 뷰포트에서 동결/동결 해제
+	Freeze/Thaw in the current viewport	현재 뷰포트에서 동결/동결 해제
+	From	기준
+	From Template...	템플릿에서...
+	General	일반
+	Geometric Center	기하학적 중심
+	Geometric Constraint	기하 구속조건
+	Geometric Constraints	기하 구속조건
+	Geometry	형상
+	Get from the Drawing	도면에서 가져오기
+	Get Variable	변수 조회
+	Get View	뷰 조회
+	Global	전체
+	Global width	전체 폭
+	Grab bag	모아 보기
+	Gradient	그라데이션
+	Gradient...	그라데이션...
+	Green	초록색
+	Grid (F7)	그리드(F7)
+	Grid Display	그리드 표시
+	Grid On (F7)	그리드 켜기(F7)
+	Grid snap	그리드 스냅
+	Grid spacing	그리드 간격
+	Grip Edit	그립 편집
+	Grip Mirror	그립 대칭 복사
+	Grip Option	그립 옵션
+	Grip Rotate	그립 회전
+	Grip Scale	그립 축척
+	Grip Stretch	그립 신축
+	Group	그룹
+	Group Edit	그룹 편집
+	Group Options	그룹 옵션
+	Group Selection	그룹 선택
+	Hatch	해치
+	Hatch Edit	해치 편집
+	Hatch Patterns	해치 패턴
+	Hatch...	해치...
+	Height	높이
+	Height: {height}	높이: {height}
+	Helix	나선
+	Help	도움말
+	Hide All	모두 숨기기
+	Hide All Constraint Bars	모든 구속조건 막대 숨기기
+	Hide All Dynamic Dimensions	모든 동적 치수 숨기기
+	Hide Layer List	도면층 목록 숨기기
+	Hide Objects	객체 숨기기
+	Hide Palettes	팔레트 숨기기
+	History	기록
+	Home	홈
+	Horizontal	수평
+	HorizontalDistance	수평 거리
+	How to apply:	적용 방법:
+	ID Point	점 좌표 조회
+	Import	가져오기
+	In	확대
+	In-window Menu Bar	창 내부 메뉴 막대
+	Include in new selection set	새 선택 세트에 포함
+	Increment angle	증분 각도
+	Index Color	인덱스 색상
+	Index color: {index}	인덱스 색상: {index}
+	Infer Constraints	구속조건 추론
+	Inquiry	조회
+	Insert	삽입
+	Insert Block	블록 삽입
+	Insert Column	열 삽입
+	Insert Row	행 삽입
+	Insert tab	탭 삽입
+	Insert this block	이 블록 삽입
+	Insert Table Formula	표 수식 삽입
+	Insertion	삽입점
+	Insertion X	삽입점 X
+	Insertion Y	삽입점 Y
+	Insertion Z	삽입점 Z
+	Inspect Constraints	구속조건 검사
+	Inspect Drawing	도면 검사
+	Inspection	검사
+	Interface Language	인터페이스 언어
+	Interface Theme	인터페이스 테마
+	Intersect	교집합
+	Intersection	교차점
+	Isolate	분리
+	Isolate Layer	도면층 분리
+	Isolate Objects	객체 분리
+	Isometric Drafting	등각 제도
+	Jogged	꺾어진 반지름
+	Jogged Linear	꺾어진 선형
+	Join	결합
+	Join the ArtCraft Discord…	ArtCraft Discord 참여하기…
+	Join us on Discord	Discord에서 함께하기
+	Isometric Plane	등각 평면
+	Isometric snap	등각 스냅
+	Language	언어
+	Last	마지막
+	Last commit	마지막 커밋
+	Layer	도면층
+	Layer Delete	도면층 삭제
+	Layer Match	도면층 일치
+	Layer Merge	도면층 병합
+	Layer Off	도면층 끄기
+	Layer Properties	도면층 특성
+	Layer Properties Manager	도면층 특성 관리자
+	Layer Properties Manager — current viewport	도면층 특성 관리자 — 현재 뷰포트
+	Layer State	도면층 상태
+	Layer States Manager...	도면층 상태 관리자...
+	Layer Tools	도면층 도구
+	Layer contains objects (double-click to make current)	객체가 있는 도면층(두 번 클릭: 현재 도면층으로 설정)
+	Layer is empty (double-click to make current)	비어 있는 도면층(두 번 클릭: 현재 도면층으로 설정)
+	Layers	도면층
+	Layers Palette	도면층 팔레트
+	Hide Palette	팔레트 숨기기
+	Layers displayed: {shown} of {total}.   Current layer: {layer}	표시된 도면층: {total}개 중 {shown}개.   현재 도면층: {layer}
+	Layout	배치
+	Layout list	배치 목록
+	Leader	지시선
+	Leaders Only	지시선만
+	Left	왼쪽
+	Length	길이
+	Length X	X 방향 길이
+	Length Y	Y 방향 길이
+	Lengthen	길이 조정
+	Light	밝게
+	Line	선
+	Line delta	코드 줄 변화량
+	Linear	선형
+	Lines +/−	코드 줄 +/−
+	Lines added	추가된 코드 줄
+	Lines deleted	삭제된 코드 줄
+	Lines of Command History	명령 기록 줄 수
+	Linetype	선종류
+	Linetype Scale	선종류 축척
+	Linetype scale	선종류 축척
+	Ltscale	선종류 축척
+	Linetype...	선종류...
+	Lineweight	선가중치
+	Lineweight...	선가중치...
+	List	목록
+	List Blocks	블록 목록
+	List Dimension Styles	치수 스타일 목록
+	List Groups	그룹 목록
+	List Layer States	도면층 상태 목록
+	List Layouts	배치 목록
+	List System Variables	시스템 변수 목록
+	List Text Styles	문자 스타일 목록
+	Load all	모두 로드
+	Load...	로드...
+	Loaded linetypes	로드된 선종류
+	Lock	잠금
+	Lock Layer	도면층 잠금
+	Lock viewport	뷰포트 잠금
+	Lock/Unlock	잠금/잠금 해제
+	Loft	로프트
+	MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.	MIT OR Apache-2.0. Autodesk, Inc.와 관련이 없습니다.
+	MODEL	모형
+	MText	여러 줄 문자
+	Magenta	자홍색
+	Major line every	주 그리드선 간격
+	Make Current	현재로 설정
+	Make Object's Layer Current	객체의 도면층을 현재로 설정
+	Make...	만들기...
+	Match Layer	도면층 일치
+	Match Properties	특성 일치
+	Measure	길이 분할
+	Measure Distance	거리 측정
+	Measure Geometry	형상 측정
+	Merge Cells	셀 병합
+	Merged PRs	병합된 PR
+	Mid Between 2 Points	두 점 사이의 중간점
+	Midpoint	중간점
+	Mirror	대칭 복사
+	Model	모형
+	Model Space (in viewport)	모형 공간(뷰포트 내부)
+	Modeling	모델링
+	Models	모델
+	Modify	수정
+	Move	이동
+	Multileader	다중 지시선
+	Multileader Style...	다중 지시선 스타일...
+	Multileader style	다중 지시선 스타일
+	Multiline	다중선
+	Multiline Text	여러 줄 문자
+	Multiline Text...	여러 줄 문자...
+	Multiple	다중
+	Multiple Point	여러 점
+	My	내 특성
+	My properties: not available yet	내 특성: 아직 사용할 수 없습니다
+	N	북
+	Name	이름
+	Name (A–Z)	이름(A–Z)
+	Named Viewports...	명명된 뷰포트...
+	Named Views...	명명된 뷰...
+	Nearest	근처점
+	New	새로 만들기
+	New (metric)	새로 만들기(미터법)
+	New Drawing	새 도면
+	New Drawing (⌘N)	새 도면(⌘N)
+	New Drawing...	새 도면...
+	New Layer	새 도면층
+	New Layout	새 배치
+	New VP Freeze	새 뷰포트 동결
+	New Viewports...	새 뷰포트...
+	New from Template...	템플릿에서 새로 만들기...
+	New layout	새 배치
+	New state name	새 상태 이름
+	Next Change	다음 변경 사항
+	No	아니요
+	No blocks defined in this drawing.	이 도면에 정의된 블록이 없습니다.
+	No contributor data was built into this copy.	이 빌드에는 기여자 정보가 포함되어 있지 않습니다.
+	No model credits were built into this copy.	이 빌드에는 모델 크레딧이 포함되어 있지 않습니다.
+	No saved layer states	저장된 도면층 상태 없음
+	No selection	선택 항목 없음
+	Node	노드
+	None	없음
+	Normal	보통
+	Not available	사용할 수 없음
+	Not available yet	아직 사용할 수 없음
+	Numbered list	번호 매기기 목록
+	OK	확인
+	Object	객체
+	Object Snap	객체 스냅
+	Object Snap (F3)	객체 스냅(F3)
+	Object Snap On (F3)	객체 스냅 켜기(F3)
+	Object Snap Tracking	객체 스냅 추적
+	Object Snap Tracking (F11)	객체 스냅 추적(F11)
+	Object Snap Tracking Settings	객체 스냅 추적 설정
+	Object type:	객체 유형:
+	Oblique	기울이기
+	Off	끄기
+	Offset	간격띄우기
+	On	켜기
+	On/Off	켜기/끄기
+	One of the Crafting Apps by the ArtCraft team and community.	ArtCraft 팀과 커뮤니티가 만드는 Crafting Apps 제품군의 하나입니다.
+	Only in this drawing: {n}	이 도면에만 있음: {n}개
+	Only in {name}: {n}	{name}에만 있음: {n}개
+	Open (⌘O)	열기(⌘O)
+	Open Sample Drawing	예제 도면 열기
+	Open sample drawing	예제 도면 열기
+	Open Xref	외부 참조 열기
+	Open...	열기...
+	Operator:	연산자:
+	Orbit	궤도 회전
+	Ordinate	좌표
+	Ortho (F8)	직교(F8)
+	Ortho Mode	직교 모드
+	Ortho Mode (F8)	직교 모드(F8)
+	Osnap Settings...	객체 스냅 설정...
+	Out	축소
+	Over-constrained	과도한 구속
+	Override	재지정
+	PAPER	도면
+	Percent	백분율
+	Polar (distance < angle)	극좌표(거리 < 각도)
+	PRs	PR
+	Page Setup Manager	페이지 설정 관리자
+	Page Setup Manager...	페이지 설정 관리자...
+	Pan	초점 이동
+	Pan Down	아래로 초점 이동
+	Pan Left	왼쪽으로 초점 이동
+	Pan Right	오른쪽으로 초점 이동
+	Pan Up	위로 초점 이동
+	Paper Space	도면 공간
+	Parallel	평행
+	Parameters Manager	매개변수 관리자
+	Parametric	파라메트릭
+	Paste	붙여넣기
+	Paste as Block	블록으로 붙여넣기
+	Paste to Command Line	명령행에 붙여넣기
+	Paste to Original Coordinates	원래 좌표로 붙여넣기
+	Path Array	경로 배열
+	Pattern	패턴
+	Perpendicular	수직
+	Plot	플롯
+	Plot (click: do not plot)	플롯(클릭: 플롯 안 함)
+	Plot Preview	플롯 미리보기
+	Plot Window	플롯 창
+	Plot style	플롯 스타일
+	Plot style attached to	플롯 스타일 적용 대상
+	Plot style table	플롯 스타일 테이블
+	Plot Style...	플롯 스타일...
+	Plot Style Manager	플롯 스타일 관리자
+	Plot Style Manager...	플롯 스타일 관리자...
+	Plot Styles...	플롯 스타일...
+	Plotter Manager	플로터 관리자
+	Plotter Manager...	플로터 관리자...
+	New CTB	새 CTB
+	New STB	새 STB
+	New style	새 스타일
+	Reset Panel Layout	패널 배치 초기화
+	Send Hatches to Back	해치를 맨 뒤로 보내기
+	Send Under Objects	객체 아래로 보내기
+	Text Objects Only	문자 객체만
+	Use for this layout	이 배치에 사용
+	Display plot styles	플롯 스타일 표시
+	No plot style tables.	플롯 스타일 테이블이 없습니다.
+	A built-in table: editing it keeps an edited copy in the drawing.	기본 제공 테이블입니다. 편집하면 수정된 사본을 도면에 보관합니다.
+	Keep an editable copy of this table in the drawing	이 테이블의 편집 가능한 사본을 도면에 보관
+	Layout {name}: {table}	배치 {name}: {table}
+	Grayscale	회색조
+	Screening	출력 농도
+	Use object linetype	객체 선종류 사용
+	Use object lineweight	객체 선가중치 사용
+	Remove	제거
+	Add	추가
+	Open a drawing first.	먼저 도면을 여세요.
+	Plot table type	플롯 테이블 유형
+	Color-dependent	색상 종속
+	Named	명명된 스타일
+	Plus/minus	플러스/마이너스
+	Point	점
+	Point Filters	점 필터
+	Point Style...	점 스타일...
+	Polar Array	원형 배열
+	Polar Tracking	극좌표 추적
+	Polar Tracking (F10)	극좌표 추적(F10)
+	Polar Tracking On (F10)	극좌표 추적 켜기(F10)
+	Polar angle measurement	극좌표 각도 측정
+	Polar distance	극좌표 거리
+	Polar: {distance} < {angle}°	극좌표: {distance} < {angle}°
+	PolarSnap	극좌표 스냅
+	Polygon	다각형
+	Polygonal	다각형
+	Polygonal Viewport	다각형 뷰포트
+	Polyline	폴리선
+	Polyline Edit	폴리선 편집
+	Position X	위치 X
+	Position Y	위치 Y
+	Position Z	위치 Z
+	Previous	이전
+	Previous Change	이전 변경 사항
+	Previous Layer	이전 도면층
+	Primitives	기본 형상
+	Print	인쇄
+	Print...	인쇄...
+	Properties	특성
+	Properties Inspector	특성 검사기
+	Properties:	특성:
+	Proxy	프록시
+	Purge	소거
+	Pyramid	각뿔
+	Quadrant	사분점
+	Query Entities	객체 조회
+	Quick	빠른
+	Quick Dimension	빠른 치수
+	Quick Properties	빠른 특성
+	Quick Select	빠른 선택
+	Quick Select Properties	빠른 선택 특성
+	Quick Select...	빠른 선택...
+	QuickCalc	빠른 계산기
+	QuickCalc Pick	빠른 계산기 점 지정
+	Quit CADCraft	CADCraft 종료
+	Radius	반지름
+	Raster Image	래스터 이미지
+	Ray	반직선
+	Read-only	읽기 전용
+	Real name	실명
+	Realtime	실시간
+	Reassociate Dimensions	치수 재연관
+	Recent	최근
+	Recent Commands	최근 명령
+	Recent Input	최근 입력
+	Recover...	복구...
+	Rectangle	직사각형
+	Recalculate Table Formulas	표 수식 다시 계산
+	Rectangular	직사각형
+	Rectangular snap	직사각형 스냅
+	Rectangular Array	직사각형 배열
+	Red	빨간색
+	Redo	다시 실행
+	Redo (⇧⌘Z)	다시 실행(Shift+⌘Z)
+	Redraw	다시 그리기
+	Regen	재생성
+	Regen All	모두 재생성
+	Region	영역
+	Region/Mass Properties	영역/질량 특성
+	Reinitialize	다시 초기화
+	Relative	상대
+	Relative to last segment	마지막 선분 기준
+	Remove Leader	지시선 제거
+	Remove the viewport override	뷰포트 재지정 제거
+	Rename Dimension Style	치수 스타일 이름 바꾸기
+	Rename Layer	도면층 이름 바꾸기
+	Rename Layer State	도면층 상태 이름 바꾸기
+	Rename Layout	배치 이름 바꾸기
+	Rename Text Style	문자 스타일 이름 바꾸기
+	Rename...	이름 바꾸기...
+	Repeat {command}	{command} 반복
+	Replace Block...	블록 바꾸기...
+	Requires a point (x,y, @dx,dy or @d<a).	점이 필요합니다(x,y, @dx,dy 또는 @d<a).
+	Reset Palettes	팔레트 초기화
+	Restore	복원
+	Restore Layer State	도면층 상태 복원
+	Reverse	방향 반전
+	Reverse the order	순서 반전
+	Revision Cloud	구름형 수정 기호
+	Revolve	회전 솔리드
+	Right	오른쪽
+	Rotate	회전
+	Rotation	회전 각도
+	S	남
+	Save	저장
+	Save (⌘S)	저장(⌘S)
+	Save As	다른 이름으로 저장
+	Save As...	다른 이름으로 저장...
+	Save Layer State	도면층 상태 저장
+	Save State	상태 저장
+	Scale	축척
+	Search for layer	도면층 검색
+	Search for parameter	매개변수 검색
+	Second and next points:	두 번째 이후 점:
+	Select	선택
+	Select 2D polyline	2D 폴리선 선택
+	Select All	모두 선택
+	Select Objects	객체 선택
+	Select Similar	유사 객체 선택
+	Select a 2D polyline.	2D 폴리선을 선택하세요.
+	Select a block reference.	블록 참조를 선택하세요.
+	Select a circle or arc.	원 또는 호를 선택하세요.
+	Select a closed polyline	닫힌 폴리선 선택
+	Select a closed polyline, circle, ellipse or closed spline.	닫힌 폴리선, 원, 타원 또는 닫힌 스플라인을 선택하세요.
+	Select a closed polyline.	닫힌 폴리선을 선택하세요.
+	Select a curve as the path.	경로로 사용할 곡선을 선택하세요.
+	Select a dimension constraint type	치수 구속조건 유형 선택
+	Select a line object	선 객체 선택
+	Select a line object.	선 객체를 선택하세요.
+	Select a line or an arc.	선 또는 호를 선택하세요.
+	Select a line or polyline segment	선 또는 폴리선 구간 선택
+	Select a line, arc or open polyline.	선, 호 또는 열린 폴리선을 선택하세요.
+	Select a line, arc, circle, polyline, ellipse or spline as the path.	선, 호, 원, 폴리선, 타원 또는 스플라인을 경로로 선택하세요.
+	Select a line, circle, arc or polyline segment.	선, 원, 호 또는 폴리선 구간을 선택하세요.
+	Select a line.	선을 선택하세요.
+	Select a polyline.	폴리선을 선택하세요.
+	Select a text, mtext, attribute definition or dimension.	문자, 여러 줄 문자, 속성 정의 또는 치수를 선택하세요.
+	Select an annotation object	주석 객체 선택
+	Select an arc or circle	호 또는 원 선택
+	Select an arc.	호를 선택하세요.
+	Select an object	객체 선택
+	Select an object to change or	변경할 객체 선택 또는
+	Select an object to measure or	측정할 객체 선택 또는
+	Select an object.	객체를 선택하세요.
+	Select an open curve.	열린 곡선을 선택하세요.
+	Select an open line, arc, polyline, ellipse arc or spline.	열린 선, 호, 폴리선, 타원 호 또는 스플라인을 선택하세요.
+	Select arc or circle	호 또는 원 선택
+	Select arc or polyline arc segment	호 또는 폴리선의 호 구간 선택
+	Select arc style	호 스타일 선택
+	Select arc, circle, line	호, 원, 선 선택
+	Select at least two objects to join.	결합할 객체를 두 개 이상 선택하세요.
+	Select circle or arc to add center mark	중심 표식을 추가할 원 또는 호 선택
+	Select closed objects (regions, closed polylines, circles).	닫힌 객체(영역, 닫힌 폴리선, 원)를 선택하세요.
+	Select first line	첫 번째 선 선택
+	Select first line or arc	첫 번째 선 또는 호 선택
+	Select first object	첫 번째 객체 선택
+	Select first object or	첫 번째 객체 선택 또는
+	Select first point	첫 번째 점 선택
+	Select nested objects to copy or	복사할 내포된 객체 선택 또는
+	Select object	객체 선택
+	Select object to dimension	치수를 기입할 객체 선택
+	Select object to divide	등분할할 객체 선택
+	Select object to extend or shift-select to trim	연장할 객체 선택 또는 Shift를 누른 채 선택하여 자르기
+	Select object to measure	길이 분할할 객체 선택
+	Select object to offset	간격띄우기할 객체 선택
+	Select object to trim or shift-select to extend	자를 객체 선택 또는 Shift를 누른 채 선택하여 연장
+	Select objects	객체 선택
+	Select objects (crossing window first corner)	객체 선택(걸침 창의 첫 번째 구석)
+	Select objects to array.	배열할 객체를 선택하세요.
+	Select objects to stretch by crossing-window or crossing-polygon...	걸침 창 또는 걸침 다각형으로 신축할 객체 선택...
+	Select objects:	객체 선택:
+	Select one polyline (Multiple is available through the JSON form).	폴리선 하나를 선택하세요(다중 선택은 JSON 형식으로 사용할 수 있습니다).
+	Select path curve	경로 곡선 선택
+	Select point or object	점 또는 객체 선택
+	Select polyline or	폴리선 선택 또는
+	Select second line	두 번째 선 선택
+	Select second line or shift-select to apply corner	두 번째 선 선택 또는 Shift를 누른 채 선택하여 각진 모서리 적용
+	Select second object	두 번째 객체 선택
+	Select second object or shift-select to apply corner	두 번째 객체 선택 또는 Shift를 누른 채 선택하여 각진 모서리 적용
+	Select second point	두 번째 점 선택
+	Select spline	스플라인 선택
+	Select symmetry line	대칭선 선택
+	Select two points	두 점 선택
+	Selection Cycling	선택 순환
+	Send to Back	맨 뒤로 보내기
+	Set Current	현재로 설정
+	Set Current Dimension Style	현재 치수 스타일 설정
+	Set Current Text Style	현재 문자 스타일 설정
+	Set Current Viewport	현재 뷰포트 설정
+	Set Layer Properties	도면층 특성 설정
+	Set Properties	특성 설정
+	Set Table Cell	표 셀 설정
+	Set Table Cell Style	표 셀 스타일 설정
+	Set Variable	변수 설정
+	Set View	뷰 설정
+	Share	공유
+	Show	표시
+	Show All	모두 표시
+	Show All Constraint Bars	모든 구속조건 막대 표시
+	Show All Dynamic Dimensions	모든 동적 치수 표시
+	Show and hide the tools of this category	이 범주의 도구 표시 및 숨기기
+	Show in Tool Sets	도구 세트에 표시
+	Show command prompting near the crosshairs	십자선 근처에 명령 프롬프트 표시
+	Show Layer List	도면층 목록 표시
+	Show/Hide Lineweight	선가중치 표시/숨기기
+	Show/Hide Transparency	투명도 표시/숨기기
+	Single Line Text	한 줄 문자
+	Single Point	단일 점
+	Single...	단일...
+	Smooth	매끄럽게
+	Snap	스냅
+	Snap Mode	스냅 모드
+	Snap Mode (F9)	스냅 모드(F9)
+	Snap On (F9)	스냅 켜기(F9)
+	Snap Overrides	스냅 재지정
+	Snap X spacing	스냅 X 간격
+	Snap and Grid	스냅 및 그리드
+	Snap type	스냅 유형
+	Solid	솔리드
+	Sort	정렬
+	Specify a point	점 지정
+	Specify a scale for the hatch pattern	해치 패턴 축척 지정
+	Specify a second extension line origin	두 번째 치수보조선 시작점 지정
+	Specify an angle for the hatch pattern	해치 패턴 각도 지정
+	Specify angle end point	각도 끝점 지정
+	Specify angle of dimension line	치수선 각도 지정
+	Specify angle of dimension text	치수 문자 각도 지정
+	Specify angle start point	각도 시작점 지정
+	Specify angle vertex	각도 꼭짓점 지정
+	Specify angle vertex point	각도 꼭짓점 지정
+	Specify arc length dimension location	호 길이 치수 위치 지정
+	Specify axis endpoint of ellipse	타원 축 끝점 지정
+	Specify base diameter	밑면 지름 지정
+	Specify base point	기준점 지정
+	Specify base point or	기준점 지정 또는
+	Specify base point or displacement (drag with the middle mouse button for realtime pan)	기준점 또는 변위 지정(마우스 가운데 버튼으로 드래그하여 실시간 초점 이동)
+	Specify base radius or	밑면 반지름 지정 또는
+	Specify center of donut	도넛 중심 지정
+	Specify center of ellipse	타원 중심 지정
+	Specify center of polygon	다각형 중심 지정
+	Specify center point for circle	원 중심점 지정
+	Specify center point of arc	호 중심점 지정
+	Specify center point of array	배열 중심점 지정
+	Specify center point of base	밑면 중심점 지정
+	Specify corner of viewport	뷰포트 구석 지정
+	Specify corner of window, enter a scale factor (nX or nXP)	창 구석 지정, 축척 비율 입력(nX 또는 nXP)
+	Specify diameter of circle	원 지름 지정
+	Specify dimension arc line location	치수 호선 위치 지정
+	Specify dimension line location	치수선 위치 지정
+	Specify distance between turns	회전 간 거리 지정
+	Specify distance to other axis	다른 축까지의 거리 지정
+	Specify end angle	끝 각도 지정
+	Specify end point of arc	호 끝점 지정
+	Specify end point of arc (hold Ctrl to switch direction)	호 끝점 지정(Ctrl을 누르면 방향 전환)
+	Specify ending width	끝 폭 지정
+	Specify ending width for next segment	다음 구간의 끝 폭 지정
+	Specify endpoint of arc	호 끝점 지정
+	Specify endpoint of axis	축 끝점 지정
+	Specify endpoint of line	선 끝점 지정
+	Specify feature location	형상 위치 지정
+	Specify fillet radius	모깎기 반지름 지정
+	Specify fillet radius for rectangles	직사각형 모깎기 반지름 지정
+	Specify first angle endpoint	첫 번째 각도 끝점 지정
+	Specify first chamfer distance	첫 번째 모따기 거리 지정
+	Specify first chamfer distance for rectangles	직사각형의 첫 번째 모따기 거리 지정
+	Specify first constraint point	첫 번째 구속점 지정
+	Specify first corner	첫 번째 구석 지정
+	Specify first corner point	첫 번째 구석점 지정
+	Specify first destination point	첫 번째 대상점 지정
+	Specify first end point of circle's diameter	원 지름의 첫 번째 끝점 지정
+	Specify first endpoint of edge	모서리의 첫 번째 끝점 지정
+	Specify first extension line origin	첫 번째 치수보조선 시작점 지정
+	Specify first point	첫 번째 점 지정
+	Specify first point of mirror line	대칭선의 첫 번째 점 지정
+	Specify first point on circle	원 위의 첫 번째 점 지정
+	Specify first point on circle: _tan to	원 위의 첫 번째 점 지정: _tan 접점
+	Specify first source point	첫 번째 원본점 지정
+	Specify height	높이 지정
+	Specify helix height or	나선 높이 지정 또는
+	Specify included angle	사이각 지정
+	Specify insertion base point	삽입 기준점 지정
+	Specify insertion point	삽입점 지정
+	A drawing opened from a file keeps that file's format.	파일에서 연 도면은 해당 파일의 형식을 유지합니다.
+	An array that would create more objects than this is refused.	이 제한보다 많은 객체를 만드는 배열은 허용하지 않습니다.
+	CADCraft keeps these preferences, object snap modes and drafting toggles for your user account and restores them when it starts.	CADCraft는 이 환경설정, 객체 스냅 모드 및 제도 기능의 켜기/끄기 상태를 사용자 계정에 저장하고 시작할 때 복원합니다.
+	Changes apply at once and are kept for next time.	변경 사항은 즉시 적용되며 다음 실행에도 유지됩니다.
+	Command line history	명령행 기록
+	Copy as JSON	JSON으로 복사
+	Crosshair size	십자선 크기
+	Display	화면 표시
+	Grip size	그립 크기
+	Hold Shift to add to the selection	Shift를 누른 채 선택하여 선택 항목에 추가
+	Interface language	인터페이스 언어
+	Interface theme	인터페이스 테마
+	Keep the system cursor visible over the drawing area	도면 영역에서도 시스템 커서 표시
+	Largest array	최대 배열 크기
+	Layout paper	배치 용지
+	Model background	모형 배경
+	Object snap aperture	객체 스냅 포착 범위
+	Object snap marker size	객체 스냅 표식 크기
+	Open and Save	열기 및 저장
+	Options	옵션
+	Options...	옵션...
+	Pickbox size	선택 상자 크기
+	Profiles	프로파일
+	Reset keeps the interface language.	초기화해도 인터페이스 언어는 유지됩니다.
+	Reset to Defaults	기본값으로 초기화
+	Save new drawings as	새 도면 저장 형식
+	Screen magnifiers, screen readers and recorders follow the system cursor.	화면 돋보기, 화면 읽기 프로그램 및 녹화 프로그램은 시스템 커서를 따라갑니다.
+	Select objects first, then choose a command	객체를 먼저 선택한 다음 명령 선택
+	Selection	선택
+	Settings...	설정...
+	Show Quick Properties for selected objects	선택한 객체의 빠른 특성 표시
+	Snap, grid, polar tracking and Dynamic Input:	스냅, 그리드, 극좌표 추적 및 동적 입력:
+	The aperture is how near the cursor must come to a point for an object snap to find it.	포착 범위는 객체 스냅이 점을 찾을 수 있도록 커서가 점에 얼마나 가까이 있어야 하는지를 정합니다.
+	User Preferences	사용자 기본 설정
+	objects	객체
+	Specify inside diameter of donut	도넛 안쪽 지름 지정
+	Specify leader arrowhead location	지시선 화살촉 위치 지정
+	Specify leader endpoint	지시선 끝점 지정
+	Specify leader landing location	지시선 연결선 위치 지정
+	Specify length for rectangles	직사각형 길이 지정
+	Specify length of chord	현 길이 지정
+	Specify length of segment	구간 길이 지정
+	Specify line width for rectangles	직사각형 선 폭 지정
+	Specify location for new vertex	새 정점 위치 지정
+	Specify minimum length of arc	호의 최소 길이 지정
+	Specify new end point	새 끝점 지정
+	Specify new location for marked vertex	표시된 정점의 새 위치 지정
+	Specify new width for all segments	모든 구간의 새 폭 지정
+	Specify next point	다음 점 지정
+	Specify offset distance	간격띄우기 거리 지정
+	Specify offset distance or	간격띄우기 거리 지정 또는
+	Specify opposite corner	반대 구석 지정
+	Specify other corner point	다른 구석점 지정
+	Specify other endpoint of axis	축의 다른 끝점 지정
+	Specify outside diameter of donut	도넛 바깥쪽 지름 지정
+	Specify point	점 지정
+	Specify point on object for first tangent of circle	원의 첫 번째 접선을 위한 객체 위의 점 지정
+	Specify point on object for second tangent of circle	원의 두 번째 접선을 위한 객체 위의 점 지정
+	Specify point on side to offset	간격띄우기할 쪽의 점 지정
+	Specify radius of arc	호 반지름 지정
+	Specify radius of circle	원 반지름 지정
+	Specify rotation angle	회전 각도 지정
+	Specify rotation angle of text	문자 회전 각도 지정
+	Specify rotation angle or	회전 각도 지정 또는
+	Specify scale factor	축척 비율 지정
+	Specify second angle endpoint	두 번째 각도 끝점 지정
+	Specify second break point	두 번째 끊기점 지정
+	Specify second chamfer distance for rectangles	직사각형의 두 번째 모따기 거리 지정
+	Specify second constraint point	두 번째 구속점 지정
+	Specify second destination point	두 번째 대상점 지정
+	Specify second end point of circle's diameter	원 지름의 두 번째 끝점 지정
+	Specify second endpoint of edge	모서리의 두 번째 끝점 지정
+	Specify second extension line origin	두 번째 치수보조선 시작점 지정
+	Specify second point	두 번째 점 지정
+	Specify second point of arc	호의 두 번째 점 지정
+	Specify second point of mirror line	대칭선의 두 번째 점 지정
+	Specify second point on circle	원 위의 두 번째 점 지정
+	Specify second point on circle: _tan to	원 위의 두 번째 점 지정: _tan 접점
+	Specify second point or <use first point as displacement>	두 번째 점 지정 또는 <첫 번째 점을 변위로 사용>
+	Specify second source point	두 번째 원본점 지정
+	Specify side to offset	간격띄우기할 쪽 지정
+	Specify start angle	시작 각도 지정
+	Specify start point	시작점 지정
+	Specify start point of arc	호 시작점 지정
+	Specify start point of polyline	폴리선 시작점 지정
+	Specify start point of text	문자 시작점 지정
+	Specify starting width	시작 폭 지정
+	Specify starting width for next segment	다음 구간의 시작 폭 지정
+	Specify tangent direction for the start point of arc	호 시작점의 접선 방향 지정
+	Specify the elevation for rectangles	직사각형 고도 지정
+	Specify thickness for rectangles	직사각형 두께 지정
+	Specify third point on circle	원 위의 세 번째 점 지정
+	Specify third point on circle: _tan to	원 위의 세 번째 점 지정: _tan 접점
+	Specify third source point or <continue>	세 번째 원본점 지정 또는 <계속>
+	Specify through point	통과점 지정
+	Specify top diameter	윗면 지름 지정
+	Specify top radius or	윗면 반지름 지정 또는
+	Specify total angle	전체 각도 지정
+	Specify total length or	전체 길이 지정 또는
+	Specify width for rectangles	직사각형 폭 지정
+	Sphere	구
+	Spline	스플라인
+	Spline Edit	스플라인 편집
+	Stack (type 1/2 then select)	분수 쌓기(1/2 입력 후 선택)
+	Standard	표준
+	Start	시작
+	Start Width	시작 폭
+	Start X	시작점 X
+	Start Y	시작점 Y
+	Start angle	시작 각도
+	Start, Center, Angle	시작점, 중심, 각도
+	Start, Center, End	시작점, 중심, 끝점
+	Start, Center, Length	시작점, 중심, 길이
+	Start, End, Angle	시작점, 끝점, 각도
+	Start, End, Direction	시작점, 끝점, 방향
+	Start, End, Radius	시작점, 끝점, 반지름
+	Status	상태
+	Status Bar	상태 막대
+	Stretch	신축
+	Style: Standard	스타일: Standard
+	Subtract	차집합
+	Sweep	스윕
+	Switch Drawing	도면 전환
+	Switch Layout	배치 전환
+	Switch between model space in a viewport and paper space	뷰포트 내 모형 공간과 도면 공간 간 전환
+	Symmetric	대칭
+	Synchronize Attributes	속성 동기화
+	To	대상
+	Toggle PICKADD (off: each pick replaces the selection)	PICKADD 전환(꺼짐: 선택할 때마다 기존 선택 대체)
+	Toggle PICKADD (on: picks add to the selection)	PICKADD 전환(켜짐: 선택할 때마다 기존 선택에 추가)
+	TOP	평면
+	Table	표
+	Table Breaks	표 분할
+	Table Cell Style	표 셀 스타일
+	Table Style...	표 스타일...
+	Table style	표 스타일
+	Table...	표...
+	Tan, Tan, Radius	접선, 접선, 반지름
+	Tan, Tan, Tan	접선, 접선, 접선
+	Tangent	접선
+	Temporary track point	임시 추적점
+	Text	문자
+	Text Editor	문자 편집기
+	Text Height	문자 높이
+	Text Style...	문자 스타일...
+	Text height	문자 높이
+	Text override	문자 재지정
+	Text style	문자 스타일
+	Thaw All Layers	모든 도면층 동결 해제
+	Thaw Layer	도면층 동결 해제
+	There is nothing here yet.	아직 아무것도 없습니다.
+	Thickness	두께
+	Time	시간
+	To get started, create or open a drawing.	시작하려면 도면을 만들거나 여세요.
+	Tool Bar	도구 막대
+	Tool Sets	도구 세트
+	Tools	도구
+	Torus	원환체
+	Trace	트레이스
+	Track orthogonally only	직교 방향으로만 추적
+	Track using all polar angle settings	모든 극좌표 각도 설정을 사용하여 추적
+	Transparency	투명도
+	Trim	자르기
+	True Color	트루 컬러
+	Turn All Layers On	모든 도면층 켜기
+	Turn Off Layer	도면층 끄기
+	Turn On Layer	도면층 켜기
+	Turn Quick Properties off (QPMODE)	빠른 특성 끄기(QPMODE)
+	Type	유형
+	Type a command	명령 입력
+	Type text; Enter starts a new paragraph	문자를 입력하세요. Enter를 누르면 새 단락이 시작됩니다
+	UCS Icon	UCS 아이콘
+	Undo	실행 취소
+	Undo (⌘Z)	실행 취소(⌘Z)
+	Ungroup	그룹 해제
+	Union	합집합
+	Unisolate Layer	도면층 분리 해제
+	Units Conversion	단위 변환
+	Units...	단위...
+	Unlock Layer	도면층 잠금 해제
+	Unlock viewport	뷰포트 잠금 해제
+	Unmerge Cells	셀 병합 해제
+	Unsaved Layer State	저장되지 않은 도면층 상태
+	Up	위로
+	Update Data Links	데이터 링크 업데이트
+	Update	업데이트
+	Use System Setting	시스템 설정 사용
+	User	사용자
+	User Parameters	사용자 매개변수
+	Username	사용자 이름
+	Volume	체적
+	VP Color	뷰포트 색상
+	VP Freeze	뷰포트 동결
+	Value	값
+	Value:	값:
+	Variables	변수
+	Version	버전
+	Version 2000	버전 2000
+	Version 2004	버전 2004
+	Version 2007	버전 2007
+	Version 2010	버전 2010
+	Version 2013	버전 2013
+	Version 2018	버전 2018
+	Version {version}	버전 {version}
+	Vertical	수직
+	VerticalDistance	수직 거리
+	View	뷰
+	ViewCube	뷰 큐브
+	Viewport	뷰포트
+	Viewport Layer Freeze	뷰포트 도면층 동결
+	Viewport Properties	뷰포트 특성
+	Viewport is locked	뷰포트가 잠겨 있습니다
+	Viewport scale	뷰포트 축척
+	Viewport {id}	뷰포트 {id}
+	Viewports	뷰포트
+	W	서
+	WCS	WCS
+	White	흰색
+	Width factor	폭 비율
+	Window	창
+	Wipeout	가리기
+	Workspace Switching	작업공간 전환
+	Write Block	블록 쓰기
+	Xline	구성선
+	Yellow	노란색
+	Yes	예
+	Zoom	줌
+	Zoom All	전체 줌
+	Zoom Dynamic	동적 줌
+	Zoom Extents	범위 줌
+	Zoom In	확대
+	Zoom Object	객체 줌
+	Zoom Out	축소
+	Zoom Previous	이전 줌
+	Zoom Realtime	실시간 줌
+	Zoom Window	창 줌
+	error	오류
+	{contributors} · {commits}	{contributors} · {commits}
+	{kind} (constraint {id})	{kind}(구속조건 {id})
+	{kind} constraint {name} = {expression}  (double-click to edit)	{kind} 구속조건 {name} = {expression}  (두 번 클릭하여 편집)
+	{name}: {distance} < {angle}°	{name}: {distance} < {angle}°
+	ƒx  New User Parameter	ƒx  새 사용자 매개변수
+	ΔLOC	ΔLOC
+	−Bin	−Bin
+	−LOC	−LOC
+	⌘↩ to finish	⌘↩로 완료
+@plural	{n} commit	커밋 {n}개
+@plural	{n} contributor	기여자 {n}명
+	Drawing as bytes	도면 바이트 데이터
+	Services	서비스
+	Hide CADCraft	CADCraft 숨기기
+	Hide Others	다른 앱 숨기기
+	Accessibility	접근성
+	Show System Cursor	시스템 커서 표시
+	Import...	가져오기...
+	Export...	내보내기...
+	Batch Publish...	일괄 게시...
+	Scale List...	축척 목록...
+	Annotative Object Scale	주석 객체 축척
+	Add Current Scale	현재 축척 추가
+	Delete Current Scale	현재 축척 삭제
+	Add/Delete Scales...	축척 추가/삭제...
+	Synchronize Multiple-scale Positions	여러 축척의 위치 동기화
+	Annotative Update	주석 업데이트
+	Show Annotative Objects	주석 객체 표시
+	Current Scale Only	현재 축척만
+	All Scales	모든 축척
+	Drawing Recovery Manager...	도면 복구 관리자...
+	Tolerance...	공차...
+	Add Vertex	정점 추가
+	Remove Vertex	정점 제거
+	Convert to Arc	호로 변환
+	Convert to Line	선으로 변환
+	Stretch Vertex	정점 신축
+	Edit Array	배열 편집
+	Close Array Editing	배열 편집 종료
+	Multiline...	다중선...
+	Multiline Style...	다중선 스타일...
+	Solid Editing	솔리드 편집
+	3D Mouse...	3D 마우스...
+	3D Mouse	3D 마우스
+	Calibrate 3D Mouse	3D 마우스 보정
+	3D Mouse Navigation	3D 마우스 탐색
+	3D mouse input is unavailable on this platform	이 플랫폼에서는 3D 마우스 입력을 사용할 수 없습니다
+	No supported 3D mouse found	지원되는 3D 마우스를 찾을 수 없습니다
+	Release the 3D mouse to calibrate its resting position	3D 마우스에서 손을 떼어 중립 위치를 보정하세요
+	3D mouse connected	3D 마우스 연결됨
+	3D mouse busy, possibly 3DxWare or missing device permissions	3D 마우스를 사용할 수 없습니다. 3DxWare가 사용 중이거나 장치 권한이 없을 수 있습니다
+	3D mouse disconnected	3D 마우스 연결 끊김
+	3D mouse input could not be started	3D 마우스 입력을 시작하지 못했습니다
+	Enable 3D mouse navigation	3D 마우스 탐색 사용
+	Pan sensitivity	초점 이동 감도
+	Zoom sensitivity	줌 감도
+	Reverse zoom direction	줌 방향 반전
+	Calibrate	보정
+	Move sideways to pan; push/pull or twist to zoom.	옆으로 움직이면 초점이 이동하고, 밀거나 당기거나 비틀면 확대 또는 축소됩니다.
+	Left device button: zoom extents. Right device button: calibrate.	장치 왼쪽 버튼: 범위 줌. 장치 오른쪽 버튼: 보정.
+	More toolbar commands	도구 막대 명령 더 보기
+	Default save version	기본 저장 버전
+	Automatic save every	자동 저장 간격
+	min	분
+	Automatic save file location	자동 저장 파일 위치
+	Drawings with no file yet are saved in the default version. 0 minutes turns automatic save off.	아직 파일로 저장하지 않은 도면은 기본 버전으로 저장됩니다. 0분으로 설정하면 자동 저장이 꺼집니다.
+	Time-sensitive right-click: a quick click is Enter, holding opens the menu	오른쪽 클릭 시간에 따라 동작 구분: 짧게 클릭하면 Enter, 길게 누르면 메뉴 열기
+	Turned off, a right-click while a command runs always opens the shortcut menu.	끄면 명령 실행 중 오른쪽 클릭 시 항상 바로 가기 메뉴가 열립니다.
+	Hatch Pattern	해치 패턴
+	Search for pattern	패턴 검색
+	Run Script...	스크립트 실행...
+	X	X
+	Y	Y
+	B	B
+	CADCraft	CADCraft
+menu	View	보기
+menu	Draw	그리기
+menu	Dimension	치수
+menu	Modify	수정
+	Check for Updates…	업데이트 확인…
+	CADCraft is up to date.	CADCraft가 최신 버전입니다.
+	Could not check for updates.	업데이트를 확인하지 못했습니다.

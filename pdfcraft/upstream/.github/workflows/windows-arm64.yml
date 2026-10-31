@@ -1,0 +1,35 @@
+# Windows on ARM (#61): package the ARM64 release the way release.yml does (cross-compiled on an
+# x64 runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner and run it, and
+# run the test suite natively on ARM64.
+name: Windows ARM64
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - "**/build.rs"
+      - .github/workflows/windows-arm64.yml
+      - packaging/windows/**
+  schedule:
+    - cron: "41 4 * * 1" # weekly, so drift in the runner images shows up
+  workflow_dispatch:
+
+concurrency:
+  group: windows-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-arm64:
+    uses: storytold/craft-common-actions/.github/workflows/windows-arm64.yml@8bb4e5ab95443171104ad88113fe1ef9b0e5ce3f
+    with:
+      app-name: pdfcraft
+      app-dir: PdfCraft
+      install-relative-path: Programs/ArtCraft/PdfCraft
+      install-scope: perUser

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?ifndef HasCraftFontLicences ?>
+  <?define HasCraftFontLicences=0 ?>
+  <?endif?>
+  <Package Name="CADCraft" Manufacturer="Learning Machines LLC" Version="$(var.Version)" UpgradeCode="119D7D76-0167-4A9E-8F37-09DA0235F68E" Scope="perUserOrMachine" Compressed="yes" Language="1033">
+    <SummaryInformation Description="CADCraft computer-aided design" Manufacturer="Learning Machines LLC" />
+    <?include $(sys.SOURCEFILEDIR)install-policy.wxi?>
+    <!-- Same-version upgrades let successive pre-releases of one X.Y.Z replace each other
+         (MSI versions are numeric, so 1.2.3-rc.1 and 1.2.3-rc.2 are both 1.2.3). -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of CADCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="CadcraftIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="CadcraftIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://getartcraft.com/apps/cadcraft" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://getartcraft.com/apps/cadcraft" />
+    <Property Id="ARPHELPLINK" Value="https://discord.gg/artcraft" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="CraftSuiteFolder" Name="ArtCraft">
+        <Directory Id="INSTALLFOLDER" Name="CADCraft" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <!-- Per-machine (ALLUSERS=1), so this is the all-users (Public) desktop, like the Start Menu above. -->
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- "Create a desktop shortcut": the wizard's checkbox sets it to 1 (cleared = unset), and
+         silent installs pass DESKTOPSHORTCUT=1. Secure, so the elevated install sees the UI choice. -->
+    <Property Id="DESKTOPSHORTCUT" Secure="yes" />
+    <!-- The previous install's choice (the shortcut component's HKCU key path, so the installing
+         user's), so upgrades keep the desktop shortcut without asking again. -->
+    <Property Id="PREVIOUSDESKTOPSHORTCUT" Secure="yes">
+      </Property>
+    <!-- Only when DESKTOPSHORTCUT wasn't given; "first" runs it once (in the UI sequence when there
+         is one), so unticking the box isn't undone by the execute sequence. -->
+    <SetProperty Id="DESKTOPSHORTCUT" Value="1" After="CraftLoadLegacyOption1" Sequence="first" Condition="NOT DESKTOPSHORTCUT AND PREVIOUSDESKTOPSHORTCUT = &quot;1&quot;" />
+
+    <UIRef Id="CadcraftUI" />
+
+    <Feature Id="Main" Title="CADCraft" Level="1">
+      <?if $(var.HasCraftFontLicences) = 1 ?>
+      <ComponentGroupRef Id="CraftFontLicences" />
+      <?endif?>
+      <ComponentGroupRef Id="CadcraftFiles" />
+    </Feature>
+  <Property Id="CRAFT_OPTION_1_M" Secure="yes"><RegistrySearch Id="CRAFT_OPTION_1_MSearch" Root="HKLM" Key="Software\Learning Machines LLC\CADCraft" Name="DesktopShortcut" Type="raw" />
+    </Property><SetProperty Id="PREVIOUSDESKTOPSHORTCUT" Action="CraftLoadOption1M" Value="[CRAFT_OPTION_1_M]" After="LaunchConditions" Sequence="both" Condition="ALLUSERS = 1" /><Property Id="CRAFT_OPTION_1_U" Secure="yes"><RegistrySearch Id="CRAFT_OPTION_1_USearch" Root="HKCU" Key="Software\Learning Machines LLC\CADCraft" Name="DesktopShortcut" Type="raw" />
+    </Property><SetProperty Id="PREVIOUSDESKTOPSHORTCUT" Action="CraftLoadOption1U" Value="[CRAFT_OPTION_1_U]" After="CraftLoadOption1M" Sequence="both" Condition="ALLUSERS &lt;&gt; 1" /><SetProperty Id="PREVIOUSDESKTOPSHORTCUT" Action="CraftLoadLegacyOption1" Value="[CRAFT_OPTION_1_U]" After="CraftLoadOption1U" Sequence="both" Condition="ALLUSERS = 1 AND NOT PREVIOUSDESKTOPSHORTCUT AND CRAFT_OPTION_1_U" /></Package>
+
+  <Fragment>
+    <?if $(var.HasCraftFontLicences) = 1 ?>
+    <ComponentGroup Id="CraftFontLicences" Directory="INSTALLFOLDER">
+      <Files Include="$(var.DocsDir)\**" />
+    </ComponentGroup>
+    <?endif?>
+    <ComponentGroup Id="CadcraftFiles" Directory="INSTALLFOLDER">
+      <Component Id="CadcraftApp" Guid="2AC18056-48DE-4079-AB79-4FDEF4FBB075">
+        <File Id="CadcraftExe" Source="$(var.BinDir)\cadcraft.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="CADCraft" Description="CADCraft computer-aided design" WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="CadcraftIcon.ico" IconIndex="0" />
+        </File>
+
+        <RegistryValue Root="HKMU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\cadcraft.exe" Value="[#CadcraftExe]" Type="string" />
+        <RegistryValue Root="HKMU" Key="Software\Classes\Applications\cadcraft.exe\shell\open\command" Value="&quot;[#CadcraftExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKMU" Key="Software\Classes\.dxf\OpenWithProgids" Name="CADCraft.Drawing" Value="" Type="string" />
+        <RegistryValue Root="HKMU" Key="Software\Classes\.dwg\OpenWithProgids" Name="CADCraft.Drawing" Value="" Type="string" />
+        <RegistryValue Root="HKMU" Key="Software\Classes\CADCraft.Drawing\shell\open\command" Value="&quot;[#CadcraftExe]&quot; &quot;%1&quot;" Type="string" />
+      <RegistryValue Root="HKMU" Key="Software\CADCraft" Name="InstallDir" Value="[INSTALLFOLDER]" Type="string" />
+      </Component>
+
+      <Component Id="CadcraftCli">
+        <File Id="CadcraftCliExe" Source="$(var.BinDir)\cadcraft-cli.exe" KeyPath="yes" />
+      </Component>
+
+      <!-- Optional desktop shortcut, removed on uninstall. A non-advertised shortcut needs a registry
+           key path, and one in a profile folder (DesktopFolder, even though ALLUSERS=1 makes it the
+           Public desktop) must be under HKCU (ICE38, ICE43, ICE57). -->
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="76029CD7-EBDB-420F-AC34-FF0E82A99E32" Condition="DESKTOPSHORTCUT = &quot;1&quot;">
+        <Shortcut Id="DesktopShortcut" Name="CADCraft" Description="CADCraft computer-aided design" Target="[INSTALLFOLDER]cadcraft.exe" WorkingDirectory="INSTALLFOLDER" Icon="CadcraftIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKMU" Key="Software\Learning Machines LLC\CADCraft" Name="DesktopShortcut" Value="1" Type="string" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <!--
+    Setup wizard: WixUI_InstallDir's flow (WiX v5, ext/UI/wixlib/WixUI_InstallDir.wxs) without the
+    licence and folder pages, plus a Shortcuts page:
+      install:     Welcome > Shortcuts > Ready to install > Progress > Finish
+      maintenance: Maintenance welcome > Repair/Remove > Ready > Progress > Finish
+  -->
+  <Fragment>
+    <UI Id="CadcraftUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <Dialog Id="ShortcutsDlg" Width="370" Height="270" Title="!(loc.InstallDirDlg_Title)">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose where to start [ProductName] from." />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Shortcuts" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="StartMenuText" Type="Text" X="20" Y="60" Width="330" Height="15" NoPrefix="yes" Text="[ProductName] will be added to the Start menu." />
+        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="85" Width="330" Height="17" Property="DESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
+      </Dialog>
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="ShortcutsDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="ShortcutsDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="ShortcutsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ShortcutsDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <!-- No "Change" in Apps & features: there is a single feature. -->
+      <Property Id="ARPNOMODIFY" Value="1" />
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

@@ -8,14 +8,19 @@
 //! - open (single): `ACTION_OPEN_DOCUMENT` → the document's bytes are staged
 //!   into the cache and the pick resolves to a real path;
 //! - open (multiple): same, multi-select; the SAF layer already stages;
-//! - folder: `ACTION_OPEN_DOCUMENT_TREE` → the tree is enumerated and every
-//!   file staged into the cache, preserving relative paths; the pick
-//!   resolves to the staging directory;
+//! - folder: `ACTION_OPEN_DOCUMENT_TREE` → a primary-volume tree maps to
+//!   its real `/sdcard/...` path (readable with `std::fs`, so pinning and
+//!   Combine folder adds stay live); any other tree is enumerated and
+//!   every file staged into the cache, preserving relative paths, and
+//!   the pick resolves to the staging directory;
 //! - save: `ACTION_CREATE_DOCUMENT` → the pick resolves to the returned
 //!   `content://` URI, which `write_atomically` writes through the SAF writer.
 //!
-//! Output-folder picks (`Ask::FolderOut`) never reach SAF: they resolve
-//! deterministically inside the shell's output base (see `services`).
+//! Output-folder picks (`Ask::FolderOut`) go through the same SAF folder
+//! bridge as `PickKind::Folder` (see `launch_pick`): the picked tree maps
+//! to its real path on the primary volume and becomes that purpose's
+//! output directory; cancel falls back to the deterministic output base
+//! (see `services`).
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -144,10 +149,26 @@ fn tree_reply(
     impl saf::DialogReply for Reply {
         fn send(self: Box<Self>, answer: Option<saf::DialogAnswer>) {
             let staged = match answer {
-                Some(saf::DialogAnswer::Folder(uri)) => stage_tree(&uri, &self.inbox).unwrap_or_else(|e| {
-                    log::error!("couldn't stage picked folder: {e}");
-                    None
-                }),
+                Some(saf::DialogAnswer::Folder(uri)) => {
+                    // A primary-volume tree maps to a real path the engine
+                    // can read with `std::fs` (pinning, Combine folder adds):
+                    // prefer it when it is readable, so the folder stays
+                    // live instead of a one-off cache staging. Anything else
+                    // (SD card, another provider, no All-files access) falls
+                    // back to staging, as before.
+                    // Edition 2021: no let-chains; filter+map keeps the
+                    // same semantics (primary path only when readable).
+                    match external_storage_path(&uri)
+                        .filter(|path| std::fs::read_dir(path).is_ok())
+                        .map(PathBuf::from)
+                    {
+                        Some(path) => Some(path),
+                        None => stage_tree(&uri, &self.inbox).unwrap_or_else(|e| {
+                            log::error!("couldn't stage picked folder: {e}");
+                            None
+                        }),
+                    }
+                }
                 _ => None,
             };
             let _ = self.tx.send(staged.into_iter().collect());
@@ -225,4 +246,50 @@ fn sanitize_file_name(name: &str) -> String {
     } else {
         base
     }
+}
+
+/// `content://com.android.externalstorage.documents/...` → a filesystem
+/// path on the primary volume, or `None` for any other provider/volume.
+/// The document id is `primary:<relative/path>`, URL-encoded, carried
+/// either as the `document/<id>` or `tree/<id>` segment.
+fn external_storage_path(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("content://com.android.externalstorage.documents/")?;
+    let doc_id = rest
+        .strip_prefix("document/")
+        .or_else(|| rest.strip_prefix("tree/"))
+        .unwrap_or(rest);
+    let doc_id = percent_decode(doc_id);
+    let relative = doc_id.strip_prefix("primary:")?;
+    if relative.is_empty() {
+        Some("/sdcard".to_string())
+    } else {
+        Some(format!("/sdcard/{relative}"))
+    }
+}
+
+/// Minimal percent-decoding for a URI document id.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = |b: u8| -> Option<u8> {
+                match b {
+                    b'0'..=b'9' => Some(b - b'0'),
+                    b'a'..=b'f' => Some(b - b'a' + 10),
+                    b'A'..=b'F' => Some(b - b'a' + 10),
+                    _ => None,
+                }
+            };
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(hi * 16 + lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }

@@ -259,9 +259,28 @@ pub fn specs() -> Vec<CommandSpec> {
             "Stroke",
             [],
             None,
-            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind:…}, cap?: butt|round|projecting, join?: miter|round|bevel, miterLimit?, start?, end?: none|simple|simpleWide|triangle|triangleWide|barbed|curved|circle|circleSolid|square|squareSolid|bar, gapSwatch?, gapTint?, gapOverprint?: bool, ids?}",
+            "{swatch?, tint?, weight?, align?: center|inside|outside, type?: {kind: solid|dashed|dotted|thickThin|thinThick|thinThin|thickThick|thinThickThin|thickThinThick|wavy|hashed|stripes|style, pattern?: [dash, gap, …] (dashed: required, points), bands?: [[start, width], …] (stripes: required, fractions of stroke weight), name?: string (style: required, document stroke style name)} (other kinds take no extra fields; unknown type fields are errors), cap?: butt|round|projecting, join?: miter|round|bevel, miterLimit?, start?, end?: none|simple|simpleWide|triangle|triangleWide|barbed|curved|circle|circleSolid|square|squareSolid|bar, gapSwatch?, gapTint?, gapOverprint?: bool, ids?}",
             has_doc,
             |s, p| {
+                let kind: Option<designcraft_doc::StrokeType> = p
+                    .get("type")
+                    .map(|v| {
+                        if let Some(fields) = v.as_object() {
+                            let field = match v.get("kind").and_then(Value::as_str) {
+                                Some("dashed") => Some("pattern"),
+                                Some("stripes") => Some("bands"),
+                                Some("style") => Some("name"),
+                                _ => None,
+                            };
+                            for key in fields.keys() {
+                                if key != "kind" && Some(key.as_str()) != field {
+                                    return Err(bad("object.stroke", format!("type: unknown field `{key}`")));
+                                }
+                            }
+                        }
+                        serde_json::from_value(v.clone()).map_err(|e| bad("object.stroke", format!("type: {e}")))
+                    })
+                    .transpose()?;
                 for key in ["swatch", "gapSwatch"] {
                     if let Some(name) = p.get(key).and_then(Value::as_str) {
                         known_swatch(&s.doc()?.doc, name, "object.stroke", key)?;
@@ -297,7 +316,7 @@ pub fn specs() -> Vec<CommandSpec> {
                             st.swatch = v.into();
                         }
                         if let Some(v) = p2.get("tint").and_then(Value::as_f64) {
-                            st.tint = v as f32;
+                            st.tint = v.clamp(0.0, 1.0) as f32;
                         }
                         if let Some(v) = p2.get("weight").and_then(Value::as_f64) {
                             st.weight = v.max(0.0);
@@ -309,16 +328,18 @@ pub fn specs() -> Vec<CommandSpec> {
                             st.gap_swatch = v.into();
                         }
                         if let Some(v) = p2.get("gapTint").and_then(Value::as_f64) {
-                            st.gap_tint = v as f32;
+                            st.gap_tint = v.clamp(0.0, 1.0) as f32;
                         }
                         if let Some(v) = p2.get("gapOverprint").and_then(Value::as_bool) {
                             st.gap_overprint = v;
                         }
-                        for (k, apply) in [("align", 0), ("type", 1), ("cap", 2), ("join", 3), ("start", 4), ("end", 5)] {
+                        if let Some(kind) = &kind {
+                            st.kind = kind.clone();
+                        }
+                        for (k, apply) in [("align", 0), ("cap", 2), ("join", 3), ("start", 4), ("end", 5)] {
                             if let Some(v) = p2.get(k).cloned() {
                                 let _ = match apply {
                                     0 => serde_json::from_value(v).map(|x| st.align = x),
-                                    1 => serde_json::from_value(v).map(|x| st.kind = x),
                                     2 => serde_json::from_value(v).map(|x| st.cap = x),
                                     3 => serde_json::from_value(v).map(|x| st.join = x),
                                     4 => serde_json::from_value(v).map(|x| st.start = x),
@@ -563,7 +584,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Effects",
             [],
             None,
-            "{effects?: {dropShadow?: {on?, color?, opacity?, angle?, globalLight?, distance?, size?, spread?}, innerShadow?, outerGlow?, innerGlow? {on?, color?, opacity?, size?, choke?, center?, mode? (blend mode: Screen, Multiply, …; Screen by default), technique?: softer|precise}, bevel?, satin?, feather? (width), featherOptions? {choke? (%), corners?: sharp|rounded|diffused}, directionalFeather?, gradientFeather?} (the fields given replace the object's, as the Effects dialog sets them), opacity?: 0..1, blend?, ids?} — every effect at once, one undo step",
+            "{effects?: {dropShadow?: {on?, color?, opacity?, angle?, globalLight?, distance?, size?, spread?}, innerShadow?, outerGlow?, innerGlow? {on?, color?, opacity?, size?, choke?, center?, mode? (blend mode: Screen, Multiply, …; Screen by default), technique?: softer|precise}, bevel?, satin?, feather? (width), featherOptions? {choke? (%), corners?: sharp|rounded|diffused}, directionalFeather?, gradientFeather?} (the fields given replace the object's, as the Effects dialog sets them), opacity?: 0..1, blend?, globalLight? (the document's global light angle, as an Angle field with Use Global Light sets it), ids?} — every effect at once, one undo step",
             has_selection,
             effects_all
         ),
@@ -577,7 +598,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Text Frame Options…",
             ["Object"],
             Some("Cmd+B"),
-            "{columns?, gutter?, inset?: number|[t,l,b,r] (null keeps that side), verticalJustification?: top|center|bottom|justify, columnsKind?: fixedNumber|fixedWidth, columnWidth? (pt, Fixed Width), firstBaseline?: ascent|capHeight|leading|xHeight|emboxHeight|fixed, firstBaselineMin? (pt), autoSize?: off|heightOnly|widthOnly|heightAndWidth|heightAndWidthProportionally, autoSizeReference?: topLeft|topCenter|topRight|leftCenter|center|rightCenter|bottomLeft|bottomCenter|bottomRight (the point that stays put), useMinimumHeight?: bool, minimumHeight? (pt), useMinimumWidth?: bool, minimumWidth? (pt), noLineBreaks?: bool, ignoreWrap?, balanceColumns?, columnRule?: bool, columnRuleWeight? (pt), columnRuleColor? (swatch name), columnRuleTint? (0..1), columnRuleOffset? (pt, horizontal), columnRuleTopInset? (pt), columnRuleBottomInset? (pt), vertical?: bool (sets the story direction of the frames' stories, as Type ▸ Story Direction), ids?}",
+            "{columns?, gutter?, inset?: number|[t,l,b,r] (null keeps that side), verticalJustification?: top|center|bottom|justify, columnsKind?: fixedNumber|fixedWidth, columnWidth? (pt, Fixed Width), firstBaseline?: ascent|capHeight|leading|xHeight|emboxHeight|fixed, firstBaselineMin? (pt), autoSize?: off|heightOnly|widthOnly|heightAndWidth|heightAndWidthProportionally, autoSizeReference?: topLeft|topCenter|topRight|leftCenter|center|rightCenter|bottomLeft|bottomCenter|bottomRight (the point that stays put), useMinimumHeight?: bool, minimumHeight? (pt), useMinimumWidth?: bool, minimumWidth? (pt), noLineBreaks?: bool, ignoreWrap?, balanceColumns?, columnRule?: bool, columnRuleWeight? (pt), columnRuleColor? (swatch name), columnRuleTint? (0..1), columnRuleOffset? (pt, horizontal), columnRuleTopInset? (pt), columnRuleBottomInset? (pt), baselineGrid?: {start? (pt), increment? (pt), relativeTo?: page|margin|frame|inset} (the frame's custom baseline grid; fields not given keep the frame's, or come from the document grid; null turns it off), vertical?: bool (sets the story direction of the frames' stories, as Type ▸ Story Direction), ids?}",
             has_selection,
             text_frame_options
         ),
@@ -665,7 +686,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Align",
             ["Window", "Object & Layout", "Align"],
             None,
-            "{edge: left|hcenter|right|top|vcenter|bottom, to?: selection|keyObject|margins|page|spread, ids?}",
+            "{edge: left|hcenter|right|top|vcenter|bottom, to?: selection|keyObject|margins|page|spread (default: keyObject while a key object is set), ids?}",
             has_selection,
             align
         ),
@@ -687,7 +708,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::always,
             |s, p| {
                 if let Some(n) = p.get("sides").and_then(Value::as_u64) {
-                    s.prefs.polygon_sides = (n as u32).clamp(3, 100);
+                    s.prefs.polygon_sides = n.clamp(3, 100) as u32;
                 }
                 if let Some(v) = p.get("starInset").and_then(Value::as_f64) {
                     s.prefs.star_inset = (v / 100.0).clamp(0.0, 1.0);
@@ -951,7 +972,7 @@ fn frame_create(s: &mut Session, p: &Value) -> Result<Value> {
     let text = super::text_param(p, "text");
     let caret = bool_or(p, "caret", content == "text");
     let vertical = bool_or(p, "vertical", false);
-    let sides = p.get("sides").and_then(Value::as_u64).map_or(s.prefs.polygon_sides, |v| v as u32).clamp(3, 100);
+    let sides = p.get("sides").and_then(Value::as_u64).unwrap_or(u64::from(s.prefs.polygon_sides)).clamp(3, 100) as u32;
     let inset = p.get("starInset").and_then(Value::as_f64).map_or(s.prefs.star_inset, |v| v / 100.0).clamp(0.0, 1.0);
     let rect = Rect::new(rect.x0, rect.y0, rect.x1.max(rect.x0 + 0.5), rect.y1.max(rect.y0 + 0.5));
     s.edit(|d, sel| {
@@ -1053,7 +1074,8 @@ fn adopt_or_dangle(dst: &mut Document, src: &Document, id: AssetId) -> AssetId {
     dst.adopt_asset(src, id).unwrap_or_else(|| AssetId(dst.alloc()))
 }
 
-fn renumber(dst: &mut Document, src: &Document, it: &mut Item, stories: &mut HashMap<StoryId, StoryId>) {
+/// Give `it` (an item of `src`) fresh ids from `dst`, with copies of its stories and the assets it uses.
+pub(crate) fn renumber(dst: &mut Document, src: &Document, it: &mut Item, stories: &mut HashMap<StoryId, StoryId>) {
     it.id = ItemId(dst.alloc());
     let my_id = it.id;
     if let Some(m) = it.media.as_mut()
@@ -1201,11 +1223,10 @@ fn transform_resize(s: &mut Session, p: &Value) -> Result<Value> {
     let to = rect_param(p, "to").ok_or_else(|| bad("transform.resize", "missing to"))?;
     let scale_content = bool_or(p, "content", false);
     let distribute = bool_or(p, "distribute", false);
-    if from.width().abs() < 1e-9 || from.height().abs() < 1e-9 {
-        return Err(bad("transform.resize", "degenerate source rect"));
-    }
-    let sx = to.width() / from.width();
-    let sy = to.height() / from.height();
+    // A flat source (a horizontal or vertical line) has no size to scale on its flat axis: that axis only moves.
+    let ratio = |new: f64, old: f64| if old.abs() < 1e-9 { 1.0 } else { new / old };
+    let sx = ratio(to.width(), from.width());
+    let sy = ratio(to.height(), from.height());
     let sx = if sx.abs() < 1e-3 { 1e-3f64.copysign(sx) } else { sx };
     let sy = if sy.abs() < 1e-3 { 1e-3f64.copysign(sy) } else { sy };
     let m = Affine::translate((to.x0, to.y0)) * Affine::scale_non_uniform(sx, sy) * Affine::translate((-from.x0, -from.y0));
@@ -2272,8 +2293,16 @@ fn effects_all(s: &mut Session, p: &Value) -> Result<Value> {
             Some(BlendMode::parse(raw).ok_or_else(|| bad(ID, format!("unknown blend mode `{raw}`")))?)
         }
     };
+    // The document's global light angle, changed from an Angle field with Use Global Light on.
+    let global_light = match p.get("globalLight") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_f64().filter(|a| a.is_finite()).ok_or_else(|| bad(ID, "globalLight must be a number"))?),
+    };
     let ids = targets(s, p)?;
     s.edit(|d, _| {
+        if let Some(a) = global_light {
+            d.settings.global_light = (a + 180.0).rem_euclid(360.0) - 180.0;
+        }
         let mut changed = 0;
         for id in &ids {
             let Some(it) = d.item_mut(*id) else { continue };
@@ -2485,6 +2514,41 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
                 as u8,
         ),
     };
+    // `Some(None)` turns the frame's custom baseline grid off.
+    let custom_grid = match p.get("baselineGrid") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::Object(g)) => {
+            let num = |key: &str, lo: f64, hi: f64| match g.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(v) => match v.as_f64() {
+                    Some(x) if x.is_finite() && (lo..=hi).contains(&x) => Ok(Some(x)),
+                    _ => Err(bad(ID, format!("baselineGrid.{key} must be a number of points from {lo} to {hi}, not {v}"))),
+                },
+            };
+            let start = num("start", -15552.0, 15552.0)?;
+            let increment = num("increment", 0.0, 15552.0)?;
+            let relative_to = match g.get("relativeTo") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(
+                    v.as_str()
+                        .and_then(designcraft_doc::FrameGridRelative::from_name)
+                        .ok_or_else(|| bad(ID, format!("baselineGrid.relativeTo must be page|margin|frame|inset, not {v}")))?,
+                ),
+            };
+            Some(Some((start, increment, relative_to)))
+        }
+        Some(v) => return Err(bad(ID, format!("baselineGrid must be an object or null, not {v}"))),
+    };
+    // A frame without a custom grid starts from the document's.
+    let doc_grid = {
+        let g = &st.doc.settings.baseline_grid;
+        let relative_to = match g.relative_to {
+            designcraft_doc::GridRelative::TopOfPage => designcraft_doc::FrameGridRelative::TopOfPage,
+            designcraft_doc::GridRelative::TopMargin => designcraft_doc::FrameGridRelative::TopMargin,
+        };
+        designcraft_doc::FrameBaselineGrid { start: g.start, increment: g.increment, relative_to }
+    };
     let rule_color = match p.get("columnRuleColor") {
         None | Some(Value::Null) => None,
         Some(Value::String(c)) if st.doc.swatch(c).is_some() => Some(c.clone()),
@@ -2496,7 +2560,7 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
             let Some(tf) = d.item_mut(*id).and_then(Item::text_frame_mut) else { continue };
             let o = &mut tf.options;
             if let Some(v) = p.get("columns").and_then(Value::as_u64) {
-                o.columns = (v as u32).clamp(1, 40);
+                o.columns = v.clamp(1, 40) as u32;
             }
             if let Some(v) = p.get("gutter").and_then(Value::as_f64) {
                 o.gutter = v.max(0.0);
@@ -2575,6 +2639,7 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
             if let Some(v) = rule_bottom {
                 o.column_rule_bottom_inset = v;
             }
+            apply_custom_frame_grid(o, custom_grid, doc_grid);
             // Fixed Width columns set the frame's width: n columns, the gutters between them and
             // the left and right insets.
             let fixed_width = o.columns_kind == designcraft_doc::ColumnsKind::FixedWidth && o.column_width > 0.0;
@@ -2594,6 +2659,24 @@ fn text_frame_options(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(json!({"changed": ids.len()}))
     })
+}
+
+fn apply_custom_frame_grid(
+    options: &mut TextFrameOptions,
+    custom: Option<Option<(Option<f64>, Option<f64>, Option<designcraft_doc::FrameGridRelative>)>>,
+    document_grid: designcraft_doc::FrameBaselineGrid,
+) {
+    match custom {
+        Some(Some((start, increment, relative_to))) => {
+            let mut grid = options.baseline_grid.unwrap_or(document_grid);
+            grid.start = start.unwrap_or(grid.start);
+            grid.increment = increment.unwrap_or(grid.increment);
+            grid.relative_to = relative_to.unwrap_or(grid.relative_to);
+            options.baseline_grid = Some(grid);
+        }
+        Some(None) => options.baseline_grid = None,
+        None => {}
+    }
 }
 
 /// The gap at `p` on spread `sr`: (vertical gap?, edge a, edge b, ids ending at a, ids starting at b).
@@ -3053,8 +3136,18 @@ fn align_reference(d: &Document, ids: &[ItemId], to: &str, key: Option<ItemId>) 
 fn align(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = targets(s, p)?;
     let edge = str_param(p, "edge").unwrap_or("left").to_string();
-    let to = str_param(p, "to").map(str::to_string).unwrap_or_else(|| if ids.len() > 1 { "selection".into() } else { "page".into() });
-    let key = s.doc()?.selection.key;
+    // A key object counts only while it is one of several items aligned. With one, InDesign's
+    // Align To switches to Key Object, so it is also the default target.
+    let key = s.doc()?.selection.key.filter(|k| ids.len() > 1 && ids.contains(k));
+    let to = str_param(p, "to").map(str::to_string).unwrap_or_else(|| {
+        if key.is_some() {
+            "keyObject".into()
+        } else if ids.len() > 1 {
+            "selection".into()
+        } else {
+            "page".into()
+        }
+    });
     s.edit(|d, _| {
         let r = align_reference(d, &ids, &to, key).ok_or_else(|| bad("object.align", "nothing to align"))?;
         for id in &ids {
@@ -3767,6 +3860,21 @@ mod polygon_tests {
             .unwrap();
         assert_eq!(s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.subpaths[0].anchors.len(), 3);
     }
+
+    #[test]
+    fn polygon_sides_clamp_before_narrowing() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("tool.polygonSettings", &json!({"sides": 4294967301u64})).unwrap();
+        assert_eq!(r["sides"], 100);
+        let r = s.execute("tool.polygonSettings", &json!({"sides": 4294967297u64})).unwrap();
+        assert_eq!(r["sides"], 100);
+        let id =
+            s.execute("frame.create", &json!({"rect": [0, 0, 50, 50], "shape": "polygon", "sides": 4294967301u64, "starInset": 0})).unwrap()["id"]
+                .as_u64()
+                .unwrap();
+        assert_eq!(s.doc().unwrap().doc.item(ItemId(id)).unwrap().path.subpaths[0].anchors.len(), 100);
+    }
 }
 
 #[cfg(test)]
@@ -4053,6 +4161,26 @@ mod light_tests {
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(angle(&s), 45.0);
     }
+
+    /// The Effects dialog's Angle with Use Global Light on changes the global light, with the
+    /// effects, in one undo step.
+    #[test]
+    fn effects_sets_the_global_light_with_the_effects() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [10, 10, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [60, 10, 90, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.dropShadow", &json!({"on": true, "globalLight": true, "ids": [b]})).unwrap();
+        let before = s.doc().unwrap().doc.settings.global_light;
+        s.execute("object.effects", &json!({"ids": [a], "effects": {"dropShadow": {"on": true, "globalLight": true}}, "globalLight": 30})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        assert_eq!(d.settings.global_light, 30.0);
+        let other = &d.item(ItemId(b)).unwrap().effects.drop_shadow;
+        assert_eq!(d.light_angle(other.angle, other.global_light), 30.0, "every shadow on Global Light follows");
+        assert!(s.execute("object.effects", &json!({"ids": [a], "globalLight": "up"})).is_err());
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(s.doc().unwrap().doc.settings.global_light, before, "one undo step");
+    }
 }
 
 #[cfg(test)]
@@ -4116,27 +4244,6 @@ mod fitting_tests {
     use super::*;
 
     #[test]
-    fn separations_come_from_source_colours() {
-        let mut s = Session::new();
-        s.execute("file.new", &json!({})).unwrap();
-        let c = s.execute("frame.create", &json!({"rect": [100, 100, 200, 200]})).unwrap()["id"].clone();
-        s.execute("object.fill", &json!({"swatch": "C=100 M=0 Y=0 K=0", "ids": [c]})).unwrap();
-        let k = s.execute("frame.create", &json!({"rect": [300, 100, 400, 200]})).unwrap()["id"].clone();
-        s.execute("object.fill", &json!({"swatch": "[Black]", "ids": [k]})).unwrap();
-        let d = s.doc().unwrap().doc.clone();
-        let plate = |p: u8| {
-            let mut rr = designcraft_render::Renderer::new();
-            rr.threads = 0;
-            rr.render_page(&d, &s.cache, 0, 1.0, false, &designcraft_render::RenderOptions { plate: Some(p), ..Default::default() }).unwrap()
-        };
-        let (cyan, black) = (plate(0), plate(3));
-        // Cyan ink only on the cyan frame; black ink only on the black one (no rich-black guess).
-        assert!(cyan.pixel(150, 150)[0] < 10 && cyan.pixel(350, 150)[0] > 245, "{:?} {:?}", cyan.pixel(150, 150), cyan.pixel(350, 150));
-        assert!(black.pixel(350, 150)[0] < 10 && black.pixel(150, 150)[0] > 245);
-        assert!(cyan.pixel(20, 20)[0] > 245, "paper has no ink");
-    }
-
-    #[test]
     fn inner_glow_bevel_and_satin_change_the_inside() {
         let mut s = Session::new();
         s.execute("file.new", &json!({})).unwrap();
@@ -4175,18 +4282,29 @@ mod fitting_tests {
         let df = shot(&s);
         assert!(df.pixel(102, 200)[0] > 200, "left edge faded to paper: {:?}", df.pixel(102, 200));
         assert_eq!(df.pixel(298, 200), plain.pixel(298, 200), "right edge untouched");
-        // A knockout group exports as an image too.
+        // A knockout group stays vector, as a knockout transparency group.
         let other = s.execute("frame.create", &json!({"rect": [400, 100, 450, 150]})).unwrap()["id"].clone();
         let other2 = s.execute("frame.create", &json!({"rect": [420, 120, 470, 170]})).unwrap()["id"].clone();
         let g = s.execute("object.group", &json!({"ids": [other, other2]})).unwrap()["id"].clone();
         s.execute("object.transparencyGroup", &json!({"ids": [g], "knockout": true})).unwrap();
         let r = s.execute("file.exportPdf", &json!({})).unwrap();
-        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("2 object(s)")), "{r}");
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("1 object(s)")), "{r}");
+        assert!(String::from_utf8_lossy(&super::super::file::base64_decode(r["base64"].as_str().unwrap())).contains("/K true"));
         // PDF export carries effects (as an image of the object).
         let r = s.execute("file.exportPdf", &json!({})).unwrap();
         assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("soft effects")), "{r}");
         let bytes = super::super::file::base64_decode(r["base64"].as_str().unwrap());
         assert!(String::from_utf8_lossy(&bytes).contains("/Subtype/Image"));
+    }
+
+    #[test]
+    fn a_flat_line_resizes_along_its_length() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("line.create", &json!({"a": [100, 100], "b": [200, 100]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("transform.resize", &json!({"ids": [id], "from": [100, 100, 200, 100], "to": [100, 100, 300, 100]})).unwrap();
+        let r = s.doc().unwrap().doc.item(ItemId(id)).unwrap().bounds();
+        assert!((r.x0 - 100.0).abs() < 1e-9 && (r.x1 - 300.0).abs() < 1e-9 && (r.y0 - 100.0).abs() < 1e-9 && r.height().abs() < 1e-9, "{r:?}");
     }
 
     #[test]
@@ -4369,6 +4487,22 @@ mod line_end_tests {
         s.execute("note.edit", &json!({"story": n["story"], "id": n["id"], "text": "Three\r\nFour"})).unwrap();
         assert_eq!(note(&mut s), "Three\nFour");
     }
+
+    /// "One\u{B}Two" kept the vertical tab, drawn as a missing-glyph box, where Word and
+    /// PowerPoint text (Chr(11)) means a forced line break.
+    #[test]
+    fn vertical_tabs_are_forced_line_breaks() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 300], "content": "text", "text": "One\u{B}Two"})).unwrap();
+        let sid = designcraft_doc::StoryId(r["story"].as_u64().unwrap());
+        let story = |s: &Session| s.doc().unwrap().doc.story(sid).unwrap().clone();
+        assert_eq!((story(&s).text.as_str(), story(&s).paras.len()), ("One\u{2028}Two", 1));
+        s.execute("text.insert", &json!({"text": "\u{B}Three", "raw": true})).unwrap();
+        assert_eq!((story(&s).text.as_str(), story(&s).paras.len()), ("One\u{2028}Two\u{2028}Three", 1));
+        s.execute("story.setText", &json!({"story": sid.0, "text": "A\u{B}B\rC"})).unwrap();
+        assert_eq!((story(&s).text.as_str(), story(&s).paras.len()), ("A\u{2028}B\nC", 2));
+    }
 }
 
 #[cfg(test)]
@@ -4450,6 +4584,21 @@ mod column_rule_tests {
         // One undo step.
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(opts(&s), before);
+    }
+
+    /// A column count past `u32::MAX` was cast to `u32` before the clamp, so
+    /// 2^32 + 1 wrapped to 1 column instead of clamping to the maximum, 40.
+    #[test]
+    fn huge_column_count_clamps_to_the_maximum() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 300], "content": "text"})).unwrap();
+        let id = ItemId(r["id"].as_u64().unwrap());
+        let columns = |s: &Session| s.doc().unwrap().doc.item(id).unwrap().text_frame().unwrap().options.columns;
+        for (given, want) in [(4_294_967_297_u64, 40), (u64::MAX, 40), (0, 1)] {
+            s.execute("object.textFrameOptions", &json!({"ids": [id.0], "columns": given})).unwrap();
+            assert_eq!(columns(&s), want, "columns {given}");
+        }
     }
 }
 
@@ -4796,6 +4945,64 @@ mod group_tests {
         let e = group_ids(&mut s, &[a, b]).unwrap_err().to_string();
         assert!(e.contains("multi-state"), "{e}");
         assert_eq!(children(&s, g), vec![a, b]);
+    }
+}
+
+#[cfg(test)]
+mod stroke_type_tests {
+    use serde_json::json;
+
+    #[test]
+    fn malformed_stroke_types_return_bad_params_without_editing() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [0, 0, 100, 100]})).unwrap()["id"].clone();
+        for (kind, hint) in [
+            (json!({"kind": "dashed", "dash": [8, 2.5]}), "dash"),
+            (json!({"kind": "zigzag"}), "zigzag"),
+            (json!({"kind": "solid", "dash": [8, 2.5]}), "dash"),
+            (json!({"kind": "dashed", "pattern": [8, 2.5], "dash": [1, 2]}), "dash"),
+            (json!({"kind": "dashed"}), "pattern"),
+            (json!({"kind": "dashed", "pattern": "bad"}), "type"),
+            (json!({"kind": "stripes", "bands": [[0, "bad"]]}), "type"),
+            (json!({"kind": "style"}), "name"),
+            (json!({}), "kind"),
+            (json!("solid"), "type"),
+            (json!(null), "type"),
+        ] {
+            let before = s.doc().unwrap().doc.clone();
+            let error = s.execute("object.stroke", &json!({"ids": [id], "weight": 5, "type": kind})).unwrap_err();
+            assert!(matches!(error, crate::EngineError::BadParams { .. }), "{error}");
+            assert!(error.to_string().contains(hint), "{kind}: {error}");
+            assert!(std::sync::Arc::ptr_eq(&before, &s.doc().unwrap().doc), "{kind}: nothing changed");
+        }
+    }
+
+    #[test]
+    fn stroke_types_apply_all_supported_variants() {
+        let mut s = crate::Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let id = s.execute("frame.create", &json!({"rect": [0, 0, 100, 100]})).unwrap()["id"].as_u64().unwrap();
+        for kind in [
+            json!({"kind": "solid"}),
+            json!({"kind": "dashed", "pattern": [8, 2.5]}),
+            json!({"kind": "dotted"}),
+            json!({"kind": "thickThin"}),
+            json!({"kind": "thinThick"}),
+            json!({"kind": "thinThin"}),
+            json!({"kind": "thickThick"}),
+            json!({"kind": "thinThickThin"}),
+            json!({"kind": "thickThinThick"}),
+            json!({"kind": "wavy"}),
+            json!({"kind": "hashed"}),
+            json!({"kind": "stripes", "bands": [[0, 0.3], [0.7, 0.3]]}),
+            json!({"kind": "style", "name": "Rails"}),
+        ] {
+            let result = s.execute("object.stroke", &json!({"ids": [id], "type": kind})).unwrap();
+            assert_eq!(result["changed"], 1);
+            let item = s.doc().unwrap().doc.item(designcraft_doc::ItemId(id)).unwrap();
+            assert_eq!(item.stroke.kind, serde_json::from_value::<designcraft_doc::StrokeType>(kind).unwrap());
+        }
     }
 }
 
@@ -5462,5 +5669,35 @@ mod fill_tint_tests {
         let stroke_of = |s: &Session, id: u64| s.doc().unwrap().doc.item(ItemId(id)).unwrap().stroke.clone();
         assert_eq!((stroke_of(&s, a).swatch.as_str(), stroke_of(&s, a).tint, stroke_of(&s, a).weight), ("C=100 M=0 Y=0 K=0", 0.5, 2.0));
         assert!(stroke_of(&s, b).is_none());
+    }
+}
+
+#[cfg(test)]
+mod frame_baseline_grid_tests {
+    use super::*;
+    use designcraft_doc::{FrameBaselineGrid, FrameGridRelative};
+
+    #[test]
+    fn text_frame_options_set_a_custom_baseline_grid_relative_to() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let r = s.execute("frame.create", &json!({"rect": [36, 36, 300, 300], "content": "text", "text": "Hello"})).unwrap();
+        let id = ItemId(r["id"].as_u64().unwrap());
+        let grid = |s: &Session| s.doc().unwrap().doc.item(id).and_then(|i| i.text_frame()).and_then(|t| t.options.baseline_grid);
+        // Turning it on with only Relative To takes the document grid's start and increment.
+        let doc = s.doc().unwrap().doc.settings.baseline_grid.clone();
+        s.execute("object.textFrameOptions", &json!({"ids": [id.0], "baselineGrid": {"relativeTo": "frame"}})).unwrap();
+        assert_eq!(grid(&s), Some(FrameBaselineGrid { start: doc.start, increment: doc.increment, relative_to: FrameGridRelative::TopOfFrame }));
+        s.execute("object.textFrameOptions", &json!({"ids": [id.0], "baselineGrid": {"start": 10, "increment": 13, "relativeTo": "inset"}})).unwrap();
+        assert_eq!(grid(&s), Some(FrameBaselineGrid { start: 10.0, increment: 13.0, relative_to: FrameGridRelative::TopInset }));
+        // Fields not given keep the frame's.
+        s.execute("object.textFrameOptions", &json!({"ids": [id.0], "baselineGrid": {"relativeTo": "margin"}})).unwrap();
+        assert_eq!(grid(&s), Some(FrameBaselineGrid { start: 10.0, increment: 13.0, relative_to: FrameGridRelative::TopMargin }));
+        for bad in [json!({"relativeTo": "spine"}), json!({"start": f64::MAX}), json!({"increment": -1}), json!(3)] {
+            assert!(s.execute("object.textFrameOptions", &json!({"ids": [id.0], "baselineGrid": bad})).is_err(), "{bad}");
+        }
+        assert_eq!(grid(&s).map(|g| g.relative_to), Some(FrameGridRelative::TopMargin));
+        s.execute("object.textFrameOptions", &json!({"ids": [id.0], "baselineGrid": null})).unwrap();
+        assert_eq!(grid(&s), None);
     }
 }

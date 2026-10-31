@@ -23,8 +23,8 @@ pub(super) const KIND: &str = "newDocument";
 /// More Settings.
 pub(super) const MORE: &str = "newDocumentMore";
 
-pub(super) const SPEC: DialogSpec = DialogSpec::window(show, confirm);
-pub(super) const MORE_SPEC: DialogSpec = DialogSpec::window(show_more, confirm);
+pub(super) const SPEC: DialogSpec = DialogSpec { inputs: |_| &["presetName"], ..DialogSpec::window(show, confirm) };
+pub(super) const MORE_SPEC: DialogSpec = DialogSpec { inputs: |_| &["presetName"], ..DialogSpec::window(show_more, confirm) };
 
 /// The fields `file.new` takes.
 const PARAMS: [&str; 12] = [
@@ -117,16 +117,33 @@ fn sync(app: &VectorcraftApp, d: &mut Dialog) {
 
 /// Create the document; the dialog stays open when that fails (bad size, …).
 fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
-    let mut p: Map<String, Value> = PARAMS.iter().filter_map(|k| Some((k.to_string(), d.fields.get(*k)?.clone()))).collect();
-    // Recent entries such as "Custom" aren't presets file.new knows.
-    if newdoc::find(&app.session, &d.str("preset")).is_none() {
-        p.remove("preset");
-    }
+    let p = params(app, d);
     let r = app.run("file.new", Value::Object(p));
     if r.is_ok() {
         app.ui.dialog = None;
     }
     r
+}
+
+/// New Without Dialog (`file.newWithoutDialog`, Cmd+Alt+N): create the document [`open`] would
+/// offer, as its Create would, without showing the dialog. A dialog already open stays open.
+pub fn create_without_dialog(app: &mut VectorcraftApp) -> Result<Value, String> {
+    let shown = app.ui.dialog.take();
+    open(app);
+    let offered = app.ui.dialog.take();
+    app.ui.dialog = shown;
+    let p = offered.map(|d| params(app, &d)).unwrap_or_default();
+    app.run("file.new", Value::Object(p))
+}
+
+/// The `file.new` params of the fields.
+fn params(app: &VectorcraftApp, d: &Dialog) -> Map<String, Value> {
+    let mut p: Map<String, Value> = PARAMS.iter().filter_map(|k| Some((k.to_string(), d.fields.get(*k)?.clone()))).collect();
+    // Recent entries such as "Custom" aren't presets file.new knows.
+    if newdoc::find(&app.session, &d.str("preset")).is_none() {
+        p.remove("preset");
+    }
+    p
 }
 
 /// The units the size fields show.
@@ -154,7 +171,7 @@ fn set_layout(d: &mut Dialog, key: &str, v: Value) {
 
 /// The New Document dialog window `id` in the shared modal frame.
 fn window(ctx: &egui::Context, id: &str, margin: i8, add: impl FnOnce(&mut egui::Ui)) {
-    super::modal::show(ctx, id, egui::Id::new(("dialog", id)), -20.0, margin, add);
+    super::modal::show(ctx, id, egui::Id::unique(("dialog", id)), -20.0, margin, add);
 }
 
 /// What the buttons of a window asked for.

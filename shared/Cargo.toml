@@ -10,8 +10,8 @@ name = "craftapps_shared"
 crate-type = ["rlib"]
 
 [dependencies]
-eframe = { version = "0.36", default-features = false, features = ["wgpu"] }
-egui = "0.36"
+eframe = { version = "0.37", default-features = false, features = ["wgpu"] }
+egui = "0.37"
 jni = "=0.22.4"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
@@ -27,7 +27,7 @@ android_logger = "0.15"
 # features has none, and winit refuses to compile without one. Only the tests
 # use this — the Android build is unaffected (winit's X11 backend is desktop
 # only).
-eframe = { version = "0.36", default-features = false, features = ["wgpu", "x11"] }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "x11"] }
 
 # NOTE: this crate does NOT forbid unsafe: the JNI bridge fundamentally needs
 # it. Every unsafe block carries a SAFETY comment (the photocraft-tablet

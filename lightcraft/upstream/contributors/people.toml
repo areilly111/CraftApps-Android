@@ -38,6 +38,9 @@ sync_github_name = true
 [people.Losminek]
 sync_github_name = true
 
+[people.nicolasfalesy]
+sync_github_name = true
+
 [people.FooVoo]
 real_name = "Aleksandr Batyrev"
 sync_github_name = true
@@ -56,4 +59,18 @@ sync_github_name = false
 
 [people.egegl]
 real_name = "Ege Gursel"
+sync_github_name = true
+
+[people.valenfys]
+sync_github_name = true
+
+[people.mahmatias]
+display_name = "Márcio Matias de Andrade"
+sync_github_name = true
+
+[people.ronibalthazar]
+sync_github_name = true
+
+[people.dotCooCoo]
+real_name = "Robert Lee"
 sync_github_name = true

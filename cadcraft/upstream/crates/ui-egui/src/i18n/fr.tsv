@@ -1,0 +1,1019 @@
+# CADCraft French interface catalog — original translations by @pechnikov2026-star.
+# License: MIT OR Apache-2.0 (the repository LICENSE-MIT and LICENSE-APACHE).
+# Written from CADCraft's English strings; no proprietary translations were copied.
+# UTF-8: context<TAB>English source<TAB>French translation.
+# Empty context = ordinary label; @plural = one|other forms with {n}.
+# Command IDs, typed keywords, technology/product names and user data stay unchanged.
+	  Cancel  	  Annuler  
+	  OK  	  OK  
+	 or [	 ou [
+	% of all commits	% de toutes les révisions
+	* Wildcard Match	* Correspondance générique
+	*VARIES*	*DIVER*
+	+  |  Top  |  2D Wireframe	+  |  Dessus  |  Filaire 2D
+	+Bin	+bin.
+	+LOC	+lignes
+	1 Viewport	1 fenêtre
+	2 Points	2 points
+	2 Viewports	2 fenêtres
+	2D Solid	Solide 2D
+	3 Points	3 points
+	3 Viewports	3 fenêtres
+	3D Face	Face 3D
+	3D Operations	Opérations 3D
+	3D Polyline	Polyligne 3D
+	4 Viewports	4 fenêtres
+	< Less than	< Inférieur à
+	<> Not Equal	<> Différent de
+	= Equals	= Égal à
+	> Greater than	> Supérieur à
+	About	À propos
+	About CADCraft	À propos de CADCraft
+	Absolute	Absolu
+	Add Leader	Ajouter un repère
+	Align	Aligner
+	Align Text	Aligner le texte
+	Aligned	Aligné
+	All	Tous
+	All Used Layers	Tous les calques utilisés
+	All files	Tous les fichiers
+	Angle	Angle
+	Angular	Angulaire
+	Annotation Visibility	Visibilité des annotations
+	Annotation scale	Échelle des annotations
+	Apparent Intersection	Intersection apparente
+	Append to current selection set	Ajouter au jeu de sélection actuel
+	Apply to:	Appliquer à :
+	Apply true color	Appliquer la couleur RGB
+	Arc	Arc
+	Arc Length	Longueur d'arc
+	Area	Aire
+	Arrange Panel	Réorganiser le panneau
+	Array	Réseau
+	Attach	Joindre
+	Attribute	Attribut
+	Attribute Definition	Définition d'attribut
+	Attribute Display	Affichage des attributs
+	Audit	Vérifier
+	Auto (system language)	Auto (langue du système)
+	Auto Constrain	Contraintes automatiques
+	AutoConstrain	ContraintesAuto
+	Axis, End	Axe, extrémité
+	Base	Base
+	Baseline	Ligne de base
+	Batch Publish	Publication par lots
+	Binary assets added	Ressources binaires ajoutées
+	Binary assets removed	Ressources binaires supprimées
+	Blend	Raccord lissé
+	Block	Bloc
+	Block Attribute Manager...	Gestionnaire des attributs de bloc...
+	Block Description...	Description de bloc...
+	Block Editor	Éditeur de blocs
+	Block Reference	Référence de bloc
+	Block...	Bloc...
+	Blocks	Blocs
+	Blue	Bleu
+	Bold	Gras
+	Boolean	Opérations booléennes
+	Boundary	Frontière
+	Boundary...	Frontière...
+	Box	Pavé
+	Break	Rupture
+	Break At Point	Rupture en un point
+	Bring to Front	Mettre au premier plan
+	ByBlock	DuBloc
+	ByColor	Par couleur
+	ByLayer	DuCalque
+	CADCraft Help	Aide de CADCraft
+	Cancel	Annuler
+	Cartesian (x, y)	Cartésien (x, y)
+	Center	Centre
+	Center Line	Ligne d'axe
+	Center Mark	Marque de centre
+	Center X	Centre X
+	Center Y	Centre Y
+	Center Z	Centre Z
+	Center, Diameter	Centre, diamètre
+	Center, Radius	Centre, rayon
+	Center, Start, Angle	Centre, départ, angle
+	Center, Start, End	Centre, départ, fin
+	Center, Start, Length	Centre, départ, longueur
+	Chamfer	Chanfrein
+	Change Space	Changer d'espace
+	Change to Current Layer	Déplacer vers le calque courant
+	Circle	Cercle
+	Circumference	Circonférence
+	Clear	Effacer
+	Clipboard	Presse-papiers
+	Close	Fermer
+	Close All	Tout fermer
+	Closed	Fermé
+	Coincident	Coïncidence
+	Collapse Tool Sets	Réduire les jeux d'outils
+	Collinear	Colinéarité
+	Color	Couleur
+	Color 8	Couleur 8
+	Color 9	Couleur 9
+	Color Index	Indice de couleur
+	Color...	Couleur...
+	Command History	Historique des commandes
+	Command Line	Ligne de commande
+	Command Line History Lines	Lignes d'historique de la ligne de commande
+	Command Reference	Référence des commandes
+	Commits	Révisions
+	Company	Société
+	Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.	Conception et dessin assistés par ordinateur : application de CAO open source, développée de manière indépendante en pur Rust.
+	Concentric	Concentricité
+	Cone	Cône
+	Constraint Bars	Barres de contraintes
+	Constraint Settings	Paramètres de contraintes
+	Construction Line	Ligne de construction
+	Contents	Sommaire
+	Continue	Continuer
+	Contributors	Contributeurs
+	Control Vertices	Sommets de contrôle
+	Copy	Copier
+	Copy Layout	Copier la présentation
+	Copy Nested Objects	Copier les objets imbriqués
+	Copy Selection	Copier la sélection
+	Copy with Base Point	Copier avec point de base
+	Count	Nombre
+	Create Block	Créer un bloc
+	Creates a user parameter	Crée un paramètre utilisateur
+	Ctrl+Enter to finish	Ctrl+Entrée pour terminer
+	Current layer	Calque courant
+	Current selection	Sélection actuelle
+	Current: {color}	Actuel : {color}
+	Cut	Couper
+	Cut with Base Point	Couper avec point de base
+	Cyan	Cyan
+	Cylinder	Cylindre
+	DWG	DWG
+	DXF	DXF
+	Dark	Sombre
+	Default	Par défaut
+	Default Save Format	Format d'enregistrement par défaut
+	Define Attributes	Définir les attributs
+	Define Attributes...	Définir les attributs...
+	Defined width	Largeur définie
+	Degree	Degré
+	Delete	Supprimer
+	Delete Column	Supprimer la colonne
+	Delete Constraints	Supprimer les contraintes
+	Delete Dimension Style	Supprimer le style de cotation
+	Delete Duplicate Objects	Supprimer les objets en double
+	Delete Layer	Supprimer le calque
+	Delete Layer State	Supprimer l'état des calques
+	Delete Layout	Supprimer la présentation
+	Delete Row	Supprimer la ligne
+	Delete Text Style	Supprimer le style de texte
+	Delta X	Écart X
+	Delta Y	Écart Y
+	Description	Description
+	Deselect All	Désélectionner tout
+	Diameter	Diamètre
+	Dim style	Style de cotation
+	Dimension	Cotation
+	Dimension Space	Espace entre cotations
+	Dimension Style Override	Substitution de style de cotation
+	Dimension Style...	Style de cotation...
+	Dimension Text Edit	Modifier le texte de cotation
+	Dimension style	Style de cotation
+	Dimensional Constraint	Contrainte dimensionnelle
+	Dimensional Constraint Parameters	Paramètres de contraintes dimensionnelles
+	Dimensional Constraints	Contraintes dimensionnelles
+	Disassociate Dimensions	Dissocier les cotations
+	Display name	Nom d'affichage
+	Distance	Distance
+	Divide	Diviser
+	Do not plot (click: plot)	Ne pas tracer (cliquer pour tracer)
+	Donut	Anneau
+	Double-click to edit the description	Double-cliquez pour modifier la description
+	Down	Bas
+	Drafting	Dessin
+	Drafting Settings	Paramètres de dessin
+	Drafting Settings...	Paramètres de dessin...
+	Draw	Dessin
+	Draw Order	Ordre de dessin
+	Drawing (DWG)	Dessin (DWG)
+	Drawing (DXF)	Dessin (DXF)
+	Drawing Limits	Limites du dessin
+	Drawing Utilities	Utilitaires de dessin
+	Drawings (DWG, DXF)	Dessins (DWG, DXF)
+	Dynamic Dimensions	Cotations dynamiques
+	Dynamic Input	Saisie dynamique
+	Dynamic Input (F12)	Saisie dynamique (F12)
+	E	Est
+	Edit	Édition
+	Edit Text...	Modifier le texte...
+	Elevation	Élévation
+	Ellipse	Ellipse
+	Elliptical Arc	Arc elliptique
+	Enable Dynamic Input (F12)	Activer la saisie dynamique (F12)
+	End Width	Largeur finale
+	End X	Extrémité X
+	End Y	Extrémité Y
+	End angle	Angle final
+	Endpoint	Extrémité
+	Enter Top, Zero or Bottom.	Entrez Top, Zero ou Bottom.
+	Enter a fit data option	Entrez une option de données d'ajustage
+	Enter a pattern name	Entrez un nom de motif
+	Enter a vertex editing option	Entrez une option d'édition de sommet
+	Enter an option	Entrez une option
+	Enter angle of xline	Entrez l'angle de la ligne de construction
+	Enter angle of xline (0) or	Entrez l'angle de la ligne de construction (0) ou
+	Enter area of rectangle in current units	Entrez l'aire du rectangle dans les unités courantes
+	Enter attribute prompt	Entrez l'invite de l'attribut
+	Enter attribute tag name	Entrez le nom de l'étiquette d'attribut
+	Enter attribute value	Entrez la valeur de l'attribut
+	Enter block name	Entrez le nom du bloc
+	Enter constraint type	Entrez le type de contrainte
+	Enter continuity	Entrez la continuité
+	Enter default attribute value	Entrez la valeur par défaut de l'attribut
+	Enter degree of spline	Entrez le degré de la spline
+	Enter delta angle	Entrez l'écart d'angle
+	Enter delta length or	Entrez l'écart de longueur ou
+	Enter dimension text	Entrez le texte de cotation
+	Enter dimension text (<> = measurement)	Entrez le texte de cotation (<> = mesure)
+	Enter dimension value or [name=expression]	Entrez la valeur de cotation ou [name=expression]
+	Enter dimension variable name to override	Entrez le nom de la variable de cotation à substituer
+	Enter justification type	Entrez le type de justification
+	Enter leader text	Entrez le texte du repère
+	Enter mline scale	Entrez l'échelle de la multiligne
+	Enter mode	Entrez le mode
+	Enter name of block to insert	Entrez le nom du bloc à insérer
+	Enter new text	Entrez le nouveau texte
+	Enter next point	Entrez le point suivant
+	Enter number of columns	Entrez le nombre de colonnes
+	Enter number of data rows	Entrez le nombre de lignes de données
+	Enter number of items	Entrez le nombre d'éléments
+	Enter number of items along path	Entrez le nombre d'éléments le long du tracé
+	Enter number of sides	Entrez le nombre de côtés
+	Enter number of turns	Entrez le nombre de tours
+	Enter percentage length	Entrez la longueur en pourcentage
+	Enter rectangle length	Entrez la longueur du rectangle
+	Enter rectangle width	Entrez la largeur du rectangle
+	Enter scale factor	Entrez le facteur d'échelle
+	Enter text	Entrer le texte
+	Enter text (use \P for new paragraphs)	Entrer le texte (utilisez \P pour les nouveaux paragraphes)
+	Enter the number of segments	Entrer le nombre de segments
+	Enter twist direction of helix	Entrer le sens de vrillage de l'hélice
+	Entire drawing	Tout le dessin
+	Equal	Égalité
+	Erase	Effacer
+	Exclude from new selection set	Exclure du nouveau jeu de sélection
+	Explode	Décomposer
+	Export	Exporter
+	Export to PDF...	Exporter en PDF...
+	Expression	Expression
+	Extend	Prolonger
+	Extension	Prolongement
+	Extents	Étendue
+	Extrude	Extruder
+	File	Fichier
+	File Tab	Onglet Fichier
+	Fillet	Congé
+	Filter	Filtre
+	Filters	Filtres
+	Find and Replace	Rechercher et remplacer
+	Find...	Rechercher...
+	First	Premier
+	First commit	Première révision
+	Fit Points	Points d'ajustement
+	Fix	Fixation
+	Flatten Objects	Aplatir les objets
+	Format	Format
+	Freehand	À main levée
+	Freeze	Geler
+	Freeze Layer	Geler le calque
+	Freeze in new viewports	Geler dans les nouvelles fenêtres
+	Freeze/Thaw	Geler/Dégeler
+	Freeze/Thaw in all viewports	Geler/Dégeler dans toutes les fenêtres
+	Freeze/Thaw in the current viewport	Geler/Dégeler dans la fenêtre courante
+	From	À partir de
+	General	Général
+	Geometric Center	Centre géométrique
+	Geometric Constraint	Contrainte géométrique
+	Geometric Constraints	Contraintes géométriques
+	Geometry	Géométrie
+	Get Variable	Obtenir la variable
+	Get View	Obtenir la vue
+	Global	Global
+	Global width	Largeur globale
+	Grab bag	Liste
+	Gradient	Dégradé
+	Gradient...	Dégradé...
+	Green	Vert
+	Grid (F7)	Grille (F7)
+	Grid Display	Affichage de la grille
+	Grid On (F7)	Activer la grille (F7)
+	Grid spacing	Espacement de la grille
+	Grip Mirror	Miroir par poignées
+	Grip Rotate	Rotation par poignées
+	Grip Scale	Échelle par poignées
+	Grip Stretch	Étirement par poignées
+	Group	Grouper
+	Group Edit	Modifier le groupe
+	Hatch	Hachures
+	Hatch Edit	Modifier les hachures
+	Hatch...	Hachures...
+	Height	Hauteur
+	Height: {height}	Hauteur : {height}
+	Helix	Hélice
+	Help	Aide
+	Hide All	Tout masquer
+	Hide All Constraint Bars	Masquer toutes les barres de contraintes
+	Hide All Dynamic Dimensions	Masquer toutes les cotes dynamiques
+	Hide Layer List	Masquer la liste des calques
+	Hide Palettes	Masquer les palettes
+	Home	Vue d'accueil
+	Horizontal	Horizontal
+	HorizontalDistance	DistanceHorizontale
+	How to apply:	Mode d'application :
+	ID Point	ID du point
+	Import	Importer
+	In	Zoom avant
+	In-window Menu Bar	Barre de menus dans la fenêtre
+	Include in new selection set	Inclure dans le nouveau jeu de sélection
+	Increment angle	Incrément d'angle
+	Index Color	Couleur indexée
+	Index color: {index}	Couleur indexée : {index}
+	Inquiry	Interroger
+	Insert	Insertion
+	Insert Block	Insérer un bloc
+	Insert Column	Insérer une colonne
+	Insert Row	Insérer une ligne
+	Insert this block	Insérer ce bloc
+	Insertion	Point d'insertion
+	Insertion X	Insertion X
+	Insertion Y	Insertion Y
+	Insertion Z	Insertion Z
+	Inspect Constraints	Inspecter les contraintes
+	Inspect Drawing	Inspecter le dessin
+	Interface Language	Langue de l'interface
+	Interface Theme	Thème de l'interface
+	Intersect	Intersection
+	Intersection	Intersection
+	Isolate	Isoler
+	Isolate Layer	Isoler le calque
+	Isometric Drafting	Dessin isométrique
+	Join	Rejoindre
+	Join the ArtCraft Discord…	Rejoindre le Discord d'ArtCraft…
+	Join us on Discord	Rejoignez-nous sur Discord
+	Language	Langue
+	Last	Dernier
+	Last commit	Dernière révision
+	Layer	Calque
+	Layer Delete	Supprimer le calque
+	Layer Match	Faire correspondre le calque
+	Layer Merge	Fusionner les calques
+	Layer Off	Désactiver le calque
+	Layer Properties	Propriétés du calque
+	Layer Properties Manager	Gestionnaire des propriétés des calques
+	Layer Properties Manager — current viewport	Gestionnaire des propriétés des calques — fenêtre courante
+	Layer State	État des calques
+	Layer States Manager...	Gestionnaire des états de calques...
+	Layer Tools	Outils de calque
+	Layer contains objects (double-click to make current)	Le calque contient des objets (double-cliquez pour le rendre courant)
+	Layer is empty (double-click to make current)	Le calque est vide (double-cliquez pour le rendre courant)
+	Layers	Calques
+	Layers Palette	Palette des calques
+	Layers displayed: {shown} of {total}.   Current layer: {layer}	Calques affichés : {shown} sur {total}.   Calque courant : {layer}
+	Layout	Présentation
+	Layout list	Liste des présentations
+	Leader	Repère
+	Left	Gauche
+	Length	Longueur
+	Length X	Longueur X
+	Length Y	Longueur Y
+	Lengthen	Modifier la longueur
+	Light	Clair
+	Line	Ligne
+	Line delta	Variation de lignes
+	Linear	Linéaire
+	Lines +/−	Lignes +/−
+	Lines added	Lignes ajoutées
+	Lines deleted	Lignes supprimées
+	Linetype	Type de ligne
+	Linetype Scale	Échelle du type de ligne
+	Linetype scale	Échelle du type de ligne
+	Ltscale	Échelle du type de ligne
+	Linetype...	Type de ligne...
+	Lineweight	Épaisseur de ligne
+	Lineweight...	Épaisseur de ligne...
+	List	Liste
+	List Blocks	Liste des blocs
+	List Dimension Styles	Liste des styles de cote
+	List Groups	Liste des groupes
+	List Layer States	Liste des états de calques
+	List Layouts	Liste des présentations
+	List System Variables	Liste des variables système
+	List Text Styles	Liste des styles de texte
+	Load all	Tout charger
+	Load...	Charger...
+	Loaded linetypes	Types de ligne chargés
+	Lock	Verrouiller
+	Lock Layer	Verrouiller le calque
+	Lock/Unlock	Verrouiller/Déverrouiller
+	Loft	Loft
+	MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.	MIT OR Apache-2.0. Non affilié à Autodesk, Inc.
+	MODEL	MODÈLE
+	MText	Texte multiligne
+	Magenta	Magenta
+	Major line every	Ligne principale tous les
+	Make Current	Rendre courant
+	Make Object's Layer Current	Rendre le calque de l'objet courant
+	Make...	Créer...
+	Match Layer	Faire correspondre le calque
+	Match Properties	Copier les propriétés
+	Measure	Mesurer
+	Measure Distance	Mesurer la distance
+	Measure Geometry	Mesurer la géométrie
+	Merge Cells	Fusionner les cellules
+	Merged PRs	PR fusionnés
+	Mid Between 2 Points	Milieu entre 2 points
+	Midpoint	Milieu
+	Mirror	Miroir
+	Model	Modèle
+	Model Space (in viewport)	Espace objet (dans la fenêtre)
+	Modeling	Modélisation
+	Models	Modèles
+	Modify	Modifier
+	Move	Déplacer
+	Multileader	Repère multiple
+	Multileader Style...	Style de repère multiple...
+	Multileader style	Style de repère multiple
+	Multiline	Multiligne
+	Multiline Text	Texte multiligne
+	Multiline Text...	Texte multiligne...
+	Multiple	Multiple
+	Multiple Point	Points multiples
+	My	Mes
+	My properties: not available yet	Mes propriétés : pas encore disponibles
+	N	N
+	Name	Nom
+	Name (A–Z)	Nom (A–Z)
+	Named Viewports...	Fenêtres nommées...
+	Nearest	Plus proche
+	New	Nouveau
+	New (metric)	Nouveau (métrique)
+	New Drawing	Nouveau dessin
+	New Drawing (⌘N)	Nouveau dessin (⌘N)
+	New Drawing...	Nouveau dessin...
+	New Layer	Nouveau calque
+	New Layout	Nouvelle présentation
+	New VP Freeze	Geler nouvelles fenêtres
+	New Viewports...	Nouvelles fenêtres...
+	New layout	Nouvelle présentation
+	New state name	Nom du nouvel état
+	No	Non
+	No blocks defined in this drawing.	Aucun bloc défini dans ce dessin.
+	No contributor data was built into this copy.	Cette version ne contient pas de données sur les contributeurs.
+	No model credits were built into this copy.	Cette version ne contient pas de crédits de modèles.
+	No saved layer states	Aucun état de calque enregistré
+	No selection	Aucune sélection
+	Node	Nœud
+	None	Aucun
+	Normal	Normal
+	Not available	Non disponible
+	Not available yet	Pas encore disponible
+	OK	OK
+	Object	Objet
+	Object Snap	Accrochage aux objets
+	Object Snap (F3)	Accrochage aux objets (F3)
+	Object Snap On (F3)	Activer l'accrochage aux objets (F3)
+	Object Snap Tracking	Suivi de l'accrochage aux objets
+	Object Snap Tracking (F11)	Suivi de l'accrochage aux objets (F11)
+	Object type:	Type d'objet :
+	Off	Désactivé
+	Offset	Décalage
+	On	Activé
+	On/Off	Activer/Désactiver
+	One of the Crafting Apps by the ArtCraft team and community.	L'une des applications Crafting Apps de l'équipe et de la communauté ArtCraft.
+	Open (⌘O)	Ouvrir (⌘O)
+	Open Sample Drawing	Ouvrir un dessin d'exemple
+	Open sample drawing	Ouvrir un dessin d'exemple
+	Open...	Ouvrir...
+	Operator:	Opérateur :
+	Orbit	Orbite
+	Ordinate	Ordonnée
+	Ortho (F8)	Ortho (F8)
+	Ortho Mode	Mode Ortho
+	Ortho Mode (F8)	Mode Ortho (F8)
+	Osnap Settings...	Paramètres d'accrochage aux objets...
+	Out	Zoom arrière
+	Override	Outrepasser
+	PAPER	PAPIER
+	Percent	Pourcentage
+	Polar (distance < angle)	Polaire (distance < angle)
+	PRs	PR
+	Page Setup Manager	Gestionnaire des mises en page
+	Page Setup Manager...	Gestionnaire des mises en page...
+	Pan	Panoramique
+	Pan Down	Panoramique vers le bas
+	Pan Left	Panoramique vers la gauche
+	Pan Right	Panoramique vers la droite
+	Pan Up	Panoramique vers le haut
+	Paper Space	Espace papier
+	Parallel	Parallèle
+	Parameters Manager	Gestionnaire des paramètres
+	Parametric	Paramétrique
+	Paste	Coller
+	Paste as Block	Coller en tant que bloc
+	Paste to Original Coordinates	Coller aux coordonnées d'origine
+	Path Array	Réseau sur trajectoire
+	Pattern	Motif
+	Perpendicular	Perpendiculaire
+	Plot	Tracer
+	Plot (click: do not plot)	Tracer (cliquer : ne pas tracer)
+	Plot Preview	Aperçu du tracé
+	Plot style	Style de tracé
+	Plot style attached to	Style de tracé associé à
+	Plot style table	Table de styles de tracé
+	Plot Style...	Style de tracé...
+	Plot Style Manager	Gestionnaire des styles de tracé
+	Plot Style Manager...	Gestionnaire des styles de tracé...
+	Plot Styles...	Styles de tracé...
+	New CTB	Nouvelle CTB
+	New STB	Nouvelle STB
+	New style	Nouveau style
+	Reset Panel Layout	Réinitialiser la disposition des panneaux
+	Use for this layout	Utiliser pour cet espace
+	Display plot styles	Afficher les styles de tracé
+	No plot style tables.	Aucune table de styles de tracé.
+	A built-in table: editing it keeps an edited copy in the drawing.	Table intégrée : sa modification conserve une copie modifiée dans le dessin.
+	Keep an editable copy of this table in the drawing	Conserver une copie modifiable de cette table dans le dessin
+	Layout {name}: {table}	Espace {name} : {table}
+	Grayscale	Niveaux de gris
+	Screening	Trame
+	Use object linetype	Utiliser le type de ligne de l'objet
+	Use object lineweight	Utiliser l'épaisseur de ligne de l'objet
+	Remove	Supprimer
+	Add	Ajouter
+	Open a drawing first.	Ouvrez d'abord un dessin.
+	Plot table type	Type de table de tracé
+	Color-dependent	Dépendante des couleurs
+	Named	Nommée
+	Plus/minus	Plus/moins
+	Point	Point
+	Point Filters	Filtres de points
+	Point Style...	Style de point...
+	Polar Array	Réseau polaire
+	Polar Tracking	Recherche polaire
+	Polar Tracking (F10)	Recherche polaire (F10)
+	Polar Tracking On (F10)	Activer la recherche polaire (F10)
+	Polar: {distance} < {angle}°	Polaire : {distance} < {angle}°
+	Polygon	Polygone
+	Polygonal	Polygonal
+	Polyline	Polyligne
+	Position X	Position X
+	Position Y	Position Y
+	Position Z	Position Z
+	Previous	Précédent
+	Previous Layer	Calque précédent
+	Primitives	Primitives
+	Print	Imprimer
+	Print...	Imprimer...
+	Properties	Propriétés
+	Properties Inspector	Inspecteur de propriétés
+	Properties:	Propriétés :
+	Proxy	Objet proxy
+	Purge	Purger
+	Pyramid	Pyramide
+	Quadrant	Quadrant
+	Query Entities	Interroger les entités
+	Quick	Rapide
+	Quick Dimension	Cotation rapide
+	Quick Properties	Propriétés rapides
+	Quick Select	Sélection rapide
+	Quick Select Properties	Propriétés de la sélection rapide
+	Quick Select...	Sélection rapide...
+	QuickCalc	Calculatrice rapide
+	Quit CADCraft	Quitter CADCraft
+	Radius	Rayon
+	Raster Image	Image raster
+	Ray	Rayon
+	Read-only	Lecture seule
+	Real name	Nom réel
+	Realtime	Temps réel
+	Reassociate Dimensions	Réassocier les cotes
+	Recent	Récents
+	Recover...	Récupérer...
+	Rectangle	Rectangle
+	Rectangular	Rectangulaire
+	Rectangular Array	Réseau rectangulaire
+	Red	Rouge
+	Redo	Rétablir
+	Redo (⇧⌘Z)	Rétablir (⇧⌘Z)
+	Redraw	Redessiner
+	Regen	Régénérer
+	Regen All	Régénérer tout
+	Region	Région
+	Region/Mass Properties	Propriétés de région/masse
+	Relative	Relatif
+	Remove Leader	Supprimer la ligne de repère
+	Remove the viewport override	Supprimer le remplacement de la fenêtre
+	Rename Dimension Style	Renommer le style de cote
+	Rename Layer	Renommer le calque
+	Rename Layer State	Renommer l'état des calques
+	Rename Layout	Renommer l'espace
+	Rename Text Style	Renommer le style de texte
+	Rename...	Renommer...
+	Repeat {command}	Répéter {command}
+	Replace Block...	Remplacer le bloc...
+	Requires a point (x,y, @dx,dy or @d<a).	Nécessite un point (x,y, @dx,dy ou @d<a).
+	Reset Palettes	Réinitialiser les palettes
+	Restore	Restaurer
+	Restore Layer State	Restaurer l'état des calques
+	Reverse	Inverser
+	Reverse the order	Inverser l'ordre
+	Revision Cloud	Nuage de révisions
+	Revolve	Révolution
+	Right	Droite
+	Rotate	Pivoter
+	Rotation	Rotation
+	S	S
+	Save	Enregistrer
+	Save (⌘S)	Enregistrer (⌘S)
+	Save As	Enregistrer sous
+	Save As...	Enregistrer sous...
+	Save Layer State	Enregistrer l'état des calques
+	Save State	Enregistrer l'état
+	Scale	Échelle
+	Search for layer	Rechercher un calque
+	Search for parameter	Rechercher un paramètre
+	Second and next points:	Deuxième point et points suivants :
+	Select	Sélectionner
+	Select 2D polyline	Sélectionner une polyligne 2D
+	Select All	Sélectionner tout
+	Select Objects	Sélectionner les objets
+	Select a 2D polyline.	Sélectionner une polyligne 2D.
+	Select a block reference.	Sélectionner une référence de bloc.
+	Select a circle or arc.	Sélectionner un cercle ou un arc.
+	Select a closed polyline	Sélectionner une polyligne fermée
+	Select a closed polyline, circle, ellipse or closed spline.	Sélectionner une polyligne fermée, un cercle, une ellipse ou une spline fermée.
+	Select a closed polyline.	Sélectionner une polyligne fermée.
+	Select a curve as the path.	Sélectionner une courbe comme trajectoire.
+	Select a dimension constraint type	Sélectionner un type de contrainte dimensionnelle
+	Select a line object	Sélectionner une ligne
+	Select a line object.	Sélectionner une ligne.
+	Select a line or an arc.	Sélectionner une ligne ou un arc.
+	Select a line or polyline segment	Sélectionner une ligne ou un segment de polyligne
+	Select a line, arc or open polyline.	Sélectionner une ligne, un arc ou une polyligne ouverte.
+	Select a line, arc, circle, polyline, ellipse or spline as the path.	Sélectionner une ligne, un arc, un cercle, une polyligne, une ellipse ou une spline comme trajectoire.
+	Select a line, circle, arc or polyline segment.	Sélectionner une ligne, un cercle, un arc ou un segment de polyligne.
+	Select a line.	Sélectionner une ligne.
+	Add to Working Set	Ajouter au jeu de travail
+	Edit Reference In-Place	Modifier la référence sur place
+	Save Reference Edits	Enregistrer les modifications de la référence
+	Working Set	Jeu de travail
+	Xref and Block In-place Editing	Édition sur place des xrefs et des blocs
+	Select a polyline.	Sélectionner une polyligne.
+	Select a text, mtext, attribute definition or dimension.	Sélectionner un texte, un texte multiligne, une définition d'attribut ou une cote.
+	Select an annotation object	Sélectionner un objet d'annotation
+	Select an arc or circle	Sélectionner un arc ou un cercle
+	Select an arc.	Sélectionner un arc.
+	Select an object	Sélectionner un objet
+	Select an object to change or	Sélectionner un objet à modifier ou
+	Select an object to measure or	Sélectionner un objet à mesurer ou
+	Select an object.	Sélectionner un objet.
+	Select an open curve.	Sélectionner une courbe ouverte.
+	Select an open line, arc, polyline, ellipse arc or spline.	Sélectionner une ligne, un arc, une polyligne, un arc elliptique ou une spline ouverts.
+	Select arc or circle	Sélectionner un arc ou un cercle
+	Select arc or polyline arc segment	Sélectionner un arc ou un segment d'arc de polyligne
+	Select arc style	Sélectionner un style d'arc
+	Select arc, circle, line	Sélectionner un arc, un cercle, une ligne
+	Select at least two objects to join.	Sélectionner au moins deux objets à joindre.
+	Select circle or arc to add center mark	Sélectionner un cercle ou un arc pour ajouter une marque de centre
+	Select closed objects (regions, closed polylines, circles).	Sélectionner des objets fermés (régions, polylignes fermées, cercles).
+	Select first line	Sélectionner la première ligne
+	Select first line or arc	Sélectionner la première ligne ou le premier arc
+	Select first object	Sélectionner le premier objet
+	Select first object or	Sélectionner le premier objet ou
+	Select first point	Sélectionner le premier point
+	Select nested objects to copy or	Sélectionner des objets imbriqués à copier ou
+	Select object	Sélectionner un objet
+	Select object to dimension	Sélectionner un objet à coter
+	Select object to divide	Sélectionner un objet à diviser
+	Select object to extend or shift-select to trim	Sélectionner un objet à prolonger ou sélectionner avec Maj pour rogner
+	Select object to measure	Sélectionner un objet à mesurer
+	Select object to offset	Sélectionner un objet à décaler
+	Select object to trim or shift-select to extend	Sélectionner un objet à rogner ou sélectionner avec Maj pour prolonger
+	Select objects	Sélectionner les objets
+	Select objects (crossing window first corner)	Sélectionner les objets (premier coin de la fenêtre de capture)
+	Select objects to array.	Sélectionner les objets à répartir en réseau.
+	Select objects to stretch by crossing-window or crossing-polygon...	Sélectionner les objets à étirer par fenêtre de capture ou polygone de capture...
+	Select objects:	Sélectionner les objets :
+	Select one polyline (Multiple is available through the JSON form).	Sélectionner une polyligne (l'option Multiple est disponible via le formulaire JSON).
+	Select path curve	Sélectionner la courbe de trajectoire
+	Select point or object	Sélectionner un point ou un objet
+	Select polyline or	Sélectionner une polyligne ou
+	Select second line	Sélectionner la deuxième ligne
+	Select second line or shift-select to apply corner	Sélectionner la deuxième ligne ou sélectionner avec Maj pour former le coin
+	Select second object	Sélectionner le deuxième objet
+	Select second object or shift-select to apply corner	Sélectionner le deuxième objet ou sélectionner avec Maj pour former le coin
+	Select second point	Sélectionner le deuxième point
+	Select spline	Sélectionner une spline
+	Select symmetry line	Sélectionner l'axe de symétrie
+	Select two points	Sélectionner deux points
+	Selection Cycling	Cycle de sélection
+	Send to Back	Envoyer à l'arrière-plan
+	Set Current	Définir comme courant
+	Set Current Dimension Style	Définir le style de cote courant
+	Set Current Text Style	Définir le style de texte courant
+	Set Layer Properties	Définir les propriétés du calque
+	Set Properties	Définir les propriétés
+	Set Table Cell	Définir la cellule de tableau
+	Set Variable	Définir la variable
+	Set View	Définir la vue
+	Share	Partager
+	Show	Afficher
+	Show All	Afficher tout
+	Show All Constraint Bars	Afficher toutes les barres de contrainte
+	Show All Dynamic Dimensions	Afficher toutes les cotes dynamiques
+	Show Layer List	Afficher la liste des calques
+	Show/Hide Lineweight	Afficher/Masquer l'épaisseur des lignes
+	Show/Hide Transparency	Afficher/Masquer la transparence
+	Single Line Text	Texte sur une ligne
+	Single Point	Point unique
+	Single...	Unique...
+	Smooth	Lissage
+	Snap	Accrochage
+	Snap Mode	Mode d'accrochage
+	Snap Mode (F9)	Mode d'accrochage (F9)
+	Snap On (F9)	Activer l'accrochage (F9)
+	Snap X spacing	Pas d'accrochage X
+	Snap and Grid	Accrochage et grille
+	Solid	Solide
+	Sort	Trier
+	Specify a point	Spécifier un point
+	Specify a scale for the hatch pattern	Spécifier une échelle pour le motif de hachures
+	Specify a second extension line origin	Spécifier l'origine de la deuxième ligne d'attache
+	Specify an angle for the hatch pattern	Spécifier un angle pour le motif de hachures
+	Specify angle end point	Spécifier le point final de l'angle
+	Specify angle of dimension line	Spécifier l'angle de la ligne de cote
+	Specify angle of dimension text	Spécifier l'angle du texte de cote
+	Specify angle start point	Spécifier le point de départ de l'angle
+	Specify angle vertex	Spécifier le sommet de l'angle
+	Specify angle vertex point	Spécifier le point du sommet de l'angle
+	Specify arc length dimension location	Spécifier l'emplacement de la cote de longueur d'arc
+	Specify axis endpoint of ellipse	Spécifier l'extrémité de l'axe de l'ellipse
+	Specify base diameter	Spécifiez le diamètre de la base
+	Specify base point	Spécifiez le point de base
+	Specify base point or	Spécifiez le point de base ou
+	Specify base point or displacement (drag with the middle mouse button for realtime pan)	Spécifiez le point de base ou le déplacement (faites glisser avec le bouton central de la souris pour un panoramique en temps réel)
+	Specify base radius or	Spécifiez le rayon de base ou
+	Specify center of donut	Spécifiez le centre de l'anneau
+	Specify center of ellipse	Spécifiez le centre de l'ellipse
+	Specify center of polygon	Spécifiez le centre du polygone
+	Specify center point for circle	Spécifiez le point central du cercle
+	Specify center point of arc	Spécifiez le point central de l'arc
+	Specify center point of array	Spécifiez le point central de la matrice
+	Specify center point of base	Spécifiez le point central de la base
+	Specify corner of viewport	Spécifiez le coin de la fenêtre
+	Specify corner of window, enter a scale factor (nX or nXP)	Spécifiez le coin de la fenêtre, entrez un facteur d'échelle (nX ou nXP)
+	Specify diameter of circle	Spécifiez le diamètre du cercle
+	Specify dimension arc line location	Spécifiez l'emplacement de l'arc de cote
+	Specify dimension line location	Spécifiez l'emplacement de la ligne de cote
+	Specify distance between turns	Spécifiez la distance entre les spires
+	Specify distance to other axis	Spécifiez la distance jusqu'à l'autre axe
+	Specify end angle	Spécifiez l'angle de fin
+	Specify end point of arc	Spécifiez le point final de l'arc
+	Specify end point of arc (hold Ctrl to switch direction)	Spécifiez le point final de l'arc (maintenez Ctrl enfoncé pour changer de direction)
+	Specify ending width	Spécifiez la largeur de fin
+	Specify ending width for next segment	Spécifiez la largeur de fin du segment suivant
+	Specify endpoint of arc	Spécifiez le point final de l'arc
+	Specify endpoint of axis	Spécifiez le point final de l'axe
+	Specify endpoint of line	Spécifiez le point final de la ligne
+	Specify feature location	Spécifiez l'emplacement de l'élément
+	Specify fillet radius	Spécifiez le rayon de congé
+	Specify fillet radius for rectangles	Spécifiez le rayon de congé des rectangles
+	Specify first angle endpoint	Spécifiez le premier point final de l'angle
+	Specify first chamfer distance	Spécifiez la première distance de chanfrein
+	Specify first chamfer distance for rectangles	Spécifiez la première distance de chanfrein des rectangles
+	Specify first constraint point	Spécifiez le premier point de contrainte
+	Specify first corner	Spécifiez le premier coin
+	Specify first corner point	Spécifiez le premier point d'angle
+	Specify first destination point	Spécifiez le premier point de destination
+	Specify first end point of circle's diameter	Spécifiez le premier point final du diamètre du cercle
+	Specify first endpoint of edge	Spécifiez le premier point final de l'arête
+	Specify first extension line origin	Spécifiez l'origine de la première ligne d'attache
+	Specify first point	Spécifiez le premier point
+	Specify first point of mirror line	Spécifiez le premier point de la ligne de symétrie
+	Specify first point on circle	Spécifiez le premier point sur le cercle
+	Specify first point on circle: _tan to	Spécifiez le premier point sur le cercle : _tan à
+	Specify first source point	Spécifiez le premier point source
+	Specify height	Spécifiez la hauteur
+	Specify helix height or	Spécifiez la hauteur de l'hélice ou
+	Specify included angle	Spécifiez l'angle inclus
+	Specify insertion base point	Spécifiez le point de base d'insertion
+	Specify insertion point	Spécifiez le point d'insertion
+	Specify inside diameter of donut	Spécifiez le diamètre intérieur de l'anneau
+	Specify leader arrowhead location	Spécifiez l'emplacement de la tête de flèche du repère
+	Specify leader endpoint	Spécifiez le point final du repère
+	Specify leader landing location	Spécifiez l'emplacement de la base du repère
+	Specify length for rectangles	Spécifiez la longueur des rectangles
+	Specify length of chord	Spécifiez la longueur de la corde
+	Specify length of segment	Spécifiez la longueur du segment
+	Specify line width for rectangles	Spécifiez la largeur de ligne des rectangles
+	Specify location for new vertex	Spécifiez l'emplacement du nouveau sommet
+	Specify minimum length of arc	Spécifiez la longueur minimale de l'arc
+	Specify new end point	Spécifiez le nouveau point final
+	Specify new location for marked vertex	Spécifiez le nouvel emplacement du sommet marqué
+	Specify new width for all segments	Spécifiez la nouvelle largeur de tous les segments
+	Specify next point	Spécifiez le point suivant
+	Specify offset distance	Spécifiez la distance de décalage
+	Specify offset distance or	Spécifiez la distance de décalage ou
+	Specify opposite corner	Spécifiez le coin opposé
+	Specify other corner point	Spécifiez l'autre point d'angle
+	Specify other endpoint of axis	Spécifiez l'autre point final de l'axe
+	Specify outside diameter of donut	Spécifiez le diamètre extérieur de l'anneau
+	Specify point	Spécifiez le point
+	Specify point on object for first tangent of circle	Spécifiez le point sur l'objet pour la première tangente du cercle
+	Specify point on object for second tangent of circle	Spécifiez le point sur l'objet pour la deuxième tangente du cercle
+	Specify point on side to offset	Spécifiez le point du côté à décaler
+	Specify radius of arc	Spécifiez le rayon de l'arc
+	Specify radius of circle	Spécifiez le rayon du cercle
+	Specify rotation angle	Spécifiez l'angle de rotation
+	Specify rotation angle of text	Spécifiez l'angle de rotation du texte
+	Specify rotation angle or	Spécifiez l'angle de rotation ou
+	Specify scale factor	Spécifiez le facteur d'échelle
+	Specify second angle endpoint	Spécifiez le deuxième point final de l'angle
+	Specify second break point	Spécifiez le deuxième point de rupture
+	Specify second chamfer distance for rectangles	Spécifiez la deuxième distance de chanfrein des rectangles
+	Specify second constraint point	Spécifiez le deuxième point de contrainte
+	Specify second destination point	Spécifiez le deuxième point de destination
+	Specify second end point of circle's diameter	Spécifiez le deuxième point final du diamètre du cercle
+	Specify second endpoint of edge	Spécifiez le deuxième point final de l'arête
+	Specify second extension line origin	Spécifiez l'origine de la deuxième ligne d'attache
+	Specify second point	Spécifiez le deuxième point
+	Specify second point of arc	Spécifiez le deuxième point de l'arc
+	Specify second point of mirror line	Spécifiez le deuxième point de la ligne de symétrie
+	Specify second point on circle	Spécifiez le deuxième point sur le cercle
+	Specify second point on circle: _tan to	Spécifiez le deuxième point sur le cercle : _tan à
+	Specify second point or <use first point as displacement>	Spécifiez le deuxième point ou <utiliser le premier point comme déplacement>
+	Specify second source point	Spécifiez le deuxième point source
+	Specify side to offset	Spécifiez le côté à décaler
+	Specify start angle	Spécifiez l'angle de départ
+	Specify start point	Spécifiez le point de départ
+	Specify start point of arc	Spécifiez le point de départ de l'arc
+	Specify start point of polyline	Spécifiez le point de départ de la polyligne
+	Specify start point of text	Spécifiez le point de départ du texte
+	Specify starting width	Spécifiez la largeur de départ
+	Specify starting width for next segment	Spécifiez la largeur de départ du segment suivant
+	Specify tangent direction for the start point of arc	Spécifiez la direction de la tangente au point de départ de l'arc
+	Specify the elevation for rectangles	Spécifiez l'élévation des rectangles
+	Specify thickness for rectangles	Spécifiez l'épaisseur des rectangles
+	Specify third point on circle	Spécifiez le troisième point sur le cercle
+	Specify third point on circle: _tan to	Spécifiez le troisième point sur le cercle : _tan à
+	Specify third source point or <continue>	Spécifiez le troisième point source ou <continuer>
+	Specify through point	Spécifiez le point de passage
+	Specify top diameter	Spécifiez le diamètre supérieur
+	Specify top radius or	Spécifiez le rayon supérieur ou
+	Specify total angle	Spécifiez l'angle total
+	Specify total length or	Spécifiez la longueur totale ou
+	Specify width for rectangles	Spécifiez la largeur des rectangles
+	Sphere	Sphère
+	Spline	Spline
+	Stack (type 1/2 then select)	Empilement (tapez 1/2, puis sélectionnez)
+	Standard	Standard
+	Start	Départ
+	Start Width	Largeur de départ
+	Start X	X de départ
+	Start Y	Y de départ
+	Start angle	Angle de départ
+	Start, Center, Angle	Départ, Centre, Angle
+	Start, Center, End	Départ, Centre, Fin
+	Start, Center, Length	Départ, Centre, Longueur
+	Start, End, Angle	Départ, Fin, Angle
+	Start, End, Direction	Départ, Fin, Direction
+	Start, End, Radius	Départ, Fin, Rayon
+	Status	État
+	Status Bar	Barre d'état
+	Stretch	Étirer
+	Style: Standard	Style : Standard
+	Subtract	Soustraction
+	Sweep	Balayage
+	Switch Drawing	Changer de dessin
+	Switch Layout	Changer de présentation
+	Switch between model space in a viewport and paper space	Basculer entre l'espace modèle dans une fenêtre et l'espace papier
+	Symmetric	Symétrie
+	Synchronize Attributes	Synchroniser les attributs
+	Toggle PICKADD (off: each pick replaces the selection)	Basculer PICKADD (désactivé : chaque sélection remplace la sélection existante)
+	Toggle PICKADD (on: picks add to the selection)	Basculer PICKADD (activé : les sélections s'ajoutent à la sélection existante)
+	TOP	HAUT
+	Table	Tableau
+	Table Style...	Style de tableau...
+	Table style	Style de tableau
+	Table...	Tableau...
+	Tan, Tan, Radius	Tangente, Tangente, Rayon
+	Tan, Tan, Tan	Tangente, Tangente, Tangente
+	Tangent	Tangente
+	Text	Texte
+	Text Editor	Éditeur de texte
+	Text Height	Hauteur du texte
+	Text Style...	Style de texte...
+	Text height	Hauteur du texte
+	Text override	Texte de remplacement
+	Text style	Style de texte
+	Thaw All Layers	Dégeler tous les calques
+	There is nothing here yet.	Il n'y a encore rien ici.
+	Thickness	Épaisseur
+	Time	Heure
+	To get started, create or open a drawing.	Pour commencer, créez ou ouvrez un dessin.
+	Tool Bar	Barre d'outils
+	Tool Sets	Ensembles d'outils
+	Tools	Outils
+	Torus	Tore
+	Trace	Trace
+	Transparency	Transparence
+	Trim	Ajuster
+	True Color	Couleur vraie
+	Turn All Layers On	Activer tous les calques
+	Turn Off Layer	Désactiver le calque
+	Turn Quick Properties off (QPMODE)	Désactiver les propriétés rapides (QPMODE)
+	Type	Type
+	Type a command	Tapez une commande
+	Type text; Enter starts a new paragraph	Saisissez le texte ; Entrée crée un nouveau paragraphe
+	UCS Icon	Icône du SCU
+	Undo	Annuler
+	Undo (⌘Z)	Annuler (⌘Z)
+	Ungroup	Dissocier
+	Union	Union
+	Unisolate Layer	Annuler l'isolement des calques
+	Units...	Unités...
+	Unlock Layer	Déverrouiller le calque
+	Unmerge Cells	Annuler la fusion des cellules
+	Unsaved Layer State	État de calque non enregistré
+	Up	Haut
+	Update	Mettre à jour
+	Use System Setting	Utiliser le paramètre système
+	User	Utilisateur
+	User Parameters	Paramètres utilisateur
+	Username	Nom d'utilisateur
+	VP Color	Couleur de la fenêtre
+	VP Freeze	Gel dans la fenêtre
+	Value	Valeur
+	Value:	Valeur :
+	Version	Version
+	Version {version}	Version {version}
+	Vertical	Vertical
+	VerticalDistance	VerticalDistance
+	View	Vue
+	ViewCube	ViewCube
+	Viewport	Fenêtre
+	Viewport Layer Freeze	Gel du calque dans la fenêtre
+	Viewport Properties	Propriétés de la fenêtre
+	Viewport {id}	Fenêtre {id}
+	Viewports	Fenêtres
+	Volume	Volume
+	W	O
+	WCS	SCG
+	White	Blanc
+	Width factor	Facteur de largeur
+	Window	Fenêtre
+	Wipeout	Masquage
+	Workspace Switching	Changement d'espace de travail
+	Write Block	Enregistrer le bloc dans un fichier
+	Xline	Ligne de construction
+	Yellow	Jaune
+	Yes	Oui
+	Zoom	Zoom
+	Zoom All	Zoom tout
+	Zoom Extents	Zoom étendu
+	Zoom In	Zoom avant
+	Zoom Object	Zoom objet
+	Zoom Out	Zoom arrière
+	Zoom Previous	Zoom précédent
+	Zoom Window	Zoom fenêtre
+	error	erreur
+	{contributors} · {commits}	{contributors} · {commits}
+	{kind} (constraint {id})	{kind} (contrainte {id})
+	{kind} constraint {name} = {expression}  (double-click to edit)	Contrainte {kind} {name} = {expression}  (double-cliquez pour modifier)
+	{name}: {distance} < {angle}°	{name} : {distance} < {angle}°
+	ƒx  New User Parameter	ƒx  Nouveau paramètre utilisateur
+	ΔLOC	ΔLOC
+	−Bin	−Bin
+	−LOC	−LOC
+	⌘↩ to finish	⌘↩ pour terminer
+@plural	{n} commit	{n} révision|{n} révisions
+@plural	{n} contributor	{n} contributeur|{n} contributeurs
+	Drawing as bytes	Dessin sous forme d'octets
+	Services	Services
+	Hide CADCraft	Masquer CADCraft
+	Hide Others	Masquer les autres
+	Accessibility	Accessibilité
+	Show System Cursor	Afficher le curseur système
+	Animation Effects	Effets d'animation
+	Animation effects	Effets d'animation
+	Import...	Importer...
+	Export...	Exporter...
+	Batch Publish...	Publication par lots...
+	Hatch Pattern	Motif de hachure
+	Search for pattern	Rechercher un motif
+	Not a number or distance: {text}	Ni un nombre ni une distance : {text}
+	Query Texts	Interroger les textes
+	Analyze Shapes	Analyser les formes
+	Check for Updates…	Rechercher des mises à jour…
+	CADCraft is up to date.	CADCraft est à jour.
+	Could not check for updates.	Impossible de rechercher les mises à jour.

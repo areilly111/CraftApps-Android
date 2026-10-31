@@ -121,12 +121,12 @@ impl Renderer {
 /// The inks of `c` in the working CMYK space: CMYK as it is, grey as black ink, RGB and Lab
 /// separated with the colour settings' intent (cached: separating searches the profile).
 fn inks(c: &Color) -> [f32; 4] {
-    let key = match *c {
+    match *c {
         Color::Cmyk { c, m, y, k } => return [c, m, y, k],
         Color::Gray { k } => return [0.0, 0.0, 0.0, k],
-        Color::Rgb { r, g, b } => [0, r.to_bits(), g.to_bits(), b.to_bits()],
-        Color::Lab { l, a, b } => [1, l.to_bits(), a.to_bits(), b.to_bits()],
-    };
+        Color::Rgb { .. } | Color::Lab { .. } => {}
+    }
+    let key = c.key();
     let cms = cms::active();
     SEPARATED.with(|s| {
         let (owner, seen) = &mut *s.borrow_mut();
@@ -141,7 +141,7 @@ fn inks(c: &Color) -> [f32; 4] {
 }
 
 /// Separated colours, for the colour settings they were separated with.
-type Separated = (Option<Arc<Cms>>, HashMap<[u32; 4], [f32; 4]>);
+type Separated = (Option<Arc<Cms>>, HashMap<[u32; 5], [f32; 4]>);
 
 thread_local! {
     static SEPARATED: RefCell<Separated> = RefCell::default();
@@ -311,18 +311,33 @@ pub(crate) fn cmyk_pixmap(blob: &ImageBlob, lut: &InkLut) -> Option<Pixmap> {
     inks_pixmap(&blob.cmyk()?, lut)
 }
 
+/// The separation tables of placed images ([`Ink::Cmy`], [`Ink::K`]) and their generation.
+fn separation() -> (Arc<[ProofLut; 2]>, u64) {
+    cached(&SEPARATE, |cms| {
+        let intent = cms.settings().intent;
+        [Ink::Cmy, Ink::K].map(|ink| ProofLut::build(|rgb| ink.plane(cms.srgb_to_cmyk(rgb, intent))))
+    })
+}
+
+/// The key of image pixels `key` painted as `plane` with the separation tables of `generation`.
+fn plane_key(key: &ImageKey, plane: Ink, generation: u64) -> ImageKey {
+    ImageKey { ink: plane, luts: (key.luts.0, generation), ..key.clone() }
+}
+
+/// The key [`ink_image`] gives image pixels `key` painted with `ink`.
+pub(crate) fn ink_key(key: &ImageKey, ink: Ink) -> ImageKey {
+    if matches!(ink, Ink::Display | Ink::RichBlack) { key.clone() } else { plane_key(key, ink, separation().1) }
+}
+
 /// Image pixels `pm` (cached as `key`, from `blob` when it is a document's image as it is) as
 /// painted with `ink`, cached with the images, and their key.
 pub(crate) fn ink_image(key: &ImageKey, pm: &Arc<Pixmap>, ink: Ink, blob: Option<&ImageBlob>, touch: bool) -> (ImageKey, Arc<Pixmap>) {
     if matches!(ink, Ink::Display | Ink::RichBlack) {
         return (key.clone(), pm.clone());
     }
-    let (luts, generation) = cached(&SEPARATE, |cms| {
-        let intent = cms.settings().intent;
-        [Ink::Cmy, Ink::K].map(|ink| ProofLut::build(|rgb| ink.plane(cms.srgb_to_cmyk(rgb, intent))))
-    });
-    let plane_key = |plane: Ink| ImageKey { ink: plane, luts: (key.luts.0, generation), ..key.clone() };
-    let want = plane_key(ink);
+    let (luts, generation) = separation();
+    let keyed = |plane: Ink| plane_key(key, plane, generation);
+    let want = keyed(ink);
     let hit = {
         let mut s = images::store();
         if touch { s.get(&want) } else { s.peek(&want) }
@@ -357,8 +372,8 @@ pub(crate) fn ink_image(key: &ImageKey, pm: &Arc<Pixmap>, ink: Ink, blob: Option
     });
     let [cmy, k] = planes;
     let mut s = images::store();
-    let cmy = s.insert(plane_key(Ink::Cmy), cmy);
-    let k = s.insert(plane_key(Ink::K), k);
+    let cmy = s.insert(keyed(Ink::Cmy), cmy);
+    let k = s.insert(keyed(Ink::K), k);
     (want, if ink == Ink::K { k } else { cmy })
 }
 
@@ -395,7 +410,8 @@ mod tests {
         let mut d = Document::new_with_mode(20.0, 10.0, ColorMode::Cmyk);
         d.images.insert("img".into(), ImageBlob::cmyk_tiff(&Inks::new(2, 2, ink.repeat(4)).unwrap()).unwrap());
         let l = d.layers[0].id;
-        let im = ImageObject { key: "img".into(), width: 2, height: 2, xf: Affine::scale(5.0), link: None, placement: Default::default() };
+        let im =
+            ImageObject { key: "img".into(), width: 2, height: 2, xf: Affine::scale(5.0), link: None, placement: Default::default(), pixels: None };
         let n = Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)));
         d.insert(Some(l), 0, n).unwrap();
         // The same inks as a fill beside it.

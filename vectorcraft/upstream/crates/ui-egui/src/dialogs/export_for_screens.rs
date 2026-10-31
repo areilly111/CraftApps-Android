@@ -11,6 +11,8 @@
 //! `YYYYMMDD`…, see `document.exportForScreens`) names every file alike, with a live example, and
 //! the files go into one folder, or a folder per row, format, item, or item and format
 //! (`folders`). Export presets (built-in and saved) set the formats, naming and folders at once.
+//! On the desktop with Background Export on, the files are encoded and written on the background
+//! thread ([`crate::background`]) after the dialog closes.
 //!
 //! Fields (`ui.dialog.set`): `tab` (artboards|assets|layers|selection), `select` (all|range|full), `range`,
 //! `boards` ([bool] per artboard), `assets` ([asset id] checked on the Assets tab), `includeBleed`,
@@ -133,6 +135,10 @@ pub(crate) fn open_assets(app: &mut VectorcraftApp, checked: Option<&[u64]>) {
         d.fields.insert("tab".into(), json!("assets"));
         if let Some(c) = checked {
             d.fields.insert("assets".into(), json!(c));
+            // The list scrolls to the first of them once: new assets land at its end.
+            if let Some(first) = c.first() {
+                d.fields.insert("__scrollTo".into(), json!(first));
+            }
         }
     }
 }
@@ -461,7 +467,7 @@ fn artboards(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
             set_select(d, "range");
         }
         ui.add_enabled_ui(select == "range", |ui| {
-            if form::text(ui, d, "range", 90.0)
+            if form::text_named(ui, d, "range", tl!("Range:"), 90.0)
                 && let Ok(Some(chosen)) = (ArtboardPick { range: Some(d.str("range")), ..Default::default() }).resolve(n)
             {
                 boards = (0..n).map(|i| chosen.contains(&i)).collect();
@@ -544,9 +550,12 @@ fn assets(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
             on.clear();
         }
     });
+    // Asked for until the row is in view: the dialog's first frame only measures it.
+    let scroll_to = d.fields.get("__scrollTo").and_then(Value::as_u64).filter(|id| st.doc.assets.iter().any(|a| a.id == *id));
+    let mut in_view = scroll_to.is_none();
     egui::ScrollArea::vertical().max_height(330.0).show(ui, |ui| {
         for a in &st.doc.assets {
-            ui.horizontal(|ui| {
+            let row = ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
                 crate::panels::asset_export::paint_thumb(ui, st, a, r);
                 let checked = on.contains(&a.id);
@@ -557,8 +566,18 @@ fn assets(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
                     }
                 }
             });
+            if scroll_to == Some(a.id) {
+                if ui.clip_rect().contains_rect(row.response.rect) {
+                    in_view = true;
+                } else {
+                    row.response.scroll_to_me(Some(egui::Align::Center));
+                }
+            }
         }
     });
+    if in_view {
+        d.fields.remove("__scrollTo");
+    }
     if on != before {
         d.fields.insert("assets".into(), json!(on));
     }
@@ -686,7 +705,9 @@ fn naming(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
         if form::text(ui, d, "name", 170.0) {
             d.fields.insert("exportPreset".into(), json!(""));
         }
-        if let Some((_, token)) = widgets::dropdown(ui, "efs-name-token", tl!("Insert"), &TOKEN_LABELS, 90.0).and_then(|i| TOKENS.get(i)) {
+        if let Some((_, token)) =
+            widgets::dropdown_named(ui, "efs-name-token", Some(tl!("Insert")), tl!("Insert"), &TOKEN_LABELS, 90.0).and_then(|i| TOKENS.get(i))
+        {
             let name = d.str("name");
             d.fields.insert("name".into(), json!(format!("{name}{token}")));
         }
@@ -798,7 +819,9 @@ pub(crate) fn formats(ui: &mut egui::Ui, d: &mut Dialog) {
             let preset = d.str("preset");
             let labels: Vec<&str> = std::iter::once("Custom").chain(SCREEN_PRESETS.iter().map(|(_, l)| *l)).collect();
             let at = SCREEN_PRESETS.iter().position(|(id, _)| *id == preset).map_or(0, |i| i + 1);
-            if let Some(i) = widgets::dropdown(ui, "efs-preset", labels[at], &labels, (ui.available_width() - 8.0).clamp(90.0, 180.0)) {
+            if let Some(i) =
+                widgets::dropdown_named(ui, "efs-preset", Some(tl!("Preset:")), labels[at], &labels, (ui.available_width() - 8.0).clamp(90.0, 180.0))
+            {
                 let id = i.checked_sub(1).and_then(|i| SCREEN_PRESETS.get(i)).map_or("", |(id, _)| *id);
                 if let Some(preset_rows) = fileio::screen_preset_rows(id) {
                     rows = preset_rows;
@@ -824,7 +847,7 @@ pub(crate) fn formats(ui: &mut egui::Ui, d: &mut Dialog) {
             let raster = row["format"].as_str().and_then(fileio::format).is_none_or(|f| f.raster);
             let scale = row["scale"].as_str().unwrap_or("1x").to_string();
             ui.add_enabled_ui(raster, |ui| {
-                if let Some(s) = widgets::text_presets(ui, ("efs-scale", i), &scale, &SIZES, scale_w) {
+                if let Some(s) = widgets::text_presets_named(ui, ("efs-scale", i), Some(tl!("Scale")), &scale, &SIZES, scale_w) {
                     // The suffix follows the size while it is the automatic one.
                     let auto = |text: &str| ScreenSize::parse(text).map(ScreenSize::suffix);
                     if row["suffix"].as_str().is_none_or(|x| Some(x.to_string()) == auto(&scale))
@@ -836,7 +859,7 @@ pub(crate) fn formats(ui: &mut egui::Ui, d: &mut Dialog) {
                     edited = true;
                 }
             });
-            if let Some(s) = widgets::text_field(ui, ("efs-suffix", i), row["suffix"].as_str(), suffix_w, 1) {
+            if let Some(s) = widgets::text_field_named(ui, ("efs-suffix", i), Some(tl!("Suffix")), row["suffix"].as_str(), suffix_w, 1) {
                 row["suffix"] = json!(s);
                 edited = true;
             }
@@ -845,7 +868,9 @@ pub(crate) fn formats(ui: &mut egui::Ui, d: &mut Dialog) {
             let current =
                 FORMATS.iter().position(|(_, f, q, print)| *f == format && *print == marked && q.is_none_or(|q| Some(u64::from(q)) == quality));
             let label = current.map_or_else(|| format.to_uppercase(), |i| FORMAT_LABELS[i].to_string());
-            if let Some((_, f, q, print)) = widgets::dropdown(ui, ("efs-fmt", i), &label, &FORMAT_LABELS, format_w).and_then(|i| FORMATS.get(i)) {
+            if let Some((_, f, q, print)) =
+                widgets::dropdown_named(ui, ("efs-fmt", i), Some(tl!("Format")), &label, &FORMAT_LABELS, format_w).and_then(|i| FORMATS.get(i))
+            {
                 row["format"] = json!(f);
                 if let Some(o) = row.as_object_mut() {
                     match q {
@@ -902,7 +927,9 @@ fn format_settings(ui: &mut egui::Ui, d: &mut Dialog, id: &str) {
     widgets::subheader(ui, tl!("Format Settings"));
     ui.add_space(6.0);
     let at = SETTINGS.iter().position(|(f, _)| *f == id).unwrap_or(0);
-    if let Some((f, _)) = widgets::dropdown(ui, "efs-settings-format", SETTINGS_LABELS[at], &SETTINGS_LABELS, 150.0).and_then(|i| SETTINGS.get(i)) {
+    if let Some((f, _)) = widgets::dropdown_named(ui, "efs-settings-format", Some(tl!("Format:")), SETTINGS_LABELS[at], &SETTINGS_LABELS, 150.0)
+        .and_then(|i| SETTINGS.get(i))
+    {
         d.fields.insert("__settings".into(), json!(f));
     }
     ui.add_space(8.0);
@@ -939,7 +966,7 @@ fn format_settings(ui: &mut egui::Ui, d: &mut Dialog, id: &str) {
 /// A small cached rendering of artboard `i` (keyed by document revision).
 pub(super) fn artboard_thumb(app: &mut VectorcraftApp, ctx: &egui::Context, i: usize) -> Option<egui::TextureHandle> {
     let st = app.session.active()?;
-    let key = egui::Id::new(("ab-thumb", i, st.revision));
+    let key = egui::Id::unique(("ab-thumb", i, st.revision));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return Some(t);
     }

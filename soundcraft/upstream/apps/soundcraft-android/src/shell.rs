@@ -242,7 +242,7 @@ impl eframe::App for ShellApp {
         // parity with the desktop host).
         let dropped: Vec<String> = self
             .app
-            .take_dropped_files(ctx)
+            .take_dropped_files()
             .iter()
             .map(|f| f.path().to_string_lossy().into_owned())
             .filter(|s| !s.is_empty())
@@ -269,8 +269,8 @@ impl eframe::App for ShellApp {
         set_title(ctx, title);
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        self.app.raw_input_hook(raw);
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.app.raw_input_hook(ctx, raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

@@ -137,8 +137,9 @@ pub fn sides_at(st: &StrokeLayer, t: f64) -> (f64, f64) {
 impl WidthTool {
     /// The stroked path nearest to `p` within reach (stroke half-width + a few pixels).
     fn spot_at(cx: &ToolContext, p: Point) -> Option<Spot> {
+        let editable = cx.doc.editable();
         let consider = |id: NodeId| -> Option<(f64, Spot)> {
-            if !cx.doc.is_editable(id) {
+            if !editable(id) {
                 return None;
             }
             let n = cx.doc.node(id)?;
@@ -435,7 +436,9 @@ impl Tool for WidthTool {
             let q = d.spot.p;
             out.push(Overlay::Line { a: q + d.spot.n * d.left, b: q - d.spot.n * d.right, color: BLUE, dashed: false });
             out.push(Overlay::Path { path: diamond(q, r), color: BLUE, width: 2.0, dashed: false });
-            out.push(Overlay::Measure { p: q + d.spot.n * (d.left + r * 3.0), text: format!("W: {}", cx.stroke_unit.readout(d.left + d.right)) });
+            if cx.measurement_labels {
+                out.push(Overlay::Measure { p: q + d.spot.n * (d.left + r * 3.0), text: format!("W: {}", cx.stroke_unit.readout(d.left + d.right)) });
+            }
         } else if let Some(h) = &self.hover {
             out.push(Overlay::Line { a: h.p + h.n * h.left, b: h.p - h.n * h.right, color: BLUE, dashed: true });
             out.push(Overlay::Path { path: diamond(h.p, r), color: BLUE, width: 1.0, dashed: false });

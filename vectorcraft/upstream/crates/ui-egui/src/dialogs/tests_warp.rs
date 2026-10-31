@@ -187,6 +187,25 @@ fn warp_options_existing_style_edit_keeps_stack_target_visibility_and_history() 
     }
 }
 
+/// A new Warp Options dialog opens on the sliders confirmed last time (#1760 follow-up).
+#[test]
+fn warp_dialog_remembers_last_confirmed_sliders() {
+    let (mut app, _) = app();
+    app.run("effect.dialog", json!({"effect": "warp.arc", "item": null})).unwrap();
+    let ctx = context();
+    settle(&mut app, &ctx);
+    set(&mut app, json!({"bend": -40.0, "horizontal": 12.0, "vertical": -8.0, "orientation": "vertical"}));
+    confirm(&mut app).unwrap();
+    app.run("effect.dialog", json!({"effect": "warp.flag", "item": null})).unwrap();
+    settle(&mut app, &ctx);
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!(d.str("__effect"), "warp.flag");
+    assert_eq!(d.f64("bend", 0.0), -40.0);
+    assert_eq!(d.f64("horizontal", 0.0), 12.0);
+    assert_eq!(d.f64("vertical", 0.0), -8.0);
+    assert_eq!(d.str("orientation"), "vertical");
+}
+
 #[test]
 fn warp_options_preview_toggle_and_ok_use_latest_values() {
     let (mut app, id) = app();
@@ -487,9 +506,9 @@ fn tab_to_warp_control(app: &mut VectorcraftApp, ctx: &egui::Context, label: &st
         if !events.iter().any(|event| {
             let egui::output::OutputEvent::FocusGained(info) = event else { return false };
             info.enabled
-                && match info.typ {
-                    egui::WidgetType::ComboBox => info.current_text_value.as_deref() == Some(label),
-                    egui::WidgetType::Button => info.label.as_deref() == Some(label),
+                && match info.role {
+                    egui::Role::ComboBox => info.current_text_value.as_deref() == Some(label),
+                    egui::Role::Button => info.label.as_deref() == Some(label),
                     _ => false,
                 }
         }) {
@@ -536,10 +555,10 @@ fn warp_options_style_keyboard_enter_does_not_accept_dialog() {
         assert_ne!(ctx.memory(|m| m.focused()), Some(style_id));
         warp_key(&mut app, &ctx, egui::Key::Tab, egui::Modifiers::SHIFT);
         assert_eq!(ctx.memory(|m| m.focused()), Some(style_id));
-        assert!(!egui::ComboBox::is_open(&ctx, style_id));
+        assert!(!craft_ui::ComboBox::is_open(&ctx, style_id));
         warp_key(&mut app, &ctx, egui::Key::Enter, egui::Modifiers::NONE);
         assert!(app.ui.dialog.is_some(), "WARP_STYLE_ENTER_OPEN: opening Style must not accept Warp Options");
-        assert!(egui::ComboBox::is_open(&ctx, style_id));
+        assert!(craft_ui::ComboBox::is_open(&ctx, style_id));
         assert_eq!(app.ui.dialog.as_ref().unwrap().str("__effect"), "warp.arc");
         assert_eq!(entries(&app.session.doc().unwrap().history.undo), undo);
         assert_eq!(entries(&app.session.doc().unwrap().history.redo), redo);
@@ -548,7 +567,7 @@ fn warp_options_style_keyboard_enter_does_not_accept_dialog() {
         tab_to_warp_control(&mut app, &ctx, "Arc Lower", egui::Modifiers::NONE);
         warp_key(&mut app, &ctx, egui::Key::Enter, egui::Modifiers::NONE);
         assert!(app.ui.dialog.is_some(), "WARP_STYLE_ENTER_CHOICE: choosing Style must not accept Warp Options");
-        assert!(!egui::ComboBox::is_open(&ctx, style_id));
+        assert!(!craft_ui::ComboBox::is_open(&ctx, style_id));
         assert_eq!(app.ui.dialog.as_ref().unwrap().str("__effect"), "warp.arcLower");
         assert!(app.ui.dialog.as_ref().unwrap().bool("__warp_style_changed"));
         let state = app.session.doc().unwrap();

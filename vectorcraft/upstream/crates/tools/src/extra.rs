@@ -240,13 +240,16 @@ pub struct ReshapeTool {
     /// (path, grab point) while dragging.
     grab: Option<(vectorcraft_doc::NodeId, Point)>,
     began: bool,
+    /// Pointer and offset readout while a reshape drag is in progress.
+    measure: Option<(Point, String)>,
 }
 
 impl ReshapeTool {
     /// The selected path under `p` (Reshape works on selected paths only, like Illustrator).
     fn hit(cx: &ToolContext, p: Point) -> Option<(vectorcraft_doc::NodeId, Point)> {
         let tol = cx.tol(4.0);
-        cx.selection.objects.iter().copied().filter(|id| cx.doc.is_editable(*id)).find_map(|id| {
+        let editable = cx.doc.editable();
+        cx.selection.objects.iter().copied().filter(|id| editable(*id)).find_map(|id| {
             let pd = cx.doc.node(id)?.path_data()?;
             let (_, _, _, q, d) = pd.nearest(p)?;
             (d <= tol).then_some((id, q))
@@ -266,13 +269,14 @@ impl Tool for ReshapeTool {
             PointerKind::Down => {
                 self.grab = Self::hit(cx, ev.pos);
                 self.began = false;
+                self.measure = None;
                 vec![]
             }
             PointerKind::Drag => {
                 let Some((id, at)) = self.grab else { return vec![] };
                 let mut d: Vec2 = ev.pos - at;
                 if ev.mods.shift {
-                    d = vectorcraft_geom::constrain_angle(d, 45.0);
+                    d = vectorcraft_geom::constrain_angle_from(d, 45.0, cx.constrain_angle);
                 }
                 let mut out = vec![];
                 if !self.began {
@@ -282,6 +286,7 @@ impl Tool for ReshapeTool {
                     self.began = true;
                     out.push(Action::Begin("Reshape".into()));
                 }
+                self.measure = cx.measurement_labels.then(|| (ev.pos + Vec2::new(cx.tol(12.0), cx.tol(12.0)), cx.offset_label(d.x, d.y)));
                 out.push(Action::Preview(
                     "path.reshape".into(),
                     json!({ "id": id.0, "x": at.x, "y": at.y, "dx": d.x, "dy": d.y, "tol": cx.tol(4.0) }),
@@ -290,16 +295,29 @@ impl Tool for ReshapeTool {
             }
             PointerKind::Up => {
                 self.grab = None;
+                self.measure = None;
                 if std::mem::take(&mut self.began) { vec![Action::Commit] } else { vec![] }
             }
             _ => vec![],
         }
     }
     fn key(&mut self, _cx: &ToolContext, key: ToolKey, _mods: Mods) -> Vec<Action> {
-        if key == ToolKey::Escape && self.grab.take().is_some() && std::mem::take(&mut self.began) {
-            return vec![Action::Cancel];
+        if key == ToolKey::Escape && self.grab.take().is_some() {
+            self.measure = None;
+            if std::mem::take(&mut self.began) {
+                return vec![Action::Cancel];
+            }
         }
         vec![]
+    }
+    fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
+        if cx.measurement_labels
+            && let Some((p, t)) = &self.measure
+        {
+            vec![Overlay::Measure { p: *p, text: t.clone() }]
+        } else {
+            vec![]
+        }
     }
     fn cursor(&self, cx: &ToolContext, p: Point, _mods: Mods) -> Cursor {
         if self.grab.is_some() || Self::hit(cx, p).is_some() { Cursor::Move } else { Cursor::Arrow }
@@ -402,24 +420,30 @@ impl Tool for ShaperTool {
 pub struct GraphTool {
     id: &'static str,
     start: Option<Point>,
+    last: Point,
+    mods: Mods,
     began: bool,
 }
 
 impl GraphTool {
     fn new(id: &str) -> Self {
         let id = crate::catalog::tool_info(id).map(|t| t.id).unwrap_or("columnGraph");
-        Self { id, start: None, began: false }
+        Self { id, start: None, last: Point::ZERO, mods: Mods::default(), began: false }
     }
     fn kind(&self) -> &'static str {
         vectorcraft_doc::GraphKind::parse(self.id).unwrap_or_default().id()
     }
-    fn params(&self, s: Point, p: Point, m: Mods) -> Value {
+    /// The plot rectangle a drag from `s` to `p` draws (Shift = square, Alt = from the centre).
+    fn plot_rect(s: Point, p: Point, m: Mods) -> vectorcraft_geom::Rect {
         let mut d = p - s;
         if m.shift {
             let k = d.x.abs().max(d.y.abs());
             d = Vec2::new(k * d.x.signum(), k * d.y.signum());
         }
-        let r = if m.alt { vectorcraft_geom::Rect::from_points(s - d, s + d) } else { vectorcraft_geom::Rect::from_points(s, s + d) };
+        if m.alt { vectorcraft_geom::Rect::from_points(s - d, s + d) } else { vectorcraft_geom::Rect::from_points(s, s + d) }
+    }
+    fn params(&self, s: Point, p: Point, m: Mods) -> Value {
+        let r = Self::plot_rect(s, p, m);
         json!({ "type": self.kind(), "x": r.x0, "y": r.y0, "width": r.width().max(1.0), "height": r.height().max(1.0) })
     }
 }
@@ -435,11 +459,14 @@ impl Tool for GraphTool {
         match ev.kind {
             PointerKind::Down => {
                 self.start = Some(ev.pos);
+                self.last = ev.pos;
                 self.began = false;
                 vec![]
             }
             PointerKind::Drag => {
                 let Some(s) = self.start else { return vec![] };
+                self.last = ev.pos;
+                self.mods = ev.mods;
                 let mut out = vec![];
                 if !self.began {
                     if ev.pos.distance(s) < cx.tol(3.0) {
@@ -472,6 +499,14 @@ impl Tool for GraphTool {
         }
         vec![]
     }
+    fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
+        if let Some(s) = self.start.filter(|_| self.began && cx.measurement_labels) {
+            let r = Self::plot_rect(s, self.last, self.mods);
+            vec![Overlay::Measure { p: self.last, text: cx.size_label(r.width(), r.height()) }]
+        } else {
+            vec![]
+        }
+    }
     fn cursor(&self, _cx: &ToolContext, _p: Point, _mods: Mods) -> Cursor {
         Cursor::Crosshair
     }
@@ -501,6 +536,62 @@ mod tests {
         assert_eq!(p["longest"].as_f64(), Some(300.0));
         t.set_option("raysOn", &json!(false));
         assert_eq!(t.params(Point::ZERO, 1.0, None)["rays"].as_u64(), Some(0));
+    }
+
+    #[test]
+    fn reshape_drag_honors_measurement_labels() {
+        use crate::testutil::*;
+        use vectorcraft_doc::Selection;
+
+        let (d, id) = doc_with_rect();
+        let s = Selection { objects: vec![id], ..Selection::default() };
+        let p = paint();
+        let mut t = ReshapeTool::default();
+        let drag = |t: &mut ReshapeTool, c: &ToolContext| {
+            t.pointer(c, &PointerEvent::new(PointerKind::Down, 100.0, 150.0));
+            t.pointer(c, &PointerEvent::new(PointerKind::Drag, 130.0, 150.0));
+        };
+        let on = ToolContext { measurement_labels: true, ..cx(&d, &s, &p) };
+        drag(&mut t, &on);
+        let want = on.offset_label(30.0, 0.0);
+        assert!(t.overlays(&on).iter().any(|o| matches!(o, Overlay::Measure { text, .. } if text == &want)));
+        let off = ToolContext { measurement_labels: false, ..cx(&d, &s, &p) };
+        assert!(!t.overlays(&off).iter().any(|o| matches!(o, Overlay::Measure { .. })), "overlay follows the current pref");
+        let mut quiet = ReshapeTool::default();
+        drag(&mut quiet, &off);
+        assert!(!quiet.overlays(&off).iter().any(|o| matches!(o, Overlay::Measure { .. })));
+    }
+
+    #[test]
+    fn graph_plot_measure_labels() {
+        use crate::testutil::*;
+        use vectorcraft_doc::Selection;
+
+        let (d, _) = doc_with_rect();
+        let s = Selection::default();
+        let p = paint();
+        let measure_count = |t: &GraphTool, c: &ToolContext| t.overlays(c).iter().filter(|o| matches!(o, Overlay::Measure { .. })).count();
+        let measure_text = |t: &GraphTool, c: &ToolContext| {
+            t.overlays(c).iter().find_map(|o| match o {
+                Overlay::Measure { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+        };
+        let mut t = GraphTool::new("columnGraph");
+        let drag = |t: &mut GraphTool, c: &ToolContext| {
+            t.pointer(c, &PointerEvent::new(PointerKind::Down, 10.0, 10.0));
+            t.pointer(c, &PointerEvent::new(PointerKind::Drag, 110.0, 60.0));
+        };
+        let on = ToolContext { measurement_labels: true, ..cx(&d, &s, &p) };
+        drag(&mut t, &on);
+        assert_eq!(measure_count(&t, &on), 1);
+        let text = measure_text(&t, &on).unwrap_or_default();
+        assert!(text.starts_with("W: "), "{text}");
+        assert!(text.contains("\nH: "), "{text}");
+        let off = ToolContext { measurement_labels: false, ..cx(&d, &s, &p) };
+        let mut quiet = GraphTool::new("columnGraph");
+        drag(&mut quiet, &off);
+        assert_eq!(measure_count(&quiet, &off), 0);
     }
 
     #[test]

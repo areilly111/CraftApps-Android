@@ -25,7 +25,7 @@ use vectorcraft_ui_egui::VectorcraftApp;
 
 /// Port version, shown in the UI. `build-apk.sh` derives the Gradle
 /// `versionCode` from it (`0.1.0` → 100100).
-pub const VERSION_NAME: &str = "0.2.1";
+pub const VERSION_NAME: &str = "0.2.2";
 
 const APP_NAME: &str = "VectorCraft";
 

@@ -1,0 +1,15 @@
+[package]
+name = "cadcraft-constraints"
+description = "CADCraft parametric solver: geometric and dimensional constraints (own damped Gauss-Newton solver), expressions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cadcraft-geom = { workspace = true }
+cadcraft-doc = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

@@ -12,8 +12,8 @@ crate-type = ["cdylib"]
 # eframe on Android: NativeActivity entry, wgpu renderer. NOTE: the `accesskit`
 # feature is a compile error with `android-native-activity`, so it is
 # deliberately absent here (same as the desktop's android-incompatible split).
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
-egui = "0.36"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
+egui = "0.37"
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 # Shared suite shell: JNI bridge, storage, SAF, pen, GPU cascade.
 craftapps-shared = { workspace = true }

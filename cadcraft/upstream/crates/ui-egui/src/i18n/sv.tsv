@@ -1,0 +1,1453 @@
+# CADCraft Swedish interface catalog — original translations by the CADCraft contributors.
+# License: MIT OR Apache-2.0 (the repository LICENSE-MIT and LICENSE-APACHE).
+# Written from CADCraft's English strings; no proprietary translations were copied.
+# Clean room: every entry is written from the plain meaning of the English label in ordinary
+# computing vocabulary. No other product's Swedish interface, string table or terminology
+# database was consulted, and no other catalog is used as a source.
+# UTF-8: context<TAB>English source<TAB>Swedish translation.
+# Empty context = ordinary label; @plural = one|other forms with {n}.
+# Keep command IDs, keywords, technology/product names and user data unchanged.
+
+	  Cancel  	  Avbryt  
+	  OK  	  OK  
+	 or [	 eller [
+	% of all commits	% av alla commits
+	* Wildcard Match	* Jokerteckenmatchning
+	*VARIES*	*VARIERAR*
+	+  |  Top  |  2D Wireframe	+  |  Ovanifrån  |  2D-trådmodell
+	+Bin	+Bin
+	+LOC	+LOC
+	1 Viewport	1 vyfönster
+	2 Points	2 punkter
+	2 Viewports	2 vyfönster
+	2D Solid	2D-solid
+	3 Points	3 punkter
+	3 Viewports	3 vyfönster
+	3D Face	3D-yta
+	3D Operations	3D-operationer
+	3D Polyline	3D-polylinje
+	4 Viewports	4 vyfönster
+	< Less than	< Mindre än
+	<> Not Equal	<> Inte lika med
+	= Equals	= Lika med
+	> Greater than	> Större än
+	A drawing opened from a file keeps that file's format.	En ritning som öppnats från en fil behåller filens format.
+	A variable name starts with a letter and has only letters, digits and _	Ett variabelnamn börjar med en bokstav och innehåller bara bokstäver, siffror och _
+	About	Om
+	About CADCraft	Om CADCraft
+	Absolute	Absolut
+	Add Current Scale	Lägg till aktuell skala
+	Add Leader	Lägg till hänvisningslinje
+	Add Vertex	Lägg till hörnpunkt
+	Add/Delete Scales...	Lägg till/ta bort skalor...
+	Additional angles	Ytterligare vinklar
+	Align	Justera
+	Align Text	Justera text
+	Aligned	Justerat
+	All	Alla
+	All Annotation Objects	Alla annoteringsobjekt
+	All Scales	Alla skalor
+	All Used Layers	Alla använda lager
+	All files	Alla filer
+	An array that would create more objects than this is refused.	En array som skulle skapa fler objekt än så avvisas.
+	Angle	Vinkel
+	Angular	Vinkelmått
+	Annotation Visibility	Annoteringssynlighet
+	Annotation scale	Annoteringsskala
+	Annotative Object Scale	Annotativ objektskala
+	Annotative Update	Annotativ uppdatering
+	Apparent Intersection	Skenbar skärningspunkt
+	Append to current selection set	Lägg till i aktuell markering
+	Apply	Använd
+	Apply to:	Använd på:
+	Apply true color	Använd RGB-färg
+	Arc	Båge
+	Arc Length	Båglängd
+	Area	Area
+	Arrange Panel	Panelen Ordna
+	Array	Array
+	Attach	Koppla
+	Attach DWG...	Koppla DWG...
+	Attribute	Attribut
+	Attribute Definition	Attributdefinition
+	Attribute Display	Attributvisning
+	Audit	Kontrollera
+	Auto (system language)	Auto (systemspråk)
+	Auto Constrain	Automatiska villkor
+	AutoConstrain	Automatiska villkor
+	Automatic save every	Spara automatiskt var
+	Automatic save file location	Plats för automatiskt sparade filer
+	Axis, End	Axel, slutpunkt
+	B	F
+	Base	Baspunkt
+	Baseline	Baslinje
+	Batch Publish	Publicera flera
+	Batch Publish...	Publicera flera...
+	Binary assets added	Tillagda binärfiler
+	Binary assets removed	Borttagna binärfiler
+	Bind	Bädda in
+	Bind...	Bädda in...
+	Blend	Mjuk övergång
+	Block	Block
+	Block Attribute Manager...	Hantera blockattribut...
+	Block Description...	Blockbeskrivning...
+	Block Editor	Blockredigerare
+	Block Reference	Blockreferens
+	Block...	Block...
+	Blocks	Block
+	Blue	Blå
+	Bold	Fet
+	Boolean	Boolesk
+	Boundary	Gräns
+	Boundary...	Gräns...
+	Box	Låda
+	Break	Bryt
+	Break At Point	Bryt vid punkt
+	Bring Above Objects	Flytta ovanför objekt
+	Bring Annotations to Front	Flytta annoteringar längst fram
+	Bring to Front	Flytta längst fram
+	Bulleted list	Punktlista
+	ByBlock	Enligt block
+	ByColor	Enligt färg
+	ByLayer	Enligt lager
+	CADCraft	CADCraft
+	CADCraft Help	Hjälp för CADCraft
+	CADCraft keeps these preferences, object snap modes and drafting toggles for your user account and restores them when it starts.	CADCraft sparar de här inställningarna, objektfästena och ritlägena för ditt användarkonto och återställer dem när programmet startar.
+	Cancel	Avbryt
+	Cartesian (x, y)	Kartesisk (x, y)
+	Center	Centrum
+	Center Line	Centrumlinje
+	Center Mark	Centrummarkering
+	Center X	Centrum X
+	Center Y	Centrum Y
+	Center Z	Centrum Z
+	Center, Diameter	Centrum, diameter
+	Center, Radius	Centrum, radie
+	Center, Start, Angle	Centrum, start, vinkel
+	Center, Start, End	Centrum, start, slut
+	Center, Start, Length	Centrum, start, längd
+	Chamfer	Fasa
+	Change Space	Byt rymd
+	Change to Current Layer	Flytta till aktuellt lager
+	Changed: {n}	Ändrade: {n}
+	Changes apply at once and are kept for next time.	Ändringar gäller direkt och sparas till nästa gång.
+	Circle	Cirkel
+	Circumference	Omkrets
+	Clear	Rensa
+	Clear Command History	Rensa kommandohistoriken
+	Clear History	Rensa historiken
+	Clip	Beskär
+	Clip Viewport	Beskär vyfönster
+	Clipboard	Urklipp
+	Close	Stäng
+	Close All	Stäng alla
+	Close All Other Drawings	Stäng alla andra ritningar
+	Close Array Editing	Avsluta redigering av array
+	Close Comparison	Stäng jämförelse
+	Export Comparison	Exportera jämförelse
+	Closed	Sluten
+	Coincident	Sammanfallande
+	Collapse Palettes	Fäll ihop paletter
+	Collapse Tool Sets	Fäll ihop verktygsuppsättningar
+	Collinear	Kolinjär
+	Color	Färg
+	Color 8	Färg 8
+	Color 9	Färg 9
+	Color Index	Färgindex
+	Color...	Färg...
+	Command Aliases	Kommandoalias
+	Command History	Kommandohistorik
+	Command Line	Kommandorad
+	Command Line History Lines	Rader i kommandoradens historik
+	Command Reference	Kommandoreferens
+	Command line history	Kommandoradens historik
+	Commits	Commits
+	Company	Företag
+	Compare Drawings...	Jämför ritningar...
+	Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.	Datorstödd konstruktion och ritning: ett CAD-program med öppen källkod, skrivet från grunden i ren Rust.
+	Concentric	Koncentrisk
+	Cone	Kon
+	Constraint Bars	Villkorsfält
+	Constraint Settings	Villkorsinställningar
+	Construction Line	Konstruktionslinje
+	Contents	Innehåll
+	Continue	Fortsätt
+	Contributors	Bidragsgivare
+	Control Vertices	Styrpunkter
+	Convert	Konvertera
+	Convert to Arc	Konvertera till båge
+	Convert to Line	Konvertera till linje
+	Copy	Kopiera
+	Copy Full File Path	Kopiera fullständig sökväg
+	Copy History	Kopiera historik
+	Copy Layout	Kopiera layout
+	Copy Nested Objects	Kopiera nästlade objekt
+	Copy Selection	Kopiera markering
+	Copy as JSON	Kopiera som JSON
+	Copy with Base Point	Kopiera med baspunkt
+	Count	Antal
+	Count List	Antalslista
+	Count Table	Antalstabell
+	Create Block	Skapa block
+	Creates a user parameter	Skapar en användarparameter
+	Crosshair size	Hårkorsets storlek
+	Ctrl+Enter to finish	Ctrl+Enter för att avsluta
+	Current Scale Only	Bara aktuell skala
+	Current layer	Aktuellt lager
+	Current selection	Aktuell markering
+	Current: {color}	Aktuell: {color}
+	Cut	Klipp ut
+	Cut with Base Point	Klipp ut med baspunkt
+	Cyan	Cyan
+	Cylinder	Cylinder
+	DWG	DWG
+	DWG Reference...	DWG-referens...
+	DXF	DXF
+	Dark	Mörkt
+	Data Extraction...	Dataextrahering...
+	Data Link...	Datalänk...
+	Default	Standard
+	Default Save Format	Standardformat för att spara
+	Default Save Version	Standardversion för att spara
+	Default save version	Standardversion för att spara
+	Define Attributes	Definiera attribut
+	Define Attributes...	Definiera attribut...
+	Defined width	Definierad bredd
+	Degree	Grad
+	Degrees of Freedom	Frihetsgrader
+	Degrees of freedom: {n}	Frihetsgrader: {n}
+	Delete	Ta bort
+	Delete Column	Ta bort kolumn
+	Delete Constraints	Ta bort villkor
+	Delete Current Scale	Ta bort aktuell skala
+	Delete Dimension Style	Ta bort måttstil
+	Delete Duplicate Objects	Ta bort dubblettobjekt
+	Delete Layer	Ta bort lager
+	Delete Layer State	Ta bort lagertillstånd
+	Delete Layout	Ta bort layout
+	Delete Row	Ta bort rad
+	Delete Text Style	Ta bort textstil
+	Delta X	Delta X
+	Delta Y	Delta Y
+	Description	Beskrivning
+	Deselect All	Avmarkera allt
+	Detach	Koppla bort
+	Diameter	Diameter
+	Dim style	Måttstil
+	Dimension	Mått
+	Dimension Break	Måttbrytning
+	Dimension Edit	Redigera mått
+	Dimension Objects Only	Bara måttobjekt
+	Dimension Space	Måttavstånd
+	Dimension Style Override	Åsidosätt måttstil
+	Dimension Style...	Måttstil...
+	Dimension Text Edit	Redigera måttal
+	Dimension style	Måttstil
+	Dimensional Constraint	Måttvillkor
+	Dimensional Constraint Parameters	Parametrar för måttvillkor
+	Dimensional Constraints	Måttvillkor
+	Disassociate Dimensions	Lösgör mått
+	Display	Visning
+	Display name	Visningsnamn
+	Distance	Avstånd
+	Divide	Dela in
+	Do not plot (click: plot)	Plotta inte (klicka: plotta)
+	Donut	Ring
+	Double-click to edit the description	Dubbelklicka för att redigera beskrivningen
+	Down	Ned
+	Drafting	Ritning
+	Drafting Settings	Ritinställningar
+	Drafting Settings...	Ritinställningar...
+	Draw	Rita
+	Draw Order	Ritordning
+	Drawing (DWG)	Ritning (DWG)
+	Drawing (DXF)	Ritning (DXF)
+	Drawing Limits	Ritningsgränser
+	Drawing Recovery Manager...	Återställ ritningar...
+	Drawing Template (DWT)	Ritningsmall (DWT)
+	Drawing Utilities	Ritningsverktyg
+	Drawings (DWG, DXF)	Ritningar (DWG, DXF)
+	Drawings with no file yet are saved in the default version. 0 minutes turns automatic save off.	Ritningar som ännu saknar fil sparas i standardversionen. 0 minuter stänger av automatiskt sparande.
+	Dynamic	Dynamisk
+	Dynamic Dimensions	Dynamiska mått
+	Dynamic Input	Dynamisk inmatning
+	Dynamic Input (F12)	Dynamisk inmatning (F12)
+	E	Ö
+	Edit	Redigera
+	Edit Array	Redigera array
+	Edit Attributes...	Redigera attribut...
+	Edit Table Cell	Redigera tabellcell
+	Edit Text...	Redigera text...
+	Elevation	Höjdläge
+	Ellipse	Ellips
+	Elliptical Arc	Elliptisk båge
+	Enable Dynamic Input (F12)	Slå på dynamisk inmatning (F12)
+	End Object Isolation	Avsluta isolering av objekt
+	End Width	Slutbredd
+	End X	Slut X
+	End Y	Slut Y
+	End angle	Slutvinkel
+	Endpoint	Ändpunkt
+	Enter	Enter
+	Enter Top, Zero or Bottom.	Ange Top, Zero eller Bottom.
+	Enter a fit data option	Ange ett alternativ för anpassningsdata
+	Enter a pattern name	Ange ett mönsternamn
+	Enter a vertex editing option	Ange ett alternativ för hörnpunktsredigering
+	Enter an option	Ange ett alternativ
+	Enter angle of xline	Ange konstruktionslinjens vinkel
+	Enter angle of xline (0) or	Ange konstruktionslinjens vinkel (0) eller
+	Enter area of rectangle in current units	Ange rektangelns area i aktuella enheter
+	Enter attribute prompt	Ange attributets fråga
+	Enter attribute tag name	Ange attributets taggnamn
+	Enter attribute value	Ange attributvärde
+	Enter block name	Ange blocknamn
+	Enter constraint type	Ange villkorstyp
+	Enter continuity	Ange kontinuitet
+	Enter default attribute value	Ange attributets standardvärde
+	Enter degree of spline	Ange splinens grad
+	Enter delta angle	Ange vinkeländring
+	Enter delta length or	Ange längdändring eller
+	Enter dimension text	Ange måttal
+	Enter dimension text (<> = measurement)	Ange måttal (<> = mätvärde)
+	Enter dimension value or [name=expression]	Ange måttvärde eller [namn=uttryck]
+	Enter dimension variable name to override	Ange namnet på måttvariabeln som ska åsidosättas
+	Enter justification type	Ange justeringstyp
+	Enter leader text	Ange text för hänvisningslinjen
+	Enter mline scale	Ange skala för multilinje
+	Enter mode	Ange läge
+	Enter name of block to insert	Ange namnet på blocket som ska infogas
+	Enter new text	Ange ny text
+	Enter next point	Ange nästa punkt
+	Enter number of columns	Ange antal kolumner
+	Enter number of data rows	Ange antal datarader
+	Enter number of items	Ange antal objekt
+	Enter number of items along path	Ange antal objekt längs banan
+	Enter number of sides	Ange antal sidor
+	Enter number of turns	Ange antal varv
+	Enter percentage length	Ange längd i procent
+	Enter rectangle length	Ange rektangelns längd
+	Enter rectangle width	Ange rektangelns bredd
+	Enter scale factor	Ange skalfaktor
+	Enter text	Ange text
+	Enter text (use \P for new paragraphs)	Ange text (använd \P för nya stycken)
+	Enter the number of segments	Ange antal segment
+	Enter twist direction of helix	Ange helixens vridriktning
+	Entire drawing	Hela ritningen
+	Equal	Lika
+	Erase	Radera
+	Evaluate	Beräkna
+	Exclude from new selection set	Uteslut från ny markering
+	Explode	Lös upp
+	Export	Exportera
+	Export Table	Exportera tabell
+	Export to PDF...	Exportera till PDF...
+	Export...	Exportera...
+	Expression	Uttryck
+	Extend	Förläng
+	Extension	Förlängning
+	Extents	Utsträckning
+	External Reference	Extern referens
+	External References	Externa referenser
+	Extrude	Extrudera
+	File	Arkiv
+	File Tab	Filflik
+	Fillet	Avrunda
+	Filter	Filter
+	Filters	Filter
+	Find and Replace	Sök och ersätt
+	Find...	Sök...
+	First	Första
+	First commit	Första commit
+	Fit Points	Anpassningspunkter
+	Fix	Fixera
+	Flatten Objects	Platta till objekt
+	Format	Format
+	Freehand	Frihand
+	Freeze	Frys
+	Freeze Layer	Frys lager
+	Freeze in new viewports	Frys i nya vyfönster
+	Freeze/Thaw	Frys/tina
+	Freeze/Thaw in all viewports	Frys/tina i alla vyfönster
+	Freeze/Thaw in the current viewport	Frys/tina i aktuellt vyfönster
+	From	Från
+	From Template...	Från mall...
+	General	Allmänt
+	Geometric Center	Geometriskt centrum
+	Geometric Constraint	Geometriskt villkor
+	Geometric Constraints	Geometriska villkor
+	Geometry	Geometri
+	Get Variable	Hämta variabel
+	Get View	Hämta vy
+	Get from the Drawing	Hämta från ritningen
+	Global	Global
+	Global width	Global bredd
+	Grab bag	Blandat
+	Gradient	Gradient
+	Gradient...	Gradient...
+	Green	Grön
+	Grid (F7)	Rutnät (F7)
+	Grid Display	Visa rutnät
+	Grid On (F7)	Rutnät på (F7)
+	Grid snap	Fäst mot rutnät
+	Grid spacing	Rutnätsavstånd
+	Grip Edit	Redigera med grepp
+	Grip Mirror	Spegla med grepp
+	Grip Option	Greppalternativ
+	Grip Rotate	Rotera med grepp
+	Grip Scale	Skala med grepp
+	Grip Stretch	Sträck med grepp
+	Grip size	Greppstorlek
+	Group	Gruppera
+	Group Edit	Redigera grupp
+	Group Options	Gruppalternativ
+	Group Selection	Gruppmarkering
+	Hatch	Skraffering
+	Hatch Edit	Redigera skraffering
+	Hatch Patterns	Skrafferingsmönster
+	Hatch...	Skraffering...
+	Height	Höjd
+	Height: {height}	Höjd: {height}
+	Helix	Helix
+	Help	Hjälp
+	Hide All	Dölj alla
+	Hide All Constraint Bars	Dölj alla villkorsfält
+	Hide All Dynamic Dimensions	Dölj alla dynamiska mått
+	Hide Layer List	Dölj lagerlistan
+	Hide Objects	Dölj objekt
+	Hide Palette	Dölj palett
+	Hide Palettes	Dölj paletter
+	History	Historik
+	Hold Shift to add to the selection	Håll ned Shift för att lägga till i markeringen
+	Home	Start
+	Horizontal	Vågrät
+	HorizontalDistance	Vågrätt avstånd
+	How to apply:	Använd så här:
+	ID Point	ID-punkt
+	Import	Importera
+	Import...	Importera...
+	In	In
+	In-window Menu Bar	Menyrad i fönstret
+	Include in new selection set	Ta med i ny markering
+	Increment angle	Vinkelsteg
+	Index Color	Indexfärg
+	Index color: {index}	Indexfärg: {index}
+	Infer Constraints	Härled villkor
+	Inquiry	Information
+	Insert	Infoga
+	Insert Block	Infoga block
+	Insert Column	Infoga kolumn
+	Insert Row	Infoga rad
+	Insert Table Formula	Infoga tabellformel
+	Insert tab	Fliken Infoga
+	Insert this block	Infoga det här blocket
+	Insertion	Insättningspunkt
+	Insertion X	Insättning X
+	Insertion Y	Insättning Y
+	Insertion Z	Insättning Z
+	Inspect Constraints	Granska villkor
+	Inspect Drawing	Granska ritningen
+	Inspection	Granskning
+	Interface Language	Gränssnittsspråk
+	Interface Theme	Gränssnittstema
+	Interface language	Gränssnittsspråk
+	Interface theme	Gränssnittstema
+	Intersect	Snitt
+	Intersection	Skärningspunkt
+	Isolate	Isolera
+	Isolate Layer	Isolera lager
+	Isolate Objects	Isolera objekt
+	Isometric Drafting	Isometrisk ritning
+	Isometric Plane	Isometriskt plan
+	Isometric snap	Isometriskt fäste
+	Jogged	Bruten
+	Jogged Linear	Brutet linjärt
+	Join	Foga samman
+	Join the ArtCraft Discord…	Gå med i ArtCrafts Discord…
+	Join us on Discord	Gå med i ArtCrafts community på Discord
+	Keep the system cursor visible over the drawing area	Visa systemets muspekare över ritytan
+	Language	Språk
+	Largest array	Största array
+	Last	Senaste
+	Last commit	Senaste commit
+	Layer	Lager
+	Layer Delete	Ta bort lager
+	Layer Match	Matcha lager
+	Layer Merge	Sammanfoga lager
+	Layer Off	Stäng av lager
+	Layer Properties	Lageregenskaper
+	Layer Properties Manager	Hantera lageregenskaper
+	Layer Properties Manager — current viewport	Hantera lageregenskaper – aktuellt vyfönster
+	Layer State	Lagertillstånd
+	Layer States Manager...	Hantera lagertillstånd...
+	Layer Tools	Lagerverktyg
+	Layer contains objects (double-click to make current)	Lagret innehåller objekt (dubbelklicka för att göra det aktuellt)
+	Layer is empty (double-click to make current)	Lagret är tomt (dubbelklicka för att göra det aktuellt)
+	Layers	Lager
+	Layers Palette	Lagerpalett
+	Layers displayed: {shown} of {total}.   Current layer: {layer}	Visade lager: {shown} av {total}.   Aktuellt lager: {layer}
+	Layout	Layout
+	Layout list	Layoutlista
+	Layout paper	Layoutpapper
+	Leader	Hänvisningslinje
+	Leaders Only	Bara hänvisningslinjer
+	Left	Vänster
+	Length	Längd
+	Length X	Längd X
+	Length Y	Längd Y
+	Lengthen	Ändra längd
+	Light	Ljust
+	Line	Linje
+	Line delta	Radskillnad
+	Linear	Linjärt
+	Lines +/−	Rader +/−
+	Lines added	Tillagda rader
+	Lines deleted	Borttagna rader
+	Lines of Command History	Rader i kommandohistoriken
+	Linetype	Linjetyp
+	Linetype Scale	Linjetypsskala
+	Linetype scale	Linjetypsskala
+	Loaded	Inläst
+	Lock viewport	Lås vyfönster
+	Ltscale	Linjetypsskala
+	Linetype...	Linjetyp...
+	Lineweight	Linjetjocklek
+	Lineweight...	Linjetjocklek...
+	List	Lista
+	List Blocks	Lista block
+	List Dimension Styles	Lista måttstilar
+	List Groups	Lista grupper
+	List Layer States	Lista lagertillstånd
+	List Layouts	Lista layouter
+	List System Variables	Lista systemvariabler
+	List Text Styles	Lista textstilar
+	Load all	Läs in alla
+	Load...	Läs in...
+	Loaded linetypes	Inlästa linjetyper
+	Lock	Lås
+	Lock Layer	Lås lager
+	Lock/Unlock	Lås/lås upp
+	Loft	Loft
+	MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.	MIT OR Apache-2.0. Inte knutet till Autodesk, Inc.
+	MODEL	MODELL
+	MText	MText
+	Magenta	Magenta
+	Major line every	Huvudlinje var
+	Make Current	Gör aktuellt
+	Make Object's Layer Current	Gör objektets lager aktuellt
+	Make it a block of this drawing, keeping its layer names	Gör den till ett block i den här ritningen och behåll dess lagernamn
+	Make it a block of this drawing; its layers become NAME$0$LAYER	Gör den till ett block i den här ritningen; dess lager blir NAME$0$LAYER
+	Make...	Skapa...
+	Match Layer	Matcha lager
+	Match Properties	Matcha egenskaper
+	Measure	Mät upp
+	Measure Distance	Mät avstånd
+	Measure Geometry	Mät geometri
+	Merge Cells	Sammanfoga celler
+	Merged PRs	Sammanslagna PR:er
+	Mid Between 2 Points	Mitt mellan 2 punkter
+	Midpoint	Mittpunkt
+	Mirror	Spegla
+	Model	Modell
+	Model Space (in viewport)	Modellrymd (i vyfönster)
+	Model background	Modellbakgrund
+	Modeling	Modellering
+	Models	Modeller
+	Modify	Ändra
+	More toolbar commands	Fler verktygsfältskommandon
+	Move	Flytta
+	Multileader	Multihänvisningslinje
+	Multileader Style...	Multihänvisningsstil...
+	Multileader style	Multihänvisningsstil
+	Multiline	Multilinje
+	Multiline Style...	Multilinjestil...
+	Multiline Text	Flerradstext
+	Multiline Text...	Flerradstext...
+	Multiline...	Multilinje...
+	Multiple	Flera
+	Multiple Point	Flera punkter
+	My	Mina
+	My properties: not available yet	Mina egenskaper: inte tillgängligt än
+	N	N
+	Name	Namn
+	Name (A–Z)	Namn (A–Ö)
+	Named Viewports...	Namngivna vyfönster...
+	Named Views...	Namngivna vyer...
+	Nearest	Närmaste
+	New	Ny
+	New (metric)	Ny (metrisk)
+	New Drawing	Ny ritning
+	New Drawing (⌘N)	Ny ritning (⌘N)
+	New Drawing...	Ny ritning...
+	New Layer	Nytt lager
+	New Layout	Ny layout
+	New VP Freeze	Frys i nya vyfönster
+	New Viewports...	Nya vyfönster...
+	New from Template...	Ny från mall...
+	New layout	Ny layout
+	New state name	Namn på nytt tillstånd
+	Next Change	Nästa ändring
+	No	Nej
+	No blocks defined in this drawing.	Inga block är definierade i den här ritningen.
+	No contributor data was built into this copy.	Den här kopian innehåller inga uppgifter om bidragsgivare.
+	No external references are attached.	Inga externa referenser är kopplade.
+	No model credits were built into this copy.	Den här kopian innehåller inga uppgifter om medverkande AI-modeller.
+	No saved layer states	Inga sparade lagertillstånd
+	No selection	Ingen markering
+	Node	Nod
+	None	Ingen
+	Not Found	Hittades inte
+	Not available	Inte tillgängligt
+	Not available yet	Inte tillgängligt än
+	Not loaded	Inte inläst
+	Numbered list	Numrerad lista
+	OK	OK
+	Object	Objekt
+	Object Snap	Objektfäste
+	Object Snap (F3)	Objektfäste (F3)
+	Object Snap On (F3)	Objektfäste på (F3)
+	Object Snap Tracking	Objektfästesspårning
+	Object Snap Tracking (F11)	Objektfästesspårning (F11)
+	Object Snap Tracking Settings	Inställningar för objektfästesspårning
+	Object snap aperture	Objektfästets sökområde
+	Object snap marker size	Objektfästets markörstorlek
+	Object type:	Objekttyp:
+	Oblique	Sned
+	Off	Av
+	Offset	Förskjut
+	On	På
+	On/Off	På/av
+	One of the Crafting Apps by the ArtCraft team and community.	En av Crafting Apps, gjord av ArtCraft-teamet och dess community.
+	Only in this drawing: {n}	Bara i den här ritningen: {n}
+	Only in {name}: {n}	Bara i {name}: {n}
+	Open	Öppna
+	Open (⌘O)	Öppna (⌘O)
+	Open Sample Drawing	Öppna exempelritning
+	Open Xref	Öppna extern referens
+	Open and Save	Öppna och spara
+	Open sample drawing	Öppna exempelritning
+	Open...	Öppna...
+	Operator:	Operator:
+	Options	Alternativ
+	Options...	Alternativ...
+	Orbit	Kretsa
+	Ordinate	Koordinatmått
+	Ortho (F8)	Orto (F8)
+	Ortho Mode	Ortoläge
+	Ortho Mode (F8)	Ortoläge (F8)
+	Osnap Settings...	Inställningar för objektfäste...
+	Out	Ut
+	Over-constrained	Överbestämd
+	Overlay	Överlägg
+	Override	Åsidosätt
+	PAPER	PAPPER
+	Paste to Command Line	Klistra in på kommandoraden
+	Percent	Procent
+	Pickbox size	Markeringsrutans storlek
+	Plotter Manager	Hantera plottrar
+	Plotter Manager...	Hantera plottrar...
+	Polar (distance < angle)	Polär (avstånd < vinkel)
+	PRs	PR:er
+	Page Setup Manager	Hantera sidinställningar
+	Page Setup Manager...	Hantera sidinställningar...
+	Pan	Panorera
+	Pan Down	Panorera nedåt
+	Pan Left	Panorera åt vänster
+	Pan Right	Panorera åt höger
+	Pan Up	Panorera uppåt
+	Paper Space	Pappersrymd
+	Parallel	Parallell
+	Parameters Manager	Hantera parametrar
+	Parametric	Parametrisk
+	Paste	Klistra in
+	Paste as Block	Klistra in som block
+	Paste to Original Coordinates	Klistra in på ursprungliga koordinater
+	Path Array	Array längs bana
+	Pattern	Mönster
+	Perpendicular	Vinkelrät
+	Plot	Plotta
+	Plot (click: do not plot)	Plotta (klicka: plotta inte)
+	Plot Preview	Förhandsgranska plott
+	Plot Window	Plottfönster
+	Plot style	Plottstil
+	Plot style attached to	Plottstil kopplad till
+	Plot style table	Plottstilstabell
+	Plot Style...	Plottstil...
+	Plot Style Manager	Hantera plottstilar
+	Plot Style Manager...	Hantera plottstilar...
+	Plot Styles...	Plottstilar...
+	New CTB	Ny CTB
+	New STB	Ny STB
+	New style	Ny stil
+	Polar angle measurement	Mätning av polär vinkel
+	Polar distance	Polärt avstånd
+	PolarSnap	Polärt fäste
+	Polygonal Viewport	Polygonalt vyfönster
+	Polyline Edit	Redigera polylinje
+	Previous Change	Föregående ändring
+	Profiles	Profiler
+	QuickCalc Pick	Snabbkalkyl: välj punkt
+	Recalculate Table Formulas	Beräkna tabellformler igen
+	Recent Commands	Senaste kommandon
+	Recent Input	Senaste inmatning
+	Rectangular snap	Rektangulärt fäste
+	Reference Manager	Referenshanterare
+	Reference Name	Referensnamn
+	References: {n}	Referenser: {n}
+	Reinitialize	Initiera om
+	Relative to last segment	Relativt sista segmentet
+	Reload	Läs in igen
+	Reload All	Läs in alla igen
+	Remove Vertex	Ta bort hörnpunkt
+	Reset Panel Layout	Återställ panellayout
+	Reset keeps the interface language.	Återställningen behåller gränssnittsspråket.
+	Reset to Defaults	Återställ standardvärden
+	SVG drawings (SVG, SVGZ)	SVG-ritningar (SVG, SVGZ)
+	Save new drawings as	Spara nya ritningar som
+	Saved Path	Sparad sökväg
+	Scale List...	Skallista...
+	Screen magnifiers, screen readers and recorders follow the system cursor.	Skärmförstorare, skärmläsare och skärminspelare följer systemets muspekare.
+	Select Similar	Markera liknande
+	Select objects first, then choose a command	Markera objekt först och välj sedan ett kommando
+	Selection	Markering
+	Send Hatches to Back	Flytta skrafferingar längst bak
+	Send Under Objects	Flytta under objekt
+	Set Current Viewport	Gör vyfönster aktuellt
+	Set Table Cell Style	Ange tabellcellstil
+	Settings...	Inställningar...
+	Show Annotative Objects	Visa annotativa objekt
+	Show Quick Properties for selected objects	Visa snabbegenskaper för markerade objekt
+	Show and hide the tools of this category	Visa och dölj verktygen i den här kategorin
+	Show command prompting near the crosshairs	Visa kommandofrågor nära hårkorset
+	Show in Tool Sets	Visa i verktygsuppsättningar
+	Snap Overrides	Tillfälliga fästen
+	Snap type	Fästtyp
+	Snap, grid, polar tracking and Dynamic Input:	Fäst, rutnät, polär spårning och dynamisk inmatning:
+	Solid Editing	Solidredigering
+	Spline Edit	Redigera spline
+	Stretch Vertex	Sträck hörnpunkt
+	Synchronize Multiple-scale Positions	Synkronisera positioner för flera skalor
+	Table Breaks	Tabellbrytningar
+	Table Cell Style	Tabellcellstil
+	Temporary track point	Tillfällig spårpunkt
+	Text Objects Only	Bara textobjekt
+	Thaw Layer	Tina lager
+	The aperture is how near the cursor must come to a point for an object snap to find it.	Sökområdet anger hur nära en punkt markören måste komma för att objektfästet ska hitta den.
+	Time-sensitive right-click: a quick click is Enter, holding opens the menu	Tidskänsligt högerklick: ett snabbt klick är Enter, att hålla ned öppnar menyn
+	To	Till
+	Tolerance...	Tolerans...
+	Track orthogonally only	Spåra bara ortogonalt
+	Track using all polar angle settings	Spåra med alla polära vinkelinställningar
+	Turn On Layer	Slå på lager
+	Turned off, a right-click while a command runs always opens the shortcut menu.	Om det är avstängt öppnar ett högerklick under ett kommando alltid snabbmenyn.
+	Units Conversion	Enhetsomvandling
+	Unload	Inaktivera
+	Unloaded	Inaktiverad
+	Unlock viewport	Lås upp vyfönster
+	Unreferenced	Inte refererad
+	Unresolved	Hittades inte
+	Update Data Links	Uppdatera datalänkar
+	Use for this layout	Använd för den här layouten
+	Display plot styles	Visa plottstilar
+	No plot style tables.	Inga plottstilstabeller.
+	A built-in table: editing it keeps an edited copy in the drawing.	En inbyggd tabell: om du redigerar den sparas en redigerad kopia i ritningen.
+	Keep an editable copy of this table in the drawing	Spara en redigerbar kopia av tabellen i ritningen
+	Layout {name}: {table}	Layout {name}: {table}
+	Grayscale	Gråskala
+	Screening	Rastrering
+	Use object linetype	Använd objektets linjetyp
+	Use object lineweight	Använd objektets linjetjocklek
+	Remove	Ta bort
+	Add	Lägg till
+	Open a drawing first.	Öppna en ritning först.
+	Plot table type	Typ av plottstilstabell
+	Color-dependent	Färgberoende
+	Named	Namngiven
+	Plus/minus	Plus/minus
+	Point	Punkt
+	Point Filters	Punktfilter
+	Point Style...	Punktstil...
+	Polar Array	Polär array
+	Polar Tracking	Polär spårning
+	Polar Tracking (F10)	Polär spårning (F10)
+	Polar Tracking On (F10)	Polär spårning på (F10)
+	Polar: {distance} < {angle}°	Polär: {distance} < {angle}°
+	Polygon	Polygon
+	Polygonal	Polygonal
+	Polyline	Polylinje
+	Position X	Position X
+	Position Y	Position Y
+	Position Z	Position Z
+	Previous	Föregående
+	Previous Layer	Föregående lager
+	Primitives	Grundformer
+	Print	Skriv ut
+	Print...	Skriv ut...
+	Properties	Egenskaper
+	Properties Inspector	Egenskapsinspektör
+	Properties:	Egenskaper:
+	Proxy	Proxy
+	Purge	Rensa
+	Pyramid	Pyramid
+	Quadrant	Kvadrant
+	Query Entities	Objektinformation
+	Quick	Snabb
+	Quick Dimension	Snabbmått
+	Quick Properties	Snabbegenskaper
+	Quick Select	Snabbmarkering
+	Quick Select Properties	Egenskaper för snabbmarkering
+	Quick Select...	Snabbmarkering...
+	QuickCalc	Snabbkalkyl
+	Quit CADCraft	Avsluta CADCraft
+	Radius	Radie
+	Raster Image	Rasterbild
+	Ray	Stråle
+	Read-only	Skrivskyddad
+	Real name	Riktigt namn
+	Realtime	Realtid
+	Reassociate Dimensions	Återkoppla mått
+	Recent	Senaste
+	Recover...	Reparera...
+	Rectangle	Rektangel
+	Rectangular	Rektangulär
+	Rectangular Array	Rektangulär array
+	Red	Röd
+	Redo	Gör om
+	Redo (⇧⌘Z)	Gör om (⇧⌘Z)
+	Redraw	Rita om
+	Regen	Regenerera
+	Regen All	Regenerera alla
+	Region	Region
+	Region/Mass Properties	Region- och massegenskaper
+	Relative	Relativ
+	Remove Leader	Ta bort hänvisningslinje
+	Remove the viewport override	Ta bort vyfönstrets åsidosättning
+	Rename Dimension Style	Byt namn på måttstil
+	Rename Layer	Byt namn på lager
+	Rename Layer State	Byt namn på lagertillstånd
+	Rename Layout	Byt namn på layout
+	Rename Text Style	Byt namn på textstil
+	Rename...	Byt namn...
+	Repeat {command}	Upprepa {command}
+	Replace Block...	Ersätt block...
+	Requires a point (x,y, @dx,dy or @d<a).	Kräver en punkt (x,y, @dx,dy eller @d<a).
+	Reset Palettes	Återställ paletter
+	Restore	Återställ
+	Restore Layer State	Återställ lagertillstånd
+	Reverse	Vänd riktning
+	Reverse the order	Vänd på ordningen
+	Revision Cloud	Revideringsmoln
+	Revolve	Rotera runt axel
+	Right	Höger
+	Rotate	Rotera
+	Rotation	Rotation
+	S	S
+	Save	Spara
+	Save (⌘S)	Spara (⌘S)
+	Save As	Spara som
+	Save As...	Spara som...
+	Save Layer State	Spara lagertillstånd
+	Save State	Spara tillstånd
+	Scale	Skala
+	Search for layer	Sök efter lager
+	Search for parameter	Sök efter parameter
+	Second and next points:	Andra och följande punkter:
+	Select	Markera
+	Select 2D polyline	Markera 2D-polylinje
+	Select All	Markera allt
+	Select Objects	Markera objekt
+	Select a 2D polyline.	Markera en 2D-polylinje.
+	Select a block reference.	Markera en blockreferens.
+	Select a circle or arc.	Markera en cirkel eller båge.
+	Select a closed polyline	Markera en sluten polylinje
+	Select a closed polyline, circle, ellipse or closed spline.	Markera en sluten polylinje, cirkel, ellips eller sluten spline.
+	Select a closed polyline.	Markera en sluten polylinje.
+	Select a curve as the path.	Markera en kurva som bana.
+	Select a dimension constraint type	Välj en typ av måttvillkor
+	Select a line object	Markera ett linjeobjekt
+	Select a line object.	Markera ett linjeobjekt.
+	Select a line or an arc.	Markera en linje eller en båge.
+	Select a line or polyline segment	Markera en linje eller ett polylinjesegment
+	Select a line, arc or open polyline.	Markera en linje, båge eller öppen polylinje.
+	Select a line, arc, circle, polyline, ellipse or spline as the path.	Markera en linje, båge, cirkel, polylinje, ellips eller spline som bana.
+	Select a line, circle, arc or polyline segment.	Markera en linje, cirkel, båge eller ett polylinjesegment.
+	Select a line.	Markera en linje.
+	Select a polyline.	Markera en polylinje.
+	Select a text, mtext, attribute definition or dimension.	Markera en text, mtext, attributdefinition eller ett mått.
+	Select an annotation object	Markera ett annoteringsobjekt
+	Select an arc or circle	Markera en båge eller cirkel
+	Select an arc.	Markera en båge.
+	Select an object	Markera ett objekt
+	Select an object to change or	Markera ett objekt att ändra eller
+	Select an object to measure or	Markera ett objekt att mäta eller
+	Select an object.	Markera ett objekt.
+	Select an open curve.	Markera en öppen kurva.
+	Select an open line, arc, polyline, ellipse arc or spline.	Markera en öppen linje, båge, polylinje, ellipsbåge eller spline.
+	Select arc or circle	Markera båge eller cirkel
+	Select arc or polyline arc segment	Markera båge eller bågsegment i polylinje
+	Select arc style	Välj bågstil
+	Select arc, circle, line	Markera båge, cirkel, linje
+	Select at least two objects to join.	Markera minst två objekt att foga samman.
+	Select circle or arc to add center mark	Markera cirkel eller båge för att lägga till centrummarkering
+	Select closed objects (regions, closed polylines, circles).	Markera slutna objekt (regioner, slutna polylinjer, cirklar).
+	Select first line	Markera första linjen
+	Select first line or arc	Markera första linjen eller bågen
+	Select first object	Markera första objektet
+	Select first object or	Markera första objektet eller
+	Select first point	Ange första punkten
+	Select nested objects to copy or	Markera nästlade objekt att kopiera eller
+	Select object	Markera objekt
+	Select object to dimension	Markera objekt att måttsätta
+	Select object to divide	Markera objekt att dela in
+	Select object to extend or shift-select to trim	Markera objekt att förlänga, eller Shift-markera för att trimma
+	Select object to measure	Markera objekt att mäta upp
+	Select object to offset	Markera objekt att förskjuta
+	Select object to trim or shift-select to extend	Markera objekt att trimma, eller Shift-markera för att förlänga
+	Select objects	Markera objekt
+	Select objects (crossing window first corner)	Markera objekt (korsande fönster, första hörnet)
+	Select objects to array.	Markera objekt för mönstret.
+	Select objects to stretch by crossing-window or crossing-polygon...	Markera objekt att sträcka med korsande fönster eller korsande polygon...
+	Select objects:	Markera objekt:
+	Select one polyline (Multiple is available through the JSON form).	Markera en polylinje (Multiple finns i JSON-formen).
+	Select path curve	Markera banans kurva
+	Select point or object	Ange punkt eller markera objekt
+	Select polyline or	Markera polylinje eller
+	Select second line	Markera andra linjen
+	Select second line or shift-select to apply corner	Markera andra linjen, eller Shift-markera för att skapa hörn
+	Select second object	Markera andra objektet
+	Select second object or shift-select to apply corner	Markera andra objektet, eller Shift-markera för att skapa hörn
+	Select second point	Ange andra punkten
+	Select spline	Markera spline
+	Select symmetry line	Markera symmetrilinje
+	Select two points	Ange två punkter
+	Selection Cycling	Växla markering
+	Send to Back	Flytta längst bak
+	Set Current	Gör aktuell
+	Set Current Dimension Style	Gör måttstil aktuell
+	Set Current Text Style	Gör textstil aktuell
+	Set Layer Properties	Ange lageregenskaper
+	Set Properties	Ange egenskaper
+	Set Table Cell	Ange tabellcell
+	Set Variable	Ange variabel
+	Set View	Ange vy
+	Share	Dela
+	Show	Visa
+	Show All	Visa alla
+	Show All Constraint Bars	Visa alla villkorsfält
+	Show All Dynamic Dimensions	Visa alla dynamiska mått
+	Show Layer List	Visa lagerlistan
+	Show/Hide Lineweight	Visa/dölj linjetjocklek
+	Show/Hide Transparency	Visa/dölj genomskinlighet
+	Single Line Text	Enradstext
+	Single Point	Enkel punkt
+	Single...	Enkel...
+	Smooth	Jämna ut
+	Snap	Fäst
+	Snap Mode	Fästläge
+	Snap Mode (F9)	Fästläge (F9)
+	Snap On (F9)	Fäst på (F9)
+	Snap X spacing	Fästavstånd X
+	Snap and Grid	Fäst och rutnät
+	Solid	Solid
+	Sort	Sortera
+	Specify a point	Ange en punkt
+	Specify a scale for the hatch pattern	Ange en skala för skrafferingsmönstret
+	Specify a second extension line origin	Ange startpunkt för andra hjälplinjen
+	Specify an angle for the hatch pattern	Ange en vinkel för skrafferingsmönstret
+	Specify angle end point	Ange vinkelns slutpunkt
+	Specify angle of dimension line	Ange måttlinjens vinkel
+	Specify angle of dimension text	Ange måttalets vinkel
+	Specify angle start point	Ange vinkelns startpunkt
+	Specify angle vertex	Ange vinkelns spets
+	Specify angle vertex point	Ange vinkelns spetspunkt
+	Specify arc length dimension location	Ange placering för båglängdsmåttet
+	Specify axis endpoint of ellipse	Ange ellipsens axeländpunkt
+	Specify base diameter	Ange basdiameter
+	Specify base point	Ange baspunkt
+	Specify base point or	Ange baspunkt eller
+	Specify base point or displacement (drag with the middle mouse button for realtime pan)	Ange baspunkt eller förskjutning (dra med mittenknappen för att panorera i realtid)
+	Specify base radius or	Ange basradie eller
+	Specify center of donut	Ange ringens centrum
+	Specify center of ellipse	Ange ellipsens centrum
+	Specify center of polygon	Ange polygonens centrum
+	Specify center point for circle	Ange cirkelns centrumpunkt
+	Specify center point of arc	Ange bågens centrumpunkt
+	Specify center point of array	Ange mönstrets centrumpunkt
+	Specify center point of base	Ange basens centrumpunkt
+	Specify corner of viewport	Ange vyfönstrets hörn
+	Specify corner of window, enter a scale factor (nX or nXP)	Ange fönstrets hörn eller en skalfaktor (nX eller nXP)
+	Specify diameter of circle	Ange cirkelns diameter
+	Specify dimension arc line location	Ange placering för måttbågen
+	Specify dimension line location	Ange placering för måttlinjen
+	Specify distance between turns	Ange avstånd mellan varven
+	Specify distance to other axis	Ange avstånd till den andra axeln
+	Specify end angle	Ange slutvinkel
+	Specify end point of arc	Ange bågens slutpunkt
+	Specify end point of arc (hold Ctrl to switch direction)	Ange bågens slutpunkt (håll ned Ctrl för att byta riktning)
+	Specify ending width	Ange slutbredd
+	Specify ending width for next segment	Ange slutbredd för nästa segment
+	Specify endpoint of arc	Ange bågens ändpunkt
+	Specify endpoint of axis	Ange axelns ändpunkt
+	Specify endpoint of line	Ange linjens ändpunkt
+	Specify feature location	Ange elementets placering
+	Specify fillet radius	Ange avrundningsradie
+	Specify fillet radius for rectangles	Ange avrundningsradie för rektanglar
+	Specify first angle endpoint	Ange vinkelns första ändpunkt
+	Specify first chamfer distance	Ange första fasavståndet
+	Specify first chamfer distance for rectangles	Ange första fasavståndet för rektanglar
+	Specify first constraint point	Ange första villkorspunkten
+	Specify first corner	Ange första hörnet
+	Specify first corner point	Ange första hörnpunkten
+	Specify first destination point	Ange första målpunkten
+	Specify first end point of circle's diameter	Ange första ändpunkten för cirkelns diameter
+	Specify first endpoint of edge	Ange kantens första ändpunkt
+	Specify first extension line origin	Ange startpunkt för första hjälplinjen
+	Specify first point	Ange första punkten
+	Specify first point of mirror line	Ange spegellinjens första punkt
+	Specify first point on circle	Ange första punkten på cirkeln
+	Specify first point on circle: _tan to	Ange första punkten på cirkeln: _tan to
+	Specify first source point	Ange första källpunkten
+	Specify height	Ange höjd
+	Specify helix height or	Ange helixens höjd eller
+	Specify included angle	Ange medelpunktsvinkel
+	Specify insertion base point	Ange insättningens baspunkt
+	Specify insertion point	Ange insättningspunkt
+	Specify inside diameter of donut	Ange ringens innerdiameter
+	Specify leader arrowhead location	Ange placering för hänvisningslinjens pilspets
+	Specify leader endpoint	Ange hänvisningslinjens ändpunkt
+	Specify leader landing location	Ange placering för hänvisningslinjens avsats
+	Specify length for rectangles	Ange längd för rektanglar
+	Specify length of chord	Ange kordans längd
+	Specify length of segment	Ange segmentets längd
+	Specify line width for rectangles	Ange linjebredd för rektanglar
+	Specify location for new vertex	Ange placering för ny hörnpunkt
+	Specify minimum length of arc	Ange minsta båglängd
+	Specify new end point	Ange ny slutpunkt
+	Specify new location for marked vertex	Ange ny placering för den markerade hörnpunkten
+	Specify new width for all segments	Ange ny bredd för alla segment
+	Specify next point	Ange nästa punkt
+	Specify offset distance	Ange förskjutningsavstånd
+	Specify offset distance or	Ange förskjutningsavstånd eller
+	Specify opposite corner	Ange motsatt hörn
+	Specify other corner point	Ange andra hörnpunkten
+	Specify other endpoint of axis	Ange axelns andra ändpunkt
+	Specify outside diameter of donut	Ange ringens ytterdiameter
+	Specify point	Ange punkt
+	Specify point on object for first tangent of circle	Ange punkt på objektet för cirkelns första tangent
+	Specify point on object for second tangent of circle	Ange punkt på objektet för cirkelns andra tangent
+	Specify point on side to offset	Ange punkt på den sida som ska förskjutas
+	Specify radius of arc	Ange bågens radie
+	Specify radius of circle	Ange cirkelns radie
+	Specify rotation angle	Ange rotationsvinkel
+	Specify rotation angle of text	Ange textens rotationsvinkel
+	Specify rotation angle or	Ange rotationsvinkel eller
+	Specify scale factor	Ange skalfaktor
+	Specify second angle endpoint	Ange vinkelns andra ändpunkt
+	Specify second break point	Ange andra brytpunkten
+	Specify second chamfer distance for rectangles	Ange andra fasavståndet för rektanglar
+	Specify second constraint point	Ange andra villkorspunkten
+	Specify second destination point	Ange andra målpunkten
+	Specify second end point of circle's diameter	Ange andra ändpunkten för cirkelns diameter
+	Specify second endpoint of edge	Ange kantens andra ändpunkt
+	Specify second extension line origin	Ange startpunkt för andra hjälplinjen
+	Specify second point	Ange andra punkten
+	Specify second point of arc	Ange bågens andra punkt
+	Specify second point of mirror line	Ange spegellinjens andra punkt
+	Specify second point on circle	Ange andra punkten på cirkeln
+	Specify second point on circle: _tan to	Ange andra punkten på cirkeln: _tan to
+	Specify second point or <use first point as displacement>	Ange andra punkten eller <använd första punkten som förskjutning>
+	Specify second source point	Ange andra källpunkten
+	Specify side to offset	Ange sida att förskjuta åt
+	Specify start angle	Ange startvinkel
+	Specify start point	Ange startpunkt
+	Specify start point of arc	Ange bågens startpunkt
+	Specify start point of polyline	Ange polylinjens startpunkt
+	Specify start point of text	Ange textens startpunkt
+	Specify starting width	Ange startbredd
+	Specify starting width for next segment	Ange startbredd för nästa segment
+	Specify tangent direction for the start point of arc	Ange tangentriktning för bågens startpunkt
+	Specify the elevation for rectangles	Ange höjdläge för rektanglar
+	Specify thickness for rectangles	Ange tjocklek för rektanglar
+	Specify third point on circle	Ange tredje punkten på cirkeln
+	Specify third point on circle: _tan to	Ange tredje punkten på cirkeln: _tan to
+	Specify third source point or <continue>	Ange tredje källpunkten eller <fortsätt>
+	Specify through point	Ange genomgångspunkt
+	Specify top diameter	Ange toppdiameter
+	Specify top radius or	Ange toppradie eller
+	Specify total angle	Ange total vinkel
+	Specify total length or	Ange total längd eller
+	Specify width for rectangles	Ange bredd för rektanglar
+	Sphere	Sfär
+	Spline	Spline
+	Stack (type 1/2 then select)	Stapla (skriv 1/2 och markera sedan)
+	Standard	Standard
+	Start	Start
+	Start Width	Startbredd
+	Start X	Start X
+	Start Y	Start Y
+	Start angle	Startvinkel
+	Start, Center, Angle	Start, centrum, vinkel
+	Start, Center, End	Start, centrum, slut
+	Start, Center, Length	Start, centrum, längd
+	Start, End, Angle	Start, slut, vinkel
+	Start, End, Direction	Start, slut, riktning
+	Start, End, Radius	Start, slut, radie
+	Status	Status
+	Status Bar	Statusfält
+	Stretch	Sträck
+	Style: Standard	Stil: Standard
+	Subtract	Subtrahera
+	Sweep	Svep
+	Switch Drawing	Byt ritning
+	Switch Layout	Byt layout
+	Switch between model space in a viewport and paper space	Växla mellan modellrymd i ett vyfönster och pappersrymd
+	Symmetric	Symmetrisk
+	Synchronize Attributes	Synkronisera attribut
+	Toggle PICKADD (off: each pick replaces the selection)	Växla PICKADD (av: varje klick ersätter markeringen)
+	Toggle PICKADD (on: picks add to the selection)	Växla PICKADD (på: klick läggs till i markeringen)
+	TOP	OVAN
+	Table	Tabell
+	Table Style...	Tabellstil...
+	Table style	Tabellstil
+	Table...	Tabell...
+	Tan, Tan, Radius	Tan, tan, radie
+	Tan, Tan, Tan	Tan, tan, tan
+	Tangent	Tangent
+	Text	Text
+	Text Editor	Textredigerare
+	Text Height	Texthöjd
+	Text Style...	Textstil...
+	Text height	Texthöjd
+	Text override	Åsidosatt text
+	Text style	Textstil
+	Thaw All Layers	Tina alla lager
+	There is nothing here yet.	Här finns inget än.
+	Thickness	Tjocklek
+	Time	Tid
+	To get started, create or open a drawing.	Kom igång genom att skapa eller öppna en ritning.
+	Tool Bar	Verktygsfält
+	Tool Sets	Verktygsuppsättningar
+	Tools	Verktyg
+	Torus	Torus
+	Trace	Bred linje
+	Transparency	Genomskinlighet
+	Trim	Trimma
+	True Color	RGB-färg
+	Turn All Layers On	Slå på alla lager
+	Turn Off Layer	Stäng av lager
+	Turn Quick Properties off (QPMODE)	Stäng av snabbegenskaper (QPMODE)
+	Type	Typ
+	Type a command	Skriv ett kommando
+	Type text; Enter starts a new paragraph	Skriv text; Enter börjar ett nytt stycke
+	UCS Icon	UCS-ikon
+	Undo	Ångra
+	Undo (⌘Z)	Ångra (⌘Z)
+	Ungroup	Dela upp grupp
+	Union	Förena
+	Unisolate Layer	Avsluta isolering av lager
+	Units...	Enheter...
+	Unlock Layer	Lås upp lager
+	Unmerge Cells	Dela celler
+	Unsaved Layer State	Osparat lagertillstånd
+	Up	Upp
+	Update	Uppdatera
+	Use System Setting	Använd systeminställningen
+	User	Användare
+	User Parameters	Användarparametrar
+	User Preferences	Användarinställningar
+	Username	Användarnamn
+	VP Color	Färg i vyfönster
+	VP Freeze	Frys i vyfönster
+	Value	Värde
+	Value:	Värde:
+	Variables	Variabler
+	Version	Version
+	Version 2000	Version 2000
+	Version 2004	Version 2004
+	Version 2007	Version 2007
+	Version 2010	Version 2010
+	Version 2013	Version 2013
+	Version 2018	Version 2018
+	Version {version}	Version {version}
+	Vertical	Lodrät
+	VerticalDistance	Lodrätt avstånd
+	View	Visa
+	ViewCube	ViewCube
+	Viewport	Vyfönster
+	Viewport Layer Freeze	Frys lager i vyfönster
+	Viewport Properties	Vyfönsteregenskaper
+	Viewport is locked	Vyfönstret är låst
+	Viewport scale	Vyfönsterskala
+	Viewport {id}	Vyfönster {id}
+	Viewports	Vyfönster
+	Volume	Volym
+	W	V
+	WCS	WCS
+	White	Vit
+	Width factor	Breddfaktor
+	Window	Fönster
+	Wipeout	Maskering
+	Workspace Switching	Byt arbetslayout
+	Write Block	Skriv block till fil
+	X	X
+	Xline	Konstruktionslinje
+	Y	Y
+	Yellow	Gul
+	Yes	Ja
+	Zoom	Zooma
+	Zoom All	Zooma allt
+	Zoom Dynamic	Zooma dynamiskt
+	Zoom Extents	Zooma till utsträckning
+	Zoom In	Zooma in
+	Zoom Object	Zooma till objekt
+	Zoom Out	Zooma ut
+	Zoom Previous	Zooma till föregående
+	Zoom Realtime	Zooma i realtid
+	Zoom Window	Zooma fönster
+	error	fel
+	min	min
+	objects	objekt
+	{contributors} · {commits}	{contributors} · {commits}
+	{kind} (constraint {id})	{kind} (villkor {id})
+	{kind} constraint {name} = {expression}  (double-click to edit)	Villkor {kind} {name} = {expression}  (dubbelklicka för att redigera)
+	{name}: {distance} < {angle}°	{name}: {distance} < {angle}°
+	ƒx  New User Parameter	ƒx  Ny användarparameter
+	ΔLOC	ΔLOC
+	−Bin	−Bin
+	−LOC	−LOC
+	⌘↩ to finish	⌘↩ för att avsluta
+@plural	{n} commit	{n} commit|{n} commits
+@plural	{n} contributor	{n} bidragsgivare|{n} bidragsgivare
+	Drawing as bytes	Ritningen som byte
+	Services	Tjänster
+	Hide CADCraft	Dölj CADCraft
+	Hide Others	Dölj övriga
+	Accessibility	Tillgänglighet
+	Show System Cursor	Visa systemets muspekare
+	3D Mouse...	3D-mus...
+	3D Mouse	3D-mus
+	Calibrate 3D Mouse	Kalibrera 3D-mus
+	3D Mouse Navigation	Navigering med 3D-mus
+	3D mouse input is unavailable on this platform	Inmatning med 3D-mus finns inte på den här plattformen
+	No supported 3D mouse found	Ingen 3D-mus som stöds hittades
+	Release the 3D mouse to calibrate its resting position	Släpp 3D-musen för att kalibrera dess viloläge
+	3D mouse connected	3D-mus ansluten
+	3D mouse busy, possibly 3DxWare or missing device permissions	3D-musen är upptagen, kanske av 3DxWare eller på grund av saknade behörigheter
+	3D mouse disconnected	3D-mus frånkopplad
+	3D mouse input could not be started	Inmatning med 3D-mus kunde inte startas
+	Enable 3D mouse navigation	Slå på navigering med 3D-mus
+	Pan sensitivity	Känslighet för panorering
+	Zoom sensitivity	Känslighet för zoom
+	Reverse zoom direction	Vänd zoomriktningen
+	Calibrate	Kalibrera
+	Move sideways to pan; push/pull or twist to zoom.	Rör i sidled för att panorera; tryck, dra eller vrid för att zooma.
+	Left device button: zoom extents. Right device button: calibrate.	Vänster knapp på enheten: zooma till utsträckning. Höger knapp: kalibrera.
+	Hatch Pattern	Skrafferingsmönster
+	Search for pattern	Sök efter mönster
+
+# Strings the Spanish catalog lacks: menu headings worded apart from their commands, and others.
+	Run Script...	Kör skript...
+menu	View	Visa
+menu	Draw	Rita
+menu	Dimension	Måttsättning
+menu	Modify	Ändra
+
+# Strings added upstream after the first Swedish catalog (Ukrainian reference order, then menus).
+	Hatch and Gradient	Skraffering och gradient
+	Color 1	Färg 1
+	Color 2	Färg 2
+	Shape	Form
+	Curved	Krökt
+	Spherical	Sfärisk
+	Hemispherical	Halvsfärisk
+	Inverted	Inverterad
+	Centered	Centrerad
+	Hatch origin	Skrafferingens origo
+	Use current origin	Använd aktuellt origo
+	Specified origin	Angivet origo
+	Click to set new origin	Klicka för att ange nytt origo
+	Default to boundary extents	Utgå från gränsens utsträckning
+	Bottom left	Nere till vänster
+	Bottom right	Nere till höger
+	Top left	Uppe till vänster
+	Top right	Uppe till höger
+	Boundaries	Gränser
+	Add: Pick points	Lägg till: välj punkter
+	Add: Select objects	Lägg till: markera objekt
+	Boundaries picked: {n}	Valda gränser: {n}
+	Associative	Associativ
+	Create separate hatches	Skapa separata skrafferingar
+	Island detection	Identifiering av öar
+	Normal	Normal
+	Outer	Yttre
+	Ignore	Ignorera
+	Origin: {x}, {y}	Origo: {x}, {y}
+	Hatch Pick	Skrafferingsval
+	Query Texts	Textinformation
+	Sheet Books to PDF...	Blad till PDF-böcker...
+	Not a number or distance: {text}	Inte ett tal eller avstånd: {text}
+	Dynamic Block Data	Data för dynamiskt block
+	Custom	Anpassat
+	Dynamic Block Reference	Dynamisk blockreferens
+	Set Dynamic Property	Ange dynamisk egenskap
+	Dynamic Block Grips	Grepp för dynamiskt block
+	Drag Dynamic Grip	Dra dynamiskt grepp
+	Save Block	Spara block
+	Save Block As	Spara block som
+	Close Block Editor	Stäng blockredigeraren
+	Unsaved changes	Osparade ändringar
+	Edit Block Definition	Redigera blockdefinition
+	Block to create or edit	Block att skapa eller redigera
+	Open in Block Editor	Öppna i blockredigeraren
+	This drawing	Den här ritningen
+	contains authoring elements. Open in Block Editor?	innehåller redigeringselement. Öppna i blockredigeraren?
+	New block	Nytt block
+	Preview	Förhandsvisning
+	Italic	Kursiv
+	Underline	Understruken
+	Overline	Linje över
+	Justify	Marginaljustera
+	Text color	Textfärg
+	Click the ruler to add a tab stop, right-click to remove one	Klicka på linjalen för att lägga till ett tabbstopp, högerklicka för att ta bort ett
+	Edit Multileader	Redigera multihänvisningslinje
+	Align Multileaders	Justera multihänvisningslinjer
+	Collect Multileaders	Samla multihänvisningslinjer
+	Collect	Samla
+	Edit Reference In-Place	Redigera referens på plats
+	Working Set	Arbetsuppsättning
+	Add to Working Set	Lägg till i arbetsuppsättningen
+	Save Reference Edits	Spara referensändringar
+	Xref and Block In-place Editing	Redigering av externa referenser och block på plats
+	Load Application...	Läs in program...
+	Evaluate LISP	Utvärdera LISP
+	Open Recent	Öppna senaste
+	Clear Recent Files	Rensa senaste filer
+	Animation Effects	Animeringseffekter
+	Animation effects	Animeringseffekter
+	Selection modes	Markeringslägen
+	Object grouping	Objektgruppering
+	Selection effect color	Färg för markeringseffekt
+	Grips	Grepp
+	Show grips	Visa grepp
+	Object selection limit for display of grips	Högsta antal markerade objekt som visar grepp
+	Selection preview	Förhandsvisning av markering
+	When a command is active	När ett kommando är aktivt
+	When no command is active	När inget kommando är aktivt
+	Visual Effect Settings...	Inställningar för visuella effekter...
+	Visual Effect Settings	Inställningar för visuella effekter
+	Selection Area Effect	Effekt för markeringsområde
+	Indicate selection area	Visa markeringsområdet
+	Window selection color:	Färg för fönstermarkering:
+	Crossing selection color:	Färg för korsande markering:
+	Selection area opacity:	Opacitet för markeringsområde:
+	Selection Preview Filter	Filter för förhandsvisning av markering
+	Exclude:	Uteslut:
+	Objects on locked layers	Objekt på låsta lager
+	Xrefs	Externa referenser
+	Tables	Tabeller
+	Groups	Grupper
+	Multiline text	Flerradstext
+	Hatches	Skrafferingar
+	Break-line Symbol	Brytlinjesymbol
+	Convert Text to Mtext	Konvertera text till MText
+	Explode Attributes to Text	Lös upp attribut till text
+	Express Tools	Express Tools
+	Move/Copy/Rotate	Flytta/kopiera/rotera
+	Interface scale	Gränssnittsskala
+	Analyze Shapes	Analysera former
+	Select boundaries to remove	Markera gränser att ta bort
+	Island	Ö
+	Select using two clicks only	Markera med endast två klick
+	Define each corner of the selection window with a separate click.	Definiera varje hörn av markeringsfönstret med ett separat klick.
+	Type an alias name.	Skriv ett aliasnamn.
+	Choose the command the alias starts.	Välj kommandot som aliaset startar.
+	{command} is an unknown command.	{command} är ett okänt kommando.
+	{alias} is already defined; select it and use Edit.	{alias} är redan definierat. Markera det och använd Redigera.
+	More than {n} aliases.	Fler än {n} alias.
+	Alias file: {file}	Aliasfil: {file}
+	No alias file loaded. REINIT replaces these aliases with a file's.	Ingen aliasfil inläst. REINIT ersätter dessa alias med en fils alias.
+	Alias	Alias
+	Command	Kommando
+	overrides built-in	åsidosätter inbyggt
+	built-in	inbyggt
+	Add…	Lägg till…
+	Edit…	Redigera…
+	Save alias	Spara alias
+	Discard	Släng
+	Customize	Anpassa
+	Edit Command Aliases (PGP)...	Redigera kommandoalias (PGP)...
+	Apply to Layout	Använd på layout
+	Arrow size	Pilstorlek
+	Center the plot	Centrera plotten
+	Dim scale overall	Total måttskala
+	Enter block names to extract	Ange blocknamn att extrahera
+	Enter geometric characteristic	Ange geometrisk egenskap
+	Enter name of LISP file to load	Ange namn på LISP-fil att läsa in
+	First corner	Första hörnet
+	Fit to paper	Anpassa till papper
+	Landscape	Liggande
+	Limits	Ritningsgränser
+	Opposite corner	Motsatt hörn
+	Orientation	Orientering
+	Paper size	Pappersstorlek
+	Plot area	Plottområde
+	Plot object lineweights	Plotta objektens linjebredder
+	Plot offset	Plottförskjutning
+	Plot transparency	Plotta genomskinlighet
+	Portrait	Stående
+	Precision	Precision
+	Printer/plotter	Skrivare/plotter
+	Window <	Fönster <
+	X offset (mm)	X-förskjutning (mm)
+	Y offset (mm)	Y-förskjutning (mm)
+	AutoLISP (LSP)	AutoLISP (LSP)
+	Units of new drawings	Enheter för nya ritningar
+	Imperial (inches)	Anglosaxiskt (tum)
+	Metric (millimetres)	Metriskt (millimeter)
+	New and the first drawing at startup use these units unless a default template is set (QNEWTEMPLATE).	Nya ritningar och den första ritningen vid start använder dessa enheter om ingen standardmall är angiven (QNEWTEMPLATE).
+	Analyze Usage	Analysera användning
+	Implied Loops	Implicita slingor
+	Angstroms	Ångström
+	Architectural	Arkitektonisk
+	Astronomical Units	Astronomiska enheter
+	Centimeters	Centimeter
+	Decameters	Dekameter
+	Decimal	Decimal
+	Decimal Degrees	Decimalgrader
+	Decimeters	Decimeter
+	Deg/Min/Sec	Grad/min/sek
+	Don't Save	Spara inte
+	Drawing Units	Ritningsenheter
+	Engineering	Teknisk
+	Feet	Fot
+	Fractional	Bråk
+	Gigameters	Gigameter
+	Grads	Gon
+	Hectometers	Hektometer
+	Inches	Tum
+	Insertion scale	Insättningsskala
+	Kilometers	Kilometer
+	Light Years	Ljusår
+	Meters	Meter
+	Microinches	Mikrotum
+	Microns	Mikrometer
+	Miles	Engelska mil
+	Millimeters	Millimeter
+	Mils	Tusendels tum
+	Nanometers	Nanometer
+	Parsecs	Parsek
+	Radians	Radianer
+	Sample output	Exempel på utdata
+	Save changes to {name}?	Spara ändringar i {name}?
+	Scientific	Vetenskaplig
+	Surveyor's Units	Lantmäterienheter
+	Unitless	Enhetslös
+	Units to scale inserted content	Enheter för skalning av infogat innehåll
+	US Survey Feet	Lantmäterifot (USA)
+	US Survey Inch	Lantmäteritum (USA)
+	US Survey Mile	Engelsk lantmäterimil (USA)
+	US Survey Yard	Lantmäteriyard (USA)
+	Yards	Yard
+	Your changes will be lost if you don't save them.	Dina ändringar går förlorade om du inte sparar dem.
+	Check for Updates…	Sök efter uppdateringar…
+	CADCraft is up to date.	CADCraft är uppdaterat.
+	Could not check for updates.	Det gick inte att söka efter uppdateringar.

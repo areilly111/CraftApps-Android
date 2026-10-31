@@ -11,7 +11,7 @@ use crate::{ImportError, Imported};
 
 /// "B12" → (row 11, column 1).
 fn cell_ref(r: &str) -> Option<(usize, usize)> {
-    let letters: String = r.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    let letters: String = r.chars().take_while(char::is_ascii_alphabetic).collect();
     let row: usize = r[letters.len()..].parse().ok()?;
     let col = letters.chars().try_fold(0usize, |acc, c| {
         let digit = (c.to_ascii_uppercase() as u8).checked_sub(b'A')? as usize + 1;
@@ -35,11 +35,23 @@ fn first_sheet_target(wb: &str, rels: &str) -> Option<String> {
     Some(if target.starts_with("xl/") { target } else { format!("xl/{target}") })
 }
 
+/// The text of a shared string (`<si>`) or inline string (`<is>`): its own `<t>` and the `<t>` of its
+/// `<r>` runs. Phonetic guides (`<rPh>`, `<phoneticPr>`) are the reading, not the cell text.
+fn string_item(si: &El) -> String {
+    si.els()
+        .map(|e| match e.name.as_str() {
+            "t" => e.text(),
+            "r" => e.els().filter(|t| t.name == "t").map(El::text).collect(),
+            _ => String::new(),
+        })
+        .collect()
+}
+
 fn value(c: &El, shared: &[String]) -> String {
     let v = || c.child("v").map(El::text).unwrap_or_default();
     match c.attr("t") {
         Some("s") => v().trim().parse::<usize>().ok().and_then(|i| shared.get(i).cloned()).unwrap_or_default(),
-        Some("inlineStr") => c.child("is").map(El::text).unwrap_or_default(),
+        Some("inlineStr") => c.child("is").map(string_item).unwrap_or_default(),
         // A cached formula string is text even when it looks like a number.
         Some("str") => v(),
         Some("b") => {
@@ -79,6 +91,34 @@ fn general(f: f64) -> String {
     }
 }
 
+/// The first and last column used on the header row, if that row has any cells.
+fn header_span(cells: &[(usize, usize, String)], header_row: usize) -> Option<(usize, usize)> {
+    cells.iter().filter(|(r, _, _)| *r == header_row).fold(None, |span, (_, c, _)| match span {
+        None => Some((*c, *c)),
+        Some((lo, hi)) => Some((lo.min(*c), hi.max(*c))),
+    })
+}
+
+/// One row's values laid into `width` columns starting at column `min_c`; values outside that
+/// span come back separately (only the non-empty ones), so the caller can warn.
+fn place_row(cols: &[(usize, String)], min_c: usize, width: usize) -> (Vec<String>, Vec<String>) {
+    let mut row = vec![String::new(); width];
+    let mut extra: Vec<String> = Vec::new();
+    for (c, v) in cols {
+        let at = c.checked_sub(min_c).filter(|at| *at < width);
+        match at {
+            Some(at) => {
+                if let Some(cell) = row.get_mut(at) {
+                    *cell = v.clone();
+                }
+            }
+            None if !v.is_empty() => extra.push(v.clone()),
+            None => {}
+        }
+    }
+    (row, extra)
+}
+
 /// One worksheet as a grid of cached cell text, empty cells kept, for data merge.
 /// The first used row is the header. Later rows that are entirely empty are left out.
 /// Cells past the header are kept so the caller can warn. Over 200 columns or 100,000
@@ -90,7 +130,7 @@ pub fn records(bytes: &[u8], sheet: Option<&str>) -> Result<Vec<Vec<String>>, Im
     let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")?
         .map(|x| parse(&x))
         .transpose()?
-        .map(|sst| sst.els().filter(|e| e.name == "si").map(El::text).collect())
+        .map(|sst| sst.els().filter(|e| e.name == "si").map(string_item).collect())
         .unwrap_or_default();
     let mut cells: Vec<(usize, usize, String)> = Vec::new();
     if let Some(data) = sheet_xml.child("sheetData") {
@@ -105,19 +145,9 @@ pub fn records(bytes: &[u8], sheet: Option<&str>) -> Result<Vec<Vec<String>>, Im
         return Err(ImportError::Corrupt("the worksheet is empty".into()));
     }
     let header_row = cells.iter().map(|c| c.0).min().unwrap_or(0);
-    let mut min_c = usize::MAX;
-    let mut max_c = 0usize;
-    let mut header_used = false;
-    for (r, c, _) in &cells {
-        if *r == header_row {
-            header_used = true;
-            min_c = min_c.min(*c);
-            max_c = max_c.max(*c);
-        }
-    }
-    if !header_used || min_c == usize::MAX {
+    let Some((min_c, max_c)) = header_span(&cells, header_row) else {
         return Err(ImportError::Corrupt("the worksheet has no header".into()));
-    }
+    };
     let width = max_c.saturating_sub(min_c).saturating_add(1);
     if width > crate::DATA_MERGE_MAX_COLS {
         return Err(ImportError::Corrupt(format!("the sheet has {width} columns; the limit is {}", crate::DATA_MERGE_MAX_COLS)));
@@ -142,26 +172,8 @@ pub fn records(bytes: &[u8], sheet: Option<&str>) -> Result<Vec<Vec<String>>, Im
     }
     let mut out = Vec::with_capacity(data_rows.saturating_add(1));
     for (r, cols) in &by_row {
-        let mut row = vec![String::new(); width];
-        let mut extra: Vec<String> = Vec::new();
-        for (c, v) in cols {
-            if *c < min_c {
-                // Outside the header span. Keep one non-empty value so the caller can warn.
-                if !v.is_empty() {
-                    extra.push(v.clone());
-                }
-                continue;
-            }
-            let at = c - min_c;
-            if at < width {
-                if let Some(cell) = row.get_mut(at) {
-                    *cell = v.clone();
-                }
-            } else if !v.is_empty() {
-                extra.push(v.clone());
-            }
-        }
-        if *r != header_row && row.iter().all(|c| c.is_empty()) && extra.is_empty() {
+        let (mut row, extra) = place_row(cols, min_c, width);
+        if *r != header_row && row.iter().all(String::is_empty) && extra.is_empty() {
             continue;
         }
         row.extend(extra);
@@ -198,7 +210,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported, ImportError> {
     let shared: Vec<String> = part(&mut zip, "xl/sharedStrings.xml")?
         .map(|x| parse(&x))
         .transpose()?
-        .map(|sst| sst.els().filter(|e| e.name == "si").map(El::text).collect())
+        .map(|sst| sst.els().filter(|e| e.name == "si").map(string_item).collect())
         .unwrap_or_default();
     let mut cells: Vec<((usize, usize), String)> = Vec::new();
     if let Some(data) = sheet.child("sheetData") {
@@ -353,6 +365,31 @@ mod tests {
         assert_eq!(rows[3][0], "");
         assert_eq!(rows[3][1], "1");
         assert!(records(&book, Some("Missing")).is_err());
+    }
+
+    #[test]
+    fn phonetic_guide_text_is_not_cell_text() {
+        let book = sheets(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            ("xl/_rels/workbook.xml.rels", r#"<Relationships><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>"#),
+            (
+                "xl/sharedStrings.xml",
+                r#"<sst><si><t>日本</t><rPh sb="0" eb="2"><t>ニホン</t></rPh><phoneticPr fontId="1"/></si><si><r><t>東</t></r><r><t>京</t></r><rPh sb="0" eb="2"><t>トウキョウ</t></rPh></si></sst>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="inlineStr"><is><t>大阪</t><rPh sb="0" eb="2"><t>オオサカ</t></rPh><phoneticPr/></is></c></row></sheetData></worksheet>"#,
+            ),
+        ]);
+        let want = ["日本", "東京", "大阪"].map(String::from).to_vec();
+        assert_eq!(records(&book, None).unwrap(), vec![want.clone()]);
+        let imp = import(&book).unwrap();
+        let t = imp.story.tables.values().next().expect("a table");
+        let got: Vec<String> = (0..3).map(|c| t.cell(0, c).unwrap().text.text.clone()).collect();
+        assert_eq!(got, want);
     }
 
     fn one_value(cell: &str) -> Vec<u8> {

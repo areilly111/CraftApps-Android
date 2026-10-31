@@ -112,7 +112,7 @@ impl AndroidServices {
     fn extensions(pick: &FilePick) -> Vec<String> {
         let mut out = Vec::new();
         for (_, exts) in &pick.filters {
-            for e in *exts {
+            for e in exts {
                 let e = e.trim_start_matches('.').to_lowercase();
                 if !out.contains(&e) {
                     out.push(e);

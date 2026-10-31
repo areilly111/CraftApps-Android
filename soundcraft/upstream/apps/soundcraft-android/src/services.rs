@@ -54,12 +54,12 @@ pub fn build_services(storage: Option<Arc<StorageManager>>, media_dir: PathBuf) 
     let save_storage = storage.clone();
     Services {
         pick_open: Some(Box::new(move |purpose: &str, exts: &[&str]| {
-            pick_open(purpose, exts)
+            pick_open(purpose, exts).map(std::path::PathBuf::from)
         })),
-        pick_save: Some(Box::new(move |purpose: &str, default: &str| {
+        pick_save: Some(Box::new(move |purpose: &str, default: &std::path::Path| {
             pick_save(purpose, default, &save_storage, &media_dir)
         })),
-        pick_folder: Some(Box::new(move |start: &str| pick_folder(start, &storage))),
+        pick_folder: Some(Box::new(move |start: &std::path::Path| pick_folder(start, &storage))),
     }
 }
 
@@ -94,12 +94,12 @@ fn pick_open(purpose: &str, exts: &[&str]) -> Option<String> {
 
 /// Pick where to write a file (a session save, a bounce…). `default` is
 /// the path the app suggests; only its file name reaches the picker.
-fn pick_save(purpose: &str, default: &str, storage: &Option<Arc<StorageManager>>, media_dir: &Path) -> Option<String> {
+fn pick_save(purpose: &str, default: &Path, storage: &Option<Arc<StorageManager>>, media_dir: &Path) -> Option<PathBuf> {
     let _ = purpose; // The picker is the same for every save purpose.
-    let base = Path::new(default)
+    let base = default
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| default.to_string());
+        .unwrap_or_else(|| default.to_string_lossy().into_owned());
     let ext = base.rsplit('.').next().unwrap_or("");
     let mimes = match saf::mime_for_extension(ext) {
         Some(mime) => vec![mime.to_string()],
@@ -116,7 +116,7 @@ fn pick_save(purpose: &str, default: &str, storage: &Option<Arc<StorageManager>>
         }
         if let Some(path) = external_storage_path(uri) {
             log::info!("save target resolved: {path}");
-            return Some(path);
+            return Some(PathBuf::from(path));
         }
         log::warn!("save URI {uri} is not a primary-volume path; using the fallback folder");
     } else {
@@ -131,12 +131,12 @@ fn pick_save(purpose: &str, default: &str, storage: &Option<Arc<StorageManager>>
             return None;
         }
     }
-    Some(fallback.to_string_lossy().into_owned())
+    Some(fallback)
 }
 
 /// Pick a folder. The tree URI is remembered as the app's SAF tree grant
 /// and resolved to a real path for the engine.
-fn pick_folder(_start: &str, storage: &Option<Arc<StorageManager>>) -> Option<String> {
+fn pick_folder(_start: &Path, storage: &Option<Arc<StorageManager>>) -> Option<PathBuf> {
     let response = await_response(PickerKind::Folder, Vec::new(), String::new(), false)?;
     if response.cancelled {
         return None;
@@ -151,7 +151,7 @@ fn pick_folder(_start: &str, storage: &Option<Arc<StorageManager>>) -> Option<St
         }
     }
     match external_storage_path(uri) {
-        Some(path) => Some(path),
+        Some(path) => Some(PathBuf::from(path)),
         None => {
             log::error!("picked folder {uri} is not a primary-volume path; the pick is unusable");
             None

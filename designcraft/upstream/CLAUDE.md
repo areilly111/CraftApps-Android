@@ -16,7 +16,7 @@ People trust DesignCraft with their layouts; a crash loses their work. **This ou
 - **Bound recursion** (seen-sets or depth limits for nested or cyclic documents). **Locks:** `lock().unwrap_or_else(PoisonError::into_inner)` or an error; thread joins are `Result`s.
 - **Last-resort guard:** escaped panics during command execution and file import/export become an error, never a lost document. It's a safety net, not a licence.
 - **Prove it:** every crash fix lands with a small synthetic regression test that panicked before the fix.
-- Clean crates carry `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`; new crates start with it. Tests may `unwrap` (`clippy.toml`).
+- Clean crates carry `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]`; new production crate roots must include the attribute before modules or other crate items, with crate-level `//!` documentation allowed before it. Every new workspace crate must also include `[lints] workspace = true` in `Cargo.toml` to inherit `[workspace.lints]`. Tests may `unwrap` (`clippy.toml`).
 
 ## Non-negotiables
 - **Clean-room.** InDesign is installed on the dev machine and may be *observed* black-box: run it, use its UI with synthetic documents, take screenshots (by window id) stored only under `plan/indesign/screenshots/` (never committed). Never read, disassemble or copy anything inside the InDesign bundle (names/listings only), never copy Adobe icons, artwork, presets or wording beyond feature names, never commit files produced by InDesign. Never copy GPL/AGPL/LGPL code (Scribus, LibreOffice, Ghostscript…).

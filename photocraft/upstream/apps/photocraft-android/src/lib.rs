@@ -38,7 +38,7 @@ use crate::shell::{AndroidShell, StorageGate};
 
 /// Port version, shown in the UI and used by the updater. `build-apk.sh`
 /// derives the Gradle `versionCode` from it.
-pub const VERSION_NAME: &str = "0.4.5";
+pub const VERSION_NAME: &str = "0.4.6";
 
 /// Per-app glue for the shared GPU cascade: attach the wgpu render state to
 /// the app for GPU canvas compositing, or record the CPU fallback.

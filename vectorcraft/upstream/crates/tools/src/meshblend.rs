@@ -162,7 +162,8 @@ impl MeshTool {
                 v.push(id);
             }
         }
-        v.retain(|id| cx.doc.is_editable(*id));
+        let editable = cx.doc.editable();
+        v.retain(|id| editable(*id));
         v
     }
 
@@ -190,7 +191,7 @@ impl Tool for MeshTool {
                     if cx.selection.objects != [g.id] && cx.doc.node(g.id).is_some_and(|n| matches!(n.kind, NodeKind::Mesh(_))) {
                         out.push(Action::Exec("select.set".into(), json!({"ids": [g.id.0]})));
                     }
-                    out.extend(self.edit.press(g));
+                    out.extend(self.edit.press(cx, g));
                     return out;
                 }
                 self.edit.unfocus();

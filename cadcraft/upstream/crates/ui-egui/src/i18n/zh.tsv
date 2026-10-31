@@ -1,0 +1,1351 @@
+# CADCraft Simplified Chinese interface catalog — original translations.
+# License: MIT OR Apache-2.0 (the repository LICENSE-MIT and LICENSE-APACHE).
+# Written from CADCraft's English strings; no proprietary translations were copied.
+# UTF-8: context<TAB>English source<TAB>Chinese translation.
+# Empty context = ordinary label; @plural = one|other forms with {n}.
+# Command IDs, typed keywords, technology/product names and user data stay unchanged.
+	  Cancel  	取消
+	  OK  	确定
+	 or [	 或 [
+	% of all commits	% 的所有提交
+	* Wildcard Match	* 通配符匹配
+	*VARIES*	*多值*
+	+  |  Top  |  2D Wireframe	+  |  俯视  |  二维线框
+	+Bin	+Bin
+	+LOC	+LOC
+	1 Viewport	1 个视口
+	2 Points	2 点
+	2 Viewports	2 个视口
+	2D Solid	二维实体
+	3 Points	3 点
+	3 Viewports	3 个视口
+	3D Face	三维面
+	3D Operations	三维操作
+	3D Polyline	三维多段线
+	4 Viewports	4 个视口
+	< Less than	< 小于
+	<> Not Equal	<> 不等于
+	= Equals	= 等于
+	> Greater than	> 大于
+	About	关于
+	About CADCraft	关于 CADCraft
+	Absolute	绝对
+	Add Leader	添加引线
+	Align	对齐
+	Align Text	对齐文字
+	Aligned	对齐
+	All	全部
+	All Used Layers	所有已使用的图层
+	All files	所有文件
+	Angle	角度
+	Angular	角度
+	Annotation Visibility	注释可见性
+	Annotation scale	注释比例
+	Apparent Intersection	外观交点
+	Append to current selection set	添加到当前选择集
+	Apply to:	应用于:
+	Apply true color	应用真彩色
+	Arc	圆弧
+	Arc Length	弧长
+	Area	面积
+	Arrange Panel	排列面板
+	Array	阵列
+	Attach	附着
+	Attribute	属性
+	Attribute Definition	属性定义
+	Attribute Display	属性显示
+	Audit	检查
+	Auto (system language)	自动（系统语言）
+	Auto Constrain	自动约束
+	AutoConstrain	自动约束
+	Axis, End	轴端点
+	Base	基准
+	Baseline	基线
+	Batch Publish	批量发布
+	Binary assets added	已添加二进制资产
+	Binary assets removed	已移除二进制资产
+	Blend	过渡
+	Block	块
+	Block Attribute Manager...	块属性管理器...
+	Block Description...	块描述...
+	Block Editor	块编辑器
+	Block Reference	块参照
+	Block...	块...
+	Blocks	块
+	Blue	蓝色
+	Bold	粗体
+	Boolean	布尔运算
+	Boundary	边界
+	Boundary...	边界...
+	Box	长方体
+	Break	打断
+	Break At Point	于点打断
+	Bring to Front	置于顶层
+	ByBlock	ByBlock
+	ByColor	ByColor
+	ByLayer	ByLayer
+	CADCraft Help	CADCraft 帮助
+	Cancel	取消
+	Cartesian (x, y)	笛卡尔坐标 (x, y)
+	Center	中心
+	Center Line	中心线
+	Center Mark	中心标记
+	Center X	中心 X
+	Center Y	中心 Y
+	Center Z	中心 Z
+	Center, Diameter	中心点、直径
+	Center, Radius	中心点、半径
+	Center, Start, Angle	中心点、起点、角度
+	Center, Start, End	中心点、起点、端点
+	Center, Start, Length	中心点、起点、长度
+	Chamfer	倒角
+	Change Space	修改空间
+	Change to Current Layer	改至当前图层
+	Circle	圆
+	Circumference	圆周
+	Clear	清除
+	Clipboard	剪贴板
+	Close	关闭
+	Close All	全部关闭
+	Closed	已关闭
+	Coincident	重合
+	Collapse Palettes	折叠选项板
+	Collapse Tool Sets	折叠工具集
+	Collinear	共线
+	Color	颜色
+	Color 8	颜色 8
+	Color 9	颜色 9
+	Color Index	颜色索引
+	Color...	颜色...
+	Command History	命令行历史
+	Command Line	命令行
+	Command Line History Lines	命令行历史行数
+	Command Reference	命令参考
+	Commits	提交
+	Company	公司
+	Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.	计算机辅助设计与绘图：一个用纯 Rust 编写的开源、自主实现的 CAD 应用程序。
+	Concentric	同心
+	Cone	圆锥体
+	Constraint Bars	约束栏
+	Constraint Settings	约束设置
+	Construction Line	构造线
+	Contents	内容
+	Continue	继续
+	Contributors	贡献者
+	Control Vertices	控制点
+	Copy	复制
+	Copy Layout	复制布局
+	Copy Nested Objects	复制嵌套对象
+	Copy Selection	复制所选对象
+	Copy with Base Point	带基点复制
+	Count	计数
+	Create Block	创建块
+	Creates a user parameter	创建一个用户参数
+	Ctrl+Enter to finish	Ctrl+Enter 完成
+	Current layer	当前图层
+	Current selection	当前选择
+	Current: {color}	当前: {color}
+	Cut	剪切
+	Cut with Base Point	带基点剪切
+	Cyan	青色
+	Cylinder	圆柱体
+	DWG	DWG
+	DXF	DXF
+	Dark	深色
+	Default	默认
+	Default Save Format	默认保存格式
+	Define Attributes	定义属性
+	Define Attributes...	定义属性...
+	Defined width	指定宽度
+	Degree	度
+	Delete	删除
+	Delete Column	删除列
+	Delete Constraints	删除约束
+	Delete Dimension Style	删除标注样式
+	Delete Duplicate Objects	删除重复对象
+	Delete Layer	删除图层
+	Delete Layer State	删除图层状态
+	Delete Layout	删除布局
+	Delete Row	删除行
+	Delete Text Style	删除文字样式
+	Delta X	增量 X
+	Delta Y	增量 Y
+	Description	描述
+	Deselect All	取消全选
+	Diameter	直径
+	Dim style	标注样式
+	Dimension	标注
+	Dimension Space	标注间距
+	Dimension Style Override	标注样式替代
+	Dimension Style...	标注样式...
+	Dimension Text Edit	编辑标注文字
+	Dimension style	标注样式
+	Dimensional Constraint	尺寸约束
+	Dimensional Constraint Parameters	尺寸约束参数
+	Dimensional Constraints	尺寸约束
+	Disassociate Dimensions	取消标注关联
+	Display name	显示名称
+	Distance	距离
+	Divide	定数等分
+	Do not plot (click: plot)	不打印（点击：打印）
+	Donut	圆环
+	Double-click to edit the description	双击编辑描述
+	Down	向下
+	Drafting	绘图
+	Drafting Settings	草图设置
+	Drafting Settings...	草图设置...
+	Draw	绘图
+	Draw Order	绘图次序
+	Drawing (DWG)	图形 (DWG)
+	Drawing (DXF)	图形 (DXF)
+	Drawing Limits	图形界限
+	Drawing Utilities	图形实用工具
+	Drawings (DWG, DXF)	图形 (DWG, DXF)
+	Dynamic Dimensions	动态标注
+	Dynamic Input	动态输入
+	Dynamic Input (F12)	动态输入 (F12)
+	E	E
+	Edit	编辑
+	Edit Text...	编辑文字...
+	Elevation	标高
+	Ellipse	椭圆
+	Elliptical Arc	椭圆弧
+	Enable Dynamic Input (F12)	启用动态输入 (F12)
+	End Width	端点宽度
+	End X	终点 X
+	End Y	终点 Y
+	End angle	端点角度
+	Endpoint	端点
+	Enter Top, Zero or Bottom.	输入 Top、Zero 或 Bottom。
+	Enter a fit data option	输入拟合数据选项
+	Enter a pattern name	输入图案名称
+	Enter a vertex editing option	输入顶点编辑选项
+	Enter an option	输入选项
+	Enter angle of xline	输入构造线角度
+	Enter angle of xline (0) or	输入构造线角度 (0) 或
+	Enter area of rectangle in current units	在当前单位中输入矩形面积
+	Enter attribute prompt	输入属性提示
+	Enter attribute tag name	输入属性标记名称
+	Enter attribute value	输入属性值
+	Enter block name	输入块名
+	Enter constraint type	输入约束类型
+	Enter continuity	输入连续性
+	Enter default attribute value	输入默认属性值
+	Enter degree of spline	输入样条曲线次数
+	Enter delta angle	输入增量角度
+	Enter delta length or	输入增量长度或
+	Enter dimension text	输入标注文字
+	Enter dimension text (<> = measurement)	输入标注文字 (<> = 测量值)
+	Enter dimension value or [name=expression]	输入标注值或 [名称=表达式]
+	Enter dimension variable name to override	输入要替代的标注变量名
+	Enter justification type	输入对齐类型
+	Enter leader text	输入引线文字
+	Enter mline scale	输入多线比例
+	Enter mode	输入模式
+	Enter name of block to insert	输入要插入的块名
+	Enter new text	输入新文字
+	Enter next point	指定下一点
+	Enter number of columns	输入列数
+	Enter number of data rows	输入数据行数
+	Enter number of items	输入项目数
+	Enter number of items along path	输入路径上的项目数
+	Enter number of sides	输入边数
+	Enter number of turns	输入圈数
+	Enter percentage length	输入百分比长度
+	Enter rectangle length	输入矩形长度
+	Enter rectangle width	输入矩形宽度
+	Enter scale factor	输入比例因子
+	Enter text	输入文字
+	Enter text (use \P for new paragraphs)	输入文字（使用 \P 创建新段落）
+	Enter the number of segments	输入段数
+	Enter twist direction of helix	输入螺旋的扭曲方向
+	Entire drawing	整个图形
+	Equal	相等
+	Erase	擦除
+	Exclude from new selection set	从新选择集中排除
+	Explode	分解
+	Export	导出
+	Export to PDF...	导出为 PDF...
+	Expression	表达式
+	Extend	延伸
+	Extension	延伸线
+	Extents	范围
+	Extrude	拉伸
+	File	文件
+	File Tab	文件选项卡
+	Fillet	圆角
+	Filter	筛选器
+	Filters	筛选器
+	Find and Replace	查找和替换
+	Find...	查找...
+	First	第一
+	First commit	首次提交
+	Fit Points	拟合点
+	Fix	固定
+	Flatten Objects	展平对象
+	Format	格式
+	Freehand	徒手画
+	Freeze	冻结
+	Freeze Layer	冻结图层
+	Freeze in new viewports	在新视口中冻结
+	Freeze/Thaw	冻结/解冻
+	Freeze/Thaw in all viewports	在所有视口中冻结/解冻
+	Freeze/Thaw in the current viewport	在当前视口中冻结/解冻
+	From	自
+	General	常规
+	Geometric Center	几何中心
+	Geometric Constraint	几何约束
+	Geometric Constraints	几何约束
+	Geometry	几何图形
+	Get Variable	获取变量
+	Get View	获取视图
+	Global	全局
+	Global width	全局宽度
+	Grab bag	杂项
+	Gradient	渐变色
+	Gradient...	渐变色...
+	Green	绿色
+	Grid (F7)	栅格 (F7)
+	Grid Display	栅格显示
+	Grid On (F7)	开启栅格 (F7)
+	Grid spacing	栅格间距
+	Grip Mirror	夹点镜像
+	Grip Rotate	夹点旋转
+	Grip Scale	夹点缩放
+	Grip Stretch	夹点拉伸
+	Group	编组
+	Group Edit	编组编辑
+	Hatch	图案填充
+	Hatch Edit	编辑图案填充
+	Hatch...	图案填充...
+	Height	高度
+	Height: {height}	高度: {height}
+	Helix	螺旋
+	Help	帮助
+	Hide All	全部隐藏
+	Hide All Constraint Bars	隐藏所有约束栏
+	Hide All Dynamic Dimensions	隐藏所有动态标注
+	Hide Layer List	隐藏图层列表
+	Hide Palettes	隐藏选项板
+	Home	主页
+	Horizontal	水平
+	HorizontalDistance	水平距离
+	How to apply:	应用方式:
+	ID Point	点坐标
+	Import	导入
+	In	放大
+	In-window Menu Bar	窗口内菜单栏
+	Include in new selection set	包含在新选择集中
+	Increment angle	增量角度
+	Index Color	索引颜色
+	Index color: {index}	索引颜色: {index}
+	Inquiry	查询
+	Insert	插入
+	Insert Block	插入块
+	Insert Column	插入列
+	Insert Row	插入行
+	Insert this block	插入此块
+	Insertion	插入
+	Insertion X	插入 X
+	Insertion Y	插入 Y
+	Insertion Z	插入 Z
+	Inspect Constraints	检查约束
+	Inspect Drawing	检查图形
+	Interface Language	界面语言
+	Interface Theme	界面主题
+	Intersect	相交
+	Intersection	交点
+	Isolate	隔离
+	Isolate Layer	隔离图层
+	Isometric Drafting	等轴测制图
+	Join	合并
+	Join the ArtCraft Discord…	加入 ArtCraft Discord…
+	Join us on Discord	在 Discord 上加入我们
+	Language	语言
+	Last	最后
+	Last commit	最后提交
+	Layer	图层
+	Layer Delete	删除图层
+	Layer Match	匹配图层
+	Layer Merge	合并图层
+	Layer Off	关闭图层
+	Layer Properties	图层特性
+	Layer Properties Manager	图层特性管理器
+	Layer Properties Manager — current viewport	图层特性管理器 — 当前视口
+	Layer State	图层状态
+	Layer States Manager...	图层状态管理器...
+	Layer Tools	图层工具
+	Layer contains objects (double-click to make current)	图层包含对象（双击将其置为当前）
+	Layer is empty (double-click to make current)	图层为空（双击将其置为当前）
+	Layers	图层
+	Layers Palette	图层选项板
+	Layers displayed: {shown} of {total}.   Current layer: {layer}	显示的图层: {shown} / {total}。当前图层: {layer}
+	Layout	布局
+	Layout list	布局列表
+	Leader	引线
+	Left	左
+	Length	长度
+	Length X	长度 X
+	Length Y	长度 Y
+	Lengthen	拉长
+	Light	浅色
+	Line	直线
+	Line delta	直线增量
+	Linear	线性
+	Lines +/−	直线 +/−
+	Lines added	添加的行数
+	Lines deleted	删除的行数
+	Linetype	线型
+	Linetype Scale	线型比例
+	Linetype scale	线型比例
+	Ltscale	Ltscale
+	Linetype...	线型...
+	Lineweight	线宽
+	Lineweight...	线宽...
+	List	列表
+	List Blocks	列出块
+	List Dimension Styles	列出标注样式
+	List Groups	列出编组
+	List Layer States	列出图层状态
+	List Layouts	列出布局
+	List System Variables	列出系统变量
+	List Text Styles	列出文字样式
+	Load all	全部加载
+	Load...	加载...
+	Loaded linetypes	已加载的线型
+	Lock	锁定
+	Lock Layer	锁定图层
+	Lock/Unlock	锁定/解锁
+	Loft	放样
+	MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.	MIT 或 Apache-2.0。与 Autodesk, Inc. 无关。
+	MODEL	模型
+	MText	多行文字
+	Magenta	品红
+	Major line every	主网格线间隔
+	Make Current	置为当前
+	Make Object's Layer Current	将对象的图层置为当前
+	Make...	制作...
+	Match Layer	匹配图层
+	Match Properties	特性匹配
+	Measure	度量
+	Measure Distance	测量距离
+	Measure Geometry	测量几何图形
+	Merge Cells	合并单元格
+	Merged PRs	已合并的 PR
+	Mid Between 2 Points	两点之间的中点
+	Midpoint	中点
+	Mirror	镜像
+	Model	模型
+	Model Space (in viewport)	模型空间（在视口中）
+	Modeling	建模
+	Models	模型
+	Modify	修改
+	Move	移动
+	Multileader	多重引线
+	Multileader Style...	多重引线样式...
+	Multileader style	多重引线样式
+	Multiline	多线
+	Multiline Text	多行文字
+	Multiline Text...	多行文字...
+	Multiple	多个
+	Multiple Point	多点
+	My	我的
+	My properties: not available yet	我的属性：暂不可用
+	N	N
+	Name	名称
+	Name (A–Z)	名称 (A–Z)
+	Nearest	最近点
+	New	新建
+	New (metric)	新建（公制）
+	New Drawing	新图形
+	New Drawing (⌘N)	新图形 (⌘N)
+	New Drawing...	新建图形...
+	New Layer	新图层
+	New Layout	新布局
+	New VP Freeze	新视口冻结
+	New Viewports...	新视口...
+	New layout	新布局
+	New state name	新状态名称
+	No	否
+	No blocks defined in this drawing.	此图形中未定义块。
+	No contributor data was built into this copy.	此副本中未内置贡献者数据。
+	No model credits were built into this copy.	此副本中未内置模型鸣谢数据。
+	No saved layer states	没有保存的图层状态
+	No selection	未选择
+	Node	节点
+	None	无
+	Not available	不可用
+	Not available yet	暂不可用
+	OK	确定
+	Object	对象
+	Object Snap	对象捕捉
+	Object Snap (F3)	对象捕捉 (F3)
+	Object Snap On (F3)	开启对象捕捉 (F3)
+	Object Snap Tracking	对象捕捉追踪
+	Object Snap Tracking (F11)	对象捕捉追踪 (F11)
+	Object type:	对象类型:
+	Off	关闭
+	Offset	偏移
+	On	开启
+	On/Off	开/关
+	One of the Crafting Apps by the ArtCraft team and community.	由 ArtCraft 团队和社区打造的 Crafting 系列应用之一。
+	Open (⌘O)	打开 (⌘O)
+	Open Sample Drawing	打开示例图形
+	Open sample drawing	打开示例图形
+	Open...	打开...
+	Operator:	运算符:
+	Orbit	三维动态观察
+	Ordinate	坐标标注
+	Ortho (F8)	正交 (F8)
+	Ortho Mode	正交模式
+	Ortho Mode (F8)	正交模式 (F8)
+	Osnap Settings...	捕捉设置...
+	Out	缩小
+	Override	替代
+	PAPER	图纸
+	Percent	百分比
+	Polar (distance < angle)	极轴 (距离 < 角度)
+	PRs	PR
+	Page Setup Manager	页面设置管理器
+	Page Setup Manager...	页面设置管理器...
+	Pan	平移
+	Pan Down	向下平移
+	Pan Left	向左平移
+	Pan Right	向右平移
+	Pan Up	向上平移
+	Paper Space	图纸空间
+	Parallel	平行
+	Parameters Manager	参数管理器
+	Parametric	参数化
+	Paste	粘贴
+	Paste as Block	粘贴为块
+	Paste to Original Coordinates	粘贴到原坐标
+	Path Array	路径阵列
+	Pattern	图案
+	Perpendicular	垂直
+	Plot	打印
+	Plot (click: do not plot)	打印（点击：不打印）
+	Plot Preview	打印预览
+	Plot style	打印样式
+	Plot style attached to	附加到...的打印样式
+	Plot style table	打印样式表
+	Plot Style...	打印样式...
+	Plot Style Manager	打印样式管理器
+	Plot Style Manager...	打印样式管理器...
+	Plot Styles...	打印样式...
+	New CTB	新 CTB
+	New STB	新 STB
+	New style	新样式
+	Reset Panel Layout	重置面板布局
+	Use for this layout	用于此布局
+	Display plot styles	显示打印样式
+	No plot style tables.	没有打印样式表。
+	A built-in table: editing it keeps an edited copy in the drawing.	内置表：对其进行编辑会在图形中保留一个编辑过的副本。
+	Keep an editable copy of this table in the drawing	在此图形中保留此表的编辑副本
+	Layout {name}: {table}	布局 {name}: {table}
+	Grayscale	灰度
+	Screening	网目调
+	Use object linetype	使用对象线型
+	Use object lineweight	使用对象线宽
+	Remove	移除
+	Add	添加
+	Open a drawing first.	请先打开一个图形。
+	Plot table type	打印样式表类型
+	Color-dependent	颜色相关
+	Named	命名
+	Plus/minus	正/负
+	Point	点
+	Point Filters	点过滤器
+	Point Style...	点样式...
+	Polar Array	环形阵列
+	Polar Tracking	极轴追踪
+	Polar Tracking (F10)	极轴追踪 (F10)
+	Polar Tracking On (F10)	开启极轴追踪 (F10)
+	Polar: {distance} < {angle}°	极轴: {distance} < {angle}°
+	Polygon	多边形
+	Polygonal	多边形
+	Polyline	多段线
+	Position X	位置 X
+	Position Y	位置 Y
+	Position Z	位置 Z
+	Previous	上一个
+	Previous Layer	上一图层
+	Primitives	图元
+	Print	打印
+	Print...	打印...
+	Properties	特性
+	Properties Inspector	特性检视器
+	Properties:	特性:
+	Proxy	代理
+	Purge	清理
+	Pyramid	棱锥体
+	Quadrant	象限点
+	Query Entities	查询实体
+	Quick	快速
+	Quick Dimension	快速标注
+	Quick Properties	快速特性
+	Quick Select	快速选择
+	Quick Select Properties	快速选择特性
+	Quick Select...	快速选择...
+	QuickCalc	快速计算器
+	Quit CADCraft	退出 CADCraft
+	Radius	半径
+	Raster Image	光栅图像
+	Ray	射线
+	Read-only	只读
+	Real name	真实姓名
+	Realtime	实时
+	Reassociate Dimensions	重新关联标注
+	Recent	最近
+	Recover...	修复...
+	Rectangle	矩形
+	Rectangular	矩形
+	Rectangular Array	矩形阵列
+	Red	红色
+	Redo	重做
+	Redo (⇧⌘Z)	重做 (⇧⌘Z)
+	Redraw	重绘
+	Regen	重生成
+	Regen All	全部重生成
+	Region	面域
+	Region/Mass Properties	面域/质量特性
+	Relative	相对
+	Remove Leader	删除引线
+	Remove the viewport override	移除视口替代
+	Rename Dimension Style	重命名标注样式
+	Rename Layer	重命名图层
+	Rename Layer State	重命名图层状态
+	Rename Layout	重命名布局
+	Rename Text Style	重命名文字样式
+	Rename...	重命名...
+	Repeat {command}	重复 {command}
+	Replace Block...	替换块...
+	Requires a point (x,y, @dx,dy or @d<a).	需要一个点 (x,y, @dx,dy 或 @d<a)。
+	Reset Palettes	重置选项板
+	Restore	恢复
+	Restore Layer State	恢复图层状态
+	Reverse	反向
+	Reverse the order	反转顺序
+	Revision Cloud	修订云线
+	Revolve	旋转
+	Right	右
+	Rotate	旋转
+	Rotation	旋转
+	S	S
+	Save	保存
+	Save (⌘S)	保存 (⌘S)
+	Save As	另存为
+	Save As...	另存为...
+	Save Layer State	保存图层状态
+	Save State	保存状态
+	Scale	缩放
+	Search for layer	搜索图层
+	Search for parameter	搜索参数
+	Second and next points:	第二点和后续点:
+	Select	选择
+	Select 2D polyline	选择二维多段线
+	Select All	全选
+	Select Objects	选择对象
+	Select a 2D polyline.	选择一条二维多段线。
+	Select a block reference.	选择一个块参照。
+	Select a circle or arc.	选择一个圆或圆弧。
+	Select a closed polyline	选择闭合多段线
+	Select a closed polyline, circle, ellipse or closed spline.	选择闭合多段线、圆、椭圆或闭合样条曲线。
+	Select a closed polyline.	选择一条闭合多段线。
+	Select a curve as the path.	选择一条曲线作为路径。
+	Select a dimension constraint type	选择尺寸约束类型
+	Select a line object	选择直线对象
+	Select a line object.	选择一条直线对象。
+	Select a line or an arc.	选择直线或圆弧。
+	Select a line or polyline segment	选择直线或多段线段
+	Select a line, arc or open polyline.	选择直线、圆弧或开式多段线。
+	Select a line, arc, circle, polyline, ellipse or spline as the path.	选择直线、圆弧、圆、多段线、椭圆或样条曲线作为路径。
+	Select a line, circle, arc or polyline segment.	选择直线、圆、圆弧或多段线段。
+	Select a line.	选择一条直线。
+	Select a polyline.	选择一条多段线。
+	Select a text, mtext, attribute definition or dimension.	选择文字、多行文字、属性定义或标注。
+	Select an annotation object	选择注释对象
+	Select an arc or circle	选择圆弧或圆
+	Select an arc.	选择一段圆弧。
+	Select an object	选择对象
+	Select an object to change or	Select an object to change or
+	Select an object to measure or	Select an object to measure or
+	Add to Working Set	添加到工作集
+	Edit Reference In-Place	就地编辑参照
+	Save Reference Edits	保存参照编辑
+	Working Set	工作集
+	Xref and Block In-place Editing	外部参照和块的就地编辑
+	Select an object.	选择一个对象。
+	Select an open curve.	选择一条开曲线。
+	Select an open line, arc, polyline, ellipse arc or spline.	选择开放的直线、圆弧、多段线、椭圆弧或样条曲线。
+	Select arc or circle	选择圆弧或圆
+	Select arc or polyline arc segment	选择圆弧或多段线圆弧段
+	Select arc style	选择圆弧样式
+	Select arc, circle, line	选择圆弧、圆、直线
+	Select at least two objects to join.	至少选择两个要合并的对象。
+	Select circle or arc to add center mark	选择圆或圆弧以添加中心标记
+	Select closed objects (regions, closed polylines, circles).	选择闭合对象（面域、闭合多段线、圆）。
+	Select first line	选择第一条直线
+	Select first line or arc	选择第一条直线或圆弧
+	Select first object	选择第一个对象
+	Select first object or	Select first object or
+	Select first point	指定第一点
+	Select nested objects to copy or	Select nested objects to copy or
+	Select object	选择对象
+	Select object to dimension	选择要标注的对象
+	Select object to divide	选择要定数等分的对象
+	Select object to extend or shift-select to trim	选择要延伸的对象，或按 Shift 键选择要裁剪的对象
+	Select object to measure	选择要度量的对象
+	Select object to offset	选择要偏移的对象
+	Select object to trim or shift-select to extend	选择要裁剪的对象，或按 Shift 键选择要延伸的对象
+	Select objects	选择对象
+	Select objects (crossing window first corner)	选择对象（指定交叉窗口第一个角点）
+	Select objects to array.	选择要阵列的对象。
+	Select objects to stretch by crossing-window or crossing-polygon...	通过交叉窗口或交叉多边形选择要拉伸的对象...
+	Select objects:	选择对象:
+	Select one polyline (Multiple is available through the JSON form).	选择一条多段线（可通过 JSON 表单选择多个）。
+	Select path curve	选择路径曲线
+	Select point or object	选择点或对象
+	Select polyline or	选择多段线或
+	Select second line	选择第二条直线
+	Select second line or shift-select to apply corner	选择第二条直线，或按 Shift 键应用角点
+	Select second object	选择第二个对象
+	Select second object or shift-select to apply corner	选择第二个对象，或按 Shift 键应用角点
+	Select second point	指定第二点
+	Select spline	选择样条曲线
+	Select symmetry line	选择对称线
+	Select two points	指定两点
+	Selection Cycling	选择循环
+	Send to Back	置于底层
+	Set Current	置为当前
+	Set Current Dimension Style	设置当前标注样式
+	Set Current Text Style	设置当前文字样式
+	Set Layer Properties	设置图层特性
+	Set Properties	设置特性
+	Set Table Cell	设置表格单元格
+	Set Variable	设置变量
+	Set View	设置视图
+	Share	共享
+	Show	显示
+	Show All	全部显示
+	Show All Constraint Bars	显示所有约束栏
+	Show All Dynamic Dimensions	显示所有动态标注
+	Show Layer List	显示图层列表
+	Show/Hide Lineweight	显示/隐藏线宽
+	Show/Hide Transparency	显示/隐藏透明度
+	Single Line Text	单行文字
+	Single Point	单点
+	Single...	单个...
+	Smooth	平滑
+	Snap	捕捉
+	Snap Mode	捕捉模式
+	Snap Mode (F9)	捕捉模式 (F9)
+	Snap On (F9)	开启捕捉 (F9)
+	Snap X spacing	捕捉 X 间距
+	Snap and Grid	捕捉和栅格
+	Solid	实心区域
+	Sort	排序
+	Specify a point	指定点
+	Specify a scale for the hatch pattern	指定图案填充的比例
+	Specify a second extension line origin	指定第二条尺寸界线原点
+	Specify an angle for the hatch pattern	指定图案填充的角度
+	Specify angle end point	指定角度端点
+	Specify angle of dimension line	指定标注线角度
+	Specify angle of dimension text	指定标注文字角度
+	Specify angle start point	指定角度起点
+	Specify angle vertex	指定角度顶点
+	Specify angle vertex point	指定角度顶点
+	Specify arc length dimension location	指定弧长标注位置
+	Specify axis endpoint of ellipse	指定椭圆的轴端点
+	Specify base diameter	指定底面直径
+	Specify base point	指定基点
+	Specify base point or	Specify base point or
+	Specify base point or displacement (drag with the middle mouse button for realtime pan)	指定基点或位移（按住鼠标中键拖动以进行实时平移）
+	Specify base radius or	Specify base radius or
+	Specify center of donut	指定圆环中心
+	Specify center of ellipse	指定椭圆中心
+	Specify center of polygon	指定多边形中心
+	Specify center point for circle	指定圆的圆心
+	Specify center point of arc	指定圆弧的中心点
+	Specify center point of array	指定阵列中心点
+	Specify center point of base	指定基准中心点
+	Specify corner of viewport	指定视口角点
+	Specify corner of window, enter a scale factor (nX or nXP)	指定窗口角点，输入比例因子 (nX 或 nXP)
+	Specify diameter of circle	指定圆直径
+	Specify dimension arc line location	指定标注圆弧线位置
+	Specify dimension line location	指定标注线位置
+	Specify distance between turns	指定圈间距
+	Specify distance to other axis	指定到另一轴的距离
+	Specify end angle	指定端点角度
+	Specify end point of arc	指定圆弧端点
+	Specify end point of arc (hold Ctrl to switch direction)	指定圆弧端点（按住 Ctrl 切换方向）
+	Specify ending width	指定端部宽度
+	Specify ending width for next segment	指定下一段的端部宽度
+	Specify endpoint of arc	指定圆弧端点
+	Specify endpoint of axis	指定轴端点
+	Specify endpoint of line	指定直线端点
+	Specify feature location	指定特征位置
+	Specify fillet radius	指定圆角半径
+	Specify fillet radius for rectangles	指定矩形的圆角半径
+	Specify first angle endpoint	指定第一角度端点
+	Specify first chamfer distance	指定第一个倒角距离
+	Specify first chamfer distance for rectangles	指定矩形的第一个倒角距离
+	Specify first constraint point	指定第一个约束点
+	Specify first corner	指定第一角点
+	Specify first corner point	指定第一个角点
+	Specify first destination point	指定第一个目标点
+	Specify first end point of circle's diameter	指定圆直径的第一端点
+	Specify first endpoint of edge	指定边缘的第一端点
+	Specify first extension line origin	指定第一条尺寸界线原点
+	Specify first point	指定第一点
+	Specify first point of mirror line	指定镜像线的第一点
+	Specify first point on circle	指定圆上的第一点
+	Specify first point on circle: _tan to	指定圆上的第一点: _tan 到
+	Specify first source point	指定第一个源点
+	Specify height	指定高度
+	Specify helix height or	Specify helix height or
+	Specify included angle	指定夹角
+	Specify insertion base point	指定插入基点
+	Specify insertion point	指定插入点
+	Specify inside diameter of donut	指定圆环内径
+	Specify leader arrowhead location	指定引线箭头位置
+	Specify leader endpoint	指定引线端点
+	Specify leader landing location	指定引线尾巴位置
+	Specify length for rectangles	指定矩形长度
+	Specify length of chord	指定弦长
+	Specify length of segment	指定段长
+	Specify line width for rectangles	指定矩形线宽
+	Specify location for new vertex	指定新顶点位置
+	Specify minimum length of arc	指定圆弧最小长度
+	Specify new end point	指定新端点
+	Specify new location for marked vertex	指定标记顶点的新位置
+	Specify new width for all segments	指定所有段的新宽度
+	Specify next point	指定下一点
+	Specify offset distance	指定偏移距离
+	Specify offset distance or	Specify offset distance or
+	Specify opposite corner	指定对角点
+	Specify other corner point	指定另一角点
+	Specify other endpoint of axis	指定轴的另一端点
+	Specify outside diameter of donut	指定圆环外径
+	Specify point	指定点
+	Specify point on object for first tangent of circle	在对象上指定圆的第一条切线点
+	Specify point on object for second tangent of circle	在对象上指定圆的第二条切线点
+	Specify point on side to offset	指定要偏移在哪一侧的点
+	Specify radius of arc	指定圆弧半径
+	Specify radius of circle	指定圆半径
+	Specify rotation angle	指定旋转角度
+	Specify rotation angle of text	指定文字旋转角度
+	Specify rotation angle or	Specify rotation angle or
+	Specify scale factor	指定比例因子
+	Specify second angle endpoint	指定第二角度端点
+	Specify second break point	指定第二打断点
+	Specify second chamfer distance for rectangles	指定矩形的第二个倒角距离
+	Specify second constraint point	指定第二个约束点
+	Specify second destination point	指定第二个目标点
+	Specify second end point of circle's diameter	指定圆直径的第二端点
+	Specify second endpoint of edge	指定边缘的第二端点
+	Specify second extension line origin	指定第二条尺寸界线原点
+	Specify second point	指定第二点
+	Specify second point of arc	指定圆弧的第二点
+	Specify second point of mirror line	指定镜像线的第二点
+	Specify second point on circle	指定圆上的第二点
+	Specify second point on circle: _tan to	指定圆上的第二点: _tan 到
+	Specify second point or <use first point as displacement>	指定第二点或 <使用第一点作为位移>
+	Specify second source point	指定第二个源点
+	Specify side to offset	指定偏移侧
+	Specify start angle	指定起始角度
+	Specify start point	指定起点
+	Specify start point of arc	指定圆弧起点
+	Specify start point of polyline	指定多段线起点
+	Specify start point of text	指定文字起点
+	Specify starting width	指定起端宽度
+	Specify starting width for next segment	指定下一段的起端宽度
+	Specify tangent direction for the start point of arc	指定圆弧起点的切线方向
+	Specify the elevation for rectangles	指定矩形标高
+	Specify thickness for rectangles	指定矩形厚度
+	Specify third point on circle	指定圆上的第三点
+	Specify third point on circle: _tan to	指定圆上的第三点: _tan 到
+	Specify third source point or <continue>	指定第三个源点或 <继续>
+	Specify through point	指定通过点
+	Specify top diameter	指定顶面直径
+	Specify top radius or	Specify top radius or
+	Specify total angle	指定总角度
+	Specify total length or	Specify total length or
+	Specify width for rectangles	指定矩形宽度
+	Sphere	球体
+	Spline	样条曲线
+	Stack (type 1/2 then select)	堆叠（输入 1/2 然后选择）
+	Standard	标准
+	Start	起点
+	Start Width	起点宽度
+	Start X	起点 X
+	Start Y	起点 Y
+	Start angle	起点角度
+	Start, Center, Angle	起点、中心点、角度
+	Start, Center, End	起点、中心点、端点
+	Start, Center, Length	起点、中心点、长度
+	Start, End, Angle	起点、端点、角度
+	Start, End, Direction	起点、端点、方向
+	Start, End, Radius	起点、端点、半径
+	Status	状态
+	Status Bar	状态栏
+	Stretch	拉伸
+	Style: Standard	样式: Standard
+	Subtract	差集
+	Sweep	扫掠
+	Switch Drawing	切换图形
+	Switch Layout	切换布局
+	Switch between model space in a viewport and paper space	在视口中的模型空间与图纸空间之间切换
+	Symmetric	对称
+	Synchronize Attributes	同步属性
+	Toggle PICKADD (off: each pick replaces the selection)	切换 PICKADD（关闭：每次点击替换当前选择）
+	Toggle PICKADD (on: picks add to the selection)	切换 PICKADD（开启：点击会添加到选择集）
+	TOP	俯视
+	Table	表格
+	Table Style...	表格样式...
+	Table style	表格样式
+	Table...	表格...
+	Tan, Tan, Radius	相切、相切、半径
+	Tan, Tan, Tan	相切、相切、相切
+	Tangent	相切
+	Text	文字
+	Text Editor	文字编辑器
+	Text Height	文字高度
+	Text Style...	文字样式...
+	Text height	文字高度
+	Text override	文字替代
+	Text style	文字样式
+	Thaw All Layers	解冻所有图层
+	There is nothing here yet.	这里什么也没有。
+	Thickness	厚度
+	Time	时间
+	To get started, create or open a drawing.	若要开始，请创建或打开一个图形。
+	Tool Bar	工具栏
+	Tool Sets	工具集
+	Tools	工具
+	Torus	圆环体
+	Trace	追踪
+	Transparency	透明度
+	Trim	修剪
+	True Color	真彩色
+	Turn All Layers On	打开所有图层
+	Turn Off Layer	关闭图层
+	Turn Quick Properties off (QPMODE)	关闭快速特性 (QPMODE)
+	Type	类型
+	Type a command	输入命令
+	Type text; Enter starts a new paragraph	输入文字；回车开始新段落
+	UCS Icon	UCS 图标
+	Undo	放弃
+	Undo (⌘Z)	放弃 (⌘Z)
+	Ungroup	取消编组
+	Union	并集
+	Unisolate Layer	取消图层隔离
+	Units...	单位...
+	Unlock Layer	解锁图层
+	Unmerge Cells	取消合并单元格
+	Unsaved Layer State	未保存的图层状态
+	Up	向上
+	Update	更新
+	Use System Setting	使用系统设置
+	User	用户
+	User Parameters	用户参数
+	Username	用户名
+	VP Color	视口颜色
+	VP Freeze	视口冻结
+	Value	值
+	Value:	值:
+	Version	版本
+	Version {version}	版本 {version}
+	Vertical	垂直
+	VerticalDistance	垂直距离
+	View	视图
+	ViewCube	视图立方
+	Viewport	视口
+	Viewport Layer Freeze	视口图层冻结
+	Viewport Properties	视口特性
+	Viewport {id}	视口 {id}
+	Viewports	视口
+	W	W
+	WCS	WCS
+	White	白色
+	Width factor	宽度因子
+	Window	窗口
+	Wipeout	区域覆盖
+	Workspace Switching	工作空间切换
+	Write Block	写块
+	Xline	构造线
+	Yellow	黄色
+	Yes	是
+	Zoom	缩放
+	Zoom All	全部缩放
+	Zoom Extents	范围缩放
+	Zoom In	放大
+	Zoom Object	对象缩放
+	Zoom Out	缩小
+	Zoom Previous	上一个缩放
+	Zoom Window	窗口缩放
+	error	错误
+	{contributors} · {commits}	{contributors} · {commits}
+	{kind} (constraint {id})	{kind} (约束 {id})
+	{kind} constraint {name} = {expression}  (double-click to edit)	{kind} 约束 {name} = {expression}  (双击编辑)
+	{name}: {distance} < {angle}°	{name}: {distance} < {angle}°
+	ƒx  New User Parameter	ƒx  新建用户参数
+	ΔLOC	ΔLOC
+	−Bin	−Bin
+	−LOC	−LOC
+	⌘↩ to finish	⌘↩ 完成
+@plural	{n} commit	{n} 次提交|{n} 次提交
+@plural	{n} contributor	{n} 位贡献者|{n} 位贡献者
+	Drawing as bytes	字节形式的图形
+	Services	服务
+	Hide CADCraft	隐藏 CADCraft
+	Hide Others	隐藏其他人
+	Accessibility	辅助功能
+	Show System Cursor	显示系统光标
+	Animation Effects	动画效果
+	Animation effects	动画效果
+	3D Mouse...	3D 鼠标...
+	3D Mouse	3D 鼠标
+	Calibrate 3D Mouse	校准 3D 鼠标
+	3D Mouse Navigation	3D 鼠标导航
+	3D mouse input is unavailable on this platform	此平台不可用 3D 鼠标输入
+	No supported 3D mouse found	未找到支持的 3D 鼠标
+	Release the 3D mouse to calibrate its resting position	释放 3D 鼠标以校准其静止位置
+	3D mouse connected	3D 鼠标已连接
+	3D mouse busy, possibly 3DxWare or missing device permissions	3D 鼠标忙，可能是因为 3DxWare 或缺少设备权限
+	3D mouse disconnected	3D 鼠标已断开连接
+	3D mouse input could not be started	无法启动 3D 鼠标输入
+	Enable 3D mouse navigation	启用 3D 鼠标导航
+	Pan sensitivity	平移灵敏度
+	Zoom sensitivity	缩放灵敏度
+	Reverse zoom direction	反转缩放方向
+	Calibrate	校准
+	Move sideways to pan; push/pull or twist to zoom.	向侧面移动以平移；推拉或扭转以缩放。
+	Left device button: zoom extents. Right device button: calibrate.	左侧设备按钮：范围缩放。右侧设备按钮：校准。
+	Not a number or distance: {text}	不是数字或距离：{text}
+	Plotter Manager...	绘图仪管理器...
+	Import...	导入...
+	Export...	导出...
+	Batch Publish...	批量发布...
+	New from Template...	根据样板新建...
+	Show Annotative Objects	显示注释性对象
+	Current Scale Only	仅当前比例
+	All Scales	所有比例
+	Dynamic	动态
+	DWG Reference...	DWG 参照...
+	Data Link...	数据链接...
+	Multiline Style...	多线样式...
+	Scale List...	比例列表...
+	Run Script...	运行脚本...
+	Data Extraction...	数据提取...
+	Open Xref	打开外部参照
+	Compare Drawings...	比较图形...
+	Isolate Objects	隔离对象
+	Hide Objects	隐藏对象
+	End Object Isolation	结束对象隔离
+	Options...	选项...
+	Bring Above Objects	置于对象之上
+	Send Under Objects	置于对象之下
+	Bring Annotations to Front	将注释置于顶层
+	Send Hatches to Back	将填充置于底层
+	Text Objects Only	仅文字对象
+	Dimension Objects Only	仅标注对象
+	Leaders Only	仅引线
+	All Annotation Objects	所有注释对象
+	Oblique	倾斜
+	Jogged	折弯
+	Jogged Linear	折弯线性
+	Dimension Break	标注打断
+	Inspection	检查
+	Tolerance...	公差...
+	Annotative Object Scale	注释性对象比例
+	Add/Delete Scales...	添加/删除比例...
+	Add Current Scale	添加当前比例
+	Delete Current Scale	删除当前比例
+	Synchronize Multiple-scale Positions	同步多比例位置
+	Clip	剪裁
+	Solid Editing	实体编辑
+	Multiline...	多线...
+	External Reference	外部参照
+	Bind...	绑定...
+	Reference Manager	参照管理器
+	Options	选项
+	Display	显示
+	Open and Save	打开和保存
+	Selection	选择
+	User Preferences	用户偏好
+	Profiles	配置文件
+	Interface theme	界面主题
+	Model background	模型背景
+	Layout paper	布局图纸
+	Crosshair size	十字光标大小
+	Command line history	命令行历史
+	Keep the system cursor visible over the drawing area	在绘图区域保持系统光标可见
+	Screen magnifiers, screen readers and recorders follow the system cursor.	屏幕放大镜、屏幕阅读器和录制软件将跟随系统光标。
+	Changes apply at once and are kept for next time.	更改立即生效并将为下次保留。
+	Save new drawings as	将新图形保存为
+	Default save version	默认保存版本
+	Automatic save every	自动保存间隔
+	Automatic save file location	自动保存文件位置
+	A drawing opened from a file keeps that file's format.	从文件打开的图形会保持该文件的格式。
+	Drawings with no file yet are saved in the default version. 0 minutes turns automatic save off.	尚无文件的图形将以默认版本保存。设为 0 分钟则关闭自动保存。
+	Object snap marker size	对象捕捉标记大小
+	Object snap aperture	对象捕捉靶框大小
+	The aperture is how near the cursor must come to a point for an object snap to find it.	靶框决定了光标必须离对象捕捉点多近才能被识别。
+	Snap, grid, polar tracking and Dynamic Input:	捕捉、栅格、极轴追踪和动态输入:
+	Pickbox size	拾取框大小
+	Grip size	夹点大小
+	Select objects first, then choose a command	先选择对象，然后选择命令
+	Hold Shift to add to the selection	按住 Shift 键添加到选择
+	Show Quick Properties for selected objects	显示所选对象的快速特性
+	Largest array	最大阵列数
+	An array that would create more objects than this is refused.	将拒绝创建超出此对象数量的阵列。
+	Time-sensitive right-click: a quick click is Enter, holding opens the menu	时间敏感右键：快速点击相当于回车，按住不放打开菜单
+	Turned off, a right-click while a command runs always opens the shortcut menu.	关闭后，在命令运行期间右键单击总是打开快捷菜单。
+	CADCraft keeps these preferences, object snap modes and drafting toggles for your user account and restores them when it starts.	CADCraft 会为你的用户账号保留这些偏好设置、对象捕捉模式和绘图切换开关，并在启动时恢复它们。
+	Reset to Defaults	恢复默认设置
+	Copy as JSON	复制为 JSON
+	Reset keeps the interface language.	重置时会保留界面语言。
+	Rectangular snap	矩形捕捉
+	Isometric snap	等轴测捕捉
+	Snap type	捕捉类型
+	Grid snap	栅格捕捉
+	PolarSnap	极轴捕捉
+	Polar distance	极轴距离
+	Additional angles	附加角
+	Object Snap Tracking Settings	对象捕捉追踪设置
+	Track orthogonally only	仅正交追踪
+	Track using all polar angle settings	使用所有极轴角设置追踪
+	Polar angle measurement	极轴角测量
+	Relative to last segment	相对于上一线段
+	Show command prompting near the crosshairs	在光标附近显示命令提示
+	Open Recent	打开最近的图形
+	Sheet Books to PDF...	图纸册转 PDF...
+	Drawing Recovery Manager...	图形恢复管理器...
+	Named Viewports...	命名视口...
+	Named Views...	命名视图...
+	Polygonal Viewport	多边形视口
+	From Template...	来自模板...
+	Layouts	布局
+	Printer/plotter	打印机/绘图仪
+	Paper size	图纸尺寸
+	Orientation	方向
+	Portrait	纵向
+	Landscape	横向
+	Plot area	打印区域
+	Fit to paper	布满图纸
+	Center the plot	居中打印
+	Plot object lineweights	打印对象线宽
+	Plot transparency	打印透明度
+	Apply to Layout	应用到布局
+	Preview	预览
+	Load Application...	加载应用程序...
+	Enter name of LISP file to load	输入要加载的 LISP 文件名
+	Enter geometric characteristic	输入几何特征
+	Enter block names to extract	输入要提取的块名
+	Limits	边界
+	Plot offset	打印偏移
+	X offset (mm)	X 偏移 (mm)
+	Y offset (mm)	Y 偏移 (mm)
+	First corner	第一角点
+	Opposite corner	对角点
+	Window <	窗口 <
+	History	历史记录
+	Grip Edit	夹点编辑
+	Paste to Command Line	粘贴到命令行
+	Changed: {n}	已更改: {n}
+	Bulleted list	项目符号列表
+	No external references are attached.	没有附加的外部参照。
+	Unloaded	已卸载
+	Make it a block of this drawing, keeping its layer names	将其制作为此图形的块，保留其图层名称
+	Spline Edit	样条曲线编辑
+	Degrees of Freedom	自由度
+	Stretch Vertex	拉伸顶点
+	Analyze Shapes	分析形状
+	Over-constrained	过度约束
+	Previous Change	上一个更改
+	Close Comparison	关闭比较
+	Export Comparison	导出比较
+	Plotter Manager	打印机管理
+	Clear Command History	清除命令历史记录
+	Degrees of freedom: {n}	自由度: {n}
+	Open	打开
+	Arrow size	箭头大小
+	Viewport scale	视口比例
+	Unresolved	未解析
+	Version 2007	2007 版
+	Clear History	清除历史记录
+	Isometric Plane	等轴测平面
+	min	最小
+	Grip Option	夹点选项
+	Interface language	界面语言
+	Command Aliases	命令别名
+	Version 2013	2013 版
+	Reload	重新加载
+	Default Save Version	默认保存版本
+	Export Table	导出表格
+	A variable name starts with a letter and has only letters, digits and _	变量名必须以字母开头，且只能包含字母、数字和下划线
+	External References	外部参照
+	Variables	变量
+	Settings...	设置...
+	Set Current Viewport	设置当前视口
+	Convert	转换为
+	Copy Full File Path	复制完整文件路径
+	Edit Table Cell	编辑表格单元格
+	Numbered list	编号列表
+	Recent Commands	最近的命令
+	Edit Attributes...	编辑属性...
+	Select Similar	选择相似
+	Viewport is locked	视口已锁定
+	Show in Tool Sets	在工具集中显示
+	Infer Constraints	推断约束
+	Group Selection	编组选择
+	Copy History	复制历史记录
+	Clip Viewport	裁剪视口
+	Dimension Edit	标注编辑
+	Hide Palette	隐藏选项板
+	Search for pattern	搜索图案
+	Recent Input	最近输入
+	Attach DWG...	附加 DWG...
+	Lines of Command History	命令历史记录行数
+	Close All Other Drawings	关闭所有其他图形
+	Overlay	覆盖
+	Units Conversion	单位转换
+	Unload	卸载
+	Unlock viewport	解除锁定视口
+	Not loaded	未加载
+	References: {n}	参照: {n}
+	Volume	体积
+	Remove Vertex	移除顶点
+	Evaluate	求值
+	To	到
+	Count Table	计数表
+	Only in this drawing: {n}	仅在此图形中: {n}
+	Reinitialize	重新初始化
+	Update Data Links	更新数据链接
+	Dim scale overall	全局标注比例
+	CADCraft	CADCraft
+	Enter	输入
+	Temporary track point	临时追踪点
+	Plot Window	窗口打印
+	Show and hide the tools of this category	显示和隐藏此类别的工具
+	Query Texts	查询文字
+	Unreferenced	未参照
+	Drawing Template (DWT)	图形样板 (DWT)
+	Turn On Layer	打开图层
+	QuickCalc Pick	快速计算器拾取
+	Loaded	已加载
+	Add Vertex	添加顶点
+	Make it a block of this drawing; its layers become NAME$0$LAYER	将其制作为此图形的块；其图层将变为 NAME$0$LAYER
+	Recalculate Table Formulas	重新计算表格公式
+	Convert to Line	转换为直线
+	More toolbar commands	更多工具栏命令
+	Reference Name	参照名
+	Close Array Editing	关闭阵列编辑
+	Version 2018	2018 版
+	Reload All	全部重新加载
+	objects	个对象
+	Set Table Cell Style	设置表格单元格样式
+	Snap Overrides	捕捉替代
+	Count List	计数列表
+	Thaw Layer	解冻图层
+	Convert to Arc	转换为圆弧
+	Precision	精度
+	Version 2004	2004 版
+	Saved Path	保存的路径
+	Apply	应用
+	Lock viewport	锁定视口
+	Bind	绑定
+	Only in {name}: {n}	仅在 {name} 中: {n}
+	SVG drawings (SVG, SVGZ)	SVG 图形 (SVG, SVGZ)
+	Insert Table Formula	插入表格公式
+	Detach	分离
+	Zoom Realtime	实时缩放
+	Not Found	未找到
+	Version 2010	2010 版
+	Group Options	编组选项
+	Version 2000	2000 版
+	Insert tab	插入选项卡
+	Polyline Edit	多段线编辑
+	Next Change	下一个更改
+	Table Breaks	表格断开
+	Hatch Patterns	填充图案
+	Table Cell Style	表格单元格样式
+	Annotative Update	注释性更新
+	Hatch Pattern	填充图案
+	Get from the Drawing	从图形中获取
+	Zoom Dynamic	动态缩放
+	Edit Array	编辑阵列
+	Save changes to {name}?	是否保存对 {name} 的更改？
+	Your changes will be lost if you don't save them.	如果不保存，您的更改将丢失。
+	Don't Save	不保存
+	Hatch and Gradient	填充和渐变
+	Boundaries	边界
+	Add: Pick points	添加：拾取点
+	Add: Select objects	添加：选择对象
+	Boundaries picked: {n}	已拾取边界：{n}
+	Associate	关联
+	Create separate hatches	创建独立的填充
+	Island detection	孤岛检测
+	Normal	普通
+	Outer	外部
+	Ignore	忽略
+	Hatch origin	填充原点
+	Use current origin	使用当前原点
+	Specified origin	指定原点
+	Click to set new origin	点击设置新原点
+	Default to boundary extents	默认至边界范围
+	Bottom left	左下
+	Bottom right	右下
+	Top right	右上
+	Top left	左上
+	Color 1	颜色 1
+	Color 2	颜色 2
+	Shape	形状
+	Inverted	反向
+	Centered	居中
+	Curved	曲线
+	Spherical	球面
+	Hemispherical	半球面
+	Drawing Units	图形单位
+	Insertion scale	插入比例
+	Units to scale inserted content	用于缩放插入内容的单位
+	Sample output	示例输出
+	Architectural	建筑
+	Decimal	十进制
+	Engineering	工程
+	Fractional	分数
+	Scientific	科学
+	Decimal Degrees	十进制度
+	Deg/Min/Sec	度/分/秒
+	Grads	梯度
+	Radians	弧度
+	Surveyor's Units	测量员单位
+	Unitless	无单位
+	Inches	英寸
+	Feet	英尺
+	Miles	英里
+	Millimeters	毫米
+	Centimeters	厘米
+	Meters	米
+	Kilometers	千米
+	Microinches	微英寸
+	Mils	密尔
+	Yards	码
+	Angstroms	埃
+	Nanometers	纳米
+	Microns	微米
+	Decimeters	分米
+	Decameters	十米
+	Hectometers	百米
+	Gigameters	吉米
+	Astronomical Units	天文单位
+	Light Years	光年
+	Parsecs	秒差距
+	US Survey Feet	美国测量英尺
+	US Survey Inch	美国测量英寸
+	US Survey Yard	美国测量码
+	US Survey Mile	美国测量英里
+	Check for Updates…	检查更新…
+	CADCraft is up to date.	CADCraft 已是最新版本。
+	Could not check for updates.	无法检查更新。

@@ -23,7 +23,7 @@ harness = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clap-sys = "0.5"
-libloading = "0.8"
+libloading = "0.9"
 
 # The isolated unsafe helper crate (craftrules never-crash): this crate opts out of the workspace
 # `unsafe_code = "forbid"` for itself only. It denies unsafe everywhere and allows it solely on the
@@ -32,7 +32,9 @@ libloading = "0.8"
 unsafe_code = "deny"
 
 [lints.clippy]
+cognitive_complexity = "deny"
+wildcard_imports = "deny"
 dbg_macro = "warn"
 todo = "warn"
-too_many_arguments = "allow"
+too_many_arguments = "deny"
 type_complexity = "allow"

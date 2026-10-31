@@ -17,7 +17,7 @@ pub struct MeasureTool {
 /// (distance, angle in degrees counter-clockwise, dx, dy)
 pub fn measure(a: Point, b: Point) -> (f64, f64, f64, f64) {
     let d = b - a;
-    (d.hypot(), (-d.y).atan2(d.x).to_degrees(), d.x, d.y)
+    (d.hypot(), (-d.y).atan2(d.x).to_degrees() + 0.0, d.x, d.y)
 }
 
 impl Tool for MeasureTool {
@@ -39,7 +39,7 @@ impl Tool for MeasureTool {
             PointerKind::Drag | PointerKind::Up if self.dragging => {
                 if let Some((a, _)) = self.line {
                     let b = if ev.mods.shift {
-                        a + vectorcraft_geom::constrain_angle(ev.pos - a, 45.0)
+                        a + vectorcraft_geom::constrain_angle_from(ev.pos - a, 45.0, cx.constrain_angle)
                     } else {
                         crate::guides::snap_draw(cx, ev.pos, &[]).0
                     };
@@ -57,14 +57,16 @@ impl Tool for MeasureTool {
         if a == b {
             return vec![];
         }
-        let (dist, ang, dx, dy) = measure(a, b);
-        vec![
-            Overlay::Line { a, b, color: CYAN, dashed: false },
-            Overlay::Measure {
+        let mut out = vec![Overlay::Line { a, b, color: CYAN, dashed: false }];
+        // Measurement Labels decides the readout; the line the tool draws stays.
+        if cx.measurement_labels {
+            let (dist, ang, dx, dy) = measure(a, b);
+            out.push(Overlay::Measure {
                 p: b + Vec2::new(cx.tol(12.0), cx.tol(12.0)),
                 text: format!("D: {}\nAngle: {ang:.1}°\n{}", cx.len(dist), cx.offset_label(dx, dy)),
-            },
-        ]
+            });
+        }
+        out
     }
 
     fn cursor(&self, _cx: &ToolContext, _p: Point, _m: Mods) -> Cursor {
@@ -89,6 +91,23 @@ mod tests {
     use vectorcraft_doc::Selection;
 
     #[test]
+    fn horizontal_drag_reports_positive_zero_angle() {
+        let (d, _) = doc_with_rect();
+        let s = Selection::default();
+        let p = paint();
+        let mut cx = cx(&d, &s, &p);
+        cx.smart_guides = false;
+        let mut t = MeasureTool::default();
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Down, 10.0, 10.0));
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Drag, 40.0, 10.0));
+        t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 40.0, 10.0));
+        let ang = t.options()["angle"].as_f64().unwrap();
+        assert!(ang == 0.0 && ang.is_sign_positive(), "angle was {ang:?}");
+        let ov = t.overlays(&cx);
+        assert!(matches!(&ov[1], Overlay::Measure { text, .. } if text.contains("Angle: 0.0°")));
+    }
+
+    #[test]
     fn drag_reports_distance_and_angle() {
         let (d, _) = doc_with_rect();
         let s = Selection::default();
@@ -104,5 +123,9 @@ mod tests {
         assert!((o["angle"].as_f64().unwrap() - 53.130102).abs() < 1e-4);
         let ov = t.overlays(&cx);
         assert!(matches!(&ov[1], Overlay::Measure { text, .. } if text.starts_with("D: 50.00 pt")));
+        let quiet = ToolContext { measurement_labels: false, ..cx };
+        let ov = t.overlays(&quiet);
+        assert!(!ov.iter().any(|o| matches!(o, Overlay::Measure { .. })), "Measurement Labels off hides the readout");
+        assert!(ov.iter().any(|o| matches!(o, Overlay::Line { .. })), "the measured line stays");
     }
 }

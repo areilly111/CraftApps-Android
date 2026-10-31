@@ -1,5 +1,6 @@
 //! Type › Find/Replace Font: the fonts a document uses (missing ones flagged) and replacing one
-//! font with another everywhere — local formatting and style definitions.
+//! font with another everywhere — local formatting and style definitions. Type › Reload Fonts:
+//! the fonts installed, edited or removed since they were read.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use designcraft_doc::{CharAttrs, Document, Story};
 use designcraft_fonts::FontSource;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd, has_doc, str_param};
+use super::{CommandSpec, always, bad, cmd, has_doc, str_param};
 use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -25,7 +26,28 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             replace
         ),
+        cmd!(
+            noundo "font.reload",
+            "Reload Fonts",
+            ["Type"],
+            None,
+            "{} — scans the font folders again and reads again the installed font files changed or removed since they were read, then recomposes the open documents → {cataloged, changed: [path]}",
+            always,
+            reload
+        ),
     ]
+}
+
+/// Fonts installed, edited or removed while the app runs (#328, #547): the font database reads
+/// them again, then every open document is composed again with what is installed now.
+fn reload(s: &mut Session, _: &Value) -> Result<Value> {
+    let reloaded = designcraft_fonts::FontDb::global().reload_fonts();
+    // A new cache: render jobs still holding the old one can't bring back the old fonts' layout.
+    s.cache = Arc::new(designcraft_compose::Cache::new());
+    for st in &mut s.docs {
+        st.bump_revision();
+    }
+    Ok(json!({"cataloged": reloaded.cataloged, "changed": reloaded.changed}))
 }
 
 /// Every story's text, including table cells and footnotes.
@@ -59,36 +81,41 @@ fn list(d: &Document) -> Vec<Value> {
     used_fonts(d).into_iter().map(|font| json!(font)).collect()
 }
 
-pub(super) fn used_fonts(d: &Document) -> Vec<UsedFont> {
-    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
-    let mut used: BTreeMap<(String, String), (usize, std::collections::BTreeSet<char>)> = BTreeMap::new();
-    for_each_story(d, &mut |st| {
-        let ranges = st.para_ranges();
-        for (pi, r) in ranges.iter().enumerate() {
-            let (_, base) = d.styles.resolve_para(&st.paras[pi]);
-            for (rr, fmt) in st.runs() {
-                let n = st.text[rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))].chars().count();
-                if n == 0 && !(r.is_empty() && rr.contains(&r.start)) {
-                    continue;
-                }
-                let p = d.styles.resolve_char(&base, fmt);
-                if let Some(f) = d.styles.composite_font(&p.font_family) {
-                    let text = st.text.get(rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))).unwrap_or("");
-                    for c in text.chars() {
-                        if let Some(e) = f.entry(c) {
-                            let entry = used.entry((e.family.clone(), e.style.clone())).or_default();
-                            entry.0 += 1;
-                            entry.1.insert(c);
-                        }
+type FontTally = BTreeMap<(String, String), (usize, std::collections::BTreeSet<char>)>;
+
+/// Count the characters of every run of one story against the font each resolves to.
+fn tally_story(d: &Document, st: &Story, used: &mut FontTally) {
+    let ranges = st.para_ranges();
+    for (pi, r) in ranges.iter().enumerate() {
+        let (_, base) = d.styles.resolve_para(&st.paras[pi]);
+        for (rr, fmt) in st.runs() {
+            let n = st.text[rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))].chars().count();
+            if n == 0 && !(r.is_empty() && rr.contains(&r.start)) {
+                continue;
+            }
+            let p = d.styles.resolve_char(&base, fmt);
+            if let Some(f) = d.styles.composite_font(&p.font_family) {
+                let text = st.text.get(rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))).unwrap_or("");
+                for c in text.chars() {
+                    if let Some(e) = f.entry(c) {
+                        let entry = used.entry((e.family.clone(), e.style.clone())).or_default();
+                        entry.0 += 1;
+                        entry.1.insert(c);
                     }
-                } else {
-                    let entry = used.entry((p.font_family, p.font_style)).or_default();
-                    entry.0 += n;
-                    entry.1.extend(st.text.get(rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))).unwrap_or("").chars());
                 }
+            } else {
+                let entry = used.entry((p.font_family, p.font_style)).or_default();
+                entry.0 += n;
+                entry.1.extend(st.text.get(rr.start.max(r.start)..rr.end.min(r.end).max(rr.start.max(r.start))).unwrap_or("").chars());
             }
         }
-    });
+    }
+}
+
+pub(super) fn used_fonts(d: &Document) -> Vec<UsedFont> {
+    let db = designcraft_fonts::FontDb::global().scoped(d.font_scope);
+    let mut used = FontTally::new();
+    for_each_story(d, &mut |st| tally_story(d, st, &mut used));
     let mut out: Vec<UsedFont> = used
         .into_iter()
         .map(|((family, style), (n, characters))| {
@@ -232,6 +259,22 @@ fn replace(s: &mut Session, p: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reload_fonts_recomposes_open_documents_without_editing_them() {
+        let mut s = Session::new();
+        let r = s.execute("font.reload", &json!({})).unwrap();
+        assert!(r["cataloged"].is_u64() && r["changed"].is_array(), "{r}");
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("frame.create", &json!({"rect": [72, 72, 400, 300], "content": "text", "text": "Some text here."})).unwrap();
+        let (revision, undo) = (s.doc().unwrap().revision, s.doc().unwrap().history.undo.len());
+        let cache = Arc::clone(&s.cache);
+        s.execute("font.reload", &json!({})).unwrap();
+        assert!(!Arc::ptr_eq(&cache, &s.cache), "the layout composed with the old fonts is let go");
+        let st = s.doc().unwrap();
+        assert_ne!(st.revision, revision, "the canvas draws the document again");
+        assert_eq!(st.history.undo.len(), undo, "reloading fonts isn't an edit");
+    }
 
     #[test]
     fn replacement_resolves_inherited_family_and_style_and_rejects_missing_targets() {

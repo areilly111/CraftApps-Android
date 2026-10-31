@@ -52,6 +52,24 @@ middle.
 
 The surface starts with a grid of 48 cells across the larger side, halved or quartered where it rises steeply near the outline. White-light Inflate retains the existing clipped polygon cells, shading, paint composition and seam joins. With colored lights, simple cells are triangulated with shared border samples, and lighting interpolates shared membrane normals through ordinary RGB vector gradients, including on a puffed back. Solid fills batch those triangles into three channel groups and one coverage clip for the whole surface. Source gradients retain per-facet vector composition and apply transparent coverage once. Seam widths retain the 0.05 to 0.75 pt bounds; colored facets use round joins. Shading is automatic, with no additional dialog option.
 
+## Fills and strokes
+
+Extrude & Bevel and Inflate build a solid from the path for the object's top fill, and one from the outline of
+each visible stroke (with its caps, joins, dashes, alignment and arrowheads), each in its own paint. An admin's
+reply on the reference app's bug forum says that strokes "will be treated as outlined when applying 3D"
+([August 2024](https://illustrator.uservoice.com/forums/601447-illustrator-desktop-bugs/suggestions/48755201-expanding-a-3d-extruded-object-with-a-stroke-as-a)).
+The rest is our reading:
+
+- When the fill and every stroke are opaque with Normal blending, the faces of all the solids are drawn in one
+  back-to-front order, and the caps turned toward the viewer are drawn last, the lower item's first. Otherwise
+  each solid is drawn on its own with its opacity and blending, the lower item's first. With a light that is not
+  white, each solid is also drawn on its own when one of them is a puffed, shaded Inflate surface in a solid color
+  (drawn as one composite) or is painted with a gradient that has transparent stops (drawn with an opacity mask).
+- The solids turn, twist and taper about the center of the bounds of all their shapes, Inflate's grid covers
+  those bounds, and with Perspective one eye sees every solid. A stroke too narrow to hold a point of Inflate's
+  grid stays flat.
+- A stroke whose outline takes more than 2,048 points is left out, and the fill's solid still draws.
+
 ## Rotate
 
 The flat art turned in 3D about the centre of its bounds. Every fill and stroke is turned with its own paint (a
@@ -82,6 +100,34 @@ sin(angle / 2) = √3 × strength / 4, and 100 % is about 51.3°. An angle given
 saves the angle.
 
 ## Lighting
+
+### Presets
+
+The Lighting tab has **Standard**, **Diffuse**, **Top Left** and **Right** choices. Choosing one
+replaces the whole light rig with one white front light at 80% intensity and sets Ambient Light.
+It leaves Shading, the object's view, geometry and other effect options unchanged. Manual edits
+remain available; the list shows **Custom** whenever the effective lighting matches none of the
+presets, including when there is more than one light. An equivalent explicit single light is
+recognized too. Reset all returns to Standard. Preview, Cancel and Undo work as for other options.
+
+These are original VectorCraft settings based on the public preset names and directions. Adobe's
+documentation does not publish numeric rigs; the values are not copied from its software or files
+and are not claimed to reproduce its presets exactly. Standard retains the existing default.
+
+| Preset | Rotation | Height | Softness | Ambient Light |
+|---|---:|---:|---:|---:|
+| Standard | 125.26438968275465 degrees | 30 degrees | 0% | 25% |
+| Diffuse | 125.26438968275465 degrees | 30 degrees | 100% | 35% |
+| Top Left | 135 degrees | 45 degrees | 0% | 25% |
+| Right | 0 degrees | 30 degrees | 0% | 25% |
+
+`effect.lightingPreset {index: 0, item: null, preset: "standard" | "diffuse" | "topLeft" | "right", ids?, target?}`
+applies the same settings through commands, CLI and MCP. The index and item address an already
+applied 3D effect. Every target must have a 3D effect at that position; validation is atomic, and
+the whole operation is one undo step. The numeric light settings are saved, not a preset name.
+Existing documents keep their appearance unless a preset is chosen.
+
+### Light settings
 
 One to ten directional lights. **Lights** selects the light whose settings and artboard gizmo are edited. **Add Light** adds and selects a white front light; **Delete Light** removes the selected light while retaining at least one. Ambient Light is shared by all lights. The public panel options' Light Settings are kept in their order:
 
@@ -120,20 +166,20 @@ and [Create 3D objects](https://helpx.adobe.com/illustrator/desktop/special-effe
 pages, and the archived Extrude & Bevel option list (depth 0–2,000, cap on/off, bevel height, bevel extent in or
 out, perspective). No Adobe software, assets, presets or bevel shapes were used.
 
-- **Materials** (base, Adobe Substance and graphics), light presets, **shadows**
-  and **ray-traced rendering** are not built: shading uses directional lights, painted with the
-  object's top fill (else its top stroke) for Extrude & Bevel and Inflate.
+- **Materials** (base, Adobe Substance and graphics), **shadows**
+  and **ray-traced rendering** are not built: shading uses directional lights, in the paint of the fill or
+  stroke the solid is built for ([Fills and strokes](#fills-and-strokes)).
 - The bevel shapes and their names are our own; custom bevel paths are not supported.
-- Visibility is a painter's algorithm: faces of a closed solid turned away are left out, the rest drawn back to
-  front. Concave solids seen at steep angles can overlap wrongly; open (hollow) solids show both sides.
-  Twisted walls and bevels are drawn in pieces about as long as a wall slice is wide (fewer near the limit of
-  32,768 facets), and a cap or flat back turned toward the viewer is drawn over them. The piece drawn on top can
-  still lie a few points behind another nearby piece.
+- Visibility is a painter's algorithm: faces of a closed solid turned away are left out, and the rest are drawn
+  back to front, with a flat cap or flat back turned toward the viewer drawn after all of them. Concave solids
+  seen at steep angles can overlap wrongly; open (hollow) solids show both sides. Twisted walls and bevels are
+  drawn in pieces about as long as a wall slice is wide (fewer near the limit of 32,768 facets). The piece drawn
+  on top can still lie a few points behind another nearby piece.
 - Extrude & Bevel and Rotate retain planar shading. Colored Inflate uses smooth vector lighting; white-light Inflate keeps its original polygon shading; bounded cell triangulation leaves a cell flat when it contains a complete hole or an unusually complex/degenerate contour. Its geometric silhouette is still a polygon approximation.
 - Paths and compound paths only: convert type, images and groups to outlines first. One 3D effect per object.
 - Curves are followed within 1/2000 of the shape's size (at least 0.05 pt), so a small curve takes a few points
-  and a large one up to 32. Extrude & Bevel and Inflate take up to 2,048 outline points, Rotate (which only turns
-  the outline) 65,536.
+  and a large one up to 32. Extrude & Bevel and Inflate take up to 2,048 outline points (a stroke's outline is
+  counted on its own), Rotate (which only turns the outline) 65,536.
 - **3D (Classic)** (the track cube, surface types, blend steps, map art), Turntable and 3D export are separate,
   unbuilt items.
 
@@ -143,4 +189,5 @@ Release measurements and a repeatable CLI scene are in [3D lighting performance]
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | Four original lighting presets, shared by all four 3D effects and commands, with effective-setting recognition and existing preview/history behavior. |
 | 2026-10-17 | Smooth colored Inflate lighting and surface batching; legacy white-light appearance and the 0.05 seam minimum preserved; shared light Color and multiple lights remain vector output. |

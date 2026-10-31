@@ -257,8 +257,8 @@ mod tests {
         let mut r = Renderer::new();
         r.threads = 0;
         let opts = RenderOptions::default();
-        let mut img = r.render(old, &cache, &placed, w, h, view, &opts);
-        let full = r.render(new, &cache, &placed, w, h, view, &opts);
+        let mut img = r.render(old, &cache, &placed, (w, h), view, &opts);
+        let full = r.render(new, &cache, &placed, (w, h), view, &opts);
         // Patch the damaged pixels.
         let regions = damage(old, new).unwrap();
         let u = regions.iter().map(|(_, r)| *r).reduce(|a, b| a.union(b)).unwrap();
@@ -266,7 +266,7 @@ mod tests {
         let y0 = ((u.y0 * zoom).floor().max(0.0)) as u32;
         let x1 = ((u.x1 * zoom).ceil() as u32).min(w);
         let y1 = ((u.y1 * zoom).ceil() as u32).min(h);
-        let patch = r.render(new, &cache, &placed, x1 - x0, y1 - y0, Affine::translate((-(x0 as f64), -(y0 as f64))) * view, &opts);
+        let patch = r.render(new, &cache, &placed, (x1 - x0, y1 - y0), Affine::translate((-(x0 as f64), -(y0 as f64))) * view, &opts);
         for y in y0..y1 {
             for x in x0..x1 {
                 let pi = (((y - y0) * (x1 - x0) + (x - x0)) * 4) as usize;

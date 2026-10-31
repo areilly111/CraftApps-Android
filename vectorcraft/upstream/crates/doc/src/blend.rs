@@ -44,13 +44,43 @@ fn lerp_f64(x: f64, y: f64, t: f64) -> f64 {
     x + (y - x) * t
 }
 
-fn solid_gradient(c: Color, like: &Gradient) -> Gradient {
+/// `like` with every stop painting `c`, linked as the solid is (`swatch` at `tint`).
+fn solid_gradient(c: Color, swatch: Option<&str>, tint: f32, like: &Gradient) -> Gradient {
     let mut g = like.clone();
     for s in &mut g.stops {
         s.color = c;
         s.opacity = 1.0;
+        s.swatch = swatch.map(str::to_string);
+        s.tint = tint;
     }
     g
+}
+
+/// The swatch and tint `g` paints at `t`: a stop's own link, or the shared swatch of the two stops
+/// around `t` at the tint between theirs (unlinked when they differ), as [`Gradient::sample_with`] walks.
+fn link_at(g: &Gradient, t: f32) -> (Option<String>, f32) {
+    let stops = &g.stops;
+    let link = |s: &GradientStop| (s.swatch.clone(), s.tint);
+    let Some(first) = stops.first() else { return (None, 1.0) };
+    if t <= first.offset {
+        return link(first);
+    }
+    for w in stops.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        if t <= b.offset {
+            let span = (b.offset - a.offset).max(1e-6);
+            let u = (t - a.offset) / span;
+            let m = a.midpoint.clamp(0.01, 0.99);
+            let v = if u < m { 0.5 * u / m } else { 0.5 + 0.5 * (u - m) / (1.0 - m) };
+            return match (&a.swatch, &b.swatch) {
+                (Some(x), Some(y)) if x == y => (Some(x.clone()), lerp_f32(a.tint, b.tint, v)),
+                _ if v <= 0.0 => link(a),
+                _ if v >= 1.0 => link(b),
+                _ => (None, 1.0),
+            };
+        }
+    }
+    stops.last().map_or((None, 1.0), link)
 }
 
 /// `g` with its stops at `offsets`, each painting what `g` paints there (midpoints centred).
@@ -59,8 +89,9 @@ fn resample_stops(g: &Gradient, offsets: &[f32]) -> Gradient {
     out.stops = offsets
         .iter()
         .map(|&o| {
-            let (color, opacity) = g.sample_with(o, lerp_color);
-            GradientStop { opacity, ..GradientStop::new(o, color) }
+            let (color, opacity) = g.sample_keep_model(o);
+            let (swatch, tint) = link_at(g, o);
+            GradientStop { opacity, swatch, tint, ..GradientStop::new(o, color) }
         })
         .collect();
     out
@@ -106,10 +137,19 @@ fn lerp_gradient(a: &GradientPaint, b: &GradientPaint, t: f32) -> Option<Gradien
         .stops
         .iter()
         .zip(&gb.stops)
-        .map(|(sa, sb)| GradientStop {
-            opacity: lerp_f32(sa.opacity, sb.opacity, t),
-            midpoint: lerp_f32(sa.midpoint, sb.midpoint, t),
-            ..GradientStop::new(lerp_f32(sa.offset, sb.offset, t), lerp_color(&sa.color, &sb.color, t))
+        .map(|(sa, sb)| {
+            // Stops on two tints of one swatch stay linked to it, as solids do (#3234).
+            let (swatch, tint) = match (&sa.swatch, &sb.swatch) {
+                (Some(x), Some(y)) if x == y => (Some(x.clone()), lerp_f32(sa.tint, sb.tint, t)),
+                _ => (None, 1.0),
+            };
+            GradientStop {
+                opacity: lerp_f32(sa.opacity, sb.opacity, t),
+                midpoint: lerp_f32(sa.midpoint, sb.midpoint, t),
+                swatch,
+                tint,
+                ..GradientStop::new(lerp_f32(sa.offset, sb.offset, t), lerp_color(&sa.color, &sb.color, t))
+            }
         })
         .collect();
     out.angle = a.angle + (b.angle - a.angle) * t as f64;
@@ -131,17 +171,21 @@ fn lerp_gradient(a: &GradientPaint, b: &GradientPaint, t: f32) -> Option<Gradien
 /// solid↔gradient; otherwise switch halfway.
 pub fn lerp_paint(a: &Paint, b: &Paint, t: f32) -> Paint {
     match (a, b) {
+        // Two tints of one swatch blend into tints of that swatch (a spot stays a spot on export).
+        (Paint::Solid { color: x, swatch: Some(sa), tint: ta }, Paint::Solid { color: y, swatch: Some(sb), tint: tb }) if sa == sb => {
+            Paint::Solid { color: lerp_color(x, y, t), swatch: Some(sa.clone()), tint: lerp_f32(*ta, *tb, t) }
+        }
         (Paint::Solid { color: x, .. }, Paint::Solid { color: y, .. }) => Paint::solid(lerp_color(x, y, t)),
         (Paint::Gradient(ga), Paint::Gradient(gb)) => match lerp_gradient(ga, gb, t) {
             Some(g) => Paint::Gradient(Box::new(g)),
             None => (if t < 0.5 { a } else { b }).clone(),
         },
-        (Paint::Solid { color, .. }, Paint::Gradient(g)) => {
-            let ga = GradientPaint { gradient: solid_gradient(*color, &g.gradient), ..(**g).clone() };
+        (Paint::Solid { color, swatch, tint }, Paint::Gradient(g)) => {
+            let ga = GradientPaint { gradient: solid_gradient(*color, swatch.as_deref(), *tint, &g.gradient), ..(**g).clone() };
             Paint::Gradient(Box::new(lerp_gradient(&ga, g, t).unwrap_or_else(|| (**g).clone())))
         }
-        (Paint::Gradient(g), Paint::Solid { color, .. }) => {
-            let gb = GradientPaint { gradient: solid_gradient(*color, &g.gradient), ..(**g).clone() };
+        (Paint::Gradient(g), Paint::Solid { color, swatch, tint }) => {
+            let gb = GradientPaint { gradient: solid_gradient(*color, swatch.as_deref(), *tint, &g.gradient), ..(**g).clone() };
             Paint::Gradient(Box::new(lerp_gradient(g, &gb, t).unwrap_or_else(|| (**g).clone())))
         }
         _ => (if t < 0.5 { a } else { b }).clone(),
@@ -535,11 +579,18 @@ impl Lerp {
 
     /// The object at `t` (0 = `a`, 1 = `b`), with id 0.
     pub fn at(&self, t: f64) -> Node {
+        self.at_eased(t, t)
+    }
+
+    /// The object whose shape is at `t` and whose colours (fills, strokes, opacity, mesh and text
+    /// colours) are at `tc`: a blend with its colours eased apart from its spacing.
+    pub fn at_eased(&self, t: f64, tc: f64) -> Node {
         let (a, b) = (&self.a, &self.b);
         let base = if t < 0.5 { a } else { b };
         let mut n = match &self.shape {
             Shape::Group { children, clip } => {
-                let mut g = Node::new(NodeId(0), NodeKind::Group { children: children.iter().map(|c| Arc::new(c.at(t))).collect(), clip: *clip });
+                let mut g =
+                    Node::new(NodeId(0), NodeKind::Group { children: children.iter().map(|c| Arc::new(c.at_eased(t, tc))).collect(), clip: *clip });
                 g.isolate = base.isolate;
                 g.knockout = base.knockout;
                 g
@@ -549,8 +600,8 @@ impl Lerp {
                 if let (NodeKind::Mesh(m), NodeKind::Mesh(ma), NodeKind::Mesh(mb)) = (&mut n.kind, &a.kind, &b.kind) {
                     for ((p, x), y) in m.points.iter_mut().zip(&ma.points).zip(&mb.points) {
                         p.p = x.p.lerp(y.p, t);
-                        p.color = lerp_color(&x.color, &y.color, t as f32);
-                        p.opacity = lerp_f32(x.opacity, y.opacity, t as f32);
+                        p.color = lerp_color(&x.color, &y.color, tc as f32);
+                        p.opacity = lerp_f32(x.opacity, y.opacity, tc as f32);
                         for h in 0..4 {
                             p.handles[h] = x.handles[h].lerp(y.handles[h], t);
                         }
@@ -576,7 +627,7 @@ impl Lerp {
             Shape::Placed => {
                 let mut n = base.clone();
                 match (&mut n.kind, &a.kind, &b.kind) {
-                    (NodeKind::Text(o), NodeKind::Text(x), NodeKind::Text(y)) => lerp_text(o, x, y, t),
+                    (NodeKind::Text(o), NodeKind::Text(x), NodeKind::Text(y)) => lerp_text(o, x, y, t, tc),
                     (NodeKind::SymbolInstance { xf: o, .. }, NodeKind::SymbolInstance { xf: x, .. }, NodeKind::SymbolInstance { xf: y, .. }) => {
                         *o = lerp_affine(*x, *y, t)
                     }
@@ -613,8 +664,8 @@ impl Lerp {
             }
         };
         n.id = NodeId(0);
-        n.appearance = lerp_appearance(&a.appearance, &b.appearance, t).into();
-        n.opacity = lerp_f32(a.opacity, b.opacity, t as f32);
+        n.appearance = lerp_appearance(&a.appearance, &b.appearance, tc).into();
+        n.opacity = lerp_f32(a.opacity, b.opacity, tc as f32);
         n.blend = base.blend;
         n.visible = true;
         n.locked = false;
@@ -644,7 +695,7 @@ fn compound(path: PathData, rule: FillRule, counts: &[usize], total: usize) -> N
 /// Interpolate text `x` → `y` into `o` (a copy of the nearer): the transform by its parts, an
 /// area frame anchor by anchor, and each run's colours, stroke weight and size from the runs at
 /// the same place (by character) of both.
-fn lerp_text(o: &mut TextObject, x: &TextObject, y: &TextObject, t: f64) {
+fn lerp_text(o: &mut TextObject, x: &TextObject, y: &TextObject, t: f64, tc: f64) {
     o.xf = lerp_affine(x.xf, y.xf, t);
     if let (crate::text::TextKind::Area { frame: f }, crate::text::TextKind::Area { frame: fx }, crate::text::TextKind::Area { frame: fy }) =
         (&mut o.kind, &x.kind, &y.kind)
@@ -666,7 +717,7 @@ fn lerp_text(o: &mut TextObject, x: &TextObject, y: &TextObject, t: f64) {
     }
     let total: usize = o.runs.iter().map(|r| r.text.chars().count()).sum::<usize>().max(1);
     let mut start = 0usize;
-    let tf = t as f32;
+    let tf = tc as f32;
     let mut resized = false;
     for r in &mut o.runs {
         let len = r.text.chars().count();
@@ -1027,8 +1078,10 @@ pub fn blend_expand(keys: &[Arc<Node>], spec: &BlendSpec) -> Vec<Node> {
         let n = blend_step_count(a, b, spec.spacing, len);
         let lerp = Lerp::new(a, b, (spec.start(i), spec.start(i + 1)));
         for j in 1..=n {
-            let t = j as f64 / (n + 1) as f64;
-            let mut s = lerp.at(t);
+            // Even position of the step, then where the easing puts its shape and its colours.
+            let u = j as f64 / (n + 1) as f64;
+            let (t, tc) = (if rail.is_some() { spec.ease.apply(u) } else { u }, spec.color_position(u));
+            let mut s = lerp.at_eased(t, tc);
             if let Some(r) = &rail {
                 r.place(&mut s, i, t);
             }
@@ -1091,6 +1144,55 @@ mod tests {
     }
 
     #[test]
+    fn easing_keeps_the_ends_and_stays_monotone() {
+        use crate::live::{BlendEase, BlendEaseType as K};
+        for kind in [K::In, K::Out, K::InOut, K::OutIn] {
+            for ramp in [0.0, 0.5, 1.0, f64::NAN, f64::INFINITY] {
+                let e = BlendEase { kind, ramp };
+                assert_eq!((e.apply(0.0), e.apply(1.0)), (0.0, 1.0));
+                let ys: Vec<f64> = (0..=100).map(|i| e.apply(i as f64 / 100.0)).collect();
+                assert!(ys.windows(2).all(|w| w[0] <= w[1]));
+                assert_eq!(e.apply(f64::NAN), 0.0);
+                if ramp == 0.0 {
+                    assert_eq!(e.apply(0.25), 0.25);
+                }
+            }
+        }
+        let e = |kind| BlendEase { kind, ramp: 1.0 };
+        assert!(e(K::In).apply(0.25) < 0.25);
+        assert!(e(K::Out).apply(0.25) > 0.25);
+        assert!(e(K::InOut).apply(0.25) < 0.25 && e(K::InOut).apply(0.75) > 0.75);
+        assert!(e(K::OutIn).apply(0.25) > 0.25 && e(K::OutIn).apply(0.75) < 0.75);
+    }
+
+    #[test]
+    fn colour_easing_moves_colours_apart_from_positions() {
+        let rect = |x: f64, c: Color| {
+            let mut n = Node::path(NodeId(1), shapes::rectangle(Rect::new(x, 0.0, x + 10.0, 10.0)), Appearance::default());
+            n.appearance = Appearance::basic(Paint::solid(c), Paint::None, 0.0).into();
+            Arc::new(n)
+        };
+        let keys = vec![rect(0.0, Color::BLACK), rect(100.0, Color::WHITE)];
+        let mid = |spec: &BlendSpec| {
+            let out = blend_expand(&keys, spec);
+            let n = &out[1];
+            (n.geometric_bounds().unwrap().x0, n.appearance.fill_paint())
+        };
+        // Position easing runs along a spine: Align to Path gives the blend one.
+        let base = BlendSpec { spacing: BlendSpacing::Steps(1), orientation: BlendOrientation::AlignToPath, ..Default::default() };
+        let (x0, p0) = mid(&base);
+        // Colour easing alone leaves the position and moves the colour.
+        let colour = BlendSpec { color_shift: 50.0, ..base.clone() };
+        let (x1, p1) = mid(&colour);
+        assert!((x0 - x1).abs() < 1e-9 && p0 != p1);
+        // Position easing alone leaves the colour and moves the position.
+        let pos = BlendSpec { ease: crate::live::BlendEase { kind: crate::live::BlendEaseType::In, ramp: 1.0 }, ..base.clone() };
+        let (x2, p2) = mid(&pos);
+        assert!((x0 - x2).abs() > 1e-3 && p0 == p2);
+        assert_eq!(mid(&pos).0, x2, "deterministic");
+    }
+
+    #[test]
     fn affine_lerp_turns_the_short_way() {
         let x = Affine::rotate(170f64.to_radians());
         let y = Affine::rotate(-170f64.to_radians());
@@ -1112,6 +1214,56 @@ mod tests {
         // Clicked start points win over the automatic match.
         let pair = PathPair::new(&a, &b, (Some(0), Some(0)));
         assert!(pair.at(0.5).bounds().unwrap().height() < 1e-6, "the clicked anchors pair up");
+    }
+
+    #[test]
+    fn blend_between_tints_of_one_swatch_keeps_the_link() {
+        let tinted = |tint: f32| Paint::Solid { color: Color::cmyk(1.0, 0.7, 0.0, 0.4).tinted(tint), swatch: Some("Spot".into()), tint };
+        let Paint::Solid { swatch, tint, .. } = lerp_paint(&tinted(0.2), &tinted(1.0), 0.5) else { panic!() };
+        assert_eq!(swatch.as_deref(), Some("Spot"));
+        assert!((tint - 0.6).abs() < 1e-6, "{tint}");
+        let other = Paint::Solid { color: Color::BLACK, swatch: Some("Other".into()), tint: 1.0 };
+        assert!(matches!(lerp_paint(&tinted(0.2), &other, 0.5), Paint::Solid { swatch: None, .. }));
+
+        // Gradient stops on tints of one swatch stay linked too; a process solid unlinks them.
+        let spot_gradient = |tint: f32| {
+            let mut stop = GradientStop::new(0.0, Color::cmyk(1.0, 0.7, 0.0, 0.4).tinted(tint));
+            stop.swatch = Some("Spot".into());
+            stop.tint = tint;
+            let stops = vec![stop.clone(), GradientStop { offset: 1.0, ..stop }];
+            Paint::Gradient(Box::new(GradientPaint::new(Gradient { stops, ..Gradient::default() })))
+        };
+        let Paint::Gradient(m) = lerp_paint(&spot_gradient(0.2), &spot_gradient(1.0), 0.5) else { panic!() };
+        assert!(m.gradient.stops.iter().all(|s| s.swatch.as_deref() == Some("Spot") && (s.tint - 0.6).abs() < 1e-6), "{:?}", m.gradient.stops);
+        let Paint::Gradient(m) = lerp_paint(&tinted(0.2), &spot_gradient(1.0), 0.5) else { panic!() };
+        assert!(m.gradient.stops.iter().all(|s| s.swatch.as_deref() == Some("Spot") && (s.tint - 0.6).abs() < 1e-6), "{:?}", m.gradient.stops);
+        let Paint::Gradient(m) = lerp_paint(&Paint::solid(Color::BLACK), &spot_gradient(1.0), 0.5) else { panic!() };
+        assert!(m.gradient.stops.iter().all(|s| s.swatch.is_none()), "{:?}", m.gradient.stops);
+    }
+
+    #[test]
+    fn resampled_gradient_stops_keep_the_swatch_link() {
+        let spot = |offset: f32, tint: f32| {
+            let mut stop = GradientStop::new(offset, Color::cmyk(1.0, 0.7, 0.0, 0.4).tinted(tint));
+            stop.swatch = Some("Spot".into());
+            stop.tint = tint;
+            stop
+        };
+        let paint = |stops: Vec<GradientStop>| Paint::Gradient(Box::new(GradientPaint::new(Gradient { stops, ..Gradient::default() })));
+        let two = paint(vec![spot(0.0, 0.2), spot(1.0, 1.0)]);
+        let three = paint(vec![spot(0.0, 0.2), spot(0.5, 0.6), spot(1.0, 1.0)]);
+        let Paint::Gradient(m) = lerp_paint(&two, &three, 0.5) else { panic!() };
+        assert_eq!(m.gradient.stops.len(), 3);
+        assert!(m.gradient.stops.iter().all(|s| s.swatch.as_deref() == Some("Spot")), "{:?}", m.gradient.stops);
+        let tints: Vec<f32> = m.gradient.stops.iter().map(|s| s.tint).collect();
+        assert!((tints[1] - 0.6).abs() < 1e-6 && (tints[2] - 1.0).abs() < 1e-6, "{tints:?}");
+
+        // Spot on one side, process on the other: the stops are unlinked.
+        let mut plain = spot(0.5, 1.0);
+        plain.swatch = None;
+        let mixed = paint(vec![spot(0.0, 1.0), plain, spot(1.0, 1.0)]);
+        let Paint::Gradient(m) = lerp_paint(&two, &mixed, 0.5) else { panic!() };
+        assert!(m.gradient.stops.iter().any(|s| s.swatch.is_none()), "{:?}", m.gradient.stops);
     }
 
     #[test]

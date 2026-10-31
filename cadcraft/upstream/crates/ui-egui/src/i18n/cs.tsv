@@ -1,0 +1,1229 @@
+# CADCraft Czech interface catalog — original translations by @Losminek (AI-assisted).
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Written from the meaning of CADCraft English strings; no proprietary translations copied.
+# UTF-8: context<TAB>English source<TAB>Czech translation.
+# @plural = one|few|other forms for integer counts.
+	Apply	Použít
+	Attach DWG...	Připojit DWG...
+	Bind	Svázat
+	Detach	Odpojit
+	Loaded	Načteno
+	Make it a block of this drawing, keeping its layer names	Převést na blok tohoto výkresu a zachovat názvy hladin
+	Make it a block of this drawing; its layers become NAME$0$LAYER	Převést na blok tohoto výkresu; názvy hladin budou NAME$0$LAYER
+	No external references are attached.	Nejsou připojeny žádné externí reference.
+	Not Found	Nenalezeno
+	Not loaded	Nenačteno
+	Open	Otevřít
+	Overlay	Překrytí
+	Reference Manager	Správce referencí
+	Reference Name	Název reference
+	References: {n}	Reference: {n}
+	Reload	Znovu načíst
+	Reload All	Znovu načíst vše
+	Saved Path	Uložená cesta
+	Unload	Uvolnit
+	Unloaded	Uvolněno
+	Unreferenced	Bez odkazu
+	Unresolved	Nevyřešeno
+	  Cancel  	  Zrušit  
+	  OK  	  OK  
+	 or [	 nebo [
+	% of all commits	% všech commitů
+	* Wildcard Match	* Shoda se zástupnými znaky
+	*VARIES*	*RŮZNÉ*
+	+  |  Top  |  2D Wireframe	+  |  Shora  |  2D drátový model
+	+Bin	+Bin
+	+LOC	+LOC
+	1 Viewport	1 výřez
+	2 Points	2 body
+	2 Viewports	2 výřezy
+	2D Solid	2D plocha
+	3 Points	3 body
+	3 Viewports	3 výřezy
+	3D Face	3D plocha
+	3D Operations	3D operace
+	3D Polyline	3D křivka
+	4 Viewports	4 výřezy
+	< Less than	< Menší než
+	<> Not Equal	<> Nerovná se
+	= Equals	= Rovná se
+	> Greater than	> Větší než
+	A variable name starts with a letter and has only letters, digits and _	Název proměnné začíná písmenem a obsahuje pouze písmena, číslice a _
+	About	O aplikaci
+	About CADCraft	O aplikaci CADCraft
+	Absolute	Absolutní
+	Add Leader	Přidat odkaz
+	Additional angles	Další úhly
+	Align	Srovnat
+	Align Text	Zarovnat text
+	Aligned	Zarovnaná
+	All	Vše
+	All Annotation Objects	Všechny objekty popisů
+	All Used Layers	Všechny použité hladiny
+	All files	Všechny soubory
+	Angle	Úhel
+	Angular	Úhlová
+	Annotation Visibility	Viditelnost popisů
+	Annotation scale	Měřítko popisů
+	Apparent Intersection	Zdánlivý průsečík
+	Append to current selection set	Přidat k aktuální výběrové množině
+	Apply to:	Použít na:
+	Apply true color	Použít skutečnou barvu
+	Arc	Oblouk
+	Arc Length	Délka oblouku
+	Area	Plocha
+	Arrange Panel	Uspořádat panel
+	Array	Pole
+	Attach	Připojit
+	Attribute	Atribut
+	Attribute Definition	Definice atributu
+	Attribute Display	Zobrazení atributů
+	Audit	Prověřit
+	Auto (system language)	Automaticky (jazyk systému)
+	Auto Constrain	Automaticky vytvořit vazby
+	AutoConstrain	Automatické vazby
+	Axis, End	Osa, konec
+	Base	Základní bod
+	Baseline	Od základny
+	Batch Publish	Dávkově publikovat
+	Binary assets added	Přidané binární soubory
+	Binary assets removed	Odebrané binární soubory
+	Bind...	Svázat...
+	Blend	Spojit křivky
+	Block	Blok
+	Block Attribute Manager...	Správce atributů bloků...
+	Block Description...	Popis bloku...
+	Block Editor	Editor bloků
+	Block Reference	Reference bloku
+	Block...	Blok...
+	Blocks	Bloky
+	Blue	Modrá
+	Bold	Tučné
+	Boolean	Booleovská
+	Boundary	Hranice
+	Boundary...	Hranice...
+	Box	Kvádr
+	Break	Přerušit
+	Break At Point	Přerušit v bodě
+	Bring Above Objects	Přenést nad objekty
+	Bring Annotations to Front	Přenést popisy dopředu
+	Bring to Front	Přenést dopředu
+	Bulleted list	Seznam s odrážkami
+	ByBlock	Dle bloku
+	ByColor	Dle barvy
+	ByLayer	Dle hladiny
+	CADCraft Help	Nápověda CADCraft
+	Cancel	Zrušit
+	Cartesian (x, y)	Kartézské (x, y)
+	Center	Střed
+	Center Line	Osa
+	Center Mark	Středová značka
+	Center X	Střed X
+	Center Y	Střed Y
+	Center Z	Střed Z
+	Center, Diameter	Střed, průměr
+	Center, Radius	Střed, poloměr
+	Center, Start, Angle	Střed, počátek, úhel
+	Center, Start, End	Střed, počátek, konec
+	Center, Start, Length	Střed, počátek, délka
+	Chamfer	Zkosit
+	Change Space	Změnit prostor
+	Change to Current Layer	Převést do aktuální hladiny
+	Changed: {n}	Změněno: {n}
+	Circle	Kružnice
+	Circumference	Obvod
+	Clear History	Vymazat historii
+	Clear	Vymazat
+	Clip	Oříznout hranicí
+	Clip Viewport	Oříznout výřez
+	Clipboard	Schránka
+	Close	Zavřít
+	Close All	Zavřít vše
+	Close All Other Drawings	Zavřít všechny ostatní výkresy
+	Closed	Uzavřeno
+	Close Comparison	Zavřít porovnání
+	Export Comparison	Exportovat porovnání
+	Coincident	Totožnost
+	Collapse Tool Sets	Sbalit sady nástrojů
+	Collinear	Kolinearita
+	Color	Barva
+	Color 8	Barva 8
+	Color 9	Barva 9
+	Color Index	Index barvy
+	Color...	Barva...
+	Command Aliases	Aliasy příkazů
+	Command History	Historie příkazů
+	Clear Command History	Vymazat historii příkazů
+	Command Line	Příkazový řádek
+	Command Line History Lines	Počet řádků historie příkazového řádku
+	Command Reference	Přehled příkazů
+	Commits	Commity
+	Company	Společnost
+	Compare Drawings...	Porovnat výkresy...
+	Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust.	Počítačem podporované navrhování a kreslení: CAD aplikace s otevřeným zdrojovým kódem, napsaná nezávisle v čistém Rustu.
+	Concentric	Soustřednost
+	Cone	Kužel
+	Constraint Bars	Lišty vazeb
+	Constraint Settings	Nastavení vazeb
+	Construction Line	Přímka
+	Contents	Obsah
+	Continue	Pokračovat
+	Contributors	Přispěvatelé
+	Control Vertices	Řídicí vrcholy
+	Convert	Převést
+	Copy	Kopírovat
+	Copy Full File Path	Kopírovat úplnou cestu k souboru
+	Copy History	Kopírovat historii
+	Copy Layout	Kopírovat rozvržení
+	Copy Nested Objects	Kopírovat vnořené objekty
+	Copy Selection	Kopírovat výběr
+	Copy with Base Point	Kopírovat se základním bodem
+	Count	Počet
+	Count List	Seznam počtů
+	Count Table	Tabulka počtů
+	Create Block	Vytvořit blok
+	Creates a user parameter	Vytvoří uživatelský parametr
+	Ctrl+Enter to finish	Ctrl+Enter pro dokončení
+	Current layer	Aktuální hladina
+	Current selection	Aktuální výběr
+	Current: {color}	Aktuální: {color}
+	Cut	Vyjmout
+	Cut with Base Point	Vyjmout se základním bodem
+	Cyan	Azurová
+	Cylinder	Válec
+	DWG	DWG
+	DWG Reference...	Reference DWG...
+	DXF	DXF
+	Dark	Tmavé
+	Data Extraction...	Extrahovat data...
+	Default	Výchozí
+	Data Link...	Datové propojení...
+	Default Save Format	Výchozí formát ukládání
+	Default Save Version	Výchozí verze ukládání
+	Define Attributes	Definovat atributy
+	Define Attributes...	Definovat atributy...
+	Defined width	Definovaná šířka
+	Degree	Stupeň
+	Degrees of Freedom	Stupně volnosti
+	Degrees of freedom: {n}	Stupně volnosti: {n}
+	Delete	Odstranit
+	Delete Column	Odstranit sloupec
+	Delete Constraints	Odstranit vazby
+	Delete Dimension Style	Odstranit kótovací styl
+	Delete Duplicate Objects	Odstranit duplicitní objekty
+	Delete Layer	Odstranit hladinu
+	Delete Layer State	Odstranit stav hladin
+	Delete Layout	Odstranit rozvržení
+	Delete Row	Odstranit řádek
+	Delete Text Style	Odstranit styl textu
+	Delta X	Rozdíl X
+	Delta Y	Rozdíl Y
+	Description	Popis
+	Deselect All	Zrušit celý výběr
+	Diameter	Průměr
+	Dim style	Kótovací styl
+	Dimension Break	Přerušení kóty
+	Dimension Edit	Upravit kótu
+	Dimension	Kóta
+	Dimension Objects Only	Pouze objekty kót
+	Dimension Space	Rozestup kót
+	Dimension Style Override	Přepsat kótovací styl
+	Dimension Style...	Kótovací styl...
+	Dimension Text Edit	Upravit text kóty
+	Dimension style	Styl kótování
+	Dimensional Constraint	Rozměrová vazba
+	Dimensional Constraint Parameters	Parametry rozměrových vazeb
+	Dimensional Constraints	Rozměrové vazby
+	Disassociate Dimensions	Zrušit asociativitu kót
+	Display name	Zobrazované jméno
+	Distance	Vzdálenost
+	Divide	Dělit
+	Do not plot (click: plot)	Netisknout (kliknutím: tisknout)
+	Donut	Prstenec
+	Double-click to edit the description	Dvojitým kliknutím upravíte popis
+	Down	Dolů
+	Drafting	Kreslení
+	Drafting Settings	Nastavení kreslení
+	Drafting Settings...	Nastavení kreslení...
+	Draw	Kreslit
+	Draw Order	Pořadí kreslení
+	Drawing (DWG)	Výkres (DWG)
+	Drawing (DXF)	Výkres (DXF)
+	Drawing Limits	Meze výkresu
+	Drawing Template (DWT)	Šablona výkresu (DWT)
+	Drawing Utilities	Nástroje výkresu
+	Drawings (DWG, DXF)	Výkresy (DWG, DXF)
+	Dynamic	Dynamická
+	Dynamic Dimensions	Dynamické kóty
+	Dynamic Input	Dynamické zadávání
+	Dynamic Input (F12)	Dynamické zadávání (F12)
+	E	V
+	Edit	Úpravy
+	Edit Attributes...	Upravit atributy...
+	Edit Text...	Upravit text...
+	Edit Table Cell	Upravit buňku tabulky
+	Elevation	Výška zdvihu
+	Ellipse	Elipsa
+	Elliptical Arc	Eliptický oblouk
+	Enable Dynamic Input (F12)	Zapnout dynamické zadávání (F12)
+	End Object Isolation	Ukončit izolaci objektů
+	End Width	Koncová šířka
+	End X	Konec X
+	End Y	Konec Y
+	End angle	Koncový úhel
+	Endpoint	Koncový bod
+	Enter	Enter
+	Enter Top, Zero or Bottom.	Zadejte Top, Zero nebo Bottom.
+	Enter a fit data option	Zadejte možnost pro prokládací body
+	Enter a pattern name	Zadejte název vzoru
+	Enter a vertex editing option	Zadejte možnost úpravy vrcholů
+	Enter an option	Zadejte možnost
+	Enter angle of xline	Zadejte úhel přímky
+	Enter angle of xline (0) or	Zadejte úhel přímky (0) nebo
+	Enter area of rectangle in current units	Zadejte plochu obdélníku v aktuálních jednotkách
+	Enter attribute prompt	Zadejte výzvu atributu
+	Enter attribute tag name	Zadejte označení atributu
+	Enter attribute value	Zadejte hodnotu atributu
+	Enter block name	Zadejte název bloku
+	Enter constraint type	Zadejte typ vazby
+	Enter continuity	Zadejte spojitost
+	Enter default attribute value	Zadejte výchozí hodnotu atributu
+	Enter degree of spline	Zadejte stupeň spline
+	Enter delta angle	Zadejte změnu úhlu
+	Enter delta length or	Zadejte změnu délky nebo
+	Enter dimension text	Zadejte text kóty
+	Enter dimension text (<> = measurement)	Zadejte text kóty (<> = naměřená hodnota)
+	Enter dimension value or [name=expression]	Zadejte hodnotu kóty nebo [name=expression]
+	Enter dimension variable name to override	Zadejte název kótovací proměnné k přepsání
+	Enter justification type	Zadejte typ zarovnání
+	Enter leader text	Zadejte text odkazu
+	Enter mline scale	Zadejte měřítko multičáry
+	Enter mode	Zadejte režim
+	Enter name of block to insert	Zadejte název bloku k vložení
+	Enter new text	Zadejte nový text
+	Enter next point	Zadejte další bod
+	Enter number of columns	Zadejte počet sloupců
+	Enter number of data rows	Zadejte počet datových řádků
+	Enter number of items	Zadejte počet prvků
+	Enter number of items along path	Zadejte počet prvků podél trajektorie
+	Enter number of sides	Zadejte počet stran
+	Enter number of turns	Zadejte počet závitů
+	Enter percentage length	Zadejte délku v procentech
+	Enter rectangle length	Zadejte délku obdélníku
+	Enter rectangle width	Zadejte šířku obdélníku
+	Enter scale factor	Zadejte faktor měřítka
+	Enter text	Zadejte text
+	Enter text (use \P for new paragraphs)	Zadejte text (\P vytvoří nový odstavec)
+	Enter the number of segments	Zadejte počet segmentů
+	Enter twist direction of helix	Zadejte směr vinutí šroubovice
+	Entire drawing	Celý výkres
+	Equal	Shodnost
+	Erase	Vymazat objekty
+	Evaluate	Vyhodnotit
+	Exclude from new selection set	Vyloučit z nové výběrové množiny
+	Explode	Rozložit
+	Export	Exportovat
+	Export Table	Exportovat tabulku
+	Export to PDF...	Exportovat do PDF...
+	Expression	Výraz
+	Extend	Prodloužit
+	Extension	Prodloužení
+	Extents	Rozsah
+	External Reference	Externí reference
+	External References	Externí reference výkresu
+	Extrude	Vysunout
+	File	Soubor
+	File Tab	Karta souboru
+	Fillet	Zaoblit
+	Filter	Filtr
+	Filters	Filtry
+	Find and Replace	Najít a nahradit
+	Find...	Najít...
+	First	První
+	First commit	První commit
+	Fit Points	Prokládací body
+	Fix	Pevná vazba
+	Flatten Objects	Převést objekty do roviny
+	Format	Formát
+	Freehand	Od ruky
+	Freeze	Zmrazit
+	Freeze Layer	Zmrazit hladinu
+	Freeze in new viewports	Zmrazit v nových výřezech
+	Freeze/Thaw	Zmrazit/Rozmrazit
+	Freeze/Thaw in all viewports	Zmrazit/Rozmrazit ve všech výřezech
+	Freeze/Thaw in the current viewport	Zmrazit/Rozmrazit v aktuálním výřezu
+	From	Od
+	From Template...	Ze šablony...
+	General	Obecné
+	Geometric Center	Geometrický střed
+	Geometric Constraint	Geometrická vazba
+	Geometric Constraints	Geometrické vazby
+	Geometry	Geometrie
+	Get from the Drawing	Převzít z výkresu
+	Get Variable	Získat proměnnou
+	Get View	Získat pohled
+	Global	Globální
+	Global width	Celková šířka
+	Grab bag	Přehled přispěvatelů
+	Gradient	Přechod
+	Gradient...	Přechod...
+	Green	Zelená
+	Grid (F7)	Rastr (F7)
+	Grid Display	Zobrazení rastru
+	Grid On (F7)	Zapnout rastr (F7)
+	Grid snap	Uchopení k rastru
+	Grid spacing	Rozteč rastru
+	Grip Edit	Upravit pomocí uzlů
+	Grip Mirror	Zrcadlit pomocí uzlů
+	Grip Option	Možnost uzlu
+	Grip Rotate	Otočit pomocí uzlů
+	Grip Scale	Měřítko pomocí uzlů
+	Grip Stretch	Protáhnout pomocí uzlů
+	Group	Skupina
+	Group Edit	Upravit skupinu
+	Group Options	Možnosti skupiny
+	Group Selection	Výběr skupin
+	Hatch	Šrafy
+	Hatch Edit	Upravit šrafy
+	Hatch Patterns	Vzory šraf
+	Hatch...	Šrafy...
+	Height	Výška
+	Height: {height}	Výška: {height}
+	Helix	Šroubovice
+	Help	Nápověda
+	Hide All	Skrýt vše
+	Hide All Constraint Bars	Skrýt všechny lišty vazeb
+	Hide All Dynamic Dimensions	Skrýt všechny dynamické kóty
+	Hide Layer List	Skrýt seznam hladin
+	Hide Objects	Skrýt objekty
+	Hide Palettes	Skrýt palety
+	History	Historie
+	Home	Domů
+	Horizontal	Vodorovná
+	HorizontalDistance	Vodorovná vzdálenost
+	How to apply:	Způsob použití:
+	ID Point	Souřadnice bodu
+	Import	Importovat
+	In	Přiblížit pohled
+	In-window Menu Bar	Nabídka v okně
+	Include in new selection set	Zahrnout do nové výběrové množiny
+	Increment angle	Přírůstek úhlu
+	Index Color	Indexovaná barva
+	Index color: {index}	Indexovaná barva: {index}
+	Infer Constraints	Odvozovat vazby
+	Inquiry	Dotazy
+	Insert	Vložit
+	Insert Block	Vložit blok
+	Insert Column	Vložit sloupec
+	Insert Row	Vložit řádek
+	Insert tab	Vložit tabulátor
+	Insert this block	Vložit tento blok
+	Insert Table Formula	Vložit vzorec tabulky
+	Insertion	Bod vložení
+	Insertion X	Vložení X
+	Insertion Y	Vložení Y
+	Insertion Z	Vložení Z
+	Inspect Constraints	Prohlédnout vazby
+	Inspect Drawing	Prohlédnout výkres
+	Inspection	Kontrolní kóta
+	Interface Language	Jazyk rozhraní
+	Interface Theme	Motiv rozhraní
+	Intersect	Průnik
+	Intersection	Průsečík
+	Isolate	Izolovat
+	Isolate Layer	Izolovat hladinu
+	Isolate Objects	Izolovat objekty
+	Isometric Drafting	Izometrické kreslení
+	Jogged	Zalomená
+	Jogged Linear	Zalomená lineární
+	Join	Spojit
+	Join the ArtCraft Discord…	Připojit se na Discord ArtCraft…
+	Join us on Discord	Připojte se k nám na Discordu
+	Isometric Plane	Izometrická rovina
+	Isometric snap	Izometrické uchopení
+	Language	Jazyk
+	Last	Poslední
+	Last commit	Poslední commit
+	Layer	Hladina
+	Layer Delete	Odstranění hladiny
+	Layer Match	Převzetí hladiny
+	Layer Merge	Sloučení hladin
+	Layer Off	Vypnutí hladiny
+	Layer Properties	Vlastnosti hladiny
+	Layer Properties Manager	Správce vlastností hladin
+	Layer Properties Manager — current viewport	Správce vlastností hladin — aktuální výřez
+	Layer State	Stav hladin
+	Layer States Manager...	Správce stavů hladin...
+	Layer Tools	Nástroje hladin
+	Layer contains objects (double-click to make current)	Hladina obsahuje objekty (dvojitým kliknutím ji nastavíte jako aktuální)
+	Layer is empty (double-click to make current)	Hladina je prázdná (dvojitým kliknutím ji nastavíte jako aktuální)
+	Layers	Hladiny
+	Layers Palette	Paleta hladin
+	Hide Palette	Skrýt paletu
+	Layers displayed: {shown} of {total}.   Current layer: {layer}	Zobrazené hladiny: {shown} z {total}.   Aktuální hladina: {layer}
+	Layout	Rozvržení
+	Layout list	Seznam rozvržení
+	Leader	Odkaz
+	Leaders Only	Pouze odkazy
+	Left	Vlevo
+	Length	Délka
+	Length X	Délka X
+	Length Y	Délka Y
+	Lengthen	Změnit délku
+	Light	Světlé
+	Line	Úsečka
+	Line delta	Rozdíl počtu řádků
+	Linear	Lineární
+	Lines +/−	Řádky +/−
+	Lines added	Přidané řádky
+	Lines deleted	Odstraněné řádky
+	Lines of Command History	Řádky historie příkazů
+	Linetype	Typ čáry
+	Linetype Scale	Měřítko typu čáry
+	Linetype scale	Měřítko čar
+	Ltscale	Faktor typu čáry
+	Linetype...	Typ čáry...
+	Lineweight	Tloušťka čáry
+	Lineweight...	Tloušťka čáry...
+	List	Výpis
+	List Blocks	Vypsat bloky
+	List Dimension Styles	Vypsat kótovací styly
+	List Groups	Vypsat skupiny
+	List Layer States	Vypsat stavy hladin
+	List Layouts	Vypsat rozvržení
+	List System Variables	Vypsat systémové proměnné
+	List Text Styles	Vypsat styly textu
+	Load all	Načíst vše
+	Load...	Načíst...
+	Loaded linetypes	Načtené typy čar
+	Lock	Zamknout
+	Lock Layer	Zamknout hladinu
+	Lock viewport	Zamknout výřez
+	Lock/Unlock	Zamknout/Odemknout
+	Loft	Šablonovat
+	MIT OR Apache-2.0. Not affiliated with Autodesk, Inc.	MIT OR Apache-2.0. Bez spojení se společností Autodesk, Inc.
+	MODEL	MODEL
+	MText	Víceřádkový text
+	Magenta	Purpurová
+	Major line every	Hlavní čára po každých
+	Make Current	Nastavit jako aktuální
+	Make Object's Layer Current	Nastavit hladinu objektu jako aktuální
+	Make...	Vytvořit...
+	Match Layer	Převzít hladinu
+	Match Properties	Převzít vlastnosti
+	Measure	Rozdělit podle délky
+	Measure Distance	Změřit vzdálenost
+	Measure Geometry	Změřit geometrii
+	Merge Cells	Sloučit buňky
+	Merged PRs	Sloučené PR
+	Mid Between 2 Points	Střed mezi 2 body
+	Midpoint	Polovina
+	Mirror	Zrcadlit
+	Model	Model
+	Model Space (in viewport)	Modelový prostor (ve výřezu)
+	Modeling	Modelování
+	Models	Modely
+	Modify	Upravit
+	Move	Posunout
+	Multileader	Multiodkaz
+	Multileader Style...	Styl multiodkazu...
+	Multileader style	Styl multiodkazů
+	Multiline	Multičára
+	Multiline Text	Víceřádkový textový objekt
+	Multiline Text...	Víceřádkový text...
+	Multiple	Více
+	Multiple Point	Více bodů
+	My	Moje
+	My properties: not available yet	Moje vlastnosti: zatím nejsou k dispozici
+	N	S
+	Name	Název
+	Name (A–Z)	Název (A–Z)
+	Named Viewports...	Pojmenované výřezy...
+	Named Views...	Pojmenované pohledy...
+	Nearest	Nejbližší
+	New	Nový
+	New (metric)	Nový (metrický)
+	New Drawing	Nový výkres
+	New Drawing (⌘N)	Nový výkres (⌘N)
+	New Drawing...	Nový výkres...
+	New Layer	Nová hladina
+	New Layout	Nové rozvržení
+	New VP Freeze	Zmrazení v nových výřezech
+	New Viewports...	Nové výřezy...
+	New from Template...	Nový ze šablony...
+	New layout	Nové rozvržení výkresu
+	New state name	Název nového stavu
+	Next Change	Další změna
+	No	Ne
+	No blocks defined in this drawing.	V tomto výkresu nejsou definovány žádné bloky.
+	No contributor data was built into this copy.	Tato kopie neobsahuje údaje o přispěvatelích.
+	No model credits were built into this copy.	Tato kopie neobsahuje kredity modelů.
+	No saved layer states	Žádné uložené stavy hladin
+	No selection	Žádný výběr
+	Node	Bod
+	None	Žádné
+	Normal	Normální
+	Not available	Není k dispozici
+	Not available yet	Zatím není k dispozici
+	Numbered list	Číslovaný seznam
+	OK	OK
+	Object	Objekt
+	Object Snap	Uchopení objektu
+	Object Snap (F3)	Uchopení objektu (F3)
+	Object Snap On (F3)	Zapnout uchopení objektu (F3)
+	Object Snap Tracking	Trasování uchopení objektu
+	Object Snap Tracking (F11)	Trasování uchopení objektu (F11)
+	Object Snap Tracking Settings	Nastavení trasování uchopení objektu
+	Object type:	Typ objektu:
+	Oblique	Šikmá
+	Off	Vypnuto
+	Offset	Ekvidistanta
+	On	Zapnuto
+	On/Off	Zapnout/Vypnout
+	One of the Crafting Apps by the ArtCraft team and community.	Jedna z aplikací Crafting Apps od týmu ArtCraft a komunity.
+	Only in this drawing: {n}	Pouze v tomto výkresu: {n}
+	Only in {name}: {n}	Pouze v {name}: {n}
+	Open (⌘O)	Otevřít (⌘O)
+	Open Sample Drawing	Otevřít ukázkový výkres
+	Open sample drawing	Otevřít ukázku výkresu
+	Open Xref	Otevřít externí referenci
+	Open...	Otevřít...
+	Operator:	Operátor:
+	Orbit	Orbit
+	Ordinate	Souřadnicová
+	Ortho (F8)	Ortho (F8)
+	Ortho Mode	Režim Ortho
+	Ortho Mode (F8)	Režim Ortho (F8)
+	Osnap Settings...	Nastavení uchopení objektu...
+	Out	Oddálit pohled
+	Over-constrained	Přeurčeno
+	Override	Přepsat
+	PAPER	PAPÍR
+	Percent	Procenta
+	Polar (distance < angle)	Polární (vzdálenost < úhel)
+	PRs	PR
+	Page Setup Manager	Správce nastavení stránky
+	Page Setup Manager...	Správce nastavení stránky...
+	Pan	Posun pohledu
+	Pan Down	Posunout pohled dolů
+	Pan Left	Posunout pohled vlevo
+	Pan Right	Posunout pohled vpravo
+	Pan Up	Posunout pohled nahoru
+	Paper Space	Výkresový prostor
+	Parallel	Rovnoběžná
+	Parameters Manager	Správce parametrů
+	Parametric	Parametrické
+	Paste	Vložit ze schránky
+	Paste as Block	Vložit jako blok
+	Paste to Command Line	Vložit do příkazového řádku
+	Paste to Original Coordinates	Vložit na původní souřadnice
+	Path Array	Pole podél trajektorie
+	Pattern	Vzor
+	Perpendicular	Kolmá
+	Plot	Tisk
+	Plot (click: do not plot)	Tisknout (kliknutím: netisknout)
+	Plot Preview	Náhled tisku
+	Plot Window	Okno tisku
+	Plot style	Tiskový styl
+	Plot style attached to	Tiskový styl přiřazený k
+	Plot style table	Tabulka tiskových stylů
+	Plot Style...	Tiskový styl...
+	Plot Style Manager	Správce tiskových stylů
+	Plot Style Manager...	Správce tiskových stylů...
+	Plot Styles...	Tiskové styly...
+	Plotter Manager	Správce plotrů
+	Plotter Manager...	Správce plotrů...
+	New CTB	Nová CTB
+	New STB	Nová STB
+	New style	Nový styl
+	Reset Panel Layout	Obnovit rozložení panelů
+	Send Hatches to Back	Přenést šrafy dozadu
+	Send Under Objects	Přenést pod objekty
+	Text Objects Only	Pouze textové objekty
+	Use for this layout	Použít pro toto rozvržení
+	Display plot styles	Zobrazit tiskové styly
+	No plot style tables.	Žádné tabulky tiskových stylů.
+	A built-in table: editing it keeps an edited copy in the drawing.	Vestavěná tabulka: při úpravě se do výkresu uloží upravená kopie.
+	Keep an editable copy of this table in the drawing	Uchovat upravitelnou kopii této tabulky ve výkresu
+	Layout {name}: {table}	Rozvržení {name}: {table}
+	Grayscale	Odstíny šedi
+	Screening	Intenzita tisku
+	Use object linetype	Použít typ čáry objektu
+	Use object lineweight	Použít tloušťku čáry objektu
+	Remove	Odebrat
+	Add	Přidat
+	Open a drawing first.	Nejprve otevřete výkres.
+	Plot table type	Typ tabulky tiskových stylů
+	Color-dependent	Závislé na barvě
+	Named	Pojmenované
+	Plus/minus	Plus/mínus
+	Point	Bod
+	Point Filters	Filtry souřadnic
+	Point Style...	Styl bodu...
+	Polar Array	Kruhové pole
+	Polar Tracking	Polární trasování
+	Polar Tracking (F10)	Polární trasování (F10)
+	Polar Tracking On (F10)	Zapnout polární trasování (F10)
+	Polar angle measurement	Měření polárního úhlu
+	Polar distance	Polární vzdálenost
+	Polar: {distance} < {angle}°	Polární: {distance} < {angle}°
+	PolarSnap	Polární uchopení
+	Polygon	Mnohoúhelník
+	Polygonal	Mnohoúhelníkové
+	Polygonal Viewport	Mnohoúhelníkový výřez
+	Polyline	Křivka
+	Polyline Edit	Upravit křivku
+	Position X	Poloha X
+	Position Y	Poloha Y
+	Position Z	Poloha Z
+	Previous	Předchozí
+	Previous Change	Předchozí změna
+	Previous Layer	Předchozí hladina
+	Primitives	Základní tělesa
+	Print	Tisknout
+	Print...	Tisknout...
+	Properties	Vlastnosti
+	Properties Inspector	Inspektor vlastností
+	Properties:	Vlastnosti:
+	Proxy	Proxy objekt
+	Purge	Čistit
+	Pyramid	Jehlan
+	Quadrant	Kvadrant
+	Query Entities	Dotaz na entity
+	Quick	Rychlé
+	Quick Dimension	Rychlá kóta
+	Quick Properties	Rychlé vlastnosti
+	Quick Select	Rychlý výběr
+	Quick Select Properties	Vlastnosti rychlého výběru
+	Quick Select...	Rychlý výběr...
+	QuickCalc	Rychlá kalkulačka
+	QuickCalc Pick	Výběr pro rychlou kalkulačku
+	Quit CADCraft	Ukončit CADCraft
+	Radius	Poloměr
+	Raster Image	Rastrový obrázek
+	Ray	Polopřímka
+	Read-only	Pouze pro čtení
+	Real name	Skutečné jméno
+	Realtime	V reálném čase
+	Reassociate Dimensions	Obnovit asociativitu kót
+	Recent	Nedávné
+	Recent Commands	Nedávné příkazy
+	Recent Input	Nedávné vstupy
+	Recover...	Obnovit výkres...
+	Rectangle	Obdélník
+	Recalculate Table Formulas	Přepočítat vzorce tabulky
+	Rectangular	Obdélníkové
+	Rectangular snap	Pravoúhlé uchopení
+	Rectangular Array	Obdélníkové pole
+	Red	Červená
+	Redo	Znovu
+	Redo (⇧⌘Z)	Znovu (⇧⌘Z)
+	Redraw	Překreslit
+	Regen	Regenerovat
+	Regen All	Regenerovat vše
+	Region	Oblast
+	Region/Mass Properties	Vlastnosti oblasti/hmoty
+	Reinitialize	Znovu inicializovat
+	Relative	Relativní
+	Relative to last segment	Vzhledem k poslednímu segmentu
+	Remove Leader	Odebrat odkaz
+	Remove the viewport override	Odebrat přepsání výřezu
+	Rename Dimension Style	Přejmenovat kótovací styl
+	Rename Layer	Přejmenovat hladinu
+	Rename Layer State	Přejmenovat stav hladin
+	Rename Layout	Přejmenovat rozvržení
+	Rename Text Style	Přejmenovat styl textu
+	Rename...	Přejmenovat...
+	Repeat {command}	Opakovat {command}
+	Replace Block...	Nahradit blok...
+	Requires a point (x,y, @dx,dy or @d<a).	Je vyžadován bod (x,y, @dx,dy nebo @d<a).
+	Reset Palettes	Obnovit palety
+	Restore	Obnovit
+	Restore Layer State	Obnovit stav hladin
+	Reverse	Obrátit
+	Reverse the order	Obrátit pořadí
+	Revision Cloud	Revizní obláček
+	Revolve	Rotovat profil
+	Right	Vpravo
+	Rotate	Otočit
+	Rotation	Natočení
+	S	J
+	Save	Uložit
+	Save (⌘S)	Uložit (⌘S)
+	Save As	Uložit jako
+	Save As...	Uložit jako...
+	Save Layer State	Uložit stav hladin
+	Save State	Uložit stav
+	Scale	Měřítko
+	Search for layer	Hledat hladinu
+	Search for parameter	Hledat parametr
+	Second and next points:	Druhý a další body:
+	Select	Vybrat
+	Select 2D polyline	Vyberte 2D křivku
+	Select All	Vybrat vše
+	Select Objects	Vybrat objekty
+	Select Similar	Vybrat podobné
+	Select a 2D polyline.	Vyberte 2D křivku.
+	Select a block reference.	Vyberte referenci bloku.
+	Select a circle or arc.	Vyberte kružnici nebo oblouk.
+	Select a closed polyline	Vyberte uzavřenou křivku
+	Select a closed polyline, circle, ellipse or closed spline.	Vyberte uzavřenou křivku, kružnici, elipsu nebo uzavřenou spline.
+	Select a closed polyline.	Vyberte uzavřenou křivku.
+	Select a curve as the path.	Vyberte křivku jako trajektorii.
+	Select a dimension constraint type	Vyberte typ rozměrové vazby
+	Select a line object	Vyberte objekt úsečky
+	Select a line object.	Vyberte objekt úsečky.
+	Select a line or an arc.	Vyberte úsečku nebo oblouk.
+	Select a line or polyline segment	Vyberte úsečku nebo segment křivky
+	Select a line, arc or open polyline.	Vyberte úsečku, oblouk nebo otevřenou křivku.
+	Select a line, arc, circle, polyline, ellipse or spline as the path.	Vyberte úsečku, oblouk, kružnici, křivku, elipsu nebo spline jako trajektorii.
+	Select a line, circle, arc or polyline segment.	Vyberte úsečku, kružnici, oblouk nebo segment křivky.
+	Select a line.	Vyberte úsečku.
+	Select a polyline.	Vyberte křivku.
+	Select a text, mtext, attribute definition or dimension.	Vyberte text, víceřádkový text, definici atributu nebo kótu.
+	Select an annotation object	Vyberte objekt popisu
+	Select an arc or circle	Vyberte oblouk nebo kružnici
+	Select an arc.	Vyberte oblouk.
+	Select an object	Vyberte objekt
+	Select an object to change or	Vyberte objekt ke změně nebo
+	Select an object to measure or	Vyberte objekt k měření nebo
+	Select an object.	Vyberte objekt.
+	Select an open curve.	Vyberte otevřenou křivku.
+	Select an open line, arc, polyline, ellipse arc or spline.	Vyberte otevřenou úsečku, oblouk, křivku, eliptický oblouk nebo spline.
+	Select arc or circle	Vyberte oblouk či kružnici
+	Select arc or polyline arc segment	Vyberte oblouk nebo obloukový segment křivky
+	Select arc style	Vyberte styl oblouku
+	Select arc, circle, line	Vyberte oblouk, kružnici, úsečku
+	Select at least two objects to join.	Vyberte alespoň dva objekty ke spojení.
+	Select circle or arc to add center mark	Vyberte kružnici nebo oblouk pro přidání středové značky
+	Select closed objects (regions, closed polylines, circles).	Vyberte uzavřené objekty (oblasti, uzavřené křivky, kružnice).
+	Select first line	Vyberte první úsečku
+	Select first line or arc	Vyberte první úsečku nebo oblouk
+	Select first object	Vyberte první objekt
+	Select first object or	Vyberte první objekt nebo
+	Select first point	Vyberte první bod
+	Add to Working Set	Přidat do pracovní sady
+	Edit Reference In-Place	Upravit referenci na místě
+	Save Reference Edits	Uložit úpravy reference
+	Working Set	Pracovní sada
+	Xref and Block In-place Editing	Úpravy xref a bloků na místě
+	Select nested objects to copy or	Vyberte vnořené objekty ke kopírování nebo
+	Select object	Vyberte objekt
+	Select object to dimension	Vyberte objekt ke kótování
+	Select object to divide	Vyberte objekt k dělení
+	Select object to extend or shift-select to trim	Vyberte objekt k prodloužení; s klávesou Shift jej oříznete
+	Select object to measure	Vyberte objekt pro rozdělení podle délky
+	Select object to offset	Vyberte objekt pro ekvidistantu
+	Select object to trim or shift-select to extend	Vyberte objekt k oříznutí; s klávesou Shift jej prodloužíte
+	Select objects	Vyberte objekty
+	Select objects (crossing window first corner)	Vyberte objekty (první roh křížícího okna)
+	Select objects to array.	Vyberte objekty pro vytvoření pole.
+	Select objects to stretch by crossing-window or crossing-polygon...	Vyberte objekty k protažení křížícím oknem nebo křížícím mnohoúhelníkem...
+	Select objects:	Vyberte objekty:
+	Select one polyline (Multiple is available through the JSON form).	Vyberte jednu křivku (možnost Multiple je dostupná ve formě JSON).
+	Select path curve	Vyberte křivku trajektorie
+	Select point or object	Vyberte bod nebo objekt
+	Select polyline or	Vyberte křivku nebo
+	Select second line	Vyberte druhou úsečku
+	Select second line or shift-select to apply corner	Vyberte druhou úsečku; s klávesou Shift vytvoříte roh
+	Select second object	Vyberte druhý objekt
+	Select second object or shift-select to apply corner	Vyberte druhý objekt; s klávesou Shift vytvoříte roh
+	Select second point	Vyberte druhý bod
+	Select spline	Vyberte spline
+	Select symmetry line	Vyberte osu souměrnosti
+	Select two points	Vyberte dva body
+	Selection Cycling	Cyklický výběr
+	Send to Back	Přenést dozadu
+	Set Current	Nastavit aktuální
+	Set Current Dimension Style	Nastavit aktuální kótovací styl
+	Set Current Text Style	Nastavit aktuální styl textu
+	Set Current Viewport	Nastavit aktuální výřez
+	Set Layer Properties	Nastavit vlastnosti hladiny
+	Set Properties	Nastavit vlastnosti
+	Set Table Cell	Nastavit buňku tabulky
+	Set Table Cell Style	Nastavit styl buňky tabulky
+	Set Variable	Nastavit proměnnou
+	Set View	Nastavit pohled
+	Share	Sdílet
+	Show	Zobrazit
+	Show All	Zobrazit vše
+	Show All Constraint Bars	Zobrazit všechny lišty vazeb
+	Show All Dynamic Dimensions	Zobrazit všechny dynamické kóty
+	Show command prompting near the crosshairs	Zobrazovat výzvy příkazů u nitkového kříže
+	Show Layer List	Zobrazit seznam hladin
+	Show/Hide Lineweight	Zobrazit/Skrýt tloušťku čáry
+	Show/Hide Transparency	Zobrazit/Skrýt průhlednost
+	Single Line Text	Jednořádkový text
+	Single Point	Jeden bod
+	Single...	Jednotlivě...
+	Smooth	Hladkost
+	Snap	Uchopení
+	Snap Mode	Režim uchopení
+	Snap Mode (F9)	Režim uchopení (F9)
+	Snap On (F9)	Zapnout uchopení (F9)
+	Snap Overrides	Dočasné uchopení
+	Snap X spacing	Rozteč uchopení X
+	Snap and Grid	Uchopení a rastr
+	Snap type	Typ uchopení
+	Solid	Tělesa
+	Sort	Seřadit
+	Specify a point	Určete bod
+	Specify a scale for the hatch pattern	Určete měřítko šrafovacího vzoru
+	Specify a second extension line origin	Určete počátek druhé vynášecí čáry
+	Specify an angle for the hatch pattern	Určete úhel šrafovacího vzoru
+	Specify angle end point	Určete koncový bod úhlu
+	Specify angle of dimension line	Určete úhel kótovací čáry
+	Specify angle of dimension text	Určete úhel textu kóty
+	Specify angle start point	Určete počáteční bod úhlu
+	Specify angle vertex	Určete vrchol úhlu
+	Specify angle vertex point	Určete bod vrcholu úhlu
+	Specify arc length dimension location	Určete umístění kóty délky oblouku
+	Specify axis endpoint of ellipse	Určete koncový bod osy elipsy
+	Specify base diameter	Určete průměr základny
+	Specify base point	Určete základní bod
+	Specify base point or	Určete základní bod nebo
+	Specify base point or displacement (drag with the middle mouse button for realtime pan)	Určete základní bod nebo posunutí (tažením prostředním tlačítkem myši posunete pohled v reálném čase)
+	Specify base radius or	Určete poloměr základny nebo
+	Specify center of donut	Určete střed prstence
+	Specify center of ellipse	Určete střed elipsy
+	Specify center of polygon	Určete střed mnohoúhelníku
+	Specify center point for circle	Určete středový bod kružnice
+	Specify center point of arc	Určete středový bod oblouku
+	Specify center point of array	Určete středový bod pole
+	Specify center point of base	Určete středový bod základny
+	Specify corner of viewport	Určete roh výřezu
+	Specify corner of window, enter a scale factor (nX or nXP)	Určete roh okna, zadejte faktor měřítka (nX nebo nXP)
+	Specify diameter of circle	Určete průměr kružnice
+	Specify dimension arc line location	Určete umístění kótovacího oblouku
+	Specify dimension line location	Určete umístění kótovací čáry
+	Specify distance between turns	Určete vzdálenost mezi závity
+	Specify distance to other axis	Určete vzdálenost ke druhé ose
+	Specify end angle	Určete koncový úhel
+	Specify end point of arc	Určete koncový bod oblouku
+	Specify end point of arc (hold Ctrl to switch direction)	Určete koncový bod oblouku (podržením Ctrl přepnete směr)
+	Specify ending width	Určete koncovou šířku
+	Specify ending width for next segment	Určete koncovou šířku dalšího segmentu
+	Specify endpoint of arc	Určete konec oblouku
+	Specify endpoint of axis	Určete koncový bod osy
+	Specify endpoint of line	Určete koncový bod úsečky
+	Specify feature location	Určete polohu prvku
+	Specify fillet radius	Určete poloměr zaoblení
+	Specify fillet radius for rectangles	Určete poloměr zaoblení obdélníků
+	Specify first angle endpoint	Určete první koncový bod úhlu
+	Specify first chamfer distance	Určete první vzdálenost zkosení
+	Specify first chamfer distance for rectangles	Určete první vzdálenost zkosení obdélníků
+	Specify first constraint point	Určete první bod vazby
+	Specify first corner	Určete první roh
+	Specify first corner point	Určete bod prvního rohu
+	Specify first destination point	Určete první cílový bod
+	Specify first end point of circle's diameter	Určete první koncový bod průměru kružnice
+	Specify first endpoint of edge	Určete první koncový bod hrany
+	Specify first extension line origin	Určete počátek první vynášecí čáry
+	Specify first point	Určete první bod
+	Specify first point of mirror line	Určete první bod osy zrcadlení
+	Specify first point on circle	Určete první bod na kružnici
+	Specify first point on circle: _tan to	Určete první bod na kružnici: _tan k
+	Specify first source point	Určete první zdrojový bod
+	Specify height	Určete výšku
+	Specify helix height or	Určete výšku šroubovice nebo
+	Specify included angle	Určete středový úhel
+	Specify insertion base point	Určete základní bod vložení
+	Specify insertion point	Určete bod vložení
+	A drawing opened from a file keeps that file's format.	Výkres otevřený ze souboru si zachová formát tohoto souboru.
+	An array that would create more objects than this is refused.	Pole překračující tento počet objektů bude odmítnuto.
+	CADCraft keeps these preferences, object snap modes and drafting toggles for your user account and restores them when it starts.	CADCraft ukládá tyto předvolby, režimy uchopení objektu a přepínače kreslení pro váš uživatelský účet a obnovuje je při spuštění.
+	Changes apply at once and are kept for next time.	Změny se projeví okamžitě a uloží se pro příště.
+	Command line history	Historie příkazového řádku
+	Copy as JSON	Kopírovat jako JSON
+	Crosshair size	Velikost nitkového kříže
+	Display	Zobrazení
+	Grip size	Velikost uzlů
+	Hold Shift to add to the selection	Podržením klávesy Shift přidáte objekty k výběru
+	Interface language	Jazyk uživatelského rozhraní
+	Interface theme	Motiv uživatelského rozhraní
+	Keep the system cursor visible over the drawing area	Ponechat systémový kurzor viditelný nad kreslicí plochou
+	Largest array	Největší pole
+	Layout paper	Papír rozvržení
+	Model background	Pozadí modelu
+	Object snap aperture	Dosah uchopení objektu
+	Object snap marker size	Velikost značky uchopení objektu
+	Open and Save	Otevírání a ukládání
+	Options	Možnosti
+	Options...	Možnosti...
+	Pickbox size	Velikost výběrového terčíku
+	Profiles	Profily
+	Reset keeps the interface language.	Obnovení výchozího nastavení zachová jazyk rozhraní.
+	Reset to Defaults	Obnovit výchozí nastavení
+	Save new drawings as	Ukládat nové výkresy jako
+	Screen magnifiers, screen readers and recorders follow the system cursor.	Lupy, čtečky obrazovky a záznamové nástroje sledují systémový kurzor.
+	Select objects first, then choose a command	Nejprve vybrat objekty, potom zvolit příkaz
+	Selection	Výběr
+	Settings...	Nastavení...
+	Show Quick Properties for selected objects	Zobrazovat rychlé vlastnosti vybraných objektů
+	Snap, grid, polar tracking and Dynamic Input:	Uchopení, rastr, polární trasování a dynamické zadávání:
+	The aperture is how near the cursor must come to a point for an object snap to find it.	Dosah určuje, jak blízko se kurzor musí přiblížit k bodu, aby jej uchopení objektu nalezlo.
+	User Preferences	Uživatelské předvolby
+	objects	objektů
+	Specify inside diameter of donut	Určete vnitřní průměr prstence
+	Specify leader arrowhead location	Určete polohu šipky odkazu
+	Specify leader endpoint	Určete koncový bod odkazu
+	Specify leader landing location	Určete polohu zakončení odkazu
+	Specify length for rectangles	Určete délku obdélníků
+	Specify length of chord	Určete délku tětivy
+	Specify length of segment	Určete délku segmentu
+	Specify line width for rectangles	Určete šířku čáry obdélníků
+	Specify location for new vertex	Určete polohu nového vrcholu
+	Specify minimum length of arc	Určete minimální délku oblouku
+	Specify new end point	Určete nový koncový bod
+	Specify new location for marked vertex	Určete novou polohu označeného vrcholu
+	Specify new width for all segments	Určete novou šířku všech segmentů
+	Specify next point	Určete další bod
+	Specify offset distance	Určete vzdálenost ekvidistanty
+	Specify offset distance or	Určete vzdálenost ekvidistanty nebo
+	Specify opposite corner	Určete protilehlý roh
+	Specify other corner point	Určete bod druhého rohu
+	Specify other endpoint of axis	Určete druhý koncový bod osy
+	Specify outside diameter of donut	Určete vnější průměr prstence
+	Specify point	Určete bod
+	Specify point on object for first tangent of circle	Určete bod na objektu pro první tečnu kružnice
+	Specify point on object for second tangent of circle	Určete bod na objektu pro druhou tečnu kružnice
+	Specify point on side to offset	Určete bod na straně pro ekvidistantu
+	Specify radius of arc	Určete poloměr oblouku
+	Specify radius of circle	Určete poloměr kružnice
+	Specify rotation angle	Určete úhel otočení
+	Specify rotation angle of text	Určete úhel otočení textu
+	Specify rotation angle or	Určete úhel otočení nebo
+	Specify scale factor	Určete faktor měřítka
+	Specify second angle endpoint	Určete druhý koncový bod úhlu
+	Specify second break point	Určete druhý bod přerušení
+	Specify second chamfer distance for rectangles	Určete druhou vzdálenost zkosení obdélníků
+	Specify second constraint point	Určete druhý bod vazby
+	Specify second destination point	Určete druhý cílový bod
+	Specify second end point of circle's diameter	Určete druhý koncový bod průměru kružnice
+	Specify second endpoint of edge	Určete druhý koncový bod hrany
+	Specify second extension line origin	Určete počátek druhé vynášecí čáry kóty
+	Specify second point	Určete druhý bod
+	Specify second point of arc	Určete druhý bod oblouku
+	Specify second point of mirror line	Určete druhý bod osy zrcadlení
+	Specify second point on circle	Určete druhý bod na kružnici
+	Specify second point on circle: _tan to	Určete druhý bod na kružnici: _tan k
+	Specify second point or <use first point as displacement>	Určete druhý bod nebo <použít první bod jako posunutí>
+	Specify second source point	Určete druhý zdrojový bod
+	Specify side to offset	Určete stranu pro ekvidistantu
+	Specify start angle	Určete počáteční úhel
+	Specify start point	Určete počáteční bod
+	Specify start point of arc	Určete počáteční bod oblouku
+	Specify start point of polyline	Určete počáteční bod křivky
+	Specify start point of text	Určete počáteční bod textu
+	Specify starting width	Určete počáteční šířku
+	Specify starting width for next segment	Určete počáteční šířku dalšího segmentu
+	Specify tangent direction for the start point of arc	Určete směr tečny v počátečním bodě oblouku
+	Specify the elevation for rectangles	Určete výšku zdvihu obdélníků
+	Specify thickness for rectangles	Určete tloušťku obdélníků
+	Specify third point on circle	Určete třetí bod na kružnici
+	Specify third point on circle: _tan to	Určete třetí bod na kružnici: _tan k
+	Specify third source point or <continue>	Určete třetí zdrojový bod nebo <pokračovat>
+	Specify through point	Určete bod, kterým má procházet
+	Specify top diameter	Určete horní průměr
+	Specify top radius or	Určete horní poloměr nebo
+	Specify total angle	Určete celkový úhel
+	Specify total length or	Určete celkovou délku nebo
+	Specify width for rectangles	Určete šířku obdélníků
+	Sphere	Koule
+	Spline	Spline
+	Spline Edit	Upravit spline
+	Stack (type 1/2 then select)	Zlomek (napište 1/2 a poté vyberte)
+	Standard	Standardní
+	Start	Úvod
+	Start Width	Počáteční šířka
+	Start X	Počátek X
+	Start Y	Počátek Y
+	Start angle	Počáteční úhel
+	Start, Center, Angle	Počátek, střed, úhel
+	Start, Center, End	Počátek, střed, konec
+	Start, Center, Length	Počátek, střed, délka
+	Start, End, Angle	Počátek, konec, úhel
+	Start, End, Direction	Počátek, konec, směr
+	Start, End, Radius	Počátek, konec, poloměr
+	Status	Stav
+	Status Bar	Stavový řádek
+	Stretch	Protáhnout
+	Style: Standard	Styl: Standard
+	Subtract	Rozdíl
+	Sweep	Tažení
+	Switch Drawing	Přepnout výkres
+	Switch Layout	Přepnout rozvržení
+	Switch between model space in a viewport and paper space	Přepnout mezi modelovým prostorem ve výřezu a výkresovým prostorem
+	Symmetric	Symetrie
+	Synchronize Attributes	Synchronizovat atributy
+	To	Do
+	Toggle PICKADD (off: each pick replaces the selection)	Přepnout PICKADD (vypnuto: každý výběr nahradí předchozí)
+	Toggle PICKADD (on: picks add to the selection)	Přepnout PICKADD (zapnuto: výběry se přidávají)
+	TOP	SHORA
+	Table	Tabulka
+	Table Breaks	Přerušení tabulky
+	Table Cell Style	Styl buňky tabulky
+	Table Style...	Styl tabulky...
+	Table style	Styl tabulky
+	Table...	Tabulka...
+	Tan, Tan, Radius	Tečna, tečna, poloměr
+	Tan, Tan, Tan	Tečna, tečna, tečna
+	Tangent	Tečna
+	Temporary track point	Dočasný bod trasování
+	Text	Text
+	Text Editor	Editor textu
+	Text Height	Výška textu
+	Text Style...	Styl textu...
+	Text height	Výška písma
+	Text override	Přepsání textu
+	Text style	Styl textu
+	Thaw All Layers	Rozmrazit všechny hladiny
+	Thaw Layer	Rozmrazit hladinu
+	There is nothing here yet.	Zatím zde nic není.
+	Thickness	Tloušťka
+	Time	Čas
+	To get started, create or open a drawing.	Začněte vytvořením nebo otevřením výkresu.
+	Tool Bar	Panel nástrojů
+	Tool Sets	Sady nástrojů
+	Tools	Nástroje
+	Torus	Anuloid
+	Trace	Stopa
+	Track orthogonally only	Trasovat pouze kolmo
+	Track using all polar angle settings	Trasovat podle všech nastavení polárních úhlů
+	Transparency	Průhlednost
+	Trim	Oříznout
+	True Color	Skutečná barva
+	Turn All Layers On	Zapnout všechny hladiny
+	Turn Off Layer	Vypnout hladinu
+	Turn On Layer	Zapnout hladinu
+	Turn Quick Properties off (QPMODE)	Vypnout rychlé vlastnosti (QPMODE)
+	Type	Typ
+	Type a command	Zadejte příkaz
+	Type text; Enter starts a new paragraph	Pište text; Enter začne nový odstavec
+	UCS Icon	Ikona USS
+	Undo	Zpět
+	Undo (⌘Z)	Zpět (⌘Z)
+	Ungroup	Zrušit skupinu
+	Union	Sjednocení
+	Unisolate Layer	Zrušit izolaci hladiny
+	Units Conversion	Převod jednotek
+	Units...	Jednotky...
+	Unlock Layer	Odemknout hladinu
+	Unlock viewport	Odemknout výřez
+	Unmerge Cells	Zrušit sloučení buněk
+	Unsaved Layer State	Neuložený stav hladin
+	Up	Nahoru
+	Update Data Links	Aktualizovat datová propojení
+	Update	Aktualizovat
+	Use System Setting	Použít nastavení systému
+	User	Uživatel
+	User Parameters	Uživatelské parametry
+	Username	Uživatelské jméno
+	Volume	Objem
+	VP Color	Barva ve výřezu
+	VP Freeze	Zmrazení ve výřezu
+	Value	Hodnota
+	Value:	Hodnota:
+	Variables	Proměnné
+	Version	Verze
+	Version 2000	Verze 2000
+	Version 2004	Verze 2004
+	Version 2007	Verze 2007
+	Version 2010	Verze 2010
+	Version 2013	Verze 2013
+	Version 2018	Verze 2018
+	Version {version}	Verze {version}
+	Vertical	Svislá
+	VerticalDistance	Svislá vzdálenost
+	View	Pohled
+	ViewCube	ViewCube
+	Viewport	Výřez
+	Viewport Layer Freeze	Zmrazení hladiny ve výřezu
+	Viewport Properties	Vlastnosti výřezu
+	Viewport is locked	Výřez je zamčený
+	Viewport scale	Měřítko výřezu
+	Viewport {id}	Výřez {id}
+	Viewports	Výřezy
+	W	Z
+	WCS	GSS
+	White	Bílá
+	Width factor	Faktor šířky
+	Window	Okno
+	Wipeout	Zakrytí
+	Workspace Switching	Přepínání pracovních prostorů
+	Write Block	Zapsat blok
+	Xline	Konstrukční přímka
+	Yellow	Žlutá
+	Yes	Ano
+	Zoom	Změna přiblížení
+	Zoom All	Přiblížit vše
+	Zoom Dynamic	Dynamické přiblížení
+	Zoom Extents	Přiblížit na rozsah
+	Zoom In	Přiblížit
+	Zoom Object	Přiblížit objekt
+	Zoom Out	Oddálit
+	Zoom Previous	Předchozí přiblížení
+	Zoom Realtime	Přiblížení v reálném čase
+	Zoom Window	Přiblížit oknem
+	error	chyba
+	{contributors} · {commits}	{contributors} · {commits}
+	{kind} (constraint {id})	{kind} (vazba {id})
+	{kind} constraint {name} = {expression}  (double-click to edit)	Vazba {kind} {name} = {expression}  (dvojitým kliknutím upravíte)
+	{name}: {distance} < {angle}°	{name}: {distance} < {angle}°
+	ƒx  New User Parameter	ƒx  Nový uživatelský parametr
+	ΔLOC	ΔLOC
+	−Bin	−Bin
+	−LOC	−LOC
+	⌘↩ to finish	⌘↩ pro dokončení
+@plural	{n} commit	{n} commit|{n} commity|{n} commitů
+@plural	{n} contributor	{n} přispěvatel|{n} přispěvatelé|{n} přispěvatelů
+	Drawing as bytes	Výkres jako bajty
+	Services	Služby
+	Hide CADCraft	Skrýt CADCraft
+	Hide Others	Skrýt ostatní
+	Accessibility	Zpřístupnění
+	Show System Cursor	Zobrazit systémový kurzor
+	Animation Effects	Efekty animace
+	Animation effects	Efekty animace
+	Import...	Importovat...
+	Export...	Exportovat...
+	Batch Publish...	Dávkově publikovat...
+	Scale List...	Seznam měřítek...
+	Annotative Object Scale	Měřítko objektu popisu
+	Add Current Scale	Přidat aktuální měřítko
+	Delete Current Scale	Odstranit aktuální měřítko
+	Add/Delete Scales...	Přidat/Odebrat měřítka...
+	Synchronize Multiple-scale Positions	Synchronizovat polohy pro více měřítek
+	Annotative Update	Aktualizovat popisy
+	Show Annotative Objects	Zobrazit objekty popisů
+	Current Scale Only	Pouze aktuální měřítko
+	All Scales	Všechna měřítka
+	Drawing Recovery Manager...	Správce obnovení výkresů...
+	Tolerance...	Tolerance...
+	Add Vertex	Přidat vrchol
+	Remove Vertex	Odebrat vrchol
+	Convert to Arc	Převést na oblouk
+	Convert to Line	Převést na úsečku
+	Stretch Vertex	Protáhnout vrchol
+	Edit Array	Upravit pole
+	Close Array Editing	Ukončit úpravy pole
+	Multiline...	Multičára...
+	Multiline Style...	Styl multičáry...
+	Solid Editing	Úpravy těles
+	X	X
+	Y	Y
+	B	B
+	CADCraft	CADCraft
+	More toolbar commands	Další příkazy panelu nástrojů
+menu	View	Zobrazení
+menu	Draw	Kreslení
+menu	Dimension	Kótování
+menu	Modify	Modifikace
+	Hatch Pattern	Vzor šrafy
+	Search for pattern	Hledat vzor
+	Not a number or distance: {text}	Není číslo ani vzdálenost: {text}
+	Query Texts	Dotaz na texty
+	Analyze Shapes	Analyzovat tvary
+	Check for Updates…	Zkontrolovat aktualizace…
+	CADCraft is up to date.	CADCraft je aktuální.
+	Could not check for updates.	Aktualizace se nepodařilo zkontrolovat.

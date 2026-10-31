@@ -2,8 +2,8 @@
 //! filters, animation presets on/off, categories or alphabetical, refresh), Favorites (star an
 //! effect), Recently Used, "* Animation Presets" (EffectCraft's own text animation and transition
 //! presets and the user's `.ecpreset` files) and the effect categories. Double-click applies to the
-//! selected layers; dragging an effect onto a layer (timeline, viewer, Effect Controls) applies
-//! it there.
+//! selected layers; dragging an effect or an animation preset onto a layer (timeline, viewer,
+//! Effect Controls) applies it there.
 
 use crate::i18n::tr;
 use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
@@ -11,7 +11,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use crate::icons::{self, Icon};
-use crate::panels::DragPayload;
+use crate::panels::{DragPayload, PresetRef};
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
 
@@ -108,10 +108,8 @@ fn highlighted(p: &egui::Painter, pos: egui::Pos2, name: &str, query: &str, t: &
 
 enum Apply {
     Effect(String),
-    TextPreset(String),
-    /// A built-in animation preset (Transitions…) by id.
-    Builtin(String),
-    PresetFile(String),
+    /// A text, built-in (Transitions…) or user file animation preset.
+    Preset(PresetRef),
 }
 
 /// A folder row; returns whether it is open.
@@ -135,7 +133,7 @@ fn folder_row(
     if r.max.y < list.min.y || r.min.y > list.max.y {
         return open;
     }
-    let resp = ui.interact(r.intersect(list), egui::Id::new(("fxcat", key)), Sense::click());
+    let resp = ui.interact(r.intersect(list), egui::Id::unique(("fxcat", key)), Sense::click());
     if resp.hovered() {
         lp.rect_filled(r, 0.0, t.hover);
     }
@@ -181,7 +179,7 @@ fn effect_row(
         return;
     }
     let star = Rect::from_center_size(pos2(r.max.x - 38.0, r.center().y), vec2(16.0, 16.0));
-    let resp = ui.interact(r.intersect(list), egui::Id::new((auto_prefix, e.id)), Sense::click_and_drag());
+    let resp = ui.interact(r.intersect(list), egui::Id::unique((auto_prefix, e.id)), Sense::click_and_drag());
     if resp.hovered() {
         lp.rect_filled(r, 0.0, t.hover);
     }
@@ -195,19 +193,17 @@ fn effect_row(
     }
     app.auto.add(&format!("{auto_prefix}.{}", e.id), r, e.name);
     // Favourite star (always shown when starred, else on hover).
-    let fav = app.ui.effects_favorites.contains(e.id);
-    let sresp = ui.interact(star.intersect(list), egui::Id::new((auto_prefix, e.id, "star")), Sense::click());
+    let fav = app.session.prefs.is_effect_favorite(e.id);
+    let sresp = ui.interact(star.intersect(list), egui::Id::unique((auto_prefix, e.id, "star")), Sense::click());
     if fav || resp.hovered() || sresp.hovered() {
         let gold = Color32::from_rgb(0xe8, 0xc0, 0x40);
         filled_star(lp, star.center(), 6.0, fav.then_some(gold), if fav || sresp.hovered() { gold } else { t.text_faint });
     }
     app.auto.add(&format!("{auto_prefix}.{}.star", e.id), star, if fav { "Remove from Favorites" } else { "Add to Favorites" });
     if sresp.clicked() {
-        if fav {
-            app.ui.effects_favorites.remove(e.id);
-        } else {
-            app.ui.effects_favorites.insert(e.id.to_string());
-        }
+        // Kept in the settings, so the stars are there next time (#1692).
+        app.session.prefs.toggle_effect_favorite(e.id);
+        app.session.save_prefs();
         return;
     }
     if resp.double_clicked() {
@@ -218,7 +214,7 @@ fn effect_row(
     }
 }
 
-/// A preset row (no drag; double-click applies).
+/// A preset row: double-click applies to the selected layers; drag it onto a layer to apply it there.
 #[allow(clippy::too_many_arguments)]
 fn preset_row(
     app: &mut EffectcraftApp,
@@ -229,7 +225,7 @@ fn preset_row(
     name: &str,
     auto_id: &str,
     query: &str,
-    on_apply: impl FnOnce() -> Apply,
+    preset: PresetRef,
     apply: &mut Option<Apply>,
 ) {
     let t = app.tokens;
@@ -238,21 +234,24 @@ fn preset_row(
     if r.max.y < list.min.y || r.min.y > list.max.y {
         return;
     }
-    let resp = ui.interact(r.intersect(list), egui::Id::new(("fxpreset", auto_id)), Sense::click());
+    let resp = ui.interact(r.intersect(list), egui::Id::unique(("fxpreset", auto_id)), Sense::click_and_drag());
     if resp.hovered() {
         lp.rect_filled(r, 0.0, t.hover);
     }
     icons::paint(lp, Rect::from_center_size(pos2(r.min.x + 58.0, r.center().y), vec2(12.0, 12.0)), Icon::Keyframe, t.text_dim);
     highlighted(lp, pos2(r.min.x + 70.0, r.center().y), name, query, &t);
     app.auto.add(auto_id, r, name);
+    if resp.drag_started() {
+        egui::DragAndDrop::set_payload(ui.ctx(), DragPayload::Preset { preset: preset.clone(), name: name.to_string() });
+    }
     if resp.double_clicked() {
-        *apply = Some(on_apply());
+        *apply = Some(Apply::Preset(preset));
     }
 }
 
 /// User preset files, rescanned every few seconds (and on Refresh List).
 fn user_presets(ctx: &egui::Context, force: bool, scan: impl FnOnce() -> Vec<PresetFile>) -> Arc<Vec<PresetFile>> {
-    let id = egui::Id::new("fx-user-presets");
+    let id = egui::Id::unique("fx-user-presets");
     let now = ctx.input(|i| i.time);
     if !force
         && let Some((at, v)) = ctx.data(|d| d.get_temp::<(f64, Arc<Vec<PresetFile>>)>(id))
@@ -265,25 +264,13 @@ fn user_presets(ctx: &egui::Context, force: bool, scan: impl FnOnce() -> Vec<Pre
     v
 }
 
-pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
-    let t = app.tokens;
-    let ctx = ui.ctx().clone();
-    let p = ui.painter().clone();
-    // Track the last applied effect (menus, drag and drop, the control channel) as recently used.
-    if let Some(last) = app.session.state.last_effect.clone()
-        && app.ui.effects_recent.first() != Some(&last)
-    {
-        push_recent(&mut app.ui.effects_recent, &last);
-    }
-    let sr = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(rect.width() - 44.0, 24.0));
-    let mut q = app.ui.effects_search.clone();
-    widgets::search_field(ui, sr, &mut q, "Search effects and presets", &t);
-    app.ui.effects_search = q.clone();
-    app.auto.add("effects.search", sr, "Search");
+/// The "Effects & Presets options" hamburger menu beside the search field; returns whether
+/// "Refresh List" was picked.
+fn contents_menu(app: &mut EffectcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, rect: Rect, sr: Rect, t: &Tokens) -> bool {
     // Contents menu.
     let mr = Rect::from_center_size(pos2(rect.max.x - 18.0, sr.center().y), vec2(22.0, 22.0));
-    let mpop = egui::Id::new("fx-contents-menu");
-    if widgets::icon_button(ui, mr, Icon::Hamburger, false, &t, egui::Id::new("fx-menu")).on_hover_text(tr("Effects & Presets options")).clicked() {
+    let mpop = egui::Id::unique("fx-contents-menu");
+    if widgets::icon_button(ui, mr, Icon::Hamburger, false, t, egui::Id::unique("fx-menu")).on_hover_text(tr("Effects & Presets options")).clicked() {
         widgets::open_popup(ui, mpop);
     }
     app.auto.add("effects.menu", mr, "Effects & Presets options");
@@ -333,7 +320,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let v = &mut app.ui.effects_view;
         match i {
             i if menu.get(i) == Some(&copy_label) => {
-                if let Err(e) = crate::menus::invoke(app, &ctx, "effects.copyPresetsFolderPath", json!({})) {
+                if let Err(e) = crate::menus::invoke(app, ctx, "effects.copyPresetsFolderPath", json!({})) {
                     app.ui.status = e;
                 }
             }
@@ -348,10 +335,36 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             _ => {}
         }
     }
+    force_scan
+}
+
+/// The Effects & Presets panel: search, a contents menu (colour-depth and GPU filters, whether
+/// presets show, categories or one alphabetical list, refresh and clear of the recently used
+/// list), then Favourites, Recently Used, Animation Presets and the effects by category or
+/// alphabetically, filtered by the query. Picking an effect or preset applies it to the selection
+/// (`effect.apply` or the preset's own command); applying an effect also records it as recently
+/// used and opens Effect Controls. Without a selected layer it only reports that in
+/// `app.ui.status`.
+pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+    let t = app.tokens;
+    let ctx = ui.ctx().clone();
+    let p = ui.painter().clone();
+    // Track the last applied effect (menus, drag and drop, the control channel) as recently used.
+    if let Some(last) = app.session.state.last_effect.clone()
+        && app.ui.effects_recent.first() != Some(&last)
+    {
+        push_recent(&mut app.ui.effects_recent, &last);
+    }
+    let sr = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(rect.width() - 44.0, 24.0));
+    let mut q = app.ui.effects_search.clone();
+    widgets::search_field(ui, sr, &mut q, "Search effects and presets", &t);
+    app.ui.effects_search = q.clone();
+    app.auto.add("effects.search", sr, "Search");
+    let force_scan = contents_menu(app, ui, &ctx, rect, sr, &t);
     let view = app.ui.effects_view.clone();
     let list = Rect::from_min_max(pos2(rect.min.x, sr.max.y + 6.0), rect.max);
     let lp = p.with_clip_rect(list);
-    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("fx-scroll"), list);
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::unique("fx-scroll"), list);
     let query = q.trim().to_lowercase();
     let searching = !query.is_empty();
     let mut y = list.min.y - scroll.offset;
@@ -364,7 +377,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let lookup = |id: &str| reg.iter().find(|e| e.id == id);
 
     // Favorites and Recently Used.
-    let favs: Vec<_> = app.ui.effects_favorites.iter().filter_map(|id| lookup(id)).filter(|e| keep(e)).collect();
+    let favs: Vec<_> = app.session.prefs.effects_favorites.iter().filter_map(|id| lookup(id)).filter(|e| keep(e)).collect();
     if !favs.is_empty() && folder_row(app, ui, &lp, list, &mut y, "favorites", "Favorites", 0.0, searching, Some(Icon::Star)) {
         let mut favs = favs;
         favs.sort_by_key(|e| e.name);
@@ -397,7 +410,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if any && folder_row(app, ui, &lp, list, &mut y, "presets", "* Animation Presets", 0.0, searching, None) {
             if !text.is_empty() && folder_row(app, ui, &lp, list, &mut y, "presets/Text", "Text", 14.0, searching, None) {
                 for (id, name) in text {
-                    preset_row(app, ui, &lp, list, &mut y, &name, &format!("effects.preset.text.{id}"), &query, || Apply::TextPreset(id.clone()), &mut apply);
+                    preset_row(app, ui, &lp, list, &mut y, &name, &format!("effects.preset.text.{id}"), &query, PresetRef::Text(id.clone()), &mut apply);
                 }
             }
             for cat in &categories {
@@ -405,7 +418,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     continue;
                 }
                 for (id, name, _) in builtin.iter().filter(|(_, _, c)| c == cat) {
-                    preset_row(app, ui, &lp, list, &mut y, name, &format!("effects.preset.builtin.{id}"), &query, || Apply::Builtin(id.clone()), &mut apply);
+                    preset_row(app, ui, &lp, list, &mut y, name, &format!("effects.preset.builtin.{id}"), &query, PresetRef::Builtin(id.clone()), &mut apply);
                 }
             }
             if !files.is_empty() && folder_row(app, ui, &lp, list, &mut y, "presets/User", "User Presets", 14.0, searching, None) {
@@ -419,7 +432,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         &f.name,
                         &format!("effects.preset.file.{}", f.name),
                         &query,
-                        || Apply::PresetFile(f.path.clone()),
+                        PresetRef::File(f.path.clone()),
                         &mut apply,
                     );
                 }
@@ -457,11 +470,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let content = y + scroll.offset - list.min.y;
     scroll.end(ui, &mut app.auto, "effects.scroll", content, &t);
-    if let Some(DragPayload::Effect(id)) = egui::DragAndDrop::payload::<DragPayload>(&ctx).as_deref()
-        && let Some(pos) = ctx.pointer_hover_pos()
+    if let Some(name) = egui::DragAndDrop::payload::<DragPayload>(&ctx).and_then(|p| match p.as_ref() {
+        DragPayload::Effect(id) => Some(effectcraft_engine::effects::find(id).map(|e| crate::i18n::effects::name(e.id, e.name)).unwrap_or_default()),
+        DragPayload::Preset { name, .. } => Some(name.clone()),
+        _ => None,
+    }) && let Some(pos) = ctx.pointer_hover_pos()
     {
-        let name = effectcraft_engine::effects::find(id).map(|e| crate::i18n::effects::name(e.id, e.name)).unwrap_or_default();
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("dnd-fx")));
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("dnd-fx")));
         let g = painter.layout_no_wrap(name, Tokens::ui(12.0), t.text);
         let r = Rect::from_min_size(pos + vec2(12.0, 8.0), g.size() + vec2(16.0, 8.0));
         painter.rect_filled(r, 4.0, Color32::from_rgba_premultiplied(40, 40, 40, 230));
@@ -475,9 +490,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let (cmd, params) = match &apply {
         Apply::Effect(id) => ("effect.apply", json!({"effect": id})),
-        Apply::TextPreset(id) => ("layer.applyTextPreset", json!({"preset": id})),
-        Apply::Builtin(id) => ("anim.applyBuiltinPreset", json!({"preset": id})),
-        Apply::PresetFile(path) => ("anim.applyPreset", json!({"path": path})),
+        Apply::Preset(preset) => preset.command(),
     };
     match app.session.execute(cmd, params) {
         Err(e) => app.ui.status = e.to_string(),
@@ -583,7 +596,7 @@ mod tests {
         for _ in 0..5 {
             let start = std::time::Instant::now();
             for _ in 0..1000 {
-                let (_, shared) = ctx.data(|d| d.get_temp::<(f64, Arc<Vec<PresetFile>>)>(egui::Id::new("fx-user-presets"))).unwrap();
+                let (_, shared) = ctx.data(|d| d.get_temp::<(f64, Arc<Vec<PresetFile>>)>(egui::Id::unique("fx-user-presets"))).unwrap();
                 std::hint::black_box((*shared).clone());
             }
             before.push(start.elapsed());

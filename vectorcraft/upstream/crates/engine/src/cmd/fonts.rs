@@ -101,6 +101,12 @@ pub(super) fn font_label((family, style, version): &UsedFont) -> String {
 
 /// The fonts (family, style, version) of the type in the layers and symbols of `d`.
 pub(super) fn used_fonts(d: &Document) -> BTreeSet<UsedFont> {
+    art_fonts(d, &[])
+}
+
+/// The fonts (family, style, version) of the type in the layers and symbols of `d` and in `art`
+/// (art read from a file, its resources in `d`).
+pub(super) fn art_fonts(d: &Document, art: &[Node]) -> BTreeSet<UsedFont> {
     let mut fonts = BTreeSet::new();
     let mut add = |n: &Node| {
         if let NodeKind::Text(t) = &n.kind {
@@ -110,6 +116,9 @@ pub(super) fn used_fonts(d: &Document) -> BTreeSet<UsedFont> {
     d.walk(&mut add);
     for s in &d.symbols {
         s.art.walk(&mut add);
+    }
+    for n in art {
+        n.walk(&mut add);
     }
     fonts
 }
@@ -301,7 +310,8 @@ fn drawn_runs(t: &vectorcraft_doc::TextObject) -> (Vec<&TextRun>, bool) {
 }
 
 /// What an export that draws type (as outlines, embedded fonts or pixels) says when `d` uses font
-/// families that aren't available: their type is drawn in the fallback font, not the font it names.
+/// families that aren't available (their type is drawn in the fallback font, not the font it
+/// names) or styles that its family doesn't have (the closest style is drawn).
 pub(super) fn substitution_warning(d: &Document) -> Option<String> {
     substitution_warning_of(used_fonts(d))
 }
@@ -309,20 +319,34 @@ pub(super) fn substitution_warning(d: &Document) -> Option<String> {
 /// [`substitution_warning`] for type set in `fonts`.
 pub(super) fn substitution_warning_of(fonts: BTreeSet<UsedFont>) -> Option<String> {
     let db = vectorcraft_text::FontDb::global();
-    let mut missing: Vec<String> = fonts
-        .into_iter()
-        .filter(|(family, style, _)| db.resolve(family, style).is_none_or(|(_, m)| m == vectorcraft_text::FontMatch::Missing))
-        .map(|(family, _, _)| family)
-        .collect();
+    let mut missing: Vec<String> = Vec::new();
+    let mut styles: BTreeSet<String> = BTreeSet::new();
+    for (family, style, _) in fonts {
+        match db.resolve(&family, &style) {
+            None | Some((_, vectorcraft_text::FontMatch::Missing)) => missing.push(family),
+            Some((face, vectorcraft_text::FontMatch::Style)) => {
+                styles.insert(format!("{family} {style} was drawn in {} {}", face.family, face.style));
+            }
+            Some(_) => {}
+        }
+    }
     // Sorted by family: its styles and versions are neighbours.
     missing.dedup();
-    (!missing.is_empty()).then(|| {
-        format!(
+    let mut parts = Vec::new();
+    if !missing.is_empty() {
+        parts.push(format!(
             "fonts that aren't available were written in the fallback font, {}: {} (install them, or replace them with Find Font)",
             vectorcraft_text::FALLBACK_FAMILY,
             missing.join(", ")
-        )
-    })
+        ));
+    }
+    if !styles.is_empty() {
+        parts.push(format!(
+            "font styles that aren't available were written in the closest style: {} (pick a style the family has)",
+            styles.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
 }
 
 fn text(d: &Document, id: NodeId) -> Option<&vectorcraft_doc::TextObject> {
@@ -583,6 +607,16 @@ mod open_tests {
         s.execute("text.create", &json!({"x": 10, "y": 90, "text": "Ab 雅楽", "font": "Inter"})).unwrap();
         let inter = s.execute("text.fonts", &json!({})).unwrap().as_array().unwrap().iter().find(|f| f["family"] == "Inter").cloned().unwrap();
         assert_eq!(inter["missingGlyphs"], 2, "雅 and 楽 come from a fallback font: {inter}");
+    }
+
+    #[test]
+    fn export_warns_when_a_style_is_drawn_in_another_style() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({"width": 200, "height": 200})).unwrap();
+        s.execute("text.create", &json!({"x": 10, "y": 20, "text": "Hi", "font": "Source Sans 3", "style": "Black Wide"})).unwrap();
+        let out = s.execute("document.export", &json!({"format": "pdf"})).unwrap();
+        let warnings = out["warnings"].to_string();
+        assert!(warnings.contains("Source Sans 3 Black Wide was drawn in Source Sans 3"), "{out}");
     }
 
     #[test]

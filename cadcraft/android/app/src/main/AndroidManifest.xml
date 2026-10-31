@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Shared suite storage (/sdcard/CraftApps): read/write user media. -->
+    <!-- Opening help links and the project site. -->
+
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+        <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:label="CadCraft"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+
+        <!-- NativeActivity subclass: the Rust eframe UI. -->
+        <activity
+            android:name="app.cadcraft.android.CadCraftActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <meta-data android:name="android.app.lib_name" android:value="cadcraft_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

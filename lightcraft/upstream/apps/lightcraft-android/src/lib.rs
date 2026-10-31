@@ -24,4 +24,4 @@ mod shell;
 
 /// Port version, shown in the UI. `build-apk.sh` derives the Gradle
 /// `versionCode` from this constant — it must stay in this file.
-pub const VERSION_NAME: &str = "0.9.4";
+pub const VERSION_NAME: &str = "0.9.5";

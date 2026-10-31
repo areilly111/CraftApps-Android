@@ -140,6 +140,74 @@ pub struct TransferStats {
     pub readback_bytes: u64,
 }
 
+/// `WGPU_ADAPTER_NAME` trimmed; empty or whitespace-only counts as unset (an empty
+/// substring would otherwise match the first adapter and skip the power preference).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn wanted_adapter_name(var: Option<&str>) -> Option<&str> {
+    var.map(str::trim).filter(|w| !w.is_empty())
+}
+
+/// Index of the first adapter whose name contains `want`, compared case-insensitively.
+/// Only the name is matched, as in wgpu (the backend is chosen with `WGPU_BACKEND`).
+/// `Err` lists each distinct adapter once as `name (backend)`, so a typo or an
+/// OS/driver-specific name is easy to spot.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn match_adapter_name(want: &str, adapters: &[(String, String)]) -> Result<usize, String> {
+    if adapters.is_empty() {
+        return Err(format!("WGPU_ADAPTER_NAME={want:?}: no adapters on the enabled backends"));
+    }
+    let w = want.to_lowercase();
+    adapters.iter().position(|(n, _)| n.to_lowercase().contains(&w)).ok_or_else(|| {
+        let mut list: Vec<String> = Vec::new();
+        for l in adapters.iter().map(|(n, b)| format!("{n} ({b})")) {
+            if !list.contains(&l) {
+                list.push(l);
+            }
+        }
+        format!(
+            "no adapter name matches WGPU_ADAPTER_NAME={want:?} (matched against the name only; \
+             select a backend with WGPU_BACKEND); available: [{}]",
+            list.join(", ")
+        )
+    })
+}
+
+/// The adapter named by `WGPU_ADAPTER_NAME` (case-insensitive substring, like wgpu's
+/// `initialize_adapter_from_env`, which panics when none matches). `None` when unset or empty.
+#[cfg(not(target_arch = "wasm32"))]
+async fn adapter_by_name(instance: &wgpu::Instance) -> Option<Result<wgpu::Adapter, String>> {
+    let var = std::env::var("WGPU_ADAPTER_NAME").ok();
+    let want = wanted_adapter_name(var.as_deref())?;
+    let mut all = instance.enumerate_adapters(wgpu::Backends::all()).await;
+    let adapters: Vec<(String, String)> = all
+        .iter()
+        .map(|a| {
+            let i = a.get_info();
+            (i.name, format!("{:?}", i.backend))
+        })
+        .collect();
+    Some(match_adapter_name(want, &adapters).map(|i| all.swap_remove(i)))
+}
+/// `WGPU_POWER_PREF` (`low` / `high` / `none`), default HighPerformance. wgpu ignores an
+/// unknown value silently; warn so a typo is noticed.
+#[cfg(not(target_arch = "wasm32"))]
+fn power_pref_from_env() -> wgpu::PowerPreference {
+    wgpu::PowerPreference::from_env().unwrap_or_else(|| {
+        if let Ok(v) = std::env::var("WGPU_POWER_PREF") {
+            log::warn!("gpu: ignoring WGPU_POWER_PREF={v:?} (expected low, high or none)");
+        }
+        wgpu::PowerPreference::HighPerformance
+    })
+}
+#[cfg(target_arch = "wasm32")]
+fn power_pref_from_env() -> wgpu::PowerPreference {
+    wgpu::PowerPreference::HighPerformance
+}
+#[cfg(target_arch = "wasm32")]
+async fn adapter_by_name(_: &wgpu::Instance) -> Option<Result<wgpu::Adapter, String>> {
+    None
+}
+
 impl Transfers {
     fn count(&self, up: bool, bytes: usize) {
         use std::sync::atomic::Ordering::Relaxed;
@@ -283,6 +351,7 @@ pub struct GpuContext {
     pub queue: wgpu::Queue,
     pub(crate) name: String,
     pub(crate) max_dim: u32,
+    pub(crate) median_kernel: crate::fx_noise::MedianKernel,
     bgl: wgpu::BindGroupLayout,
     bgl_ext: wgpu::BindGroupLayout,
     pipelines: HashMap<&'static str, wgpu::ComputePipeline>,
@@ -394,6 +463,12 @@ pub(crate) fn buffer_init(device: &wgpu::Device, queue: &wgpu::Queue, label: Opt
     buffer
 }
 
+/// The descriptor for a device the compositor owns: `MemoryUsage` so freed textures give their
+/// allocator blocks back instead of a few long-lived objects pinning large ones.
+pub(crate) fn device_descriptor(required_limits: wgpu::Limits) -> wgpu::DeviceDescriptor<'static> {
+    wgpu::DeviceDescriptor { label: Some("effectcraft gpu"), required_limits, memory_hints: wgpu::MemoryHints::MemoryUsage, ..Default::default() }
+}
+
 impl GpuContext {
     /// [`buffer_init`] on this context's device.
     pub(crate) fn buffer_init(&self, label: Option<&str>, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
@@ -407,6 +482,9 @@ impl GpuContext {
     /// [`Self::device_failure_notifier`] for immediate readback cancellation.
     pub fn new(adapter: &wgpu::Adapter, device: wgpu::Device, queue: wgpu::Queue) -> Result<GpuContext, String> {
         let info = adapter.get_info();
+        let median_kernel = crate::fx_noise::MedianKernel::for_adapter(info.backend, info.device_type);
+        #[cfg(test)]
+        let median_kernel = median_kernel.test_override()?;
         if !adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS) {
             return Err(format!("{} ({:?}): no compute shaders", info.name, info.backend));
         }
@@ -426,6 +504,7 @@ impl GpuContext {
             ("max_compute_workgroup_size_x", l.max_compute_workgroup_size_x, 64),
             ("max_compute_workgroup_size_y", l.max_compute_workgroup_size_y, 16),
             ("max_compute_invocations_per_workgroup", l.max_compute_invocations_per_workgroup, 256),
+            ("max_compute_workgroup_storage_size", l.max_compute_workgroup_storage_size, median_kernel.workgroup_storage()),
         ];
         if let Some((limit, have, need)) = needs.iter().find(|(_, have, need)| have < need) {
             return Err(format!("{} ({:?}): device limit {limit} is {have}, needs {need}", info.name, info.backend));
@@ -451,6 +530,7 @@ impl GpuContext {
             include_str!("shaders/fx_key.wgsl"),
             include_str!("shaders/fx_stylize.wgsl"),
             include_str!("shaders/fx_noise.wgsl"),
+            median_kernel.source(),
             include_str!("shaders/fx_tone.wgsl"),
             include_str!("shaders/fx_warp.wgsl"),
             include_str!("shaders/fx_extra.wgsl"),
@@ -632,6 +712,7 @@ impl GpuContext {
             queue,
             name,
             max_dim,
+            median_kernel,
             bgl,
             bgl_ext,
             pipelines,
@@ -774,29 +855,38 @@ impl GpuContext {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Match eframe's backend override so CLI and headless acceptance tests
-            // exercise the backend requested for the native viewer.
-            desc.backends = wgpu::Backends::from_env().unwrap_or(desc.backends);
+            // Honour the same wgpu env vars as the viewer (WGPU_BACKEND, WGPU_DX12_COMPILER,
+            // WGPU_VALIDATION, WGPU_DEBUG, WGPU_POWER_PREF), plus WGPU_ADAPTER_NAME (CLI/headless
+            // only for now; the viewer ignores it). Not full parity: the viewer also changes
+            // instance flags and has a GL fallback.
+            // Note: with_env() also resets memory_budget_thresholds to their default (unused here).
+            desc = desc.with_env();
         }
         #[cfg(target_arch = "wasm32")]
         {
             desc.backends = wgpu::Backends::BROWSER_WEBGPU;
         }
         let instance = wgpu::Instance::new(desc);
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })
-            .await
-            .map_err(|e| format!("no adapter: {e}"))?;
+        let (adapter, by_name) = match adapter_by_name(&instance).await {
+            Some(a) => (a?, true),
+            None => (
+                instance
+                    .request_adapter(&wgpu::RequestAdapterOptions { power_preference: power_pref_from_env(), ..Default::default() })
+                    .await
+                    .map_err(|e| format!("no adapter: {e}"))?,
+                false,
+            ),
+        };
         let limits = adapter.limits();
         let required_limits = wgpu::Limits {
             max_texture_dimension_2d: limits.max_texture_dimension_2d.min(16384),
             max_buffer_size: limits.max_buffer_size,
             ..wgpu::Limits::default()
         };
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor { label: Some("effectcraft gpu"), required_limits, ..Default::default() })
-            .await
-            .map_err(|e| format!("no device: {e}"))?;
+        let (device, queue) = adapter.request_device(&device_descriptor(required_limits)).await.map_err(|e| match by_name {
+            true => format!("no device on {} (picked by WGPU_ADAPTER_NAME): {e}", adapter.get_info().name),
+            false => format!("no device: {e}"),
+        })?;
         let context = GpuContext::new(&adapter, device, queue)?;
         // This path owns the device; install handlers only after construction succeeds.
         crate::readback::install(&context.device, &context.readbacks);
@@ -999,6 +1089,13 @@ pub(crate) struct Enc<'g> {
     owner: u64,
 }
 
+/// Images bound to a compute kernel's source, optional auxiliary and output slots.
+pub(crate) struct KernelImages<'a> {
+    pub src: &'a GpuImage,
+    pub aux: Option<&'a GpuImage>,
+    pub out: &'a GpuImage,
+}
+
 impl Drop for Enc<'_> {
     fn drop(&mut self) {
         // Unsubmitted work is discarded, so nothing recorded will read pooled textures.
@@ -1072,32 +1169,21 @@ impl<'g> Enc<'g> {
     }
 
     /// Run kernel `entry` writing `out` (dispatched over `groups` workgroups).
-    pub fn dispatch(
-        &mut self,
-        entry: &str,
-        p: &Params,
-        src: &GpuImage,
-        aux: Option<&GpuImage>,
-        out: &GpuImage,
-        data: Option<&wgpu::Buffer>,
-        groups: (u32, u32),
-    ) {
-        self.dispatch_ext(entry, p, src, aux, out, data, groups, None);
+    pub fn dispatch(&mut self, entry: &str, p: &Params, images: KernelImages<'_>, data: Option<&wgpu::Buffer>, groups: (u32, u32)) {
+        self.dispatch_ext(entry, p, images, data, groups, None);
     }
 
     /// [`Enc::dispatch`] for the kernels in `EXT_ENTRIES`, with their group 1 storage buffers.
-    #[allow(clippy::too_many_arguments)]
     pub fn dispatch_ext(
         &mut self,
         entry: &str,
         p: &Params,
-        src: &GpuImage,
-        aux: Option<&GpuImage>,
-        out: &GpuImage,
+        images: KernelImages<'_>,
         data: Option<&wgpu::Buffer>,
         groups: (u32, u32),
         ext: Option<[&wgpu::Buffer; 4]>,
     ) {
+        let KernelImages { src, aux, out } = images;
         let g = self.g;
         let Some(pipe) = g.pipelines.get(entry) else {
             if !g.unavailable.iter().any(|(e, _)| *e == entry) {
@@ -1153,7 +1239,7 @@ impl<'g> Enc<'g> {
     /// Per-pixel kernel over `out`'s size (16×16 workgroups).
     pub fn pixels(&mut self, entry: &str, p: &Params, src: &GpuImage, aux: Option<&GpuImage>, out: &GpuImage, data: Option<&wgpu::Buffer>) {
         let groups = (out.width.div_ceil(16), out.height.div_ceil(16));
-        self.dispatch(entry, p, src, aux, out, data, groups);
+        self.dispatch(entry, p, KernelImages { src, aux, out }, data, groups);
     }
 
     /// Copy `src` into a larger zeroed image at (`x`, `y`) (Buf::pad).
@@ -1164,6 +1250,24 @@ impl<'g> Enc<'g> {
             wgpu::TexelCopyTextureInfo { texture: &dst.texture, mip_level: 0, origin: wgpu::Origin3d { x, y, z: 0 }, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width: src.width, height: src.height, depth_or_array_layers: 1 },
         );
+    }
+
+    /// A `w` × `h` image showing `src` with its pixel (`x`, `y`) at the top-left, transparent
+    /// where `src` doesn't reach (Image::crop).
+    pub fn crop(&mut self, src: &GpuImage, x: i64, y: i64, w: u32, h: u32) -> GpuImage {
+        let dst = self.image(w, h);
+        let span = |o: i64, n: u32, len: u32| {
+            let (a, b) = (o.max(0), (o + n as i64).min(len as i64));
+            (b > a).then(|| (a as u32, (a - o) as u32, (b - a) as u32))
+        };
+        let (Some((sx, dx, cw)), Some((sy, dy, ch))) = (span(x, w, src.width), span(y, h, src.height)) else { return dst };
+        let enc = self.encoder();
+        enc.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo { texture: &src.texture, mip_level: 0, origin: wgpu::Origin3d { x: sx, y: sy, z: 0 }, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: &dst.texture, mip_level: 0, origin: wgpu::Origin3d { x: dx, y: dy, z: 0 }, aspect: wgpu::TextureAspect::All },
+            wgpu::Extent3d { width: cw, height: ch, depth_or_array_layers: 1 },
+        );
+        dst
     }
 
     /// Submit recorded work.
@@ -1391,4 +1495,67 @@ impl<'g> Enc<'g> {
 /// Mip levels of a full chain for a `w × h` texture (down to 1 × 1).
 pub(crate) fn mip_levels(w: u32, h: u32) -> u32 {
     u32::BITS - w.max(h).max(1).leading_zeros()
+}
+
+#[cfg(test)]
+mod adapter_name_tests {
+    use super::{match_adapter_name, wanted_adapter_name};
+
+    fn adapters() -> Vec<(String, String)> {
+        [("NVIDIA GeForce GTX 1070", "Vulkan"), ("Intel(R) UHD Graphics 630", "Dx12"), ("llvmpipe (LLVM 19.1.7, 256 bits)", "Gl")]
+            .map(|(n, b)| (n.into(), b.into()))
+            .to_vec()
+    }
+
+    #[test]
+    fn matches_case_insensitive_substring() {
+        assert_eq!(match_adapter_name("intel", &adapters()), Ok(1));
+        assert_eq!(match_adapter_name("GTX 1070", &adapters()), Ok(0));
+        assert_eq!(match_adapter_name("LLVMPIPE", &adapters()), Ok(2));
+    }
+
+    #[test]
+    fn first_match_wins() {
+        assert_eq!(match_adapter_name("i", &adapters()), Ok(0));
+    }
+
+    #[test]
+    fn empty_or_blank_name_is_unset_and_value_is_trimmed() {
+        assert_eq!(wanted_adapter_name(None), None);
+        assert_eq!(wanted_adapter_name(Some("")), None);
+        assert_eq!(wanted_adapter_name(Some("  ")), None);
+        assert_eq!(wanted_adapter_name(Some(" intel ")), Some("intel"));
+        assert_eq!(match_adapter_name(wanted_adapter_name(Some(" intel ")).unwrap(), &adapters()), Ok(1));
+    }
+
+    #[test]
+    fn mismatch_lists_name_and_backend() {
+        let e = match_adapter_name("NoSuch", &adapters()).unwrap_err();
+        assert!(e.contains("\"NoSuch\""), "{e}");
+        assert!(e.contains("Intel(R) UHD Graphics 630 (Dx12)"), "{e}");
+        assert!(e.contains("NVIDIA GeForce GTX 1070 (Vulkan)"), "{e}");
+    }
+
+    #[test]
+    fn backend_is_not_part_of_the_match_and_message_says_so() {
+        let e = match_adapter_name("dx12", &adapters()).unwrap_err();
+        assert!(e.contains("name only"), "{e}");
+        assert!(e.contains("WGPU_BACKEND"), "{e}");
+    }
+
+    #[test]
+    fn mismatch_lists_identical_name_and_backend_once() {
+        let mut a = adapters();
+        a.insert(2, ("Intel(R) UHD Graphics 630".into(), "Dx12".into()));
+        a.push(("Intel(R) UHD Graphics 630".into(), "Vulkan".into()));
+        let e = match_adapter_name("NoSuch", &a).unwrap_err();
+        assert_eq!(e.matches("Intel(R) UHD Graphics 630 (Dx12)").count(), 1, "{e}");
+        assert_eq!(e.matches("Intel(R) UHD Graphics 630 (Vulkan)").count(), 1, "{e}");
+    }
+
+    #[test]
+    fn no_adapters_has_its_own_message() {
+        let e = match_adapter_name("x", &[]).unwrap_err();
+        assert!(e.contains("no adapters on the enabled backends"), "{e}");
+    }
 }

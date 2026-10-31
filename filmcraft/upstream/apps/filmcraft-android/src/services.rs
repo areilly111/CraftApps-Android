@@ -34,6 +34,10 @@ impl Services for AndroidServices {
         self.inner.write_file(path, data)
     }
 
+    fn write_file_new(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        self.inner.write_file_new(path, data)
+    }
+
     fn file_size(&self, path: &str) -> std::io::Result<u64> {
         self.inner.file_size(path)
     }

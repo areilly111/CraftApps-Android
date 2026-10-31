@@ -143,8 +143,8 @@ fn lines_are_lwpolylines_curves_splines_and_fills_hatches() {
     let out = export(&d, &opts(&d)).unwrap();
     assert_eq!(
         kinds(&out),
-        ["LWPOLYLINE", "HATCH", "LWPOLYLINE", "SPLINE"],
-        "the fill's outline and hatch, then the stroke, then the ellipse's stroke"
+        ["LWPOLYLINE", "HATCH", "LWPOLYLINE", "CIRCLE"],
+        "the fill's outline and hatch, then the stroke, then the circle's stroke"
     );
     let e = entities(&out);
     // The rectangle, y up from the artboard's bottom-left corner: 10..110 × 40..90.
@@ -164,11 +164,9 @@ fn lines_are_lwpolylines_curves_splines_and_fills_hatches() {
     assert_eq!((get(&e[0], 370), get(&e[2], 370)), (None, Some("35")));
     let hatch = &e[1];
     assert_eq!((get(hatch, 2), get(hatch, 70), get(hatch, 91), get(hatch, 93)), (Some("SOLID"), Some("1"), Some("1"), Some("4")));
-    // The ellipse: four cubics through clamped knots.
-    let spline = &e[3];
-    assert_eq!((get(spline, 71), get(spline, 73)), (Some("3"), Some("13")));
-    assert_eq!(get(spline, 70), Some("9"), "closed planar spline (#1299): 1 = closed, 8 = planar");
-    assert_eq!(all(spline, 40), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0]);
+    // The circular ellipse is preserved as a native circle (#1299).
+    let circle = &e[3];
+    assert_eq!((all(circle, 10), all(circle, 20), all(circle, 40)), (vec![150.0], vec![50.0], vec![30.0]));
     // R14 has lightweight polylines but no lineweights: the stroke is a polyline width.
     let r14 = export(&d, &DxfOptions { version: DxfVersion::R14, ..opts(&d) }).unwrap();
     assert_eq!(get(&entities(&r14)[2], 43), Some("1"));
@@ -177,14 +175,75 @@ fn lines_are_lwpolylines_curves_splines_and_fills_hatches() {
     // R13 has splines and hatches, and polylines of vertices.
     let r13 = export(&d, &DxfOptions { version: DxfVersion::R13, ..opts(&d) }).unwrap();
     let poly = ["POLYLINE", "VERTEX", "VERTEX", "VERTEX", "VERTEX", "SEQEND"];
-    assert_eq!(kinds(&r13), [&poly[..], &["HATCH"], &poly, &["SPLINE"]].concat());
-    // R12: polylines only; the fill is its outline, the ellipse flattened.
+    assert_eq!(kinds(&r13), [&poly[..], &["HATCH"], &poly, &["CIRCLE"]].concat());
+    // R12: visible stroke widths live on old POLYLINE entities, including curved strokes.
     let r12 = export(&d, &DxfOptions { version: DxfVersion::R12, ..opts(&d) }).unwrap();
     let k = kinds(&r12);
     assert!(k.iter().all(|k| matches!(k.as_str(), "POLYLINE" | "VERTEX" | "SEQEND")), "{k:?}");
     assert_eq!(k.iter().filter(|k| *k == "POLYLINE").count(), 3);
-    assert!(k.iter().filter(|k| *k == "VERTEX").count() > 20, "the ellipse is flattened");
+    assert_eq!(k.iter().filter(|k| *k == "CIRCLE").count(), 0);
     assert!(r12.warnings.iter().any(|w| w.contains("R12 has no fills")), "{:?}", r12.warnings);
+}
+
+#[test]
+fn circles_and_circular_arcs_are_native_dxf_entities() {
+    let d = doc_with(|d| {
+        let circle = shapes::ellipse(Rect::new(20.0, 20.0, 80.0, 80.0));
+        let c = Point::new(120.0, 50.0);
+        let r = 30.0;
+        let k = r * shapes::KAPPA;
+        let mut arc = vectorcraft_geom::BezPath::new();
+        arc.move_to(Point::new(c.x + r, c.y));
+        arc.curve_to(Point::new(c.x + r, c.y - k), Point::new(c.x + k, c.y - r), Point::new(c.x, c.y - r));
+        vec![
+            path(d, circle, Paint::None, Paint::solid(Color::BLACK), 1.0),
+            path(d, PathData::from_bezpath(&arc), Paint::None, Paint::solid(Color::BLACK), 1.0),
+        ]
+    });
+    for version in DxfVersion::ALL.into_iter().filter(|version| *version != DxfVersion::R12) {
+        let out = export(&d, &DxfOptions { version, ..opts(&d) }).unwrap();
+        let e = entities(&out);
+        assert_eq!(e.iter().map(|x| kind(x)).collect::<Vec<_>>(), ["CIRCLE", "ARC"], "{version:?}");
+        assert_eq!((all(&e[0], 10), all(&e[0], 20), all(&e[0], 40)), (vec![50.0], vec![50.0], vec![30.0]), "{version:?}");
+        assert_eq!((all(&e[1], 10), all(&e[1], 20), all(&e[1], 40)), (vec![120.0], vec![50.0], vec![30.0]), "{version:?}");
+        assert_eq!((all(&e[1], 50), all(&e[1], 51)), (vec![0.0], vec![90.0]), "{version:?}");
+    }
+
+    // An actual ellipse is not close enough to a circle and remains a spline.
+    let ellipse = doc_with(|d| vec![path(d, shapes::ellipse(Rect::new(20.0, 20.0, 100.0, 60.0)), Paint::None, Paint::solid(Color::BLACK), 1.0)]);
+    assert_eq!(kinds(&export(&ellipse, &opts(&ellipse)).unwrap()), ["SPLINE"]);
+}
+
+#[test]
+fn r12_stroked_circles_keep_polyline_width() {
+    let d = doc_with(|d| vec![path(d, shapes::ellipse(Rect::new(20.0, 20.0, 80.0, 80.0)), Paint::None, Paint::solid(Color::BLACK), 3.0)]);
+    let out = export(&d, &DxfOptions { version: DxfVersion::R12, ..opts(&d) }).unwrap();
+    let e = entities(&out);
+    assert_eq!(kind(&e[0]), "POLYLINE");
+    assert_eq!((get(&e[0], 40), get(&e[0], 41)), (Some("3"), Some("3")));
+    assert!(!e.iter().any(|entity| kind(entity) == "CIRCLE"));
+}
+
+#[test]
+fn closed_circular_arc_with_a_closing_chord_is_not_a_circle() {
+    let d = doc_with(|d| {
+        let c = Point::new(50.0, 50.0);
+        let r = 30.0;
+        let k = r * shapes::KAPPA;
+        let mut arc = vectorcraft_geom::BezPath::new();
+        arc.move_to(Point::new(c.x + r, c.y));
+        arc.curve_to(Point::new(c.x + r, c.y - k), Point::new(c.x + k, c.y - r), Point::new(c.x, c.y - r));
+        arc.curve_to(Point::new(c.x - k, c.y - r), Point::new(c.x - r, c.y - k), Point::new(c.x - r, c.y));
+        arc.curve_to(Point::new(c.x - r, c.y + k), Point::new(c.x - k, c.y + r), Point::new(c.x, c.y + r));
+        arc.close_path();
+        vec![path(d, PathData::from_bezpath(&arc), Paint::None, Paint::solid(Color::BLACK), 1.0)]
+    });
+
+    let modern = export(&d, &opts(&d)).unwrap();
+    assert_eq!(kinds(&modern), ["SPLINE"]);
+    let r12 = export(&d, &DxfOptions { version: DxfVersion::R12, ..opts(&d) }).unwrap();
+    assert!(kinds(&r12).iter().any(|k| k == "POLYLINE"));
+    assert!(!kinds(&r12).iter().any(|k| k == "CIRCLE"));
 }
 
 #[test]
@@ -353,7 +412,7 @@ fn alter_paths_writes_strokes_as_filled_outlines() {
     // Each fill and stroke: its outlines, then its hatch.
     let fill = ["LWPOLYLINE", "HATCH"];
     let rect_stroke = ["LWPOLYLINE", "LWPOLYLINE", "HATCH"];
-    assert_eq!(kinds(&out), [&fill[..], &rect_stroke, &["SPLINE", "SPLINE", "HATCH"]].concat());
+    assert_eq!(kinds(&out), [&fill[..], &rect_stroke, &["CIRCLE", "CIRCLE", "HATCH"]].concat());
     // The rectangle's stroke: an outer and an inner boundary.
     assert_eq!(get(&entities(&out)[4], 91), Some("2"));
     // Preserve Appearance outlines only the strokes a line can't draw.
@@ -362,9 +421,9 @@ fn alter_paths_writes_strokes_as_filled_outlines() {
     if let Some(st) = d.node_mut(rect).and_then(|n| n.appearance.stroke_mut()) {
         st.align = vectorcraft_doc::StrokeAlign::Outside;
     }
-    assert_eq!(kinds(&export(&d, &opts(&d)).unwrap()), [&fill[..], &rect_stroke, &["SPLINE"]].concat());
+    assert_eq!(kinds(&export(&d, &opts(&d)).unwrap()), [&fill[..], &rect_stroke, &["CIRCLE"]].concat());
     let editable = export(&d, &DxfOptions { preserve: Preserve::Editability, ..opts(&d) }).unwrap();
-    assert_eq!(kinds(&editable), ["LWPOLYLINE", "HATCH", "LWPOLYLINE", "SPLINE"]);
+    assert_eq!(kinds(&editable), ["LWPOLYLINE", "HATCH", "LWPOLYLINE", "CIRCLE"]);
     assert!(editable.warnings.iter().any(|w| w.contains("stroke alignment")));
 }
 
@@ -397,6 +456,87 @@ fn type_is_text_or_outlines() {
     }
 }
 
+/// A list paragraph's bullet is a TEXT entity of its own where it is drawn, and the paragraph's
+/// text starts after it, at the left indent.
+#[test]
+fn a_bullet_is_text_of_its_own_before_its_paragraph() {
+    let mut d = text_doc("Item", 20.0);
+    let id = d.layers[0].children().unwrap()[0].id;
+    if let Some(NodeKind::Text(t)) = d.node_mut(id).map(|n| &mut n.kind) {
+        t.para.list = Some(vectorcraft_doc::text::ParaList::bulleted(vectorcraft_doc::text::Bullet::Dot));
+        t.para.left_indent = 18.0;
+        t.para.first_line_indent = -18.0;
+    }
+    let out = export(&d, &DxfOptions { version: DxfVersion::R2018, preserve: Preserve::Editability, ..opts(&d) }).unwrap();
+    let e = entities(&out);
+    assert_eq!(kinds(&out), ["TEXT", "TEXT"]);
+    assert_eq!((get(&e[0], 1), get(&e[1], 1)), (Some("\u{2022}"), Some("Item")));
+    assert_eq!((all(&e[0], 10)[0], all(&e[1], 10)[0]), (10.0, 28.0), "the bullet at the anchor, the text 18 pt on");
+    // In a right-to-left paragraph the bullet is drawn after the text, at the right, and its tab
+    // lies between the two.
+    let mut d = text_doc("שלום", 20.0);
+    let id = d.layers[0].children().unwrap()[0].id;
+    let mut bullet_x = f64::NAN;
+    if let Some(NodeKind::Text(t)) = d.node_mut(id).map(|n| &mut n.kind) {
+        t.para.list = Some(vectorcraft_doc::text::ParaList::bulleted(vectorcraft_doc::text::Bullet::Dot));
+        let lay = vectorcraft_text::layout(vectorcraft_text::FontDb::global(), t);
+        let m = &lay.markers[0];
+        let bullet = m.glyphs.clone().find(|&i| i != m.tab).unwrap();
+        assert!(lay.glyphs[m.tab].origin.x < lay.glyphs[bullet].origin.x, "the tab before the bullet");
+        bullet_x = 10.0 + lay.glyphs[bullet].origin.x;
+    }
+    let out = export(&d, &DxfOptions { version: DxfVersion::R2018, preserve: Preserve::Editability, ..opts(&d) }).unwrap();
+    let e = entities(&out);
+    assert_eq!(kinds(&out), ["TEXT", "TEXT"]);
+    assert_eq!((get(&e[0], 1), get(&e[1], 1)), (Some("שלום"), Some("\u{2022}")));
+    assert!((all(&e[1], 10)[0] - bullet_x).abs() < 1e-6, "the bullet where it is drawn: {} and {bullet_x}", all(&e[1], 10)[0]);
+}
+
+/// A numbered list paragraph's number and period are a TEXT entity of their own where they are
+/// drawn, in the order they are drawn: in a right-to-left paragraph the period comes first, at the
+/// number's left.
+#[test]
+fn a_number_is_text_of_its_own_before_its_paragraph() {
+    use vectorcraft_doc::text::{NumberStyle, ParaList};
+    let numbered = |text: &str, count: u32| {
+        let mut d = text_doc(text, 20.0);
+        let id = d.layers[0].children().unwrap()[0].id;
+        if let Some(NodeKind::Text(t)) = d.node_mut(id).map(|n| &mut n.kind) {
+            t.para.list = Some(ParaList::numbered(NumberStyle::Arabic));
+            t.para.left_indent = 30.0;
+            t.para.first_line_indent = -30.0;
+            t.list_count = count;
+        }
+        let out = export(&d, &DxfOptions { version: DxfVersion::R2018, preserve: Preserve::Editability, ..opts(&d) }).unwrap();
+        entities(&out).iter().map(|e| (get(e, 1).map(str::to_string), all(e, 10)[0])).collect::<Vec<_>>()
+    };
+    assert_eq!(numbered("Item", 11), [(Some("12.".to_string()), 10.0), (Some("Item".to_string()), 40.0)]);
+    let rtl = numbered("שלום", 11);
+    assert_eq!(rtl.iter().map(|(s, _)| s.clone().unwrap_or_default()).collect::<Vec<_>>(), ["שלום", ".12"]);
+    assert!(rtl[1].1 > rtl[0].1, "the number right of the text: {rtl:?}");
+}
+
+/// Area type that Shrink Text to Fit scales down is written at the height it draws at.
+#[test]
+fn shrunk_area_type_is_text_at_the_size_it_draws_at() {
+    let mut d = text_doc("Plan A, plan B and plan C", 20.0);
+    let id = d.layers[0].children().unwrap()[0].id;
+    let mut fit = 1.0;
+    if let Some(NodeKind::Text(t)) = d.node_mut(id).map(|n| &mut n.kind) {
+        t.kind = vectorcraft_doc::TextKind::Area { frame: shapes::rectangle(Rect::new(0.0, 0.0, 120.0, 30.0)) };
+        t.area.fit = vectorcraft_doc::AreaFit::ShrinkText { min_percent: 10.0 };
+        let lay = vectorcraft_text::layout(vectorcraft_text::FontDb::global(), t);
+        assert!(!lay.overflow && lay.fit_scale < 0.9, "the text is shrunk to fit: {}", lay.fit_scale);
+        fit = lay.fit_scale;
+    }
+    let out = export(&d, &DxfOptions { preserve: Preserve::Editability, ..opts(&d) }).unwrap();
+    let e = entities(&out);
+    assert!(!e.is_empty() && e.iter().all(|e| kind(e) == "TEXT"), "{:?}", kinds(&out));
+    for e in &e {
+        assert!((all(e, 40)[0] - 14.0 * fit).abs() < 1e-6, "the cap height of {} pt type: {:?}", 20.0 * fit, all(e, 40));
+    }
+}
+
 #[test]
 fn text_outside_ascii_is_escaped_before_2007() {
     let d = text_doc("Größe", 12.0);
@@ -420,6 +560,7 @@ fn images_link_png_or_jpeg_files() {
             xf: Affine::translate((10.0, 20.0)) * Affine::scale(5.0),
             link: None,
             placement: Default::default(),
+            pixels: None,
         };
         vec![Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)))]
     });
@@ -447,11 +588,37 @@ fn images_link_png_or_jpeg_files() {
 }
 
 #[test]
+fn images_without_pixels_are_left_out_with_one_note() {
+    // One image has no data in the document, and the other image's data is empty.
+    let mut d = doc_with(|d| {
+        ["raster-1", "raster-2"]
+            .into_iter()
+            .map(|key| {
+                let im = ImageObject {
+                    key: key.into(),
+                    width: 4,
+                    height: 2,
+                    xf: Affine::IDENTITY,
+                    link: None,
+                    placement: Default::default(),
+                    pixels: None,
+                };
+                Node::new(d.alloc_id(), NodeKind::Image(Box::new(im)))
+            })
+            .collect()
+    });
+    d.images.insert("raster-2".into(), ImageBlob { mime: "image/png".into(), bytes: Arc::new(vec![]), proxy: None });
+    let out = export(&d, &opts(&d)).unwrap();
+    assert!(entities(&out).is_empty() && out.images.is_empty());
+    assert_eq!(out.warnings, ["an image has no pixels and was left out"]);
+}
+
+#[test]
 fn crop_leaves_out_art_outside_the_region() {
     let d = shapes_doc();
     // Only the ellipse (120..180) reaches into 115..200.
     let o = DxfOptions { region: Rect::new(115.0, 0.0, 200.0, 100.0), crop: true, ..opts(&d) };
-    assert_eq!(kinds(&export(&d, &o).unwrap()), ["SPLINE"]);
+    assert_eq!(kinds(&export(&d, &o).unwrap()), ["CIRCLE"]);
     assert_eq!(kinds(&export(&d, &DxfOptions { crop: false, ..o }).unwrap()).len(), 4);
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "cadcraft-fonts"
+description = "CADCraft text: the built-in single-stroke drafting font and TEXT/MTEXT layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cadcraft-geom = { workspace = true }
+skrifa = { workspace = true }
+harfrust = { workspace = true }
+unicode-bidi = { workspace = true }

@@ -227,6 +227,43 @@ fn live_objects_draw_through_new_color_settings() {
     }
 }
 
+/// The art drawn for 3D effects and color adjustments follows the Color Settings: in the next
+/// frame, a CMYK cyan rectangle with Revolve, with Extrude & Bevel, with Inflate, with Rotate, with
+/// Brightness/Contrast, and a group holding it with Brightness/Contrast, draw through the new
+/// working CMYK profile.
+#[test]
+fn effect_art_draws_through_new_color_settings() {
+    let _g = settings();
+    let old = cms::active_settings();
+    let cyan = json!({"c": 100, "m": 0, "y": 0, "k": 0});
+    let brighter = json!({"brightness": 30});
+    let cases = [
+        ("the revolved rectangle", "threeD.revolve", json!({}), false),
+        ("the extruded rectangle", "threeD.extrude", json!({}), false),
+        ("the inflated rectangle", "threeD.inflate", json!({}), false),
+        ("the rotated rectangle", "threeD.rotate", json!({}), false),
+        ("the adjusted rectangle", "adjust.brightnessContrast", brighter.clone(), false),
+        ("the adjusted group", "adjust.brightnessContrast", brighter, true),
+    ];
+    let opts = RenderOptions { background: Some([255, 255, 255, 255]), ..Default::default() };
+    let frame = |r: &mut Renderer, s: &Session| r.render(&s.doc().unwrap().doc, 400, 300, Affine::IDENTITY, &opts).pixels;
+    for (what, effect, params, grouped) in cases {
+        let mut s = session();
+        let shape = rect(&mut s, 150.0, 60.0, 60.0, 120.0);
+        exec(&mut s, "paint.setFill", json!({"ids": [shape.0], "color": cyan}));
+        let target = if grouped { id_of(&exec(&mut s, "object.group", json!({"ids": [shape.0]}))) } else { shape };
+        exec(&mut s, "effect.apply", json!({"ids": [target.0], "effect": effect, "params": params}));
+        let mut r = Renderer::new();
+        let before = frame(&mut r, &s);
+        s.execute("edit.colorSettings", &json!({"cmyk": cms::DEVICE_CMYK})).unwrap();
+        let fresh = frame(&mut Renderer::new(), &s);
+        let warm = frame(&mut r, &s);
+        cms::set_active(&old).unwrap();
+        assert!(fresh != before, "{what}: the new profile changes the frame");
+        assert!(warm == fresh, "{what}: drawn as a new renderer draws it");
+    }
+}
+
 /// #2276: with a working RGB space other than sRGB, the Eyedropper takes an image's sRGB pixel
 /// into the working space, so the sampled fill shows as the pixel it was picked from.
 #[test]
@@ -246,7 +283,7 @@ fn the_eyedropper_takes_an_image_pixel_into_the_working_rgb_space() {
         let l = d.layers[0].id;
         let id = d.alloc_id();
         let xf = Affine::translate((300.0, 0.0)) * Affine::scale(100.0);
-        let im = ImageObject { key: "px".into(), width: 1, height: 1, xf, link: None, placement: Default::default() };
+        let im = ImageObject { key: "px".into(), width: 1, height: 1, xf, link: None, placement: Default::default(), pixels: None };
         d.insert(Some(l), 0, Node::new(id, NodeKind::Image(Box::new(im)))).map_err(|e| vectorcraft_engine::EngineError::Other(e.to_string()))
     })
     .unwrap();
@@ -308,4 +345,48 @@ fn a_freeform_gradient_expands_with_its_rgb_values_in_the_working_rgb_space() {
         let close = shown.iter().zip(field).all(|(a, b)| (a - b).abs() < 2.0 / 255.0);
         assert!(matches!(c, Color::Rgb { .. }) && close, "{c:?} shows {shown:?} for {field:?}");
     }
+}
+
+/// Loading a new file of the working RGB profile (named after its description, as before) takes
+/// effect at once: CMYK colors convert into the new file and the canvas redraws, without choosing
+/// the working spaces again.
+#[test]
+fn loading_the_working_rgb_profile_again_takes_effect_at_once() {
+    let _g = settings();
+    let old = cms::active_settings();
+    // A built-in RGB profile's file renamed `name`: padded with spaces, which names drop.
+    let renamed = |builtin: &str, name: &str| {
+        let utf16 = |s: &str| s.encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<u8>>();
+        let mut bytes = cms::icc_bytes(builtin).unwrap().to_vec();
+        let (from, to) = (utf16(builtin), utf16(&format!("{name:<width$}", width = builtin.len())));
+        let at = bytes.windows(from.len()).position(|w| w == from).unwrap();
+        bytes[at..at + to.len()].copy_from_slice(&to);
+        bytes
+    };
+    let name = "Reload RGB";
+    let dir = vectorcraft_testkit::temp_dir("reload-working-rgb");
+    let load = |s: &mut Session, builtin: &str| {
+        let path = dir.join(format!("{}.icc", builtin.len()));
+        std::fs::write(&path, renamed(builtin, name)).unwrap();
+        let r = s.execute("color.loadProfile", &json!({"path": path.to_str().unwrap()})).unwrap();
+        assert_eq!(r["name"], name);
+    };
+    let cmyk = cms::register_icc(&cms::icc_bytes(cms::GENERIC_CMYK).unwrap(), Some("Reload Working CMYK".into())).unwrap().name;
+    let cyan = [1.0, 0.0, 0.0, 0.0];
+    let convert = || cms::active().cmyk_to_rgb(cyan, old.intent);
+    let mut s = session();
+    load(&mut s, cms::DISPLAY_P3);
+    s.execute("edit.colorSettings", &json!({"rgb": name, "cmyk": cmyk})).unwrap();
+    let in_p3 = convert();
+    let revision = s.doc().unwrap().revision;
+    load(&mut s, cms::PROPHOTO_RGB);
+    let after = convert();
+    let redrawn = s.doc().unwrap().revision > revision;
+    // What a CMYK profile loaded afresh gives in the new file.
+    let fresh = cms::register_icc(&cms::icc_bytes(cms::GENERIC_CMYK).unwrap(), Some("Reload Working CMYK 2".into())).unwrap().name;
+    let want = cms::Cms::new(&cms::ColorSettings { cmyk: fresh, ..cms::active_settings() }).unwrap().cmyk_to_rgb(cyan, old.intent);
+    cms::set_active(&old).unwrap();
+    assert!(in_p3.iter().zip(want).any(|(a, b)| (a - b).abs() > 0.05), "Display P3 {in_p3:?} vs ProPhoto {want:?}");
+    assert!(after.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-4), "after the reload {after:?}, want {want:?}");
+    assert!(redrawn, "the canvas redraws");
 }

@@ -13,8 +13,8 @@ crate-type = ["cdylib"]
 # feature is a compile error with `android-native-activity` (eframe 0.36), so
 # it is deliberately absent here — and in filmcraft-ui-egui's Android target
 # deps (feature unification would otherwise re-enable it).
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
-egui = "0.36"
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "android-native-activity"] }
+egui = "0.37"
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 # Shared suite shell: JNI bridge, SAF pickers, storage, GPU cascade, pen input.
 craftapps-shared = { path = "../../../../shared" }

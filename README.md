@@ -10,14 +10,15 @@ a GPU cascade, and shared suite storage under `/sdcard/CraftApps/`.
 
 | App | Port version | What it is |
 |---|---|---|
-| **PhotoCraft** | 0.4.5 | Raster image editor (Photoshop-style) |
-| **VectorCraft** | 0.2.1 | Vector graphics editor |
-| **LightCraft** | 0.9.4 | Photo library & lighting editor |
-| **DesignCraft** | 0.9.2 | Layout / design tool |
-| **PdfCraft** | 0.2.1 | PDF viewer & editor |
-| **FilmCraft** | 0.1.1 | Video editor |
-| **EffectCraft** | 0.1.0 | Effects / compositing |
-| **SoundCraft** | 0.1.0 | Audio workstation (DAW) |
+| **PhotoCraft** | 0.4.6 | Raster image editor (Photoshop-style) |
+| **VectorCraft** | 0.2.2 | Vector graphics editor |
+| **LightCraft** | 0.9.5 | Photo library & lighting editor |
+| **DesignCraft** | 0.9.3 | Layout / design tool |
+| **PdfCraft** | 0.2.3 | PDF viewer & editor |
+| **FilmCraft** | 0.1.2 | Video editor |
+| **EffectCraft** | 0.1.1 | Effects / compositing |
+| **SoundCraft** | 0.1.1 | Audio workstation (DAW) |
+| **CadCraft** | 0.1.0 | CAD and drafting tool (AutoCAD-style) |
 
 ## Versioning
 
@@ -67,7 +68,7 @@ and JDK 17:
 ```
 ./scripts/build-apk.sh <app>   # photocraft, vectorcraft, lightcraft,
                                # designcraft, pdfcraft, filmcraft,
-                               # effectcraft, soundcraft
+                               # effectcraft, soundcraft, cadcraft
 ```
 
 The script vendors and patches `android-activity` (stylus support),
@@ -78,7 +79,7 @@ repo — see `AGENTS.md` / `PATCHES.md` for the port's patch notes).
 ## Credits & licence
 
 Unofficial Android port — based on PhotoCraft, VectorCraft,
-LightCraft, DesignCraft, PdfCraft, FilmCraft, EffectCraft and
-SoundCraft by the ArtCraft team. Upstream sources live under each
+LightCraft, DesignCraft, PdfCraft, FilmCraft, EffectCraft,
+SoundCraft and CadCraft by the ArtCraft team. Upstream sources live under each
 app's `upstream/` directory with their own licences
 (Apache-2.0 / MIT). The Android port code is original work.

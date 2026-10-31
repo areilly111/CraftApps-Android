@@ -164,6 +164,20 @@ fn spreads_and_ranges() {
 }
 
 #[test]
+fn pdfx4_xmp_has_metadata_date_and_version_id() {
+    let d = doc_with_text("Print me");
+    let opts = PdfOptions { standard: Standard::PdfX4, created: Some(1_700_000_000), ..Default::default() };
+    let r = export_pdf_with_report(&d, &Cache::new(), &opts).unwrap();
+    let text = String::from_utf8_lossy(&r.bytes).to_string();
+    assert!(text.contains("<xmp:MetadataDate>2023-11-14T22:13:20Z</xmp:MetadataDate>"), "metadata date");
+    assert!(text.contains("<xmpMM:VersionID>1</xmpMM:VersionID>"), "version id");
+    assert!(crate::check_pdfx4(&r.bytes).is_empty());
+    // Without the two entries the check says so.
+    let stripped = text.replace("xmp:MetadataDate", "xmp:Other").replace("xmpMM:VersionID", "xmpMM:Other");
+    assert_eq!(crate::check_pdfx4(stripped.as_bytes()).iter().filter(|i| i.contains("xmp")).count(), 2);
+}
+
+#[test]
 fn standards() {
     let d = doc_with_text("Archive me");
     let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { standard: Standard::PdfA2b, created: Some(1_700_000_000), ..Default::default() });
@@ -174,16 +188,34 @@ fn standards() {
     // Output intent, identification and checks all in place; the update still reads.
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     assert!(crate::check_pdfx4(&r.bytes).is_empty());
-    let text = String::from_utf8_lossy(&r.bytes).to_string();
     // The default working CMYK space is the built-in Coated FOGRA39.
-    assert!(text.contains("/OutputIntents[") && text.contains("/OutputConditionIdentifier(FOGRA39)"), "output intent");
-    assert!(text.contains(r"/OutputCondition(Coated FOGRA39 \(fitted, craft-cms\))"), "output condition");
+    let intent = crate::print_tests::output_intent(&r.bytes).expect("output intent");
+    assert_eq!((intent.identifier.as_str(), intent.condition.as_str()), ("FOGRA39", "Coated FOGRA39 (fitted, craft-cms)"));
     // A plain export fails the checks; both read with the same pages.
     let plain = export_pdf(&d, &Cache::new(), &PdfOptions::default()).unwrap();
     assert_eq!(hayro_syntax::Pdf::new(r.bytes.clone()).unwrap().pages().len(), hayro_syntax::Pdf::new(plain.clone()).unwrap().pages().len());
     assert!(crate::check_pdfx4(&plain).len() >= 3);
     assert_eq!(Standard::parse("PDF/X-4"), Some(Standard::PdfX4));
     assert_eq!(Standard::parse("pdfa-2b"), Some(Standard::PdfA2b));
+}
+
+#[test]
+fn table_gradient_fill_exports_a_shading() {
+    let mut d = Document::new(&NewDocument::default());
+    let mut gradient = designcraft_color::Gradient::default();
+    gradient.stops[0].color = Color::rgb(1.0, 0.0, 0.0);
+    gradient.stops[1].color = Color::rgb(0.0, 0.0, 1.0);
+    d.swatches.push(Swatch { name: "Table gradient".into(), value: SwatchValue::Gradient { gradient }, locked: false, named: true, hidden: false });
+    let (_, sid) = d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 336.0, 300.0), d.default_layer(), "", ParaFormat::default()).unwrap();
+    let mut t = designcraft_doc::Table::new(1, 1, 2, 0, 0, 200.0);
+    t.rows[0].height = 40.0;
+    t.rows[0].mode = designcraft_doc::RowHeightMode::Exactly;
+    for cell in &mut t.cells {
+        cell.fill = "Table gradient".into();
+    }
+    d.story_mut(sid).unwrap().insert_table(0, t);
+    let pdf = uncompressed(&d, PdfOptions::default());
+    assert!(pdf.contains("/ShadingType 2") || pdf.contains("/ShadingType2"), "table fill must export a linear gradient");
 }
 
 #[test]
@@ -243,6 +275,7 @@ fn place(d: &mut Document, data: Vec<u8>, px: (u32, u32)) {
     let id = ItemId(d.alloc());
     let mut it = Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(72.0, 72.0, 272.0, 172.0)));
     it.content = designcraft_doc::Content::Graphic(designcraft_doc::Graphic {
+        layer_options: None,
         asset,
         size: (px.0 as f64, px.1 as f64),
         xf: designcraft_geom::Affine::translate((72.0, 72.0)) * designcraft_geom::Affine::scale(50.0),
@@ -324,6 +357,26 @@ fn cmyk_tiff_keeps_its_inks() {
         assert_eq!(images, vec![("DeviceCMYK".to_string(), px.clone())], "{standard:?}");
         assert_eq!(images[0].1[..4], [0, 0, 0, 255], "K only");
     }
+}
+
+/// A placed greyscale TIFF went into PDFs as DeviceRGB, unlike a greyscale PNG or JPEG (#1426):
+/// a page holding only a black-and-white scan declared colour.
+#[test]
+fn grey_tiff_exports_as_device_gray() {
+    let px: Vec<u8> = vec![0, 64, 128, 255, 255, 128, 64, 0];
+    let mut tif = Vec::new();
+    tiff::encoder::TiffEncoder::new(std::io::Cursor::new(&mut tif)).unwrap().write_image::<tiff::encoder::colortype::Gray8>(4, 2, &px).unwrap();
+    let mut d = doc_with_text("x");
+    place(&mut d, tif, (4, 2));
+    for standard in [Standard::None, Standard::PdfX4] {
+        let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { standard, ..Default::default() }).unwrap();
+        assert!(r.warnings.is_empty(), "{standard:?}: {:?}", r.warnings);
+        assert_eq!(image_xobjects(&r.bytes), vec![("DeviceGray".to_string(), px.clone())], "{standard:?}");
+    }
+    // Recompressed, it stays a grey JPEG.
+    let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions { compress_images: true, compress: false, ..Default::default() }).unwrap();
+    let s = String::from_utf8_lossy(&r.bytes);
+    assert!(s.contains("/DCTDecode") && s.contains("/DeviceGray") && !s.contains("/DeviceRGB"), "a grey JPEG");
 }
 
 /// An 8×8 raster encoded as `fmt`; `alpha` gives it a transparent corner.
@@ -443,6 +496,7 @@ fn paint_order(bytes: &[u8]) -> Vec<(String, f32)> {
                 GlyphDrawMode::Fill => ("fill text".into(), 0.0),
                 GlyphDrawMode::Stroke(p) => ("stroke text".into(), p.line_width),
                 GlyphDrawMode::Invisible => ("invisible text".into(), 0.0),
+                GlyphDrawMode::Clip => ("clip text".into(), 0.0),
             });
         }
         fn draw_image(&mut self, _: Image<'_, '_>, _: kurbo::Affine) {}
@@ -569,29 +623,21 @@ fn column_rules_are_drawn() {
         o.inset = [0.0; 4];
         o.column_rule = on;
         o.column_rule_weight = 2.0;
+        // The rules run from the top line's ascent to the bottom line's descent, not the 264 pt
+        // of the columns.
+        let sid = *d.stories.keys().next().unwrap();
+        let cs = designcraft_compose::compose_story(&d, sid, &designcraft_compose::ComposeOptions::default());
+        let line = &cs.frames[0].lines[0];
+        let depth = line.ascent + line.descent;
+        assert!(cs.frames[0].lines.len() == 1 && depth < 264.0 - 1.0, "{depth}");
         let (_, paths) = drawn(&export_pdf(&d, &Cache::new(), &PdfOptions::default()).unwrap());
-        paths.into_iter().filter(|r| (r.width() - 2.0).abs() < 0.01 && (r.height() - 264.0).abs() < 0.01).map(|r| r.center().x).collect::<Vec<_>>()
+        paths.into_iter().filter(|r| (r.width() - 2.0).abs() < 0.01 && (r.height() - depth).abs() < 0.01).map(|r| r.center().x).collect::<Vec<_>>()
     };
     // 540 pt wide in three columns with 12 pt gutters: columns of 172 pt from x 36.
     let xs = rules(true);
     assert_eq!(xs.len(), 2, "{xs:?}");
     assert!((xs[0] - 214.0).abs() < 0.01 && (xs[1] - 398.0).abs() < 0.01, "{xs:?}");
     assert!(rules(false).is_empty());
-}
-
-#[test]
-fn ruby_overprint_is_reported_as_not_exported() {
-    use designcraft_doc::cjk_settings::AdornmentOverprint;
-    let mut d = doc_with_text("漢字です");
-    let sid = *d.stories.keys().next().unwrap();
-    let clean = export_pdf_with_report(&d, &Cache::new(), &PdfOptions::default()).unwrap();
-    assert!(!clean.warnings.iter().any(|w| w.contains("overprint")), "{:?}", clean.warnings);
-    d.story_mut(sid).unwrap().format_chars(0.."漢字".len(), |f| {
-        f.over.ruby = Some("かんじ".into());
-        f.over.ruby_overprint_fill = Some(AdornmentOverprint::On);
-    });
-    let r = export_pdf_with_report(&d, &Cache::new(), &PdfOptions::default()).unwrap();
-    assert!(r.warnings.iter().any(|w| w.contains("overprint is not exported yet")), "{:?}", r.warnings);
 }
 
 #[test]
@@ -775,6 +821,38 @@ fn empty_and_populated_export_metadata_preserve_key_presence() {
     assert!(s.contains("Synthetic title") && s.contains("Test author"));
 }
 
+/// File › File Info goes into the PDF's document information and XMP; the export options' title
+/// and author replace File Info's, and PDF/X-4 and Print Booklet keep them.
+#[test]
+fn file_info_is_written_into_the_pdf_metadata() {
+    let mut d = doc_with_text("Body");
+    d.title = "flyer-v3".into();
+    d.file_info.document_title = "Spring Catalog".into();
+    d.file_info.author = "Ana Ruiz".into();
+    d.file_info.description = "Shoes for the spring season".into();
+    d.file_info.keywords = vec!["spring".into(), "shoes".into()];
+    let s = uncompressed(&d, PdfOptions::default());
+    for want in ["/Title(Spring Catalog)", "/Author(Ana Ruiz)", "/Subject(Shoes for the spring season)", "/Keywords(spring, shoes)"] {
+        assert!(s.contains(want), "missing {want}");
+    }
+    for want in ["<dc:title>", "<dc:creator>", "<dc:description>", "spring, shoes</pdf:Keywords>"] {
+        assert!(s.contains(want), "XMP missing {want}");
+    }
+    assert!(!s.contains("flyer-v3"), "the document's name is not the title");
+    let s = uncompressed(&d, PdfOptions { title: Some("Proof".into()), author: Some("Studio".into()), ..Default::default() });
+    assert!(s.contains("/Title(Proof)") && s.contains("/Author(Studio)") && !s.contains("Ana Ruiz"), "the options win");
+    let s = uncompressed(&d, PdfOptions { standard: Standard::PdfX4, ..Default::default() });
+    assert!(s.contains("GTS_PDFXVersion"), "PDF/X-4");
+    let booklet = export_booklet(&d, &Cache::new(), &BookletOptions::default()).unwrap();
+    let b = String::from_utf8_lossy(&booklet.bytes);
+    for (name, s) in [("PDF/X-4", s.as_str()), ("Print Booklet", &*b)] {
+        for want in ["/Title(Spring Catalog)", "/Author(Ana Ruiz)", "/Subject(Shoes for the spring season)", "/Keywords(spring, shoes)"] {
+            assert!(s.contains(want), "{name} missing {want}");
+        }
+        assert!(s.contains("<dc:description>") && s.contains("spring, shoes</pdf:Keywords>"), "{name} XMP");
+    }
+}
+
 /// A swatch applied to a placed greyscale image colours it (#1094): the image's darkness is the
 /// coverage of the swatch, so a spot swatch prints on its own plate. A colour image, or a swatch
 /// that no longer exists, exports as the image itself.
@@ -818,4 +896,31 @@ fn a_swatch_colours_a_greyscale_image() {
     assert!(!gone.contains("/SMask"), "nothing painted through it");
     let (s, _) = export(&rgb, Some("PANTONE Test"));
     assert!(!s.contains("PANTONE#20Test"), "a colour image keeps its colours");
+}
+
+/// The export asks for each story's composition once per page it is shown on: a parent page's
+/// page number still reads its own page everywhere, and a story threaded across pages shows each
+/// frame's own lines.
+#[test]
+fn each_page_shows_its_own_composition() {
+    use designcraft_doc::story::PAGE_NUMBER;
+    let mut d = Document::new(&NewDocument { pages: 3, facing_pages: false, ..NewDocument::default() });
+    let lid = d.default_layer();
+    d.add_text_frame(SpreadRef::Parent(0), Rect::new(36.0, 700.0, 300.0, 740.0), lid, &format!("Folio{PAGE_NUMBER}"), ParaFormat::default()).unwrap();
+    let (first, _) =
+        d.add_text_frame(SpreadRef::Doc(0), Rect::new(36.0, 36.0, 300.0, 56.0), lid, "Alpha\nBravo\nCharlie", ParaFormat::default()).unwrap();
+    let mut prev = first;
+    for si in 1..3 {
+        let id = ItemId(d.alloc());
+        let it = Item::new(id, lid, designcraft_doc::Shape::Rectangle, designcraft_geom::shapes::rectangle(Rect::new(36.0, 36.0, 300.0, 56.0)));
+        d.insert_item(SpreadRef::Doc(si), it, None).unwrap();
+        d.thread(prev, id).unwrap();
+        prev = id;
+    }
+    let cache = Cache::new();
+    let opts = PdfOptions { created: Some(0), ..PdfOptions::default() };
+    let bytes = export_pdf(&d, &cache, &opts).unwrap();
+    // Parent items first, then the page's own.
+    assert_eq!(extract_text(&bytes), ["Folio1Alpha", "Folio2Bravo", "Folio3Charlie"]);
+    assert_eq!(export_pdf(&d, &cache, &opts).unwrap(), bytes, "a warm cache exports the same bytes");
 }

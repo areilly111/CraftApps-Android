@@ -491,7 +491,7 @@ fn swatch_name_clash(d: &Document, old: &str, new: &str) -> bool {
     let own = |w: &vectorcraft_color::Swatch| pattern_name(&w.paint).is_some_and(|p| p == old);
     let mut holders = d.swatches_iter().filter(|w| w.name == new).peekable();
     let only_own = holders.peek().is_some() && holders.all(own);
-    d.swatch_name_taken(new) && !(only_own && !d.swatches_iter().any(|w| w.name == old && own(w)))
+    d.swatch_name_taken(new) && (!only_own || d.swatches_iter().any(|w| w.name == old && own(w)))
 }
 
 /// Rename a pattern in swatches, paints and the edit record. Of the swatches named `old`, only the
@@ -737,7 +737,8 @@ fn repeat_expand(s: &mut Session, _: &Value) -> Result<Value> {
 /// instance node gets a fresh id.
 fn expand_repeat(d: &mut Document, r: NodeId) -> Result<()> {
     let Some(n) = d.node(r).cloned() else { return Ok(()) };
-    let mut g = vectorcraft_doc::live::expanded_group(&n, None);
+    let hooks = vectorcraft_doc::live::Hooks { symbols: Some(d), ..Default::default() };
+    let mut g = vectorcraft_doc::live::expanded_group_hooks(&n, hooks);
     if let Some(ch) = g.children_mut() {
         for c in ch.iter_mut() {
             fix_ids(d, Arc::make_mut(c));

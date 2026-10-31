@@ -74,12 +74,11 @@ fn arrow(pen: &Pen, hollow: bool) {
     }
 }
 
-/// Paint icon `name` into `r`.
-pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
-    let mut pen = Pen { p, r, c, w: 1.3 };
+/// Icons of one family: paints `name` and says whether it is one of them.
+fn paint_tools(pen: &mut Pen, name: &str) -> bool {
     match name {
-        "tool-selection" => arrow(&pen, false),
-        "tool-direct" => arrow(&pen, true),
+        "tool-selection" => arrow(pen, false),
+        "tool-direct" => arrow(pen, true),
         "tool-page" => {
             pen.closed(&[(5.0, 3.0), (12.0, 3.0), (15.0, 6.0), (15.0, 17.0), (5.0, 17.0)]);
             pen.line(&[(12.0, 3.0), (12.0, 6.0), (15.0, 6.0)]);
@@ -156,14 +155,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
         }
         "tool-scale" => {
             // A small square grown into a larger one from their shared corner.
-            Pen { p, r, c: c.gamma_multiply(0.45), w: 1.0 }.rect(3.0, 3.0, 17.0, 17.0);
+            Pen { p: pen.p, r: pen.r, c: pen.c.gamma_multiply(0.45), w: 1.0 }.rect(3.0, 3.0, 17.0, 17.0);
             pen.rect(3.0, 10.0, 10.0, 17.0);
             pen.line(&[(10.0, 10.0), (15.0, 5.0)]);
             pen.line(&[(11.5, 5.0), (15.0, 5.0), (15.0, 8.5)]);
         }
         "tool-shear" => {
             // A rectangle slanted into a parallelogram along its base.
-            Pen { p, r, c: c.gamma_multiply(0.45), w: 1.0 }.rect(3.0, 8.0, 13.0, 17.0);
+            Pen { p: pen.p, r: pen.r, c: pen.c.gamma_multiply(0.45), w: 1.0 }.rect(3.0, 8.0, 13.0, 17.0);
             pen.closed(&[(7.0, 8.0), (17.0, 8.0), (13.0, 17.0), (3.0, 17.0)]);
             pen.line(&[(7.0, 4.0), (16.0, 4.0)]);
             pen.line(&[(13.5, 2.0), (16.0, 4.0), (13.5, 6.0)]);
@@ -192,7 +191,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
         "tool-gradient" | "tool-gradient-feather" => {
             for i in 0..6 {
                 let a = 30 + i * 35;
-                let pc = Pen { p, r, c: c.gamma_multiply(a as f32 / 255.0 * 1.2), w: 1.0 };
+                let pc = Pen { p: pen.p, r: pen.r, c: pen.c.gamma_multiply(a as f32 / 255.0 * 1.2), w: 1.0 };
                 pc.frect(3.0 + i as f32 * 2.33, 4.0, 3.0 + (i + 1) as f32 * 2.33, 16.0);
             }
             pen.rect(3.0, 4.0, 17.0, 16.0);
@@ -283,7 +282,7 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
         }
         "panel-gradient" => {
             for i in 0..7 {
-                let pc = Pen { p, r, c: c.gamma_multiply(0.15 + i as f32 * 0.14), w: 1.0 };
+                let pc = Pen { p: pen.p, r: pen.r, c: pen.c.gamma_multiply(0.15 + i as f32 * 0.14), w: 1.0 };
                 pc.frect(3.0 + i as f32 * 2.0, 5.0, 5.0 + i as f32 * 2.0, 15.0);
             }
         }
@@ -331,6 +330,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.line(&[(12.5, 10.0), (11.0, 8.5)]);
             pen.line(&[(12.5, 10.0), (11.0, 11.5)]);
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Icons of one family: paints `name` and says whether it is one of them.
+fn paint_panels(pen: &mut Pen, name: &str) -> bool {
+    match name {
         "objdistribute-v" => {
             pen.frect(5.0, 2.5, 15.0, 6.0);
             pen.frect(5.0, 14.0, 15.0, 17.5);
@@ -600,6 +607,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
                 }
             }
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Icons of one family: paints `name` and says whether it is one of them.
+fn paint_shapes(pen: &mut Pen, name: &str) -> bool {
+    match name {
         // Flex Layout panel (original drawings): direction arrows, wrap, justification, spacing.
         "flex-right" | "flex-left" | "flex-down" | "flex-up" => {
             let pts: [(f32, f32); 5] = match name {
@@ -748,6 +763,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.line(&[(10.0, 3.0), (10.0, 13.0)]);
             pen.line(&[(6.5, 9.5), (10.0, 13.0), (13.5, 9.5)]);
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Icons of one family: paints `name` and says whether it is one of them.
+fn paint_page(pen: &mut Pen, name: &str) -> bool {
+    match name {
         "orient-portrait" => {
             pen.rect(5.5, 3.0, 14.5, 17.0);
             pen.fcircle(10.0, 8.0, 1.8);
@@ -796,6 +819,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
                 let v = 9.0 + k as f32 * 2.2;
                 pen.line(&[(v, 3.0), (v, 5.0)]);
                 pen.line(&[(3.0, v), (5.0, v)]);
+            }
+        }
+        // Do Not Align to Baseline Grid: ragged lines of text, free of any grid.
+        "grid-none" => {
+            for (y, x1) in [(5.0, 17.0), (8.5, 12.0), (12.0, 17.0), (15.5, 14.0)] {
+                pen.line(&[(3.0, y), (x1, y)]);
             }
         }
         "grid-baseline" => {
@@ -905,6 +934,14 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
                 pen.line(&[(15.5, 2.0), (15.5, 18.0)]);
             }
         }
+        _ => return false,
+    }
+    true
+}
+
+/// Icons of one family: paints `name` and says whether it is one of them.
+fn paint_text(pen: &mut Pen, name: &str) -> bool {
+    match name {
         "text-columns" => {
             pen.rect(2.5, 3.5, 17.5, 16.5);
             pen.line(&[(7.5, 3.5), (7.5, 16.5)]);
@@ -915,6 +952,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.line(&[(8.0, 3.5), (8.0, 16.5)]);
             pen.line(&[(12.0, 3.5), (12.0, 16.5)]);
             pen.line(&[(9.0, 10.0), (11.0, 10.0)]);
+        }
+        "small-caps" => {
+            // Two original T shapes share a baseline; no phonetic small-cap glyph is required.
+            pen.line(&[(3.0, 5.0), (10.0, 5.0)]);
+            pen.line(&[(6.5, 5.0), (6.5, 15.0)]);
+            pen.line(&[(12.0, 8.0), (17.0, 8.0)]);
+            pen.line(&[(14.5, 8.0), (14.5, 15.0)]);
         }
         "font-size" => {
             pen.text(6.0, 12.5, "T", 10.0);
@@ -936,6 +980,86 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
                 pen.line(&[(3.0, 15.5), (17.0, 15.5)]);
                 pen.line(&[(5.0, 13.5), (3.0, 15.5), (5.0, 17.5)]);
                 pen.line(&[(15.0, 13.5), (17.0, 15.5), (15.0, 17.5)]);
+            }
+        }
+        "vscale" => {
+            pen.text(13.0, 10.5, "T", 15.0);
+            pen.line(&[(4.0, 3.0), (4.0, 17.0)]);
+            pen.line(&[(2.5, 5.0), (4.0, 3.0), (5.5, 5.0)]);
+            pen.line(&[(2.5, 15.0), (4.0, 17.0), (5.5, 15.0)]);
+        }
+        "hscale" => {
+            pen.text(10.0, 8.0, "T", 13.0);
+            pen.line(&[(3.0, 16.5), (17.0, 16.5)]);
+            pen.line(&[(5.0, 14.5), (3.0, 16.5), (5.0, 18.5)]);
+            pen.line(&[(15.0, 14.5), (17.0, 16.5), (15.0, 18.5)]);
+        }
+        "baseline-shift" => {
+            pen.text(7.0, 11.0, "A", 13.0);
+            pen.text(15.5, 5.5, "a", 8.0);
+            pen.line(&[(15.5, 17.5), (15.5, 10.0)]);
+            pen.line(&[(13.5, 12.0), (15.5, 10.0), (17.5, 12.0)]);
+        }
+        "skew" => {
+            pen.w = 1.8;
+            pen.line(&[(7.0, 4.0), (17.0, 4.0)]);
+            pen.line(&[(12.0, 4.0), (8.0, 17.0)]);
+        }
+        "indent-left" | "indent-right" | "indent-first" | "indent-last" => {
+            // Text lines, and an arrow at the side (or line) indented.
+            let (x0, x1) = match name {
+                "indent-left" => (9.0, 18.0),
+                "indent-right" => (2.0, 11.0),
+                _ => (2.0, 18.0),
+            };
+            for (k, y) in [4.0, 8.0, 12.0, 16.0].into_iter().enumerate() {
+                let (a, z) = match (name, k) {
+                    ("indent-first", 0) => (9.0, x1),
+                    ("indent-last", 3) => (x0, 11.0),
+                    _ => (x0, x1),
+                };
+                pen.line(&[(a, y), (z, y)]);
+            }
+            let (y, from, to) = match name {
+                "indent-left" => (10.0, 2.0, 7.0),
+                "indent-right" => (10.0, 18.0, 13.0),
+                "indent-first" => (4.0, 2.0, 7.0),
+                _ => (16.0, 18.0, 13.0),
+            };
+            pen.line(&[(from, y), (to, y)]);
+            let d = if to > from { -2.0 } else { 2.0 };
+            pen.line(&[(to + d, y - 2.0), (to, y), (to + d, y + 2.0)]);
+        }
+        "space-before" | "space-after" => {
+            let before = name == "space-before";
+            let (bar, lines) = if before { (3.0, [11.0, 14.5, 18.0]) } else { (17.0, [2.0, 5.5, 9.0]) };
+            pen.line(&[(2.0, bar), (18.0, bar)]);
+            for y in lines {
+                pen.line(&[(8.0, y), (18.0, y)]);
+            }
+            let (a, z) = if before { (5.0, 10.0) } else { (10.0, 15.0) };
+            pen.line(&[(4.0, a), (4.0, z)]);
+            pen.line(&[(2.5, a + 1.5), (4.0, a), (5.5, a + 1.5)]);
+            pen.line(&[(2.5, z - 1.5), (4.0, z), (5.5, z - 1.5)]);
+        }
+        // Space Between Paragraphs Using Same Style: two paragraphs and the space between them.
+        "space-same" => {
+            for y in [2.0, 5.0, 15.0, 18.0] {
+                pen.line(&[(8.0, y), (18.0, y)]);
+            }
+            pen.line(&[(4.0, 6.5), (4.0, 13.5)]);
+            pen.line(&[(2.5, 8.0), (4.0, 6.5), (5.5, 8.0)]);
+            pen.line(&[(2.5, 12.0), (4.0, 13.5), (5.5, 12.0)]);
+        }
+        "drop-lines" | "drop-chars" => {
+            pen.text(5.5, 8.0, "A", 14.0);
+            if name == "drop-chars" {
+                pen.text(13.5, 4.5, "a", 8.0);
+            }
+            for (y, x) in [(if name == "drop-chars" { 8.5 } else { 3.5 }, 11.0), (8.5, 11.0), (13.5, 11.0), (17.5, 2.0)] {
+                if name == "drop-lines" || y > 5.0 {
+                    pen.line(&[(x, y), (18.0, y)]);
+                }
             }
         }
         "corner" => {
@@ -974,6 +1098,20 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
                 pen.text(4.0, *y, ["1", "2", "3"][k], 6.0);
                 pen.line(&[(7.5, *y), (if k == 1 { 14.0 } else { 17.0 }, *y)]);
             }
+        }
+        // Paragraph shading: a square with a checked fill (the Control panel's Shading).
+        "para-shading" => {
+            pen.w = 1.0;
+            pen.rect(4.0, 4.0, 16.0, 16.0);
+            pen.frect(4.0, 4.0, 10.0, 10.0);
+            pen.frect(10.0, 10.0, 16.0, 16.0);
+        }
+        // Paragraph border: a box with its corner drawn heavy (the Control panel's Border).
+        "para-border" => {
+            pen.w = 1.0;
+            pen.rect(4.0, 4.0, 16.0, 16.0);
+            pen.w = 2.5;
+            pen.line(&[(5.0, 12.0), (5.0, 5.0), (12.0, 5.0)]);
         }
         "pilcrow-menu" => {
             pen.text(9.0, 10.0, "¶", 14.0);
@@ -1040,9 +1178,21 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
             pen.rect(3.0, 4.0, 17.0, 16.0);
             pen.line(&[(3.0, 7.0), (17.0, 7.0)]);
         }
-        _ => {
-            pen.rect(4.0, 4.0, 16.0, 16.0);
-        }
+        _ => return false,
+    }
+    true
+}
+
+/// Paint icon `name` into `r`.
+pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32) {
+    let mut pen = Pen { p, r, c, w: 1.3 };
+    if !(paint_tools(&mut pen, name)
+        || paint_panels(&mut pen, name)
+        || paint_shapes(&mut pen, name)
+        || paint_page(&mut pen, name)
+        || paint_text(&mut pen, name))
+    {
+        pen.rect(4.0, 4.0, 16.0, 16.0);
     }
 }
 
@@ -1058,7 +1208,7 @@ pub fn button(ui: &mut egui::Ui, name: &str, size: f32, selected: bool, tip: &st
     let pad = size * 0.16;
     paint(ui.painter(), r.shrink(pad), name, if selected { t.text_strong } else { t.icon });
     let enabled = ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, tip));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, selected, tip));
     if tip.is_empty() {
         resp
     } else {
